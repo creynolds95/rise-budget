@@ -26,6 +26,7 @@ export const ErrorCode = z.enum([
   'NOTHING_TO_FORGIVE',
   'AMOUNT_MISMATCH',
   'IDEMPOTENCY_CONFLICT',
+  'RATE_LIMITED',
   'INTERNAL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -147,3 +148,33 @@ export const TransactionQuery = z.object({
 });
 
 export const PeriodParam = z.object({ id: PeriodId });
+
+// ── auth ──────────────────────────────────────────────────────────────────────
+
+/** WebAuthn JSON payloads are validated structurally by @simplewebauthn/server. */
+const WebAuthnJson = z.looseObject({ id: z.string(), type: z.literal('public-key') });
+
+export const RegisterOptionsBody = z.object({
+  /** One-time token from `pnpm seed:user`; omitted when adding a device while signed in. */
+  registrationToken: z.string().optional(),
+});
+
+export const RegisterVerifyBody = z.object({
+  challengeToken: z.string(),
+  response: WebAuthnJson,
+  deviceLabel: z.string().max(80).optional(),
+});
+
+export const LoginVerifyBody = z.object({
+  challengeToken: z.string(),
+  response: WebAuthnJson,
+});
+
+export const FallbackLoginBody = z.object({
+  email: z.email(),
+  code: z.string().trim().min(6).max(32),
+});
+
+export const TotpConfirmBody = z.object({ code: z.string().regex(/^\d{6}$/) });
+
+export const AccessTokenResponse = z.object({ access: z.string() });

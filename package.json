@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "test": "pnpm -r test",
     "coverage": "pnpm -r coverage",
-    "dev": "pnpm -r --parallel dev"
+    "dev": "pnpm -r --parallel dev",
+    "seed:user": "pnpm --filter @rise/api seed:user"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

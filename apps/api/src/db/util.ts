@@ -5,6 +5,7 @@
  * statement filters on `user_id`. `test/db-scoping.test.ts` scans this directory and fails
  * the build if a statement omits it. The one table without a `user_id` column is `user`
  * itself; statements against it are keyed on `id` and carry the marker `/* scoped:user.id *\/`.
+ * The single exception is the login lookup by email (`/* lookup:login *\/`, auth.ts only).
  */
 
 export type UserId = string;

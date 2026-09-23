@@ -39,9 +39,13 @@ export type AppLock = z.infer<typeof AppLock>;
 
 export const AuditAction = z.enum([
   'auth.login',
+  'auth.login_failed',
   'auth.logout',
   'auth.passkey_added',
+  'auth.totp_enabled',
+  'auth.recovery_generated',
   'auth.recovery_used',
+  'auth.refresh_reuse_detected',
   'period.closed',
   'period.recalculated',
   'category.deficit_forgiven',

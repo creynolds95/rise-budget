@@ -1,4 +1,5 @@
-import { exports } from 'cloudflare:workers';
+import { env, exports } from 'cloudflare:workers';
+import { signAccess } from '../src/lib/tokens';
 import { describe, expect, it } from 'vitest';
 
 describe('worker', () => {
@@ -8,8 +9,17 @@ describe('worker', () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it('unknown routes return the error contract', async () => {
+  it('unknown routes do not reveal themselves to anonymous callers', async () => {
     const res = await exports.default.fetch('https://rise.test/nope');
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ error: { code: 'UNAUTHORIZED' } });
+  });
+
+  it('unknown routes return NOT_FOUND to a signed-in caller', async () => {
+    const access = await signAccess(env, 'u1', 's1');
+    const res = await exports.default.fetch('https://rise.test/nope', {
+      headers: { authorization: `Bearer ${access}` },
+    });
     expect(res.status).toBe(404);
     expect(await res.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
   });

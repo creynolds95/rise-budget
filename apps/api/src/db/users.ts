@@ -1,4 +1,5 @@
-import { User, UserSettings } from '@rise/shared/schemas';
+import { User, UserSettings, type PatchSettingsBody } from '@rise/shared/schemas';
+import type { z } from 'zod';
 import { nowIso, type UserId } from './util';
 
 interface UserRow {
@@ -53,11 +54,12 @@ export async function createUser(
 export async function updateSettings(
   userId: UserId,
   db: D1Database,
-  patch: Partial<UserSettings>,
+  patch: z.infer<typeof PatchSettingsBody>,
 ): Promise<UserSettings | null> {
   const user = await getUser(userId, db);
   if (!user) return null;
-  const settings = UserSettings.parse({ ...user.settings, ...patch });
+  const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+  const settings = UserSettings.parse({ ...user.settings, ...defined });
   await db
     .prepare('UPDATE user SET settings_json = ?2 WHERE id = ?1 /* scoped:user.id */')
     .bind(userId, JSON.stringify(settings))

@@ -9,3 +9,9 @@ database_name = "rise"
 # Local dev and tests don't need a real id. Replace with `wrangler d1 create rise` output at deploy (T47).
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
+
+[vars]
+RP_ID = "localhost"
+RP_ORIGIN = "http://localhost:5173"
+RP_NAME = "Rise"
+# Secrets (never here): JWT_SECRET, TOTP_KEY — `wrangler secret put`, or .dev.vars locally.

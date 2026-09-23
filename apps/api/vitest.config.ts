@@ -7,6 +7,9 @@ export default defineConfig({
       wrangler: { configPath: './wrangler.toml' },
       miniflare: {
         bindings: {
+          // Test-only secrets. Real ones are Worker Secrets.
+          JWT_SECRET: 'test-jwt-secret-not-for-production',
+          TOTP_KEY: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
           TEST_MIGRATIONS: await readD1Migrations(
             new URL('./migrations', import.meta.url).pathname,
           ),

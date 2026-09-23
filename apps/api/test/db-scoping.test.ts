@@ -20,7 +20,11 @@ describe('query layer scoping', () => {
     it(`every statement in ${file.split('/').pop()} filters on user_id`, () => {
       const statements = [...src.matchAll(SQL)].map((m) => m[2] as string);
       for (const sql of statements) {
-        expect(/\buser_id\b/.test(sql) || sql.includes('/* scoped:user.id */'), sql).toBe(true);
+        const loginLookup = file.endsWith('/auth.ts') && sql.includes('/* lookup:login */');
+        expect(
+          /\buser_id\b/.test(sql) || sql.includes('/* scoped:user.id */') || loginLookup,
+          sql,
+        ).toBe(true);
       }
     });
   }

@@ -7,15 +7,19 @@
     "dev": "wrangler dev",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "migrate:local": "wrangler d1 migrations apply rise --local"
+    "migrate:local": "wrangler d1 migrations apply rise --local",
+    "seed:user": "node --experimental-strip-types scripts/seed-user.ts"
   },
   "dependencies": {
     "@rise/shared": "workspace:*",
-    "hono": "^4.13.8"
+    "@simplewebauthn/server": "^14.0.2",
+    "hono": "^4.13.8",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260923.1",
+    "@levischuck/tiny-cbor": "^0.3.6",
     "wrangler": "^4.137.0"
   }
 }

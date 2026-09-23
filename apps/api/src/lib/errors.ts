@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiError, ErrorCode } from '@rise/shared/schemas';
 
@@ -19,6 +20,12 @@ export function errorBody(code: ErrorCode, message: string, detail?: unknown): A
 }
 
 export function renderError(err: Error, c: Context) {
+  if (err instanceof HTTPException) {
+    return c.json(
+      errorBody(err.status === 401 ? 'UNAUTHORIZED' : 'BAD_REQUEST', err.message),
+      err.status as ContentfulStatusCode,
+    );
+  }
   if (err instanceof AppError)
     return c.json(errorBody(err.code, err.message, err.detail), err.status);
   return c.json(errorBody('INTERNAL', 'Something went wrong'), 500);
