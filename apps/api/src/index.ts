@@ -8,6 +8,7 @@ import { categories, categoryGroups } from './routes/categories';
 import { me } from './routes/me';
 import { networth } from './routes/networth';
 import { allocations, periods } from './routes/periods';
+import { transactions } from './routes/transactions';
 
 export const app = new Hono<AppEnv>();
 
@@ -24,6 +25,7 @@ app.route('/category-groups', categoryGroups);
 app.route('/categories', categories);
 app.route('/periods', periods);
 app.route('/allocations', allocations);
+app.route('/transactions', transactions);
 
 app.notFound((c) =>
   c.json(errorBody('NOT_FOUND', `No route for ${c.req.method} ${c.req.path}`), 404),

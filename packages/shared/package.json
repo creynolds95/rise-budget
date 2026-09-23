@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./budget": "./src/budget/index.ts",
     "./schemas": "./src/schemas/index.ts",
-    "./networth": "./src/networth/index.ts"
+    "./networth": "./src/networth/index.ts",
+    "./categorize": "./src/categorize/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
