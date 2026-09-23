@@ -12,6 +12,7 @@ build/
 .wrangler/
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 worker-configuration.d.ts
 
 # secrets & local env — NEVER commit
