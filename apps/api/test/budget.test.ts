@@ -155,8 +155,9 @@ describe('T18 categories, groups, periods, allocations', () => {
         cat(s.rent.id, 'expense', 150_000, 150_000, s.rent),
       ],
     });
-    const { period, ...view } = res.json;
+    const { period, close, ...view } = res.json;
     expect(period.id).toBe(PERIOD);
+    expect(close.ended).toBe(localToday('America/Chicago') > '2026-09-30');
     const byId = (xs: { categoryId: string }[]) =>
       [...xs].sort((a, b) => a.categoryId.localeCompare(b.categoryId));
     expect({ ...view, categories: byId(view.categories) }).toEqual({

@@ -1,21 +1,37 @@
 import {
   buildReallocation,
+  closePeriod,
+  hasEnded,
+  nextPeriod,
   pace,
   planAllocationChange,
+  prevPeriod,
+  recalculateCascade,
   type SlackInput,
 } from '@rise/shared/budget';
-import { PatchAllocationBody, PatchPeriodBody, PeriodId } from '@rise/shared/schemas';
+import {
+  ClosePeriodBody,
+  PatchAllocationBody,
+  PatchPeriodBody,
+  PeriodId,
+} from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
   addPlannedStmt,
+  closeWriteStmts,
+  dismissRecalcFlag,
   ensurePeriodStmt,
+  getPeriod,
   getUser,
+  listPeriodsFrom,
+  writeAudit,
   insertReallocationStmt,
   listReallocations,
   parseAllocationId,
   setExpectedIncome,
 } from '../db';
 import type { AppEnv } from '../env';
+import { loadCloseInput, loadCloseStatus } from '../lib/close';
 import { localToday } from '../lib/dates';
 import { AppError } from '../lib/errors';
 import { loadPeriodView } from '../lib/period-view';
@@ -31,12 +47,118 @@ function periodParam(id: string): string {
 }
 
 periods.get('/:id', async (c) => {
-  const { period, view } = await loadPeriodView(
-    c.env,
-    c.get('userId'),
-    periodParam(c.req.param('id')),
+  const id = periodParam(c.req.param('id'));
+  const userId = c.get('userId');
+  const [{ period, view }, close] = await Promise.all([
+    loadPeriodView(c.env, userId, id),
+    loadCloseStatus(c.env, userId, id),
+  ]);
+  return c.json({ period, ...view, close });
+});
+
+/**
+ * SPEC §2.4. Only ever on the user's explicit confirm — there is no background close.
+ * Re-closing is a no-op that returns the frozen period.
+ */
+periods.post('/:id/close', async (c) => {
+  const id = periodParam(c.req.param('id'));
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const { override } = await body(c, ClosePeriodBody);
+  const [input, status, user] = await Promise.all([
+    loadCloseInput(c.env, userId, id),
+    loadCloseStatus(c.env, userId, id),
+    getUser(userId, db),
+  ]);
+  const today = localToday(user?.timezone ?? 'America/Chicago');
+
+  // Close in order: a later month's carry-in depends on this one, and a closed month is never restated.
+  if (input.status === 'open') {
+    const [prev, next] = await Promise.all([
+      getPeriod(userId, db, prevPeriod(id)),
+      getPeriod(userId, db, nextPeriod(id)),
+    ]);
+    if (prev?.status === 'open' && hasEnded(prev.id, today)) {
+      throw new AppError(409, 'CONFLICT', `Close ${prev.id} first`);
+    }
+    if (next?.status === 'closed')
+      throw new AppError(409, 'CONFLICT', `${next.id} is already closed`);
+  }
+
+  const result = closePeriod(input, { today, readiness: status.readiness, override });
+  switch (result.kind) {
+    case 'not_ended':
+      throw new AppError(409, 'PERIOD_NOT_ENDED', `${id} hasn't ended yet`);
+    case 'waiting':
+      throw new AppError(
+        409,
+        'PERIOD_NOT_READY',
+        'Some accounts have not reported past the end of the month',
+        {
+          waitingOn: result.waitingOn,
+        },
+      );
+    case 'already_closed':
+      return c.json({ period: await getPeriod(userId, db, id), alreadyClosed: true });
+    case 'closed':
+      await db.batch(closeWriteStmts(userId, db, result.outcome, new Date().toISOString()));
+      await writeAudit(userId, db, 'period.closed', {
+        type: 'period',
+        id,
+        detail: {
+          overridden: result.overridden,
+          returnedSurplusCents: result.outcome.returnedSurplusCents,
+        },
+      });
+      return c.json({
+        period: await getPeriod(userId, db, id),
+        alreadyClosed: false,
+        outcome: result.outcome,
+      });
+  }
+});
+
+/**
+ * SPEC §2.5 "Recalculate carry-forward": re-run close for P and every later closed period, in
+ * order, writing the first open period's carry-in last. Only on explicit request.
+ */
+periods.post('/:id/recalculate', async (c) => {
+  const id = periodParam(c.req.param('id'));
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const start = await getPeriod(userId, db, id);
+  if (!start || start.status !== 'closed')
+    throw new AppError(409, 'CONFLICT', `${id} is not closed`);
+
+  // P and every contiguous closed period after it, then the first open one.
+  const stored = await listPeriodsFrom(userId, db, id);
+  const chain: string[] = [];
+  let expected = id;
+  for (const p of stored) {
+    if (p.id !== expected || p.status !== 'closed') break;
+    chain.push(p.id);
+    expected = nextPeriod(p.id);
+  }
+  const inputs = await Promise.all(
+    [...chain, expected].map((pid) => loadCloseInput(c.env, userId, pid)),
   );
-  return c.json({ period, ...view });
+  const outcomes = recalculateCascade(inputs);
+  const closedAt = new Date().toISOString();
+  await db.batch(outcomes.flatMap((o) => closeWriteStmts(userId, db, o, closedAt)));
+  await writeAudit(userId, db, 'period.recalculated', {
+    type: 'period',
+    id,
+    detail: { periods: outcomes.map((o) => o.periodId) },
+  });
+  return c.json({ recalculated: outcomes.map((o) => o.periodId), outcomes });
+});
+
+/** "Leave as is": keep the frozen numbers, clear the banner. */
+periods.post('/:id/dismiss-recalc', async (c) => {
+  const id = periodParam(c.req.param('id'));
+  const userId = c.get('userId');
+  await dismissRecalcFlag(userId, c.env.DB, id);
+  return c.json({ period: await getPeriod(userId, c.env.DB, id) });
 });
 
 periods.patch('/:id', async (c) => {

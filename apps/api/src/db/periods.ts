@@ -190,3 +190,76 @@ export async function spentByCategory(
     .all<{ category_id: string; spent: number }>();
   return new Map(results.map((r) => [r.category_id, r.spent]));
 }
+
+// ── close & recalculate writes (SPEC §2.4, §2.5) ──────────────────────────────
+
+export interface CloseWrite {
+  periodId: string;
+  nextPeriodId: string;
+  carryIn: { categoryId: string; carriedInCents: number }[];
+  returnedSurplusCents: number;
+}
+
+/**
+ * Statements that freeze one close outcome: carry-ins on P+1, returned surplus and status on P.
+ * The caller runs them (possibly several outcomes) in a single atomic batch.
+ */
+export function closeWriteStmts(
+  userId: UserId,
+  db: D1Database,
+  w: CloseWrite,
+  closedAt: string,
+): D1PreparedStatement[] {
+  return [
+    ensurePeriodStmt(userId, db, w.periodId),
+    ensurePeriodStmt(userId, db, w.nextPeriodId),
+    ...w.carryIn.map((c) =>
+      db
+        .prepare(
+          `INSERT INTO allocation (id, user_id, period_id, category_id, carried_in_cents) VALUES (?1, ?2, ?3, ?4, ?5)
+           ON CONFLICT(user_id, period_id, category_id) DO UPDATE SET carried_in_cents = excluded.carried_in_cents
+           WHERE allocation.user_id = ?2`,
+        )
+        .bind(
+          allocationId(w.nextPeriodId, c.categoryId),
+          userId,
+          w.nextPeriodId,
+          c.categoryId,
+          c.carriedInCents,
+        ),
+    ),
+    db
+      .prepare(
+        `UPDATE period SET status = 'closed', returned_surplus_cents = ?3, needs_recalc = 0, recalc_delta_cents = 0,
+           closed_at = COALESCE(closed_at, ?4)
+         WHERE user_id = ?1 AND id = ?2`,
+      )
+      .bind(userId, w.periodId, w.returnedSurplusCents, closedAt),
+  ];
+}
+
+export async function dismissRecalcFlag(
+  userId: UserId,
+  db: D1Database,
+  periodId: string,
+): Promise<void> {
+  await db
+    .prepare(
+      'UPDATE period SET needs_recalc = 0, recalc_delta_cents = 0 WHERE user_id = ?1 AND id = ?2',
+    )
+    .bind(userId, periodId)
+    .run();
+}
+
+/** Closed periods from `fromId` onward, ascending — the recalculation cascade's range. */
+export async function listPeriodsFrom(
+  userId: UserId,
+  db: D1Database,
+  fromId: string,
+): Promise<Period[]> {
+  const { results } = await db
+    .prepare('SELECT * FROM period WHERE user_id = ?1 AND id >= ?2 ORDER BY id')
+    .bind(userId, fromId)
+    .all<PeriodRow>();
+  return results.map(toPeriod);
+}
