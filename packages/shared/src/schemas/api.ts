@@ -191,3 +191,9 @@ export const FallbackLoginBody = z.object({
 export const TotpConfirmBody = z.object({ code: z.string().regex(/^\d{6}$/) });
 
 export const AccessTokenResponse = z.object({ access: z.string() });
+
+export const CreateCategoryGroupBody = z.object({
+  name: z.string().min(1),
+  kind: z.enum(['income', 'expense']),
+  sortOrder: z.int().default(0),
+});

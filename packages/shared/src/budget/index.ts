@@ -8,3 +8,4 @@ export * from './pool';
 export * from './pace';
 export * from './reallocation';
 export * from './forgive';
+export * from './view';

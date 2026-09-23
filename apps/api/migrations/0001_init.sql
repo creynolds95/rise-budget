@@ -103,7 +103,7 @@ CREATE TABLE category (
 
 -- ── periods & budget ──────────────────────────────────────────────────────
 CREATE TABLE period (
-  id                     TEXT PRIMARY KEY,   -- '2026-09'
+  id                     TEXT NOT NULL,      -- '2026-09' — unique per user, not globally
   user_id                TEXT NOT NULL REFERENCES user(id),
   status                 TEXT NOT NULL DEFAULT 'open',  -- open|closed
   expected_income_cents  INTEGER NOT NULL DEFAULT 0,
@@ -111,28 +111,30 @@ CREATE TABLE period (
   needs_recalc           INTEGER NOT NULL DEFAULT 0,
   recalc_delta_cents     INTEGER NOT NULL DEFAULT 0,
   closed_at              TEXT,
-  UNIQUE(user_id, id)
+  PRIMARY KEY (user_id, id)
 );
 
 CREATE TABLE allocation (
   id                TEXT PRIMARY KEY,
   user_id           TEXT NOT NULL REFERENCES user(id),
-  period_id         TEXT NOT NULL REFERENCES period(id),
+  period_id         TEXT NOT NULL,
   category_id       TEXT NOT NULL REFERENCES category(id),
   planned_cents     INTEGER NOT NULL DEFAULT 0,
   carried_in_cents  INTEGER NOT NULL DEFAULT 0,   -- FROZEN at close; never recomputed implicitly
-  UNIQUE(period_id, category_id)
+  UNIQUE(user_id, period_id, category_id),
+  FOREIGN KEY (user_id, period_id) REFERENCES period(user_id, id)
 );
 
 CREATE TABLE reallocation (
   id                TEXT PRIMARY KEY,
   user_id           TEXT NOT NULL REFERENCES user(id),
-  period_id         TEXT NOT NULL REFERENCES period(id),
+  period_id         TEXT NOT NULL,
   from_category_id  TEXT REFERENCES category(id),   -- NULL = pool
   to_category_id    TEXT REFERENCES category(id),   -- NULL = pool
   amount_cents      INTEGER NOT NULL,
   note              TEXT,
-  created_at        TEXT NOT NULL
+  created_at        TEXT NOT NULL,
+  FOREIGN KEY (user_id, period_id) REFERENCES period(user_id, id)
 );
 
 -- ── transactions ──────────────────────────────────────────────────────────
