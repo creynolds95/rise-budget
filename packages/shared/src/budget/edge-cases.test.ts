@@ -242,5 +242,5 @@ describe('SPEC §11 edge cases', () => {
     ).toMatchObject({ expectedSpentCents: 0, status: 'on' });
   });
 
-  it.todo('#15 an offline mutation replayed twice applies once (T22)');
+  // #15 lives in apps/api/test/idempotency.test.ts: it needs the Worker and D1.
 });

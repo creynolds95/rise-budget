@@ -8,9 +8,9 @@ export const BASE = 'https://rise.test';
 export async function call(
   method: string,
   path: string,
-  opts: { body?: unknown; access?: string; cookie?: string } = {},
+  opts: { body?: unknown; access?: string; cookie?: string; headers?: Record<string, string> } = {},
 ) {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...opts.headers };
   if (opts.body !== undefined) headers['content-type'] = 'application/json';
   if (opts.access) headers['authorization'] = `Bearer ${opts.access}`;
   if (opts.cookie) headers['cookie'] = opts.cookie;

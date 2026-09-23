@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from './env';
 import { errorBody, renderError } from './lib/errors';
+import { idempotency } from './lib/idempotency';
 import { requireAuth } from './lib/session';
 import { auth } from './routes/auth';
 import { accounts } from './routes/accounts';
@@ -18,6 +19,7 @@ app.route('/auth', auth);
 
 // Everything else requires a valid access token (T16).
 app.use('*', requireAuth);
+app.use('*', idempotency);
 app.route('/me', me);
 app.route('/accounts', accounts);
 app.route('/networth', networth);
