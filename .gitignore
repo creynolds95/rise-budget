@@ -1,0 +1,51 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Cloudflare
+.wrangler/
+.dev.vars
+.dev.vars.*
+worker-configuration.d.ts
+
+# secrets & local env — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+simplefin-token.txt
+simplefin-access-url.txt
+
+# local database & backups
+*.sqlite
+*.sqlite3
+*.db
+/backups/
+
+# real financial data — never commit statements or exports
+/private/
+*.ofx
+*.qfx
+*.qbo
+statements/
+# test fixtures are explicitly allowed (scrubbed, synthetic)
+!apps/api/test/fixtures/**
+
+# test output
+coverage/
+playwright-report/
+test-results/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
