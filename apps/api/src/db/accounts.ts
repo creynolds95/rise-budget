@@ -1,4 +1,9 @@
-import { Account, type AccountKind, type AccountSource } from '@rise/shared/schemas';
+import {
+  Account,
+  type AccountKind,
+  type AccountSource,
+  type PatchAccountBody,
+} from '@rise/shared/schemas';
 import { bool, newId, nowIso, type UserId } from './util';
 
 interface AccountRow {
@@ -109,4 +114,91 @@ export async function createAccount(
     )
     .run();
   return (await getAccount(userId, db, id)) as Account;
+}
+
+export type AccountPatch = PatchAccountBody;
+
+const PATCH_COLUMNS: Record<keyof AccountPatch, string> = {
+  name: 'name',
+  kind: 'kind',
+  institutionName: 'institution_name',
+  includeInNetWorth: 'include_in_net_worth',
+  includeInBudget: 'include_in_budget',
+  expectedPaymentCents: 'expected_payment_cents',
+  paymentDay: 'payment_day',
+  syncCadenceHours: 'sync_cadence_hours',
+};
+
+export async function updateAccount(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  patch: AccountPatch,
+): Promise<Account | null> {
+  const entries = (Object.keys(PATCH_COLUMNS) as (keyof AccountPatch)[])
+    .filter((k) => patch[k] !== undefined)
+    .map(
+      (k) =>
+        [
+          PATCH_COLUMNS[k],
+          typeof patch[k] === 'boolean' ? bool(patch[k] as boolean) : patch[k],
+        ] as const,
+    );
+  if (entries.length > 0) {
+    const sets = entries.map(([col], i) => `${col} = ?${i + 3}`).join(', ');
+    await db
+      .prepare(`UPDATE account SET ${sets} WHERE user_id = ?1 AND id = ?2`)
+      .bind(userId, id, ...entries.map(([, v]) => v ?? null))
+      .run();
+  }
+  return getAccount(userId, db, id);
+}
+
+// ── balance snapshots ─────────────────────────────────────────────────────────
+
+export interface SnapshotRow {
+  account_id: string;
+  as_of: string;
+  balance_cents: number;
+}
+
+/** Upsert on (account, date). If it is the newest snapshot, it becomes the current balance. */
+export async function putSnapshot(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+  s: { asOf: string; balanceCents: number; source: 'manual' | 'sync' },
+): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO balance_snapshot (id, user_id, account_id, as_of, balance_cents, source, created_at)
+         SELECT ?3, ?1, ?2, ?4, ?5, ?6, ?7 WHERE EXISTS (SELECT 1 FROM account WHERE user_id = ?1 AND id = ?2)
+         ON CONFLICT(account_id, as_of) DO UPDATE SET balance_cents = excluded.balance_cents, source = excluded.source
+         WHERE balance_snapshot.user_id = ?1`,
+      )
+      .bind(userId, accountId, newId(), s.asOf, s.balanceCents, s.source, nowIso()),
+    db
+      .prepare(
+        `UPDATE account SET balance_cents = ?3 WHERE user_id = ?1 AND id = ?2
+         AND NOT EXISTS (SELECT 1 FROM balance_snapshot WHERE user_id = ?1 AND account_id = ?2 AND as_of > ?4)`,
+      )
+      .bind(userId, accountId, s.balanceCents, s.asOf),
+  ]);
+}
+
+export async function listSnapshots(
+  userId: UserId,
+  db: D1Database,
+  opts: { accountId?: string; to?: string } = {},
+): Promise<SnapshotRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT account_id, as_of, balance_cents FROM balance_snapshot
+       WHERE user_id = ?1 AND (?2 IS NULL OR account_id = ?2) AND (?3 IS NULL OR as_of <= ?3)
+       ORDER BY account_id, as_of`,
+    )
+    .bind(userId, opts.accountId ?? null, opts.to ?? null)
+    .all<SnapshotRow>();
+  return results;
 }

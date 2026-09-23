@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, Cents, CreateCategoryBody, PatchAllocationBody, PeriodId, User } from './index';
+import {
+  ApiError,
+  Cents,
+  CreateCategoryBody,
+  PatchAccountBody,
+  PatchAllocationBody,
+  PatchSettingsBody,
+  PeriodId,
+  User,
+} from './index';
 
 describe('schemas', () => {
   it('Cents rejects floats', () => {
@@ -43,5 +52,10 @@ describe('schemas', () => {
         .success,
     ).toBe(true);
     expect(ApiError.safeParse({ error: { code: 'NOPE', message: 'x' } }).success).toBe(false);
+  });
+
+  it('PATCH bodies never inject defaults for absent keys', () => {
+    expect(PatchSettingsBody.parse({ appLock: '5m' })).toEqual({ appLock: '5m' });
+    expect(PatchAccountBody.parse({ name: 'USAA Savings' })).toEqual({ name: 'USAA Savings' });
   });
 });

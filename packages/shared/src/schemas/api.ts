@@ -2,13 +2,13 @@ import { z } from 'zod';
 import { Cents, Id, IsoDate, PeriodId } from './primitives';
 import {
   AccountKind,
+  AppLock,
   ReviewState,
   RolloverPolicy,
   RuleMatchField,
   RuleMatchType,
   SpendShape,
 } from './enums';
-import { UserSettings } from './entities';
 
 // ── error contract (ARCHITECTURE §4) ──────────────────────────────────────────
 
@@ -42,7 +42,12 @@ export type ApiError = z.infer<typeof ApiError>;
 
 // ── request bodies ────────────────────────────────────────────────────────────
 
-export const PatchSettingsBody = UserSettings.partial();
+// PATCH bodies are written out without `.default()`s: `.partial()` on a defaulted field
+// re-applies the default when the key is absent, silently resetting the user's choice.
+export const PatchSettingsBody = z.object({
+  rollIncomeVariance: z.boolean().optional(),
+  appLock: AppLock.optional(),
+});
 
 export const CreateAccountBody = z.object({
   name: z.string().min(1),
@@ -55,9 +60,17 @@ export const CreateAccountBody = z.object({
 });
 export type CreateAccountBody = z.infer<typeof CreateAccountBody>;
 
-export const PatchAccountBody = CreateAccountBody.partial().extend({
+export const PatchAccountBody = z.object({
+  name: z.string().min(1).optional(),
+  kind: AccountKind.optional(),
+  institutionName: z.string().nullable().optional(),
+  includeInNetWorth: z.boolean().optional(),
+  includeInBudget: z.boolean().optional(),
+  expectedPaymentCents: Cents.nullable().optional(),
+  paymentDay: z.int().min(1).max(31).nullable().optional(),
   syncCadenceHours: z.int().positive().nullable().optional(),
 });
+export type PatchAccountBody = z.infer<typeof PatchAccountBody>;
 
 export const CreateSnapshotBody = z.object({ asOf: IsoDate, balanceCents: Cents });
 

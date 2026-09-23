@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./budget": "./src/budget/index.ts",
-    "./schemas": "./src/schemas/index.ts"
+    "./schemas": "./src/schemas/index.ts",
+    "./networth": "./src/networth/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
