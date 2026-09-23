@@ -1,5 +1,6 @@
 import { periodOf } from '@rise/shared/budget';
 import { Transaction, type ReviewState } from '@rise/shared/schemas';
+import { refreshAggregateStmts } from './aggregates';
 import { newId, nowIso, type UserId } from './util';
 
 export interface TxnRow {
@@ -223,7 +224,7 @@ export async function updateTransactionFields(
 /**
  * Replace a transaction's full split set atomically (SPEC §3.5). Splits inherit the parent's
  * period. If that period is closed, flag it for recalculation and accumulate the change —
- * and do nothing else (SPEC §2.5, edge 5).
+ * and do nothing else (SPEC §2.5, edge 5). The period's aggregates refresh in the same batch.
  */
 export async function replaceSplits(
   userId: UserId,
@@ -265,6 +266,7 @@ export async function replaceSplits(
             .bind(userId, periodId, delta),
         ]
       : []),
+    ...refreshAggregateStmts(userId, db, periodId),
   ]);
 }
 
