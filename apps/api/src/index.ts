@@ -1,6 +1,14 @@
-// Placeholder until T2 (Hono + D1 bootstrap). Proves the workspace link to @rise/shared.
-import { pool } from '@rise/shared/budget';
-import { ApiError } from '@rise/shared/schemas';
+import { Hono } from 'hono';
+import type { Env } from './env';
+import { errorBody, renderError } from './lib/errors';
 
-export const health = () => ({ ok: true as const });
-export { pool, ApiError };
+export const app = new Hono<{ Bindings: Env }>();
+
+app.get('/health', (c) => c.json({ ok: true as const }));
+
+app.notFound((c) =>
+  c.json(errorBody('NOT_FOUND', `No route for ${c.req.method} ${c.req.path}`), 404),
+);
+app.onError(renderError);
+
+export default app;
