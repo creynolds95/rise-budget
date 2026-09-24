@@ -28,6 +28,7 @@ export const ErrorCode = z.enum([
   'AMOUNT_MISMATCH',
   'IDEMPOTENCY_CONFLICT',
   'RATE_LIMITED',
+  'STEP_UP_REQUIRED',
   'INTERNAL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

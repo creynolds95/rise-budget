@@ -6,8 +6,9 @@ export const ACCESS_TTL_S = 15 * 60;
 export const REFRESH_TTL_S = 30 * 24 * 60 * 60;
 export const CHALLENGE_TTL_S = 2 * 60;
 export const REGISTRATION_TTL_S = 10 * 60;
+export const STEP_UP_TTL_S = 5 * 60;
 
-type Purpose = 'access' | 'challenge' | 'register';
+type Purpose = 'access' | 'challenge' | 'register' | 'stepup';
 
 const nowS = () => Math.floor(Date.now() / 1000);
 
@@ -37,6 +38,19 @@ export async function verifyAccess(env: Env, token: string) {
   return p && typeof p['sub'] === 'string' && typeof p['sid'] === 'string'
     ? { userId: p['sub'], sessionId: p['sid'] }
     : null;
+}
+
+/**
+ * Proof the user re-verified with a passkey moments ago (H4: a 15-minute access token alone
+ * shouldn't be enough to enable a second permanent auth factor). Bound to the user, not the
+ * session, so it survives a refresh and works for the one-time registration-link flow too.
+ */
+export const signStepUp = (env: Env, userId: string) =>
+  signToken(env, 'stepup', STEP_UP_TTL_S, { sub: userId });
+
+export async function verifyStepUp(env: Env, token: string) {
+  const p = await verifyToken(env, 'stepup', token);
+  return p && typeof p['sub'] === 'string' ? { userId: p['sub'] } : null;
 }
 
 /** Stateless WebAuthn challenge: signed, short-lived, bound to purpose and (for register) user. */
