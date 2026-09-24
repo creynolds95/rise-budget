@@ -1,6 +1,7 @@
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, onAuthChange, refreshSession, setAccess } from './api';
+import { clearLock, forgetLock } from './lock';
 
 /** Set while this device holds a session, so a cold start offline can still open the cache. */
 const HAD_SESSION = 'rise-had-session';
@@ -60,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         challengeToken,
         response,
       });
+      clearLock();
       setAccess(access);
     },
     async signInWithCode(kind, email, code) {
@@ -67,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         code,
       });
+      clearLock();
       setAccess(access);
     },
     async registerPasskey(registrationToken) {
@@ -80,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     async signOut() {
       await api('POST', '/auth/logout').catch(() => undefined);
+      forgetLock();
       setAccess(null);
     },
   };

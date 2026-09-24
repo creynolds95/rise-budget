@@ -1,4 +1,5 @@
 import type {
+  AppLock,
   Category,
   CategoryGroupKind,
   Rule,
@@ -13,6 +14,7 @@ import { CategoryEditSheet } from '../components/CategoryEditSheet';
 import { Group, GroupRow, RadioRow } from '../components/primitives/Group';
 import { Toggle } from '../components/primitives/Toggle';
 import { backFrom } from '../lib/nav';
+import { clearPin, hasPin, lockKeys, setPin, store as lockStore, validPin } from '../lib/lock';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
@@ -36,7 +38,7 @@ const SECTIONS = {
   categories: 'Categories',
   rules: 'Rules',
   sync: 'Bank sync',
-  security: 'Sign-in',
+  security: 'Security',
 } as const;
 type Section = keyof typeof SECTIONS;
 
@@ -101,8 +103,18 @@ export function Settings() {
         >
           Balances, cadence, loans
         </Card>
-        <Card to="/settings/security" title="Sign-in" state="Passkeys">
-          Add this device or another
+        <Card
+          to="/settings/security"
+          title="Security"
+          state={
+            me
+              ? me.settings.appLock === 'off'
+                ? 'App lock off'
+                : `Locks ${{ immediate: 'immediately', '5m': 'after 5 min', '1h': 'after 1 hour' }[me.settings.appLock]}`
+              : undefined
+          }
+        >
+          App lock, PIN, passkeys
         </Card>
       </div>
 
@@ -634,33 +646,185 @@ function SyncSection() {
   );
 }
 
+const LOCK_CHOICES: { id: AppLock; label: string; hint?: string }[] = [
+  { id: 'off', label: 'Off' },
+  { id: 'immediate', label: 'Immediately', hint: 'Every time you come back to Rise.' },
+  { id: '5m', label: 'After 5 minutes away' },
+  { id: '1h', label: 'After 1 hour away' },
+];
+
 function SecuritySection() {
   const { registerPasskey, signOut } = useAuth();
+  const me = useMe().data;
+  const qc = useQueryClient();
   const [msg, setMsg] = useState<string | null>(null);
+  const [pinSheet, setPinSheet] = useState(false);
+  const [pinOn, setPinOn] = useState(hasPin);
+  const lock = useMutation({
+    mutationFn: (appLock: AppLock) => api('PATCH', '/me/settings', { appLock }),
+    onMutate: (appLock) => {
+      // Mirror it now, and count from this moment, so turning it on doesn't lock at once.
+      lockStore.set(lockKeys.mode, appLock);
+      lockStore.set(lockKeys.hiddenAt, null);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+  const mode = lock.isPending ? (lock.variables ?? 'off') : (me?.settings.appLock ?? 'off');
   return (
     <>
-      <p className="text-ink-muted">
-        Rise signs in with passkeys: Face ID, Touch ID or a security key. Add one for each device
-        you use.
-      </p>
-      <Button
-        className="mt-4"
-        onClick={async () => {
-          setMsg(null);
-          try {
-            await registerPasskey();
-            setMsg('Passkey added.');
-          } catch (e) {
-            setMsg(e instanceof ApiError ? e.message : 'Passkey was not added.');
-          }
-        }}
+      <Group
+        title="App lock"
+        footer="When Rise is locked, you unlock it with your passkey (Face ID or Touch ID)."
       >
-        Add a passkey on this device
-      </Button>
-      {msg && <p className="mt-2 text-ink-muted">{msg}</p>}
+        {LOCK_CHOICES.map((c) => (
+          <RadioRow
+            key={c.id}
+            name="app-lock"
+            label={c.label}
+            hint={c.hint}
+            checked={mode === c.id}
+            onSelect={() => lock.mutate(c.id)}
+          />
+        ))}
+      </Group>
+      {mode !== 'off' && (
+        <Group
+          title="Offline PIN"
+          footer="For when you're offline and a passkey can't be checked. The PIN only opens the lock on this device. It can't sign in or change your account. Five wrong tries turn it off."
+        >
+          {pinOn ? (
+            <>
+              <button
+                onClick={() => setPinSheet(true)}
+                className="flex min-h-13 w-full items-center justify-between px-4 text-left active:bg-sage-100"
+              >
+                Change PIN
+                <Chevron />
+              </button>
+              <button
+                onClick={() => {
+                  clearPin();
+                  setPinOn(false);
+                }}
+                className="flex min-h-13 w-full items-center px-4 text-left text-clay active:bg-clay-100"
+              >
+                Turn off PIN
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setPinSheet(true)}
+              className="flex min-h-13 w-full items-center justify-between px-4 text-left active:bg-sage-100"
+            >
+              Set a PIN
+              <Chevron />
+            </button>
+          )}
+        </Group>
+      )}
+      <Group title="Passkeys" footer="Add one on each phone or computer you use Rise on.">
+        <button
+          onClick={async () => {
+            setMsg(null);
+            try {
+              await registerPasskey();
+              setMsg('Passkey added.');
+            } catch (e) {
+              setMsg(e instanceof ApiError ? e.message : 'Passkey was not added.');
+            }
+          }}
+          className="flex min-h-13 w-full items-center justify-between px-4 text-left active:bg-sage-100"
+        >
+          Add a passkey on this device
+          <Chevron />
+        </button>
+      </Group>
+      {msg && <p className="mt-2 px-1 text-ink-muted">{msg}</p>}
       <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
         Sign out
       </Button>
+      <PinSheet
+        open={pinSheet}
+        onClose={() => setPinSheet(false)}
+        onSaved={() => {
+          setPinOn(true);
+          setPinSheet(false);
+        }}
+      />
     </>
+  );
+}
+
+function PinSheet({
+  open,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [first, setFirst] = useState('');
+  const [second, setSecond] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const reset = () => {
+    setFirst('');
+    setSecond('');
+    setError(null);
+  };
+  const save = async () => {
+    if (!validPin(first)) return setError('Use 4 to 8 digits.');
+    if (first !== second) return setError('Those don’t match.');
+    await setPin(first);
+    reset();
+    onSaved();
+  };
+  const field =
+    'min-h-12 w-full rounded-input border border-hairline bg-surface px-3 text-center text-xl tracking-[0.5em] money';
+  return (
+    <Sheet
+      open={open}
+      title="Offline PIN"
+      onClose={() => {
+        reset();
+        onClose();
+      }}
+      action={{ label: 'Save', onClick: () => void save(), disabled: !first || !second }}
+    >
+      <form
+        className="flex flex-col gap-4 pt-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <label className="flex flex-col gap-1">
+          <span className="type-label text-ink-muted">New PIN</span>
+          <input
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={8}
+            className={field}
+            value={first}
+            onChange={(e) => setFirst(e.target.value.replace(/\D/g, ''))}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="type-label text-ink-muted">Again</span>
+          <input
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={8}
+            className={field}
+            value={second}
+            onChange={(e) => setSecond(e.target.value.replace(/\D/g, ''))}
+          />
+        </label>
+        {error && <p className="text-clay">{error}</p>}
+        <button type="submit" hidden />
+      </form>
+    </Sheet>
   );
 }

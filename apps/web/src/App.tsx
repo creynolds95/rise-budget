@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router';
+import { LockGate } from './components/LockGate';
 import { OfflineBar } from './components/OfflineBar';
 import { Shell } from './components/Shell';
 import { Skeleton } from './components/primitives/Skeleton';
@@ -33,7 +34,7 @@ export function App() {
     );
   }
   return (
-    <>
+    <LockGate>
       <OfflineBar />
       <Routes>
         <Route element={<Shell />}>
@@ -50,6 +51,6 @@ export function App() {
         <Route path="settings/:section" element={<SettingsSection />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </>
+    </LockGate>
   );
 }
