@@ -1,0 +1,24 @@
+name = "rise"
+main = "src/index.ts"
+# Must not exceed what the pinned workerd binary supports (vitest-pool-workers checks this).
+compatibility_date = "2026-08-15"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rise"
+# Local dev and tests don't need a real id. Replace with `wrangler d1 create rise` output at deploy (T47).
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[vars]
+RP_ID = "localhost"
+RP_ORIGIN = "http://localhost:5173"
+RP_NAME = "Rise"
+# Whose data the scheduled sync writes. Set at deploy (T47).
+SIMPLEFIN_OWNER_EMAIL = ""
+# Secrets (never here): JWT_SECRET, TOTP_KEY, SIMPLEFIN_ACCESS_URL (`pnpm simplefin:claim`) —
+# `wrangler secret put`, or .dev.vars locally. SIMPLEFIN_MOCK=1 belongs in .dev.vars only.
+
+[triggers]
+# SimpleFIN sync 3× daily (ARCHITECTURE §6).
+crons = ["0 8,14,22 * * *"]

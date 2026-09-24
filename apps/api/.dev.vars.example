@@ -1,0 +1,6 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+JWT_SECRET=change-me-to-a-long-random-string
+# 32 random bytes, base64: `openssl rand -base64 32`
+TOTP_KEY=
+# Sync from the built-in mock bridge (Caleb's seven accounts) until SimpleFIN is connected.
+SIMPLEFIN_MOCK=1
