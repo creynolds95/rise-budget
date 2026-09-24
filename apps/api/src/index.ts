@@ -11,6 +11,7 @@ import { me } from './routes/me';
 import { networth } from './routes/networth';
 import { allocations, periods } from './routes/periods';
 import { recurring } from './routes/recurring';
+import { review } from './routes/review';
 import { sync } from './routes/sync';
 import { transactions } from './routes/transactions';
 import { findUserIdByEmail } from './db';
@@ -40,6 +41,7 @@ app.route('/allocations', allocations);
 app.route('/transactions', transactions);
 app.route('/sync', sync);
 app.route('/recurring', recurring);
+app.route('/review', review);
 
 app.notFound((c) =>
   c.json(errorBody('NOT_FOUND', `No route for ${c.req.method} ${c.req.path}`), 404),

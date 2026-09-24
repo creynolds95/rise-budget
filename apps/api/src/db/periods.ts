@@ -263,3 +263,67 @@ export async function listPeriodsFrom(
     .all<PeriodRow>();
   return results.map(toPeriod);
 }
+
+/** SPEC §2.8: forgiveness zeroes the carried deficit of an OPEN period — nothing else. */
+export function clearCarriedInStmt(
+  userId: UserId,
+  db: D1Database,
+  periodId: string,
+  categoryId: string,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE allocation SET carried_in_cents = 0
+       WHERE user_id = ?1 AND period_id = ?2 AND category_id = ?3 AND carried_in_cents < 0
+         AND EXISTS (SELECT 1 FROM period p WHERE p.user_id = ?1 AND p.id = ?2 AND p.status = 'open')`,
+    )
+    .bind(userId, periodId, categoryId);
+}
+
+export interface CategoryHistoryRow {
+  periodId: string;
+  plannedCents: number;
+  carriedInCents: number;
+  spentCents: number;
+}
+
+/** One category month by month: its plan and carry, and what was spent (from aggregates). */
+export async function categoryHistory(
+  userId: UserId,
+  db: D1Database,
+  categoryId: string,
+  from: string,
+  to: string,
+): Promise<CategoryHistoryRow[]> {
+  const [alloc, agg] = await Promise.all([
+    db
+      .prepare(
+        `SELECT period_id, planned_cents, carried_in_cents FROM allocation
+         WHERE user_id = ?1 AND category_id = ?2 AND period_id BETWEEN ?3 AND ?4`,
+      )
+      .bind(userId, categoryId, from, to)
+      .all<{ period_id: string; planned_cents: number; carried_in_cents: number }>(),
+    db
+      .prepare(
+        `SELECT period_id, spent_cents FROM period_aggregate
+         WHERE user_id = ?1 AND category_id = ?2 AND period_id BETWEEN ?3 AND ?4`,
+      )
+      .bind(userId, categoryId, from, to)
+      .all<{ period_id: string; spent_cents: number }>(),
+  ]);
+  const spent = new Map(agg.results.map((r) => [r.period_id, r.spent_cents]));
+  const plan = new Map(alloc.results.map((r) => [r.period_id, r]));
+  const out: CategoryHistoryRow[] = [];
+  for (let p = from; p <= to;) {
+    const a = plan.get(p);
+    out.push({
+      periodId: p,
+      plannedCents: a?.planned_cents ?? 0,
+      carriedInCents: a?.carried_in_cents ?? 0,
+      spentCents: spent.get(p) ?? 0,
+    });
+    const [y, m] = [Number(p.slice(0, 4)), Number(p.slice(5, 7))];
+    p = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+  }
+  return out;
+}

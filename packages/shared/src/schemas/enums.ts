@@ -25,7 +25,9 @@ export const TxnSource = z.enum(['simplefin', 'ofx', 'csv', 'manual']);
 export type TxnSource = z.infer<typeof TxnSource>;
 
 export const RuleMatchField = z.enum(['descriptor', 'merchant']);
+export type RuleMatchField = z.infer<typeof RuleMatchField>;
 export const RuleMatchType = z.enum(['contains', 'equals', 'regex']);
+export type RuleMatchType = z.infer<typeof RuleMatchType>;
 
 export const RecurringCadence = z.enum(['weekly', 'biweekly', 'monthly', 'annual']);
 export const RecurringStatus = z.enum(['active', 'broken', 'ended']);
