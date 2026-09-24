@@ -5,6 +5,7 @@ import {
   detectSeries,
   nextDate,
   nextSemimonthlyDate,
+  projectOccurrences,
   shiftWeekendToFriday,
   steadyAmounts,
   typicalPostDay,
@@ -209,5 +210,36 @@ describe('semimonthly pay detection (5th & 20th, 1st & 15th, ...)', () => {
       o('2026-05-20', -310_000, 'income'),
     ];
     expect(detectSemimonthly(occ, '2026-05-25')?.categoryId).toBe('income');
+  });
+});
+
+describe('projecting a series forward (cash-to-payday)', () => {
+  it('projects a monthly bill at its expected amount', () => {
+    const s = detectSeries([o('2026-06-07'), o('2026-07-07'), o('2026-08-08')], '2026-08-20');
+    expect(s).not.toBeNull();
+    expect(projectOccurrences(s as NonNullable<typeof s>, 3)).toEqual([
+      { date: '2026-09-07', amountCents: 1_549 },
+      { date: '2026-10-07', amountCents: 1_549 },
+      { date: '2026-11-07', amountCents: 1_549 },
+    ]);
+  });
+
+  it('projects a semimonthly paycheck, alternating anchors', () => {
+    const occ = [
+      '2026-04-03',
+      '2026-04-20',
+      '2026-05-05',
+      '2026-05-20',
+      '2026-06-05',
+      '2026-06-19',
+      '2026-07-03',
+    ].map((d) => o(d, -310_000));
+    const s = detectSemimonthly(occ, '2026-07-10');
+    expect(s).not.toBeNull();
+    expect(projectOccurrences(s as NonNullable<typeof s>, 3)).toEqual([
+      { date: '2026-07-20', amountCents: -310_000 },
+      { date: '2026-08-05', amountCents: -310_000 },
+      { date: '2026-08-20', amountCents: -310_000 },
+    ]);
   });
 });
