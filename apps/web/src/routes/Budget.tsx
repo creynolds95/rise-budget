@@ -367,8 +367,15 @@ function CloseControl({ month, data }: { month: string; data: PeriodResponse }) 
       <section className="gutter mb-6">
         <div className="rounded-card bg-clay-100 p-4">
           <p className="text-ink">
-            <MoneyText cents={data.period.recalcDeltaCents} /> of spending landed in {name} after it
-            closed. Its carry into {next} still uses the old numbers.
+            {data.period.recalcDeltaCents !== 0 ? (
+              <>
+                <MoneyText cents={data.period.recalcDeltaCents} /> changed in {name} since it
+                closed.
+              </>
+            ) : (
+              <>Money moved between categories in {name} since it closed.</>
+            )}{' '}
+            Its carry into {next} still uses the old numbers.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button onClick={() => run('recalculate')}>Recalculate carry into {next}</Button>

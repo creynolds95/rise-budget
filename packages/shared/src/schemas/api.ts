@@ -87,6 +87,9 @@ export const PatchTransactionBody = z.object({
   notes: z.string().nullable().optional(),
   merchantDisplay: z.string().nullable().optional(),
   reviewState: ReviewState.optional(),
+  // M1: past months are editable, not frozen — moving a transaction's date moves its splits
+  // to the new period and flags either side if closed (SPEC §2.5).
+  postedAt: IsoDate.optional(),
 });
 
 export const CreateTransactionBody = z.object({

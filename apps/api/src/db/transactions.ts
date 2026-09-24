@@ -326,7 +326,11 @@ export async function replaceSplits(
     db
       .prepare('UPDATE txn SET updated_at = ?3 WHERE user_id = ?1 AND id = ?2')
       .bind(userId, txn.id, nowIso()),
-    ...(delta !== 0 ? [flagClosedPeriodStmt(userId, db, periodId, delta)] : []),
+    // Flag even at delta = 0: a recategorization between two budgeted categories doesn't
+    // change the period's total, but it does move money between two categories' own carry
+    // (M2) — the closed period's carry-forward is stale either way. `flagClosedPeriodStmt`
+    // is always safe to call; its own SQL no-ops on an open period.
+    flagClosedPeriodStmt(userId, db, periodId, delta),
     ...refreshAggregateStmts(userId, db, periodId),
   ]);
   return true;
@@ -368,8 +372,46 @@ export async function reassignSplitStmts(
     db
       .prepare('UPDATE txn SET updated_at = ?3 WHERE user_id = ?1 AND id = ?2')
       .bind(userId, txn.id, nowIso()),
-    ...(delta !== 0 ? [flagClosedPeriodStmt(userId, db, periodId, delta)] : []),
+    flagClosedPeriodStmt(userId, db, periodId, delta),
     ...refreshAggregateStmts(userId, db, periodId),
+  ];
+}
+
+/**
+ * Move a transaction's date to a new period (M1: past months are editable, not frozen). Its
+ * splits move with it; a closed period on either side of the move is flagged with the counted
+ * amount leaving/entering it — mirroring sync's own date-drift handling in `sync.ts`'s
+ * `updateSyncedTxnStmts`. A same-period date change is just the date column.
+ */
+export async function movePostedAtStmts(
+  userId: UserId,
+  db: D1Database,
+  row: TxnRow,
+  splits: SplitRow[],
+  newPostedAt: string,
+): Promise<D1PreparedStatement[]> {
+  const oldPeriod = periodOf(row.posted_at);
+  const newPeriod = periodOf(newPostedAt);
+  const setDate = db
+    .prepare('UPDATE txn SET posted_at = ?3, updated_at = ?4 WHERE user_id = ?1 AND id = ?2')
+    .bind(userId, row.id, newPostedAt, nowIso());
+  if (oldPeriod === newPeriod) return [setDate];
+  const counted = await countedCentsOf(userId, db, splits, row.review_state);
+  return [
+    setDate,
+    ...splits.map((s) =>
+      db
+        .prepare('UPDATE split SET period_id = ?3 WHERE user_id = ?1 AND id = ?2')
+        .bind(userId, s.id, newPeriod),
+    ),
+    ...(counted !== 0
+      ? [
+          flagClosedPeriodStmt(userId, db, oldPeriod, -counted),
+          flagClosedPeriodStmt(userId, db, newPeriod, counted),
+        ]
+      : []),
+    ...refreshAggregateStmts(userId, db, oldPeriod),
+    ...refreshAggregateStmts(userId, db, newPeriod),
   ];
 }
 
