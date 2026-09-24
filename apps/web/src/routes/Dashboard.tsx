@@ -102,8 +102,12 @@ export function Dashboard() {
         {p.period.needsRecalc && (
           <NavRow
             to="/budget"
-            label="Late spending in a closed month"
-            value={<MoneyText cents={p.period.recalcDeltaCents} />}
+            label="A closed month changed"
+            value={
+              p.period.recalcDeltaCents !== 0 ? (
+                <MoneyText cents={p.period.recalcDeltaCents} />
+              ) : undefined
+            }
           />
         )}
       </section>

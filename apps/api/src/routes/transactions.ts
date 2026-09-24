@@ -28,6 +28,7 @@ import {
   refreshAggregateStmts,
   sortKey,
   linkTransferStmts,
+  movePostedAtStmts,
   replaceSplits,
   splitsFor,
   unlinkTransferStmts,
@@ -160,6 +161,10 @@ transactions.patch('/:id', async (c) => {
       ruleOffer = await recordManualCategorisation(c.env.DB, userId, txnRef(row), b.categoryId);
     }
   }
+  if (b.postedAt && b.postedAt !== row.posted_at) {
+    const splits = (await splitsFor(userId, c.env.DB, [id])).get(id) ?? [];
+    await c.env.DB.batch(await movePostedAtStmts(userId, c.env.DB, row, splits, b.postedAt));
+  }
   await updateTransactionFields(userId, c.env.DB, id, b);
   return c.json({ ...(await getTransaction(userId, c.env.DB, id)), ruleOffer });
 });
@@ -266,7 +271,9 @@ transactions.post('/bulk-accept', async (c) => {
           )
           .bind(newId(), userId, row.id, categoryId, row.amount_cents, periodId),
       );
-      if (delta !== 0) stmts.push(flagClosedPeriodStmt(userId, db, periodId, delta));
+      // Flag even at delta = 0 — a same-total recategorization still moves money between two
+      // categories' own carry in a closed period (M2); flagClosedPeriodStmt no-ops if open.
+      stmts.push(flagClosedPeriodStmt(userId, db, periodId, delta));
     }
     stmts.push(
       db

@@ -1,5 +1,6 @@
 import { resolvePlanned, type PlanDefault } from '@rise/shared/budget';
 import { Period } from '@rise/shared/schemas';
+import { flagClosedPeriodStmt } from './transactions';
 import { nowIso, type UserId } from './util';
 
 interface PeriodRow {
@@ -69,17 +70,25 @@ export function ensurePeriodStmt(userId: UserId, db: D1Database, id: string): D1
     .bind(userId, id);
 }
 
+/**
+ * Past months aren't frozen — expected income can be corrected after close too. Unlike a
+ * blocked edit, this always writes; when the period is already closed, it also flags it for
+ * recalculation with the income delta, same as a late or recategorized split (SPEC §2.5, M1).
+ */
 export async function setExpectedIncome(
   userId: UserId,
   db: D1Database,
   id: string,
   cents: number,
 ): Promise<Period> {
+  const existing = await getPeriod(userId, db, id);
+  const delta = cents - (existing?.expectedIncomeCents ?? 0);
   await db.batch([
     ensurePeriodStmt(userId, db, id),
     db
       .prepare('UPDATE period SET expected_income_cents = ?3 WHERE user_id = ?1 AND id = ?2')
       .bind(userId, id, cents),
+    flagClosedPeriodStmt(userId, db, id, delta),
   ]);
   return (await getPeriod(userId, db, id)) as Period;
 }

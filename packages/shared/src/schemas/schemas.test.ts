@@ -27,6 +27,7 @@ describe('schemas', () => {
       name: 'Rent',
       emoji: null,
       isBill: true,
+      budgeted: true,
     });
     expect(PatchAllocationBody.parse({ plannedCents: 5000 })).toEqual({
       plannedCents: 5000,

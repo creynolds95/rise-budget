@@ -17,7 +17,12 @@ async function setup() {
   return { ...u, api, eat, rent };
 }
 
-async function spend(userId: string, categoryId: string, amountCents: number, date: string) {
+async function spend(
+  userId: string,
+  categoryId: string,
+  amountCents: number,
+  date: string,
+): Promise<string> {
   const db = env.DB;
   const acct = crypto.randomUUID();
   const txn = crypto.randomUUID();
@@ -40,6 +45,7 @@ async function spend(userId: string, categoryId: string, amountCents: number, da
       )
       .bind(crypto.randomUUID(), userId, txn, categoryId, amountCents, date.slice(0, 7)),
   ]);
+  return txn;
 }
 
 const planned = (
@@ -220,5 +226,59 @@ describe('T20 recalculate', () => {
   it('refuses to recalculate an open month', async () => {
     const s = await setup();
     expect((await s.api('POST', '/periods/2026-07/recalculate')).status).toBe(409);
+  });
+});
+
+describe('M1/M2 late edits to closed months', () => {
+  it('editing expected income after close flags needsRecalc (M1)', async () => {
+    const s = await setup();
+    await s.api('POST', '/periods/2026-07/close', {});
+    await s.api('PATCH', '/periods/2026-07', { expectedIncomeCents: 600_000 });
+    const jul = await s.api('GET', '/periods/2026-07');
+    expect(jul.json.period).toMatchObject({
+      status: 'closed',
+      needsRecalc: true,
+      recalcDeltaCents: 100_000,
+    });
+  });
+
+  it('a net-zero recategorization in a closed month still flags needsRecalc (M2)', async () => {
+    const s = await setup();
+    const txn = await spend(s.userId, s.eat.id, 5_000, '2026-07-10');
+    await s.api('POST', '/periods/2026-07/close', {});
+    const res = await s.api('PATCH', `/transactions/${txn}`, { categoryId: s.rent.id });
+    expect(res.status).toBe(200);
+    const jul = await s.api('GET', '/periods/2026-07');
+    expect(jul.json.period).toMatchObject({
+      status: 'closed',
+      needsRecalc: true,
+      recalcDeltaCents: 0,
+    });
+  });
+
+  it('moving a transaction into another closed month flags both sides (M1)', async () => {
+    const s = await setup();
+    await s.api('POST', '/periods/2026-06/close', {});
+    await s.api('POST', '/periods/2026-07/close', {});
+    const txn = await spend(s.userId, s.eat.id, 5_000, '2026-06-10');
+
+    const res = await s.api('PATCH', `/transactions/${txn}`, { postedAt: '2026-07-15' });
+    expect(res.status).toBe(200);
+    expect(res.json.postedAt).toBe('2026-07-15');
+
+    const june = await s.api('GET', '/periods/2026-06');
+    const july = await s.api('GET', '/periods/2026-07');
+    expect(june.json.period).toMatchObject({ needsRecalc: true, recalcDeltaCents: -5_000 });
+    expect(july.json.period).toMatchObject({ needsRecalc: true, recalcDeltaCents: 5_000 });
+  });
+
+  it('moving a transaction within the same month does not flag anything', async () => {
+    const s = await setup();
+    await s.api('POST', '/periods/2026-07/close', {});
+    const txn = await spend(s.userId, s.eat.id, 5_000, '2026-07-10');
+    const res = await s.api('PATCH', `/transactions/${txn}`, { postedAt: '2026-07-20' });
+    expect(res.status).toBe(200);
+    const jul = await s.api('GET', '/periods/2026-07');
+    expect(jul.json.period).toMatchObject({ needsRecalc: false, recalcDeltaCents: 0 });
   });
 });
