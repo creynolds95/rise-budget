@@ -10,6 +10,7 @@ import { merchants, rules } from './routes/rules';
 import { me } from './routes/me';
 import { networth } from './routes/networth';
 import { allocations, periods } from './routes/periods';
+import { cashToPayday } from './routes/cashToPayday';
 import { recurring } from './routes/recurring';
 import { review } from './routes/review';
 import { sync } from './routes/sync';
@@ -43,6 +44,7 @@ app.route('/allocations', allocations);
 app.route('/transactions', transactions);
 app.route('/sync', sync);
 app.route('/recurring', recurring);
+app.route('/cash-to-payday', cashToPayday);
 app.route('/review', review);
 app.route('/export', dataExport);
 

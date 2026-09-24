@@ -306,6 +306,8 @@ describe('T16 auth middleware + error contract', () => {
       rollIncomeVariance: true,
       appLock: '5m',
       planChangesApplyToFuture: false,
+      cushionCents: 0,
+      cashAccountIds: [],
     });
   });
 });

@@ -50,6 +50,8 @@ export const PatchSettingsBody = z.object({
   rollIncomeVariance: z.boolean().optional(),
   appLock: AppLock.optional(),
   planChangesApplyToFuture: z.boolean().optional(),
+  cushionCents: Cents.optional(),
+  cashAccountIds: z.array(Id).optional(),
 });
 
 export const CreateAccountBody = z.object({
