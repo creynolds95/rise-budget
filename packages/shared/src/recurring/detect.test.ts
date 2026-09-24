@@ -75,6 +75,7 @@ describe('recurring detection (SPEC §7)', () => {
       nextExpectedDate: '2027-03-02',
     });
     expect(nextDate('annual', '2026-02-28')).toBe('2027-02-28');
+    expect(() => nextDate('semimonthly', '2026-09-05')).toThrow(/nextSemimonthlyDate/);
     // 11-day gaps fit weekly (off by 4) and biweekly (off by 3): the closer cadence wins.
     const ambiguous = ['2026-09-01', '2026-09-12', '2026-09-23'].map((d) => o(d, 2_000));
     expect(detectSeries(ambiguous, '2026-09-24')?.cadence).toBe('biweekly');
@@ -200,6 +201,32 @@ describe('semimonthly pay detection (5th & 20th, 1st & 15th, ...)', () => {
     expect(detectSemimonthly(oneCluster, '2026-05-15')).toBeNull();
     const weekly = ['2026-09-01', '2026-09-08', '2026-09-15', '2026-09-22'].map((d) => o(d, 500));
     expect(detectSemimonthly(weekly, '2026-09-23')).toBeNull();
+    // Every occurrence on the same day of month: no second anchor to cluster against.
+    const sameDay = ['2026-04-05', '2026-05-05', '2026-06-05', '2026-07-05'].map((d) => o(d, 500));
+    expect(detectSemimonthly(sameDay, '2026-08-01')).toBeNull();
+    // Good anchors (5th & 20th), but the charges themselves are far too close together.
+    const tooClose = ['2026-01-05', '2026-01-06', '2026-01-20', '2026-02-05'].map((d) => o(d, 500));
+    expect(detectSemimonthly(tooClose, '2026-02-10')).toBeNull();
+    // Good anchors, but the charges span years apart instead of alternating monthly.
+    const tooFarApart = ['2020-01-05', '2020-01-20', '2025-06-05', '2025-06-20'].map((d) =>
+      o(d, 500),
+    );
+    expect(detectSemimonthly(tooFarApart, '2025-07-01')).toBeNull();
+    // Otherwise-valid semimonthly dates, but the amounts aren't a real pay series.
+    const mixedSign = [
+      o('2026-01-05', 500),
+      o('2026-01-20', -500),
+      o('2026-02-05', 500),
+      o('2026-02-20', 500),
+    ];
+    expect(detectSemimonthly(mixedSign, '2026-03-01')).toBeNull();
+    const unsteady = [
+      o('2026-01-05', 500),
+      o('2026-01-20', 5_000),
+      o('2026-02-05', 500),
+      o('2026-02-20', 500),
+    ];
+    expect(detectSemimonthly(unsteady, '2026-03-01')).toBeNull();
   });
 
   it('carries the category once two charges share it, same as detectSeries', () => {
