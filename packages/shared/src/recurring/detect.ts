@@ -6,7 +6,7 @@ import { dateFromDayNumber, dayNumber } from '../networth';
  * feeds pace (`typical_post_day`) and Layer-3 categorisation.
  */
 
-export type Cadence = 'weekly' | 'biweekly' | 'monthly' | 'annual';
+export type Cadence = 'weekly' | 'biweekly' | 'monthly' | 'annual' | 'semimonthly';
 
 export interface Occurrence {
   date: string;
@@ -24,6 +24,8 @@ export interface DetectedSeries {
   status: 'active' | 'broken';
   categoryId: string | null;
   occurrences: number;
+  /** Only set for `semimonthly`: the two days of month it pays on, before weekend-shift. */
+  anchorDays: [number, number] | null;
 }
 
 export const MIN_OCCURRENCES = 3;
@@ -59,6 +61,8 @@ export function nextDate(cadence: Cadence, from: string, anchorDay?: number): st
       return addMonths(from, 1, anchorDay);
     case 'annual':
       return addMonths(from, 12, anchorDay);
+    case 'semimonthly':
+      throw new Error('semimonthly cadence uses nextSemimonthlyDate, not nextDate');
   }
 }
 
@@ -127,6 +131,137 @@ export function detectSeries(
         dayNumber(today) - dayNumber(nextExpectedDate) > BROKEN_AFTER_DAYS ? 'broken' : 'active',
       categoryId: establishedCategory(run),
       occurrences: run.length,
+      anchorDays: null,
+    };
+  }
+  return null;
+}
+
+export const MIN_SEMIMONTHLY_OCCURRENCES = 4;
+/** A gap smaller than this between the two day-of-month clusters means they're really one. */
+const MIN_ANCHOR_GAP_DAYS = 5;
+/** Consecutive semimonthly paydays land 10-20 days apart (the 15th-to-1st being the tightest). */
+const MIN_SEMIMONTHLY_GAP_DAYS = 10;
+const MAX_SEMIMONTHLY_GAP_DAYS = 20;
+
+/** 0 = Sunday ... 6 = Saturday. 1970-01-01 (day number 0) is a Thursday. */
+function weekday(dayNum: number): number {
+  return (((dayNum + 4) % 7) + 7) % 7;
+}
+
+/** A payday never lands on a weekend — it moves to the Friday before, never later. */
+export function shiftWeekendToFriday(date: string): string {
+  const dn = dayNumber(date);
+  const wd = weekday(dn);
+  if (wd === 6) return dateFromDayNumber(dn - 1);
+  if (wd === 0) return dateFromDayNumber(dn - 2);
+  return date;
+}
+
+function nominalPayDate(y: number, m: number, anchorDay: number): string {
+  const day = Math.min(anchorDay, daysInMonth(y, m));
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** The actual (weekend-shifted) date a given month pays on for one anchor day. */
+function actualPayDate(y: number, m: number, anchorDay: number): string {
+  return shiftWeekendToFriday(nominalPayDate(y, m, anchorDay));
+}
+
+function monthAfter(y: number, m: number): { y: number; m: number } {
+  const idx = y * 12 + (m - 1) + 1;
+  return { y: Math.floor(idx / 12), m: (idx % 12) + 1 };
+}
+
+/** Smallest of the two anchors' actual dates in `from`'s month or the next that falls after it. */
+export function nextSemimonthlyDate(from: string, anchors: readonly [number, number]): string {
+  const { y, m } = parts(from);
+  const next = monthAfter(y, m);
+  const candidates = [
+    actualPayDate(y, m, anchors[0]),
+    actualPayDate(y, m, anchors[1]),
+    actualPayDate(next.y, next.m, anchors[0]),
+    actualPayDate(next.y, next.m, anchors[1]),
+  ];
+  const fromN = dayNumber(from);
+  const future = candidates
+    .filter((c) => dayNumber(c) > fromN)
+    .sort((a, b) => dayNumber(a) - dayNumber(b));
+  return future[0] as string;
+}
+
+/** Consecutive dates space out like semimonthly pay and actually touch both anchors. */
+function alternatesAnchors(dates: readonly string[], anchors: readonly [number, number]): boolean {
+  for (let i = 1; i < dates.length; i++) {
+    const gap = dayNumber(dates[i] as string) - dayNumber(dates[i - 1] as string);
+    if (gap < MIN_SEMIMONTHLY_GAP_DAYS || gap > MAX_SEMIMONTHLY_GAP_DAYS) return false;
+  }
+  const near = (d: string, anchor: number) =>
+    Math.abs(parts(d).d - anchor) <= INTERVAL_TOLERANCE_DAYS;
+  return dates.some((d) => near(d, anchors[0])) && dates.some((d) => near(d, anchors[1]));
+}
+
+/**
+ * Two days-of-month, ~15 days apart (5th & 20th, 1st & 15th, ...), each occurrence within
+ * `INTERVAL_TOLERANCE_DAYS` before its anchor — a weekend shift only ever moves a payday
+ * earlier, so the largest day seen in a cluster is the true anchor.
+ */
+function fitSemimonthly(dates: readonly string[]): [number, number] | null {
+  const days = dates.map((d) => parts(d).d);
+  const unique = [...new Set(days)].sort((a, b) => a - b);
+  if (unique.length < 2) return null;
+  let splitAt = -1;
+  let maxGap = -1;
+  for (let i = 1; i < unique.length; i++) {
+    const gap = (unique[i] as number) - (unique[i - 1] as number);
+    if (gap > maxGap) {
+      maxGap = gap;
+      splitAt = i;
+    }
+  }
+  if (maxGap < MIN_ANCHOR_GAP_DAYS) return null;
+  const clusterA = unique.slice(0, splitAt);
+  const clusterB = unique.slice(splitAt);
+  const anchorA = clusterA.at(-1) as number;
+  const anchorB = clusterB.at(-1) as number;
+  const fitsCluster = (cluster: number[], anchor: number) =>
+    cluster.every((d) => anchor - d >= 0 && anchor - d <= INTERVAL_TOLERANCE_DAYS);
+  if (!fitsCluster(clusterA, anchorA) || !fitsCluster(clusterB, anchorB)) return null;
+  const anchors: [number, number] = [Math.min(anchorA, anchorB), Math.max(anchorA, anchorB)];
+  if (!alternatesAnchors(dates, anchors)) return null;
+  return anchors;
+}
+
+/**
+ * Semimonthly pay (e.g. 5th & 20th) isn't one of the generic cadences `detectSeries` tries —
+ * it alternates between two fixed days of month rather than a fixed interval. Called as a
+ * fallback when `detectSeries` finds nothing.
+ */
+export function detectSemimonthly(
+  occurrences: readonly Occurrence[],
+  today: string,
+): DetectedSeries | null {
+  const all = [...occurrences].sort((a, b) => a.date.localeCompare(b.date));
+  for (let start = 0; start + MIN_SEMIMONTHLY_OCCURRENCES <= all.length; start++) {
+    const run = all.slice(start);
+    const amounts = run.map((o) => o.amountCents);
+    if (amounts.some((a) => Math.sign(a) !== Math.sign(amounts[0] as number) || a === 0)) continue;
+    if (!steadyAmounts(amounts)) continue;
+    const dates = run.map((o) => o.date);
+    const anchors = fitSemimonthly(dates);
+    if (!anchors) continue;
+    const last = run.at(-1) as Occurrence;
+    const nextExpectedDate = nextSemimonthlyDate(last.date, anchors);
+    return {
+      cadence: 'semimonthly',
+      expectedAmountCents: last.amountCents,
+      lastDate: last.date,
+      nextExpectedDate,
+      status:
+        dayNumber(today) - dayNumber(nextExpectedDate) > BROKEN_AFTER_DAYS ? 'broken' : 'active',
+      categoryId: establishedCategory(run),
+      occurrences: run.length,
+      anchorDays: anchors,
     };
   }
   return null;

@@ -412,9 +412,6 @@ function SplitSheet({
       >
         Add a row
       </Button>
-      <p className="type-caption text-ink-faint">
-        The last row is always what's left, so the split adds up exactly.
-      </p>
       {(problem ?? error) && (
         <p className="mt-2 text-clay">{error ?? (problem ? message[problem] : '')}</p>
       )}
@@ -570,9 +567,6 @@ function LinkTransferSheet({
       >
         The other side isn't here yet — mark as a transfer
       </Button>
-      <p className="type-caption text-ink-faint">
-        For a card that reports late, like Apple. It stops counting as spending now.
-      </p>
       {error && <p className="mt-2 text-clay">{error}</p>}
     </Sheet>
   );

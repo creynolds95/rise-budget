@@ -30,7 +30,6 @@ export function Login() {
   return (
     <div className="gutter mx-auto flex min-h-dvh max-w-sm flex-col justify-center">
       <h1 className="font-serif text-5xl tracking-tight text-sage-700">Rise</h1>
-      <p className="mt-2 text-ink-muted">Money you plan, carried month to month.</p>
       {mode === 'passkey' ? (
         <div className="mt-12 flex flex-col gap-3">
           <Button disabled={busy} onClick={() => run(auth.signInWithPasskey)}>
@@ -104,7 +103,6 @@ export function Register() {
   return (
     <div className="gutter mx-auto flex min-h-dvh max-w-sm flex-col justify-center">
       <h1 className="font-serif text-5xl tracking-tight text-sage-700">Rise</h1>
-      <p className="mt-2 text-ink-muted">Create the passkey you'll sign in with on this device.</p>
       <Button
         className="mt-12"
         disabled={busy || !token}

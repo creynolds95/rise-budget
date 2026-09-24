@@ -130,9 +130,6 @@ function LockScreen({ onUnlock }: { onUnlock: () => void }) {
       </h1>
       {mode === 'passkey' ? (
         <>
-          <p className="mt-2 max-w-xs text-ink-muted">
-            Unlock with your passkey to see your money.
-          </p>
           <div className="mt-8 flex w-full max-w-xs flex-col gap-2">
             <Button disabled={busy} onClick={() => void passkey()}>
               {busy ? 'Waiting for passkey…' : 'Unlock'}

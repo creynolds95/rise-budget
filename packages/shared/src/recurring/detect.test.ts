@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   addMonths,
+  detectSemimonthly,
   detectSeries,
   nextDate,
+  nextSemimonthlyDate,
+  shiftWeekendToFriday,
   steadyAmounts,
   typicalPostDay,
   type Occurrence,
@@ -132,5 +135,79 @@ describe('recurring detection (SPEC §7)', () => {
       '2026-09-16',
     );
     expect(weekly && typicalPostDay(weekly)).toBeNull();
+  });
+});
+
+describe('semimonthly pay detection (5th & 20th, 1st & 15th, ...)', () => {
+  it('shifts a weekend payday to the Friday before, never later', () => {
+    expect(shiftWeekendToFriday('2026-06-20')).toBe('2026-06-19'); // Saturday
+    expect(shiftWeekendToFriday('2026-07-05')).toBe('2026-07-03'); // Sunday
+    expect(shiftWeekendToFriday('2026-06-05')).toBe('2026-06-05'); // Friday: unchanged
+  });
+
+  it('detects alternating 5th/20th pay, weekend shifts included, and predicts the next', () => {
+    const occ = [
+      '2026-04-03', // 5th, shifted from Sunday
+      '2026-04-20',
+      '2026-05-05',
+      '2026-05-20',
+      '2026-06-05',
+      '2026-06-19', // 20th, shifted from Saturday
+      '2026-07-03', // 5th, shifted from Sunday
+    ].map((d) => o(d, -310_000));
+    const s = detectSemimonthly(occ, '2026-07-10');
+    expect(s).toMatchObject({
+      cadence: 'semimonthly',
+      anchorDays: [5, 20],
+      lastDate: '2026-07-03',
+      nextExpectedDate: '2026-07-20',
+      status: 'active',
+      occurrences: 7,
+    });
+  });
+
+  it("predicts across a month boundary and honours the next month's own weekend shift", () => {
+    expect(nextSemimonthlyDate('2026-07-20', [5, 20])).toBe('2026-08-05');
+    // Aug 1st and 15th both fall on a Saturday (shifted to Jul 31 / Aug 14) and are already
+    // past `from`, so the next payday rolls to September's unshifted 1st.
+    expect(nextSemimonthlyDate('2026-08-14', [1, 15])).toBe('2026-09-01');
+  });
+
+  it('marks broken when the next payday is more than 7 days late', () => {
+    const occ = [
+      '2026-04-03',
+      '2026-04-20',
+      '2026-05-05',
+      '2026-05-20',
+      '2026-06-05',
+      '2026-06-19',
+      '2026-07-03',
+    ].map((d) => o(d, -310_000));
+    expect(detectSemimonthly(occ, '2026-07-27')?.status).toBe('active');
+    expect(detectSemimonthly(occ, '2026-07-28')?.status).toBe('broken');
+  });
+
+  it('needs at least 4 occurrences', () => {
+    const occ = ['2026-04-03', '2026-04-20', '2026-05-05'].map((d) => o(d, -310_000));
+    expect(detectSemimonthly(occ, '2026-05-10')).toBeNull();
+  });
+
+  it('rejects a single cluster (not two anchors) and weekly noise', () => {
+    const oneCluster = ['2026-05-05', '2026-05-07', '2026-05-09', '2026-05-11'].map((d) =>
+      o(d, 500),
+    );
+    expect(detectSemimonthly(oneCluster, '2026-05-15')).toBeNull();
+    const weekly = ['2026-09-01', '2026-09-08', '2026-09-15', '2026-09-22'].map((d) => o(d, 500));
+    expect(detectSemimonthly(weekly, '2026-09-23')).toBeNull();
+  });
+
+  it('carries the category once two charges share it, same as detectSeries', () => {
+    const occ = [
+      o('2026-04-03', -310_000, 'income'),
+      o('2026-04-20', -310_000, 'income'),
+      o('2026-05-05', -310_000, 'income'),
+      o('2026-05-20', -310_000, 'income'),
+    ];
+    expect(detectSemimonthly(occ, '2026-05-25')?.categoryId).toBe('income');
   });
 });

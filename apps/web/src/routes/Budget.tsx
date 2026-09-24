@@ -576,10 +576,6 @@ function EmptyBudget({ onAdd }: { onAdd: () => void }) {
     <section className="gutter mt-10">
       <div className="border-l-2 border-gold pl-4">
         <p className="type-title">Start with what you spend on.</p>
-        <p className="mt-2 text-ink-muted">
-          Groceries, gas, eating out, rent. Each gets a plan and a rail; whatever's left carries
-          into next month.
-        </p>
         <Button className="mt-4" onClick={onAdd}>
           Add your first category
         </Button>
