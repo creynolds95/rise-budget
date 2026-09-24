@@ -93,6 +93,8 @@ export const Category = z.object({
   /** SPEC §2.9: the plan for months with no allocation row, from `planDefaultFrom` on. */
   planDefaultCents: Cents.nullable(),
   planDefaultFrom: PeriodId.nullable(),
+  /** H1: the one category a transaction with no real signal falls back to. Exactly one per user. */
+  isCatchall: z.boolean(),
 });
 export type Category = z.infer<typeof Category>;
 

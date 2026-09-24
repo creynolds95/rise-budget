@@ -119,6 +119,12 @@ export async function listStoredForSync(
   }));
 }
 
+/**
+ * H1: a synced row is never left without a category — `assignedCategoryId` is the real
+ * suggestion when there is one, the user's catch-all otherwise. It lands as a real split for
+ * the full amount immediately, so it counts as real spending from the moment it arrives;
+ * `review_state` stays 'needs_review' because nobody has confirmed or corrected the guess yet.
+ */
 export function insertSyncedTxnStmt(
   userId: UserId,
   db: D1Database,
@@ -130,32 +136,51 @@ export function insertSyncedTxnStmt(
     merchantDisplay: string | null;
     suggestedCategoryId: string | null;
     suggestionConfidence: number;
+    assignedCategoryId: string;
   },
-): D1PreparedStatement {
+): D1PreparedStatement[] {
   const now = nowIso();
-  return db
-    .prepare(
-      `INSERT INTO txn (id, user_id, account_id, posted_at, amount_cents, descriptor_raw, merchant_normalized,
-         merchant_display, is_pending, review_state, suggested_category_id, suggestion_confidence,
-         source, source_id, created_at, updated_at)
-       VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'needs_review', ?10, ?11, 'simplefin', ?12, ?13, ?13)
-       ON CONFLICT DO NOTHING`,
-    )
-    .bind(
-      userId,
-      t.id,
-      t.accountId,
-      t.incoming.postedAt,
-      t.incoming.amountCents,
-      t.incoming.descriptor,
-      t.merchant,
-      t.merchantDisplay,
-      t.incoming.pending ? 1 : 0,
-      t.suggestedCategoryId,
-      t.suggestionConfidence,
-      t.incoming.sourceId,
-      now,
-    );
+  return [
+    db
+      .prepare(
+        `INSERT INTO txn (id, user_id, account_id, posted_at, amount_cents, descriptor_raw, merchant_normalized,
+           merchant_display, is_pending, review_state, suggested_category_id, suggestion_confidence,
+           source, source_id, created_at, updated_at)
+         VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'needs_review', ?10, ?11, 'simplefin', ?12, ?13, ?13)
+         ON CONFLICT DO NOTHING`,
+      )
+      .bind(
+        userId,
+        t.id,
+        t.accountId,
+        t.incoming.postedAt,
+        t.incoming.amountCents,
+        t.incoming.descriptor,
+        t.merchant,
+        t.merchantDisplay,
+        t.incoming.pending ? 1 : 0,
+        t.suggestedCategoryId,
+        t.suggestionConfidence,
+        t.incoming.sourceId,
+        now,
+      ),
+    // The txn insert above can no-op on a conflict (edge 12, a re-fetched overlap window);
+    // this only lands when that row actually exists, so a skipped insert never orphans a
+    // split against a row that isn't there.
+    db
+      .prepare(
+        `INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, 0 WHERE EXISTS (SELECT 1 FROM txn WHERE user_id = ?2 AND id = ?3)`,
+      )
+      .bind(
+        newId(),
+        userId,
+        t.id,
+        t.assignedCategoryId,
+        t.incoming.amountCents,
+        periodOf(t.incoming.postedAt),
+      ),
+  ];
 }
 
 const counts = (isTransfer: number, reviewState: string) =>
@@ -165,7 +190,7 @@ const counts = (isTransfer: number, reviewState: string) =>
  * Spending effects of moving a transaction's splits from one (period, amounts, counted)
  * state to another: flag closed periods, refresh aggregates for both.
  */
-function splitEffectStmts(
+export function splitEffectStmts(
   userId: UserId,
   db: D1Database,
   before: { period: string; total: number; counted: boolean },
@@ -296,7 +321,13 @@ export async function listTransferCandidates(
   db: D1Database,
   from: string,
   to: string,
+  catchallCategoryId: string,
 ): Promise<TransferRow[]> {
+  // H1: every row now gets a split at insert (the guess, or the catch-all), so "not yet
+  // engaged with" can no longer mean split-less. It means: still needs review, and its one
+  // split still is exactly that untouched guess — nobody has categorised, split, or
+  // accepted it since (any of those either changes the split away from the guess or, via
+  // bulk-accept, flips review_state to reviewed).
   const { results } = await db
     .prepare(
       `SELECT t.id, t.account_id, a.kind, t.posted_at, t.amount_cents
@@ -304,9 +335,11 @@ export async function listTransferCandidates(
        WHERE t.user_id = ?1 AND t.posted_at BETWEEN ?2 AND ?3
          AND t.is_pending = 0 AND t.is_transfer = 0 AND t.transfer_pair_id IS NULL
          AND t.review_state = 'needs_review'
-         AND NOT EXISTS (SELECT 1 FROM split s WHERE s.user_id = ?1 AND s.txn_id = t.id)`,
+         AND (SELECT COUNT(*) FROM split s WHERE s.user_id = ?1 AND s.txn_id = t.id) = 1
+         AND (SELECT s.category_id FROM split s WHERE s.user_id = ?1 AND s.txn_id = t.id)
+           = COALESCE(t.suggested_category_id, ?4)`,
     )
-    .bind(userId, from, to)
+    .bind(userId, from, to, catchallCategoryId)
     .all<TransferRow>();
   return results;
 }

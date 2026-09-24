@@ -13,11 +13,16 @@ export async function listOccurrences(
   db: D1Database,
   from: string,
 ): Promise<Map<string, Occurrence[]>> {
+  // H1: every occurrence always has a split now (a guess or the catch-all), so a category
+  // only counts here once the user has actually reviewed it — otherwise every merchant would
+  // "establish" whatever its unconfirmed guess happened to be.
   const { results } = await db
     .prepare(
       `SELECT t.merchant_normalized, t.posted_at, t.amount_cents,
-         (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(s.category_id) END FROM split s
-           WHERE s.user_id = ?1 AND s.txn_id = t.id) AS category_id
+         CASE WHEN t.review_state = 'reviewed' THEN
+           (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(s.category_id) END FROM split s
+             WHERE s.user_id = ?1 AND s.txn_id = t.id)
+         END AS category_id
        FROM txn t
        WHERE t.user_id = ?1 AND t.posted_at >= ?2 AND t.is_transfer = 0 AND t.is_pending = 0
          AND t.review_state != 'dropped'

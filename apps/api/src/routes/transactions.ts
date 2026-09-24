@@ -14,6 +14,7 @@ import {
   bumpMemoryStmt,
   categoryIdsExist,
   countingChangeStmts,
+  ensureCatchallCategory,
   flagClosedPeriodStmt,
   getAccount,
   getTransaction,
@@ -35,7 +36,7 @@ import {
   type TxnRow,
 } from '../db';
 import type { AppEnv } from '../env';
-import { recordManualCategorisation, refreshSuggestions } from '../lib/categorize';
+import { recordManualCategorisation, refreshSuggestions, suggestFor } from '../lib/categorize';
 import { b64urlDecode, b64urlEncode } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { body } from '../lib/validate';
@@ -96,35 +97,46 @@ transactions.get('/:id', async (c) => {
   return c.json(t);
 });
 
-/** Manual entry. Entered by hand, so already reviewed. */
+/**
+ * Manual entry. Picking a category by hand is reviewed on the spot. Leaving it blank still
+ * gets a real category (H1) — the same best guess sync would make, or the catch-all — so it
+ * counts as real spending immediately; it waits in the review queue like any other guess.
+ */
 transactions.post('/', async (c) => {
   const userId = c.get('userId');
+  const db = c.env.DB;
   const b = await body(c, CreateTransactionBody);
-  if (!(await getAccount(userId, c.env.DB, b.accountId)))
+  if (!(await getAccount(userId, db, b.accountId)))
     throw new AppError(400, 'BAD_REQUEST', 'Unknown account');
-  if (b.categoryId && !(await categoryIdsExist(userId, c.env.DB, [b.categoryId]))) {
+  if (b.categoryId && !(await categoryIdsExist(userId, db, [b.categoryId]))) {
     throw new AppError(400, 'BAD_REQUEST', 'Unknown category');
   }
-  const id = await insertManualTransaction(userId, c.env.DB, {
+  const merchant = normalizeMerchant(b.descriptor);
+  const categoryId =
+    b.categoryId ??
+    (await suggestFor(db, userId, [{ id: 'draft', descriptor: b.descriptor, merchant }])).get(
+      'draft',
+    )?.categoryId ??
+    (await ensureCatchallCategory(userId, db)).id;
+  const id = await insertManualTransaction(userId, db, {
     accountId: b.accountId,
     postedAt: b.postedAt,
     amountCents: b.amountCents,
     descriptor: b.descriptor,
-    merchant: normalizeMerchant(b.descriptor),
+    merchant,
     notes: b.notes ?? null,
+    reviewState: b.categoryId ? 'reviewed' : 'needs_review',
   });
+  const row = await getTransactionRow(userId, db, id);
+  if (!row) throw notFound();
+  await replaceSplits(userId, db, row, [{ categoryId, amountCents: b.amountCents }]);
   if (b.categoryId) {
-    const row = await getTransactionRow(userId, c.env.DB, id);
-    if (!row) throw notFound();
-    await replaceSplits(userId, c.env.DB, row, [
-      { categoryId: b.categoryId, amountCents: b.amountCents },
-    ]);
     // Entered by hand, so it teaches memory, but a rule offer belongs to the review flow.
-    await recordManualCategorisation(c.env.DB, userId, txnRef(row), b.categoryId, {
+    await recordManualCategorisation(db, userId, txnRef(row), b.categoryId, {
       countTowardOffer: false,
     });
   }
-  return c.json(await getTransaction(userId, c.env.DB, id), 201);
+  return c.json(await getTransaction(userId, db, id), 201);
 });
 
 /** Setting `categoryId` makes the transaction one split of its whole amount (SPEC §3.5). */
