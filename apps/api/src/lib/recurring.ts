@@ -1,6 +1,7 @@
 import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
 import {
   BROKEN_AFTER_DAYS,
+  detectSemimonthly,
   detectSeries,
   typicalPostDay,
   type DetectedSeries,
@@ -25,7 +26,7 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
   const byMerchant = await listOccurrences(userId, db, from);
   const found: [string, DetectedSeries][] = [];
   for (const [merchant, occ] of byMerchant) {
-    const s = detectSeries(occ, today);
+    const s = detectSeries(occ, today) ?? detectSemimonthly(occ, today);
     if (s) found.push([merchant, s]);
   }
   const billDay = new Map<string, { day: number; size: number }>();
