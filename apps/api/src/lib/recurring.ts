@@ -26,7 +26,10 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
   const byMerchant = await listOccurrences(userId, db, from);
   const found: [string, DetectedSeries][] = [];
   for (const [merchant, occ] of byMerchant) {
-    const s = detectSeries(occ, today) ?? detectSemimonthly(occ, today);
+    // Semimonthly first: a true 5th/20th-style pay date is ~15 days apart, which also
+    // slips inside biweekly's ±4-day tolerance — but biweekly's fixed 14-day step drifts
+    // off the real anchor days over time, so a genuine semimonthly fit wins the tie.
+    const s = detectSemimonthly(occ, today) ?? detectSeries(occ, today);
     if (s) found.push([merchant, s]);
   }
   const billDay = new Map<string, { day: number; size: number }>();
