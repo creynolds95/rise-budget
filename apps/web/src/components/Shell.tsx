@@ -9,7 +9,12 @@ const ICON: Record<Tab, string> = {
   budget: 'M4 7h16M4 12h10M4 17h6',
 };
 
-/** Four tabs and an avatar. No drawer (§4). */
+/**
+ * Four tabs and an avatar. No drawer (§4). Below `lg` these are a bottom tab bar, as on
+ * phone; at `lg` and up they become a persistent left sidebar (H5) — desktop has the width
+ * for it to stay visible instead of scrolling out of reach, and a mouse has no thumb-reach
+ * reason to keep navigation at the bottom of the screen.
+ */
 export function Shell() {
   const me = useMe().data;
   const initials = (me?.displayName ?? '')
@@ -19,23 +24,69 @@ export function Shell() {
     .slice(0, 2)
     .toUpperCase();
   return (
-    <div className="min-h-dvh pb-[calc(64px+env(safe-area-inset-bottom))]">
-      <div className="gutter mx-auto flex max-w-2xl items-center justify-between pt-[max(12px,env(safe-area-inset-top))]">
-        <span className="font-serif text-xl tracking-tight text-sage-700">Rise</span>
+    <div className="min-h-dvh pb-[calc(64px+env(safe-area-inset-bottom))] lg:flex lg:pb-0">
+      <aside className="hidden lg:flex lg:h-dvh lg:w-60 lg:flex-shrink-0 lg:flex-col lg:justify-between lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
+        <div className="flex flex-col gap-7">
+          <span className="px-3 font-serif text-xl tracking-tight text-sage-700">Rise</span>
+          <nav aria-label="Tabs" className="flex flex-col gap-0.5">
+            {TABS.map((t) => (
+              <NavLink
+                key={t.tab}
+                to={t.path}
+                end={t.path === '/'}
+                className={({ isActive }) =>
+                  `flex min-h-11 items-center gap-3 rounded-card px-3 text-body ${
+                    isActive ? 'bg-sage-100 font-semibold text-sage-700' : 'text-ink-muted'
+                  }`
+                }
+              >
+                <svg
+                  aria-hidden
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  className="fill-none stroke-current"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d={ICON[t.tab]} />
+                </svg>
+                {t.label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
         <Link
           to="/settings"
-          aria-label="Settings"
-          className="flex size-11 items-center justify-center rounded-full bg-sage-100 type-caption font-semibold text-sage-700"
+          className="flex min-h-11 items-center gap-2.5 rounded-card px-3 text-ink-muted"
         >
-          {initials || '•'}
+          <span className="flex size-8 items-center justify-center rounded-full bg-sage-100 type-caption font-semibold text-sage-700">
+            {initials || '•'}
+          </span>
+          <span className="type-body">Settings</span>
         </Link>
+      </aside>
+
+      <div className="min-w-0 flex-1">
+        <div className="gutter mx-auto flex max-w-2xl items-center justify-between pt-[max(12px,env(safe-area-inset-top))] lg:hidden">
+          <span className="font-serif text-xl tracking-tight text-sage-700">Rise</span>
+          <Link
+            to="/settings"
+            aria-label="Settings"
+            className="flex size-11 items-center justify-center rounded-full bg-sage-100 type-caption font-semibold text-sage-700"
+          >
+            {initials || '•'}
+          </Link>
+        </div>
+        <main>
+          <Outlet />
+        </main>
       </div>
-      <main>
-        <Outlet />
-      </main>
+
       <nav
         aria-label="Tabs"
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-hairline bg-canvas/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-hairline bg-canvas/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >
         <ul className="mx-auto grid max-w-2xl grid-cols-4">
           {TABS.map((t) => (

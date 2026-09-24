@@ -13,8 +13,10 @@ import { Rail } from '../components/primitives/Rail';
 import { EditRow } from '../components/primitives/Rows';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
+import { CategoryDetailPanel } from './CategoryDetail';
 import { ApiError, api, get } from '../lib/api';
 import { addMonths, monthName, shortDate } from '../lib/dates';
+import { useIsDesktop } from '../lib/media';
 import { formatCents } from '../lib/money';
 
 import {
@@ -39,6 +41,8 @@ export function Budget() {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const plan = usePlanFlow(month, categories.data ?? []);
+  const isDesktop = useIsDesktop();
+  const selected = params.get('category');
 
   if (!period.data || !groups.data || !categories.data) return <BudgetSkeleton />;
   const p = period.data;
@@ -46,122 +50,142 @@ export function Budget() {
   const byId = new Map(categories.data.map((c) => [c.id, c]));
   const expenseGroups = groups.data.filter((g) => g.kind === 'expense');
 
+  const selectCategory = (categoryId: string) => {
+    const next = new URLSearchParams(params);
+    next.set('category', categoryId);
+    setParams(next);
+  };
+
   return (
-    <div className="mx-auto max-w-2xl pb-16">
-      <MonthSwitcher
-        month={month}
-        today={today}
-        onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
-      />
-
-      <header className="gutter pt-2 pb-6">
-        <div className="flex items-center justify-between">
-          <p className="type-label text-ink-muted">
-            {closed ? 'Returned to the pool' : 'Ready to assign'}
-          </p>
-          <Link
-            to={`/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`}
-            aria-label="Budget settings"
-            className="-mr-2 flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-          >
-            <Icon name="sliders" />
-          </Link>
-        </div>
-        <p className="mt-1 type-display">
-          <MoneyText
-            cents={closed ? p.period.returnedSurplusCents : p.poolCents}
-            tone={!closed && p.poolCents < 0 ? 'over' : 'ink'}
-          />
-        </p>
-        <p className="mt-1 text-ink-muted">
-          <MoneyText cents={p.totals.plannedCents} tone="muted" /> planned ·{' '}
-          <MoneyText cents={p.totals.spentCents} tone="muted" /> spent
-        </p>
-      </header>
-
-      <CloseControl month={month} data={p} />
-
-      <section className="gutter">
-        <EditRow
-          label="Expected income"
-          field={
-            closed ? (
-              <MoneyText cents={p.expectedIncomeCents} />
-            ) : (
-              <MoneyField
-                label="Expected income"
-                cents={p.expectedIncomeCents}
-                onCommit={async (v) => {
-                  await api('PATCH', `/periods/${month}`, { expectedIncomeCents: v });
-                  await invalidate();
-                }}
-              />
-            )
-          }
+    <div className={selected ? 'lg:flex lg:items-start lg:gap-10 lg:px-8' : ''}>
+      <div
+        className={`mx-auto max-w-2xl pb-16 ${selected ? 'hidden lg:block lg:mx-0 lg:max-w-[560px] lg:flex-shrink-0' : ''}`}
+      >
+        <MonthSwitcher
+          month={month}
+          today={today}
+          onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
         />
-        <div className="flex min-h-12 items-center justify-between border-b border-hairline py-3">
-          <span className="text-ink-muted">Income so far</span>
-          <MoneyText cents={p.actualIncomeCents} />
-        </div>
-        {!groups.data.some((g) => g.kind === 'income') && (
-          <p className="py-3 type-caption text-ink-muted">
-            Paychecks count once they're filed under an income category.{' '}
-            <button
-              className="min-h-11 font-medium text-sage-700"
-              onClick={async () => {
-                setError(null);
-                try {
-                  const g = await api<{ id: string }>('POST', '/category-groups', {
-                    name: 'Income',
-                    kind: 'income',
-                  });
-                  await api('POST', '/categories', { groupId: g.id, name: 'Paycheck' });
-                  await invalidate();
-                } catch (e) {
-                  setError(e instanceof ApiError ? e.message : 'Could not add it.');
-                }
-              }}
+
+        <header className="gutter pt-2 pb-6">
+          <div className="flex items-center justify-between">
+            <p className="type-label text-ink-muted">
+              {closed ? 'Returned to the pool' : 'Ready to assign'}
+            </p>
+            <Link
+              to={`/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`}
+              aria-label="Budget settings"
+              className="-mr-2 flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
             >
-              Add a Paycheck category
-            </button>
+              <Icon name="sliders" />
+            </Link>
+          </div>
+          <p className="mt-1 type-display">
+            <MoneyText
+              cents={closed ? p.period.returnedSurplusCents : p.poolCents}
+              tone={!closed && p.poolCents < 0 ? 'over' : 'ink'}
+            />
           </p>
-        )}
-      </section>
+          <p className="mt-1 text-ink-muted">
+            <MoneyText cents={p.totals.plannedCents} tone="muted" /> planned ·{' '}
+            <MoneyText cents={p.totals.spentCents} tone="muted" /> spent
+          </p>
+        </header>
 
-      {(error ?? plan.error) && <p className="gutter mt-4 text-clay">{error ?? plan.error}</p>}
+        <CloseControl month={month} data={p} />
 
-      {expenseGroups.length === 0 ? (
-        <EmptyBudget onAdd={() => setAdding(true)} />
-      ) : (
-        expenseGroups.map((g) => (
-          <GroupSection
-            key={g.id}
-            group={g}
-            rows={p.categories.filter((c) => byId.get(c.categoryId)?.groupId === g.id)}
-            byId={byId}
-            month={month}
-            editable={!closed}
-            onEdit={(row) => {
-              const category = byId.get(row.categoryId);
-              if (category) plan.open(category, row, p.poolCents);
-            }}
+        <section className="gutter">
+          <EditRow
+            label="Expected income"
+            field={
+              closed ? (
+                <MoneyText cents={p.expectedIncomeCents} />
+              ) : (
+                <MoneyField
+                  label="Expected income"
+                  cents={p.expectedIncomeCents}
+                  onCommit={async (v) => {
+                    await api('PATCH', `/periods/${month}`, { expectedIncomeCents: v });
+                    await invalidate();
+                  }}
+                />
+              )
+            }
           />
-        ))
-      )}
+          <div className="flex min-h-12 items-center justify-between border-b border-hairline py-3">
+            <span className="text-ink-muted">Income so far</span>
+            <MoneyText cents={p.actualIncomeCents} />
+          </div>
+          {!groups.data.some((g) => g.kind === 'income') && (
+            <p className="py-3 type-caption text-ink-muted">
+              Paychecks count once they're filed under an income category.{' '}
+              <button
+                className="min-h-11 font-medium text-sage-700"
+                onClick={async () => {
+                  setError(null);
+                  try {
+                    const g = await api<{ id: string }>('POST', '/category-groups', {
+                      name: 'Income',
+                      kind: 'income',
+                    });
+                    await api('POST', '/categories', { groupId: g.id, name: 'Paycheck' });
+                    await invalidate();
+                  } catch (e) {
+                    setError(e instanceof ApiError ? e.message : 'Could not add it.');
+                  }
+                }}
+              >
+                Add a Paycheck category
+              </button>
+            </p>
+          )}
+        </section>
 
-      {expenseGroups.length > 0 && !closed && (
-        <div className="gutter mt-6">
-          <Button variant="quiet" onClick={() => setAdding(true)}>
-            + Add category
-          </Button>
+        {(error ?? plan.error) && <p className="gutter mt-4 text-clay">{error ?? plan.error}</p>}
+
+        {expenseGroups.length === 0 ? (
+          <EmptyBudget onAdd={() => setAdding(true)} />
+        ) : (
+          expenseGroups.map((g) => (
+            <GroupSection
+              key={g.id}
+              group={g}
+              rows={p.categories.filter((c) => byId.get(c.categoryId)?.groupId === g.id)}
+              byId={byId}
+              month={month}
+              editable={!closed}
+              onEdit={(row) => {
+                const category = byId.get(row.categoryId);
+                if (category) plan.open(category, row, p.poolCents);
+              }}
+              isDesktop={isDesktop}
+              onSelect={selectCategory}
+            />
+          ))
+        )}
+
+        {expenseGroups.length > 0 && !closed && (
+          <div className="gutter mt-6">
+            <Button variant="quiet" onClick={() => setAdding(true)}>
+              + Add category
+            </Button>
+          </div>
+        )}
+
+        <Upcoming month={month} today={today} categories={categories.data} />
+        <Moves month={month} categories={categories.data} />
+
+        {plan.sheets}
+        <AddCategorySheet open={adding} groups={groups.data} onClose={() => setAdding(false)} />
+      </div>
+      {/* H5: desktop master/detail — the category detail panel sits beside the list instead
+        of pushing over it. On mobile `selected` only ever comes from a desktop selection,
+        so this stays hidden there; the mobile push still goes through /budget/:categoryId. */}
+      {selected && (
+        <div className="hidden border-t border-hairline pt-6 lg:block lg:flex-grow lg:border-t-0 lg:border-l lg:pt-2 lg:pl-10">
+          <CategoryDetailPanel categoryId={selected} month={month} />
         </div>
       )}
-
-      <Upcoming month={month} today={today} categories={categories.data} />
-      <Moves month={month} categories={categories.data} />
-
-      {plan.sheets}
-      <AddCategorySheet open={adding} groups={groups.data} onClose={() => setAdding(false)} />
     </div>
   );
 }
@@ -205,6 +229,8 @@ function GroupSection({
   month,
   editable,
   onEdit,
+  isDesktop,
+  onSelect,
 }: {
   group: CategoryGroup;
   rows: ViewCategory[];
@@ -212,6 +238,8 @@ function GroupSection({
   month: string;
   editable: boolean;
   onEdit: (row: ViewCategory) => void;
+  isDesktop: boolean;
+  onSelect: (categoryId: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const available = rows.reduce((n, r) => n + r.availableCents, 0);
@@ -248,6 +276,8 @@ function GroupSection({
                 month={month}
                 editable={editable}
                 onEdit={() => onEdit(r)}
+                isDesktop={isDesktop}
+                onSelect={onSelect}
               />
             ))}
         </ul>
@@ -262,12 +292,16 @@ function BudgetRow({
   month,
   editable,
   onEdit,
+  isDesktop,
+  onSelect,
 }: {
   row: ViewCategory;
   category: Category | undefined;
   month: string;
   editable: boolean;
   onEdit: () => void;
+  isDesktop: boolean;
+  onSelect: (categoryId: string) => void;
 }) {
   const over = row.remainingCents < 0;
   return (
@@ -275,6 +309,13 @@ function BudgetRow({
       <div className="flex items-baseline justify-between gap-3">
         <Link
           to={`/budget/${row.categoryId}?m=${month}`}
+          onClick={(e) => {
+            // H5: desktop opens the category beside the list instead of pushing over it.
+            if (isDesktop) {
+              e.preventDefault();
+              onSelect(row.categoryId);
+            }
+          }}
           className="flex min-h-11 min-w-0 items-center gap-2 font-medium"
         >
           {category?.emoji && (
