@@ -277,3 +277,27 @@ function establishedCategory(run: Occurrence[]): string | null {
 /** Day of month a monthly bill is expected, for fixed-shape pace (SPEC §2.7). */
 export const typicalPostDay = (s: DetectedSeries): number | null =>
   s.cadence === 'monthly' ? parts(s.nextExpectedDate).d : null;
+
+export interface ProjectedOccurrence {
+  date: string;
+  amountCents: number;
+}
+
+/**
+ * The next `count` dates a series is expected to land on, at its current amount. Used to
+ * build a cash-flow projection (paychecks in, real auto-drafted bills out) — never called
+ * for a card payment, since those are never a predictable outflow.
+ */
+export function projectOccurrences(series: DetectedSeries, count: number): ProjectedOccurrence[] {
+  const anchorDay = parts(series.nextExpectedDate).d;
+  const out: ProjectedOccurrence[] = [];
+  let date = series.nextExpectedDate;
+  for (let i = 0; i < count; i++) {
+    out.push({ date, amountCents: series.expectedAmountCents });
+    date =
+      series.cadence === 'semimonthly'
+        ? nextSemimonthlyDate(date, series.anchorDays as [number, number])
+        : nextDate(series.cadence, date, anchorDay);
+  }
+  return out;
+}
