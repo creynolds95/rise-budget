@@ -138,6 +138,60 @@ describe('T25 categorisation', () => {
     );
   });
 
+  it('bulk-accept batches a closed-period row: recalc flag set, aggregates refreshed', async () => {
+    const s = await setup();
+    await s.api('PATCH', '/periods/2026-08', { expectedIncomeCents: 500_000 });
+    await s.api('POST', '/periods/2026-08/close', {});
+
+    const lateId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO txn (id, user_id, account_id, posted_at, amount_cents, descriptor_raw, merchant_normalized,
+         review_state, source, source_id, created_at, updated_at)
+       VALUES (?1, ?2, ?3, '2026-08-15', 2_000, 'QT 2', 'QuikTrip', 'needs_review', 'simplefin', ?1, ?4, ?4)`,
+    )
+      .bind(lateId, s.userId, s.card.id, now)
+      .run();
+    // A rule refreshes suggestions for every queued row, including this closed-month one.
+    await s.api('POST', '/rules', {
+      matchField: 'merchant',
+      matchType: 'equals',
+      matchValue: 'QuikTrip',
+      categoryId: s.gas.id,
+    });
+
+    // Also accept an ordinary open-month row in the same call, to prove the batch handles
+    // more than one row/period/merchant at once.
+    const open = await s.queued('SHELL', 'Shell');
+    await s.api('POST', '/rules', {
+      matchField: 'merchant',
+      matchType: 'equals',
+      matchValue: 'Shell',
+      categoryId: s.gas.id,
+    });
+
+    const res = await s.api('POST', '/transactions/bulk-accept', { minConfidence: 0.9 });
+    expect(new Set(res.json.accepted)).toEqual(new Set([lateId, open]));
+    expect(await s.txn(lateId)).toMatchObject({
+      reviewState: 'reviewed',
+      splits: [{ categoryId: s.gas.id, amountCents: 2_000 }],
+    });
+
+    const aug = await env.DB.prepare(
+      "SELECT needs_recalc, recalc_delta_cents FROM period WHERE user_id = ?1 AND id = '2026-08'",
+    )
+      .bind(s.userId)
+      .first<{ needs_recalc: number; recalc_delta_cents: number }>();
+    expect(aug).toMatchObject({ needs_recalc: 1, recalc_delta_cents: 2_000 });
+
+    const agg = await env.DB.prepare(
+      "SELECT spent_cents FROM period_aggregate WHERE user_id = ?1 AND period_id = '2026-08' AND category_id = ?2",
+    )
+      .bind(s.userId, s.gas.id)
+      .first<{ spent_cents: number }>();
+    expect(agg?.spent_cents).toBe(2_000);
+  });
+
   it('a merchant rename applies to past transactions', async () => {
     const s = await setup();
     const id = await s.queued('APPLE.COM/BILL 866-712-7753 CA', 'Apple Services');

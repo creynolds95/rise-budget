@@ -46,6 +46,23 @@ export async function getPeriod(
   return row ? toPeriod(row) : null;
 }
 
+/**
+ * A period can have real spending (a categorised split) with no `period` row at all — nothing
+ * ever set its income or plan, but a transaction was still filed into it. H2: that's the case
+ * closing must not skip past, even though `getPeriod` returns null for it.
+ */
+export async function periodHasActivity(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare('SELECT 1 FROM split WHERE user_id = ?1 AND period_id = ?2 LIMIT 1')
+    .bind(userId, id)
+    .first();
+  return row !== null;
+}
+
 export function ensurePeriodStmt(userId: UserId, db: D1Database, id: string): D1PreparedStatement {
   return db
     .prepare('INSERT INTO period (id, user_id) VALUES (?2, ?1) ON CONFLICT(user_id, id) DO NOTHING')
