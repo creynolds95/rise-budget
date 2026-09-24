@@ -254,22 +254,6 @@ function BudgetSection() {
           <Chevron />
         </Link>
       </Group>
-      <Group title="How Rise budgets">
-        <ol className="space-y-3 px-4 py-4 text-ink-muted">
-          <li>
-            <span className="font-medium text-ink">Every dollar gets a job.</span> Income lands in
-            Ready to assign; you hand it to categories.
-          </li>
-          <li>
-            <span className="font-medium text-ink">Leftovers roll.</span> Unspent money stays in its
-            category next month, unless you send it back.
-          </li>
-          <li>
-            <span className="font-medium text-ink">Going over is a debt, not a failure.</span>{' '}
-            Overspending carries into next month so it gets paid back.
-          </li>
-        </ol>
-      </Group>
     </>
   );
 }
@@ -307,10 +291,6 @@ function CategoriesSection() {
   };
   return (
     <>
-      <p className="text-ink-muted">
-        Income groups hold paychecks and are never budgeted. Expense groups are what you plan and
-        spend.
-      </p>
       {error && <p className="mt-2 text-clay">{error}</p>}
       {groups.map((g, i) => (
         <section key={g.id} className="mt-6">
@@ -976,12 +956,7 @@ function DataSection() {
           disabled={busy !== null}
           className="flex min-h-13 w-full items-center justify-between px-4 py-3 text-left active:bg-sage-100 disabled:opacity-60"
         >
-          <span>
-            <span className="block">Transactions (CSV)</span>
-            <span className="mt-0.5 block type-caption text-ink-faint">
-              For a spreadsheet, dated and categorized.
-            </span>
-          </span>
+          <span className="block">Transactions (CSV)</span>
           {busy === 'csv' ? (
             <span className="type-caption text-ink-muted">Preparing…</span>
           ) : (
@@ -993,12 +968,7 @@ function DataSection() {
           disabled={busy !== null}
           className="flex min-h-13 w-full items-center justify-between px-4 py-3 text-left active:bg-sage-100 disabled:opacity-60"
         >
-          <span>
-            <span className="block">Everything (JSON)</span>
-            <span className="mt-0.5 block type-caption text-ink-faint">
-              Every account, category, transaction and rule you have.
-            </span>
-          </span>
+          <span className="block">Everything (JSON)</span>
           {busy === 'json' ? (
             <span className="type-caption text-ink-muted">Preparing…</span>
           ) : (
