@@ -3,7 +3,7 @@ import { createUser } from '../../src/db';
 import { signRegistration } from '../../src/lib/tokens';
 import { SoftAuthenticator } from './authenticator';
 
-export const BASE = 'https://rise.test';
+export const BASE = 'https://rise.test/api';
 
 export async function call(
   method: string,

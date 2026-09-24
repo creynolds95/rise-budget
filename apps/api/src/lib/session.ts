@@ -21,13 +21,13 @@ export function setRefreshCookie(c: Context<AppEnv>, token: string) {
     httpOnly: true,
     secure: true,
     sameSite: 'Strict',
-    path: '/auth',
+    path: '/api/auth',
     maxAge: REFRESH_TTL_S,
   });
 }
 
 export function clearRefreshCookie(c: Context<AppEnv>) {
-  deleteCookie(c, REFRESH_COOKIE, { path: '/auth', secure: true });
+  deleteCookie(c, REFRESH_COOKIE, { path: '/api/auth', secure: true });
 }
 
 export const readRefreshCookie = (c: Context<AppEnv>) => getCookie(c, REFRESH_COOKIE);

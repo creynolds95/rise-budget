@@ -18,7 +18,8 @@ import type { Env } from './env';
 import { runSync } from './sync/run';
 import { sourceFromEnv } from './sync/source';
 
-export const app = new Hono<AppEnv>();
+/** Everything is under /api; the rest of the origin is the web app (Workers Static Assets). */
+export const app = new Hono<AppEnv>().basePath('/api');
 
 // Public: health and the auth handshake. There is no signup route (SPEC §9).
 app.get('/health', (c) => c.json({ ok: true as const }));
