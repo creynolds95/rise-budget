@@ -187,6 +187,25 @@ export async function api<T>(
 
 export const get = <T>(path: string) => api<T>('GET', path);
 
+/**
+ * T46: hands the browser a file to save, reusing `send`'s auth and the one-retry-on-401
+ * that `api` does. Export needs the raw body and its filename, not a JSON-parsed result.
+ */
+export async function downloadExport(format: 'json' | 'csv'): Promise<void> {
+  const path = `/export?format=${format}`;
+  let res = await send('GET', path, undefined, {});
+  if (res.status === 401 && (await refresh())) res = await send('GET', path, undefined, {});
+  if (!res.ok) throw new ApiError(res.status, 'UNKNOWN', 'Could not export your data');
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `rise-export.${format}`;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── offline outbox ───────────────────────────────────────────────────────────
 
 const OUTBOX_KEY = 'rise-outbox';

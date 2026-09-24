@@ -11,3 +11,4 @@ export * from './aggregates';
 export * from './categorize';
 export * from './sync';
 export * from './recurring';
+export * from './backup';

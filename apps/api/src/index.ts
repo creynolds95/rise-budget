@@ -14,8 +14,10 @@ import { recurring } from './routes/recurring';
 import { review } from './routes/review';
 import { sync } from './routes/sync';
 import { transactions } from './routes/transactions';
+import { dataExport } from './routes/export';
 import { findUserIdByEmail } from './db';
 import type { Env } from './env';
+import { BACKUP_CRON, runBackup } from './backup/run';
 import { runSync } from './sync/run';
 import { sourceFromEnv } from './sync/source';
 
@@ -42,14 +44,22 @@ app.route('/transactions', transactions);
 app.route('/sync', sync);
 app.route('/recurring', recurring);
 app.route('/review', review);
+app.route('/export', dataExport);
 
 app.notFound((c) =>
   c.json(errorBody('NOT_FOUND', `No route for ${c.req.method} ${c.req.path}`), 404),
 );
 app.onError(renderError);
 
-/** Cron (ARCHITECTURE §6): 3× daily. Single-user, so it syncs the configured owner. */
-export async function scheduled(_event: ScheduledController, env: Env): Promise<void> {
+/**
+ * Crons: SimpleFIN sync 3× daily (ARCHITECTURE §6), and the nightly backup (§8) at 09:30 UTC
+ * (early morning Central), well after the evening sync. Single-user, so sync runs for the configured owner.
+ */
+export async function scheduled(event: ScheduledController, env: Env): Promise<void> {
+  if (event.cron === BACKUP_CRON) {
+    await runBackup(env.DB, env.BACKUPS, new Date(event.scheduledTime));
+    return;
+  }
   const source = sourceFromEnv(env);
   if (!source || !env.SIMPLEFIN_OWNER_EMAIL) return;
   const userId = await findUserIdByEmail(env.DB, env.SIMPLEFIN_OWNER_EMAIL);

@@ -20,11 +20,12 @@ import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, downloadExport } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { localToday, shortDate } from '../lib/dates';
 import {
   useAccounts,
+  useBackupStatus,
   useCategories,
   useGroups,
   useInvalidateMoney,
@@ -39,6 +40,7 @@ const SECTIONS = {
   rules: 'Rules',
   sync: 'Bank sync',
   security: 'Security',
+  data: 'Your data',
 } as const;
 type Section = keyof typeof SECTIONS;
 
@@ -57,6 +59,7 @@ export function Settings() {
   const accounts = useAccounts().data;
   const sync = useSyncStatus().data;
   const lastRun = sync?.runs[0];
+  const backups = useBackupStatus().data;
 
   return (
     <div className="gutter mx-auto max-w-2xl pt-4 pb-12">
@@ -115,6 +118,19 @@ export function Settings() {
           }
         >
           App lock, PIN, passkeys
+        </Card>
+        <Card
+          to="/settings/data"
+          title="Your data"
+          state={
+            backups
+              ? backups.latest
+                ? `Backed up ${shortDate(backups.latest.date)}`
+                : 'No backup yet'
+              : undefined
+          }
+        >
+          Export, and nightly backups
         </Card>
       </div>
 
@@ -178,6 +194,7 @@ export function SettingsSection() {
         {s === 'rules' && <RulesSection />}
         {s === 'sync' && <SyncSection />}
         {s === 'security' && <SecuritySection />}
+        {s === 'data' && <DataSection />}
       </div>
     </div>
   );
@@ -826,5 +843,83 @@ function PinSheet({
         <button type="submit" hidden />
       </form>
     </Sheet>
+  );
+}
+
+/** T46. The user can always walk away with their data (ARCHITECTURE §8). */
+function DataSection() {
+  const backups = useBackupStatus().data;
+  const [busy, setBusy] = useState<'json' | 'csv' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const download = async (format: 'json' | 'csv') => {
+    setBusy(format);
+    setError(null);
+    try {
+      await downloadExport(format);
+    } catch {
+      setError("That didn't go through. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const backupState = !backups
+    ? undefined
+    : backups.latest
+      ? `Last night: ${shortDate(backups.latest.date)}`
+      : 'None yet';
+
+  return (
+    <>
+      <Group
+        title="Export"
+        footer="Amounts are exact, in dollars and cents. No passkeys or PINs are ever included."
+      >
+        <button
+          onClick={() => void download('csv')}
+          disabled={busy !== null}
+          className="flex min-h-13 w-full items-center justify-between px-4 py-3 text-left active:bg-sage-100 disabled:opacity-60"
+        >
+          <span>
+            <span className="block">Transactions (CSV)</span>
+            <span className="mt-0.5 block type-caption text-ink-faint">
+              For a spreadsheet, dated and categorized.
+            </span>
+          </span>
+          {busy === 'csv' ? (
+            <span className="type-caption text-ink-muted">Preparing…</span>
+          ) : (
+            <Chevron />
+          )}
+        </button>
+        <button
+          onClick={() => void download('json')}
+          disabled={busy !== null}
+          className="flex min-h-13 w-full items-center justify-between px-4 py-3 text-left active:bg-sage-100 disabled:opacity-60"
+        >
+          <span>
+            <span className="block">Everything (JSON)</span>
+            <span className="mt-0.5 block type-caption text-ink-faint">
+              Every account, category, transaction and rule you have.
+            </span>
+          </span>
+          {busy === 'json' ? (
+            <span className="type-caption text-ink-muted">Preparing…</span>
+          ) : (
+            <Chevron />
+          )}
+        </button>
+      </Group>
+      {error && <p className="mt-2 px-1 text-clay">{error}</p>}
+      <Group
+        title="Backups"
+        footer="A copy of everything is kept safe automatically, off this device, in case anything ever goes wrong. 90 days are kept."
+      >
+        <GroupRow label="Last backup">
+          <span className="text-ink-muted">{backupState ?? <Skeleton className="h-5 w-24" />}</span>
+        </GroupRow>
+      </Group>
+    </>
   );
 }

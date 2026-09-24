@@ -6,6 +6,8 @@ export default defineConfig({
     cloudflareTest(async () => ({
       wrangler: { configPath: './wrangler.toml' },
       miniflare: {
+        // An empty database to restore backups into (T46 AC).
+        d1Databases: ['RESTORE'],
         bindings: {
           // Test-only secrets. Real ones are Worker Secrets.
           JWT_SECRET: 'test-jwt-secret-not-for-production',
