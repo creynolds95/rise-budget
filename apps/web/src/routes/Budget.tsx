@@ -117,6 +117,29 @@ export function Budget() {
           <span className="text-ink-muted">Income so far</span>
           <MoneyText cents={p.actualIncomeCents} />
         </div>
+        {!groups.data.some((g) => g.kind === 'income') && (
+          <p className="py-3 type-caption text-ink-muted">
+            Paychecks count once they're filed under an income category.{' '}
+            <button
+              className="min-h-11 font-medium text-sage-700"
+              onClick={async () => {
+                setError(null);
+                try {
+                  const g = await api<{ id: string }>('POST', '/category-groups', {
+                    name: 'Income',
+                    kind: 'income',
+                  });
+                  await api('POST', '/categories', { groupId: g.id, name: 'Paycheck' });
+                  await invalidate();
+                } catch (e) {
+                  setError(e instanceof ApiError ? e.message : 'Could not add it.');
+                }
+              }}
+            >
+              Add a Paycheck category
+            </button>
+          </p>
+        )}
       </section>
 
       {error && <p className="gutter mt-4 text-clay">{error}</p>}

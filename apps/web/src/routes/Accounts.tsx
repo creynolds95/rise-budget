@@ -11,6 +11,7 @@ import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api } from '../lib/api';
 import { allowsPercentChange, rangeStart, type Range } from '../lib/chart';
+import { daysBetween, shortDate } from '../lib/dates';
 import { useAccounts, useMe, useNetWorth, useToday } from '../lib/queries';
 import type { AccountWithStaleness } from '../lib/types';
 
@@ -36,13 +37,18 @@ export function Accounts() {
   const tz = useMe().data?.timezone;
   const [range, setRange] = useState<Range>('6M');
   const accounts = useAccounts();
-  const nw = useNetWorth(rangeStart(range, today), today);
+  const start = rangeStart(range, today);
+  const nw = useNetWorth(start, today);
   const [adding, setAdding] = useState(false);
 
   const points = nw.data?.points ?? [];
   const first = points[0];
   const last = points.at(-1);
-  const pct = first && last ? percentChange(first.netWorthCents, last.netWorthCents, range) : null;
+  // SPEC §5.3: no percentage over less than three months — of actual history, not just the chip.
+  const pct =
+    first && last && daysBetween(first.date, last.date) >= 90
+      ? percentChange(first.netWorthCents, last.netWorthCents, range)
+      : null;
   const live = (accounts.data ?? []).filter((a) => !a.archivedAt);
 
   return (
@@ -60,7 +66,12 @@ export function Accounts() {
             <Skeleton className="h-11 w-48" />
           )}
         </p>
-        {first && last && (
+        {first && last && first.date === last.date && (
+          <p className="mt-1 text-ink-muted">
+            History starts {shortDate(first.date)}, the first balance Rise saw.
+          </p>
+        )}
+        {first && last && first.date !== last.date && (
           <p className="mt-1 text-ink-muted">
             <MoneyText
               cents={last.netWorthCents - first.netWorthCents}
@@ -68,8 +79,10 @@ export function Accounts() {
               tone="muted"
               whole
             />
-            {pct && ` (${pct})`} over{' '}
-            {range === 'ALL' ? 'three years' : range === 'YTD' ? 'this year' : range}
+            {pct && ` (${pct})`}{' '}
+            {first.date > start
+              ? `since ${shortDate(first.date)}`
+              : `over ${range === 'ALL' ? 'three years' : range === 'YTD' ? 'this year' : range}`}
             {last.inferred && ' · includes estimated balances'}
           </p>
         )}

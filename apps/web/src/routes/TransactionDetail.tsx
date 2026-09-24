@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { RuleOfferSheet } from '../components/RuleOfferSheet';
+import { TxnAmount } from '../components/TxnAmount';
 import { TxnRow } from '../components/TxnRow';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
@@ -115,13 +116,7 @@ export function TransactionDetail() {
         header={{ back, title: name }}
         identity={{
           label: t.isTransfer ? 'Transfer' : income ? 'Money in' : 'Spent',
-          hero: (
-            <MoneyText
-              cents={-t.amountCents}
-              sign={income ? 'always' : 'auto'}
-              tone={t.isTransfer ? 'muted' : 'ink'}
-            />
-          ),
+          hero: <TxnAmount t={t} />,
           context: (
             <>
               {shortDate(t.postedAt)} · {account?.name ?? 'Unknown account'}
@@ -247,7 +242,7 @@ export function TransactionDetail() {
                   }
                 }}
               >
-                Not a transfer — unlink both sides
+                {t.transferPairId ? 'Not a transfer — unlink both sides' : 'Not a transfer'}
               </Button>
             ) : (
               <Button variant="quiet" onClick={() => setLinking(true)}>
@@ -560,6 +555,24 @@ function LinkTransferSheet({
           </li>
         ))}
       </ul>
+      <Button
+        variant="quiet"
+        className="-ml-4 mt-4"
+        onClick={async () => {
+          try {
+            await api('POST', `/transactions/${t.id}/mark-transfer`);
+            await onLinked();
+            onClose();
+          } catch (e) {
+            setError(e instanceof ApiError ? e.message : 'Could not mark.');
+          }
+        }}
+      >
+        The other side isn't here yet — mark as a transfer
+      </Button>
+      <p className="type-caption text-ink-faint">
+        For a card that reports late, like Apple. It stops counting as spending now.
+      </p>
       {error && <p className="mt-2 text-clay">{error}</p>}
     </Sheet>
   );

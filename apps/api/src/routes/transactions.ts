@@ -23,6 +23,8 @@ import {
   replaceSplits,
   splitsFor,
   unlinkTransferStmts,
+  markTransferStmt,
+  unmarkTransferStmt,
   updateTransactionFields,
   type TxnRow,
 } from '../db';
@@ -235,12 +237,39 @@ transactions.post('/:id/transfer-link', async (c) => {
   });
 });
 
-/** Unlink: both legs go back to being ordinary transactions. */
+/**
+ * One side of a transfer whose other side isn't here yet — typically a card payment from
+ * checking to a card that reports monthly (Apple). It stops counting as spending now
+ * (SPEC §3.4); the user's tap is the confirmation, and it can be linked or undone later.
+ */
+transactions.post('/:id/mark-transfer', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const a = await getTransactionRow(userId, db, c.req.param('id'));
+  if (!a) throw notFound();
+  if (a.is_transfer === 1) throw new AppError(409, 'CONFLICT', 'Already a transfer');
+  const splits = await splitsFor(userId, db, [a.id]);
+  await db.batch([
+    ...countingChangeStmts(userId, db, a, splits.get(a.id) ?? [], false),
+    markTransferStmt(userId, db, a.id),
+  ]);
+  return c.json(await getTransaction(userId, db, a.id));
+});
+
+/** Unlink: both legs (or a lone marked leg) go back to being ordinary transactions. */
 transactions.delete('/:id/transfer-link', async (c) => {
   const userId = c.get('userId');
   const db = c.env.DB;
   const a = await getTransactionRow(userId, db, c.req.param('id'));
   if (!a) throw notFound();
+  if (a.is_transfer === 1 && !a.transfer_pair_id) {
+    const own = await splitsFor(userId, db, [a.id]);
+    await db.batch([
+      ...countingChangeStmts(userId, db, a, own.get(a.id) ?? [], true),
+      unmarkTransferStmt(userId, db, a.id),
+    ]);
+    return c.json({ items: [await getTransaction(userId, db, a.id)] });
+  }
   const b = a.transfer_pair_id ? await getTransactionRow(userId, db, a.transfer_pair_id) : null;
   if (!b) throw new AppError(409, 'CONFLICT', 'Not linked as a transfer');
   const splits = await splitsFor(userId, db, [a.id, b.id]);

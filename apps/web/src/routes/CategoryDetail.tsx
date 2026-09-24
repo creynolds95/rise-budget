@@ -13,7 +13,7 @@ import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
 import type { Range } from '../lib/chart';
-import { monthName } from '../lib/dates';
+import { monthEnd, monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import {
   useCategories,
@@ -50,7 +50,7 @@ export function CategoryDetail() {
         `/categories/${categoryId}/history?months=${months}`,
       ),
   });
-  const txns = useTransactions({ category: categoryId, from: `${month}-01`, to: `${month}-31` });
+  const txns = useTransactions({ category: categoryId, from: `${month}-01`, to: monthEnd(month) });
   const [forgiving, setForgiving] = useState(false);
 
   const cat = categories.data?.find((c) => c.id === categoryId);
@@ -80,7 +80,7 @@ export function CategoryDetail() {
       <DetailPage
         header={{ back, title: cat.name }}
         identity={{
-          label: `Available in ${monthName(month, false)}`,
+          label: `Left in ${monthName(month, false)}`,
           hero: (
             <MoneyText cents={row.remainingCents} tone={row.remainingCents < 0 ? 'over' : 'ink'} />
           ),

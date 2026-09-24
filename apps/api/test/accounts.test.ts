@@ -125,6 +125,27 @@ describe('T17 net worth', () => {
     ]);
   });
 
+  it('starts at the first reported balance, not at a made-up $0', async () => {
+    const u = await signedInUser();
+    const empty = await call('GET', '/networth?from=2026-08-01&to=2026-08-03', {
+      access: u.access,
+    });
+    expect(empty.json.points).toEqual([]);
+    const a = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'Car', kind: 'other' },
+    });
+    await call('POST', `/accounts/${a.json.id}/snapshots`, {
+      access: u.access,
+      body: { asOf: '2026-08-02', balanceCents: 900_000 },
+    });
+    const nw = await call('GET', '/networth?from=2026-08-01&to=2026-08-03', { access: u.access });
+    expect(nw.json.points.map((p: { date: string }) => p.date)).toEqual([
+      '2026-08-02',
+      '2026-08-03',
+    ]);
+  });
+
   it('validates the range', async () => {
     const u = await signedInUser();
     expect((await call('GET', '/networth', { access: u.access })).status).toBe(400);

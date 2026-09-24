@@ -51,3 +51,58 @@ export const confidentCount = (items: readonly QueueItem[]) =>
   items.filter(
     (t) => t.suggestedCategoryId && !t.isTransfer && bandOf(t.suggestionConfidence) === 'confident',
   ).length;
+
+export interface ChipContext {
+  /** Category id → its group's kind. */
+  kinds: ReadonlyMap<string, 'income' | 'expense'>;
+  /** Categories in display order, the last-resort fill. */
+  ordered: readonly string[];
+  /** Most-used lately, from the queue endpoint. */
+  frequent: readonly string[];
+}
+
+/**
+ * One-tap choices for a row that isn't pre-filled (SPEC §4.5): the merchant's own top
+ * categories first, then what the user files most, then anything, so even the first week
+ * is one tap. Money in leads with income categories; a refund still finds its merchant's.
+ * These are choices, never a pre-fill.
+ */
+export function chipsFor(
+  t: Pick<QueueItem, 'amountCents' | 'topCategoryIds' | 'suggestedCategoryId'>,
+  ctx: ChipContext,
+  max = 4,
+): string[] {
+  const order: ('income' | 'expense')[] = t.amountCents < 0 ? ['income', 'expense'] : ['expense'];
+  const pool = [
+    ...t.topCategoryIds,
+    ...order.flatMap((k) =>
+      [...ctx.frequent, ...ctx.ordered].filter((id) => ctx.kinds.get(id) === k),
+    ),
+  ];
+  const out: string[] = [];
+  for (const id of pool) {
+    if (out.length === max) break;
+    if (!ctx.kinds.has(id) || id === t.suggestedCategoryId || out.includes(id)) continue;
+    out.push(id);
+  }
+  return out;
+}
+
+const MOVE = /PAYMENT|\bPMT\b|AUTOPAY|AUTO PAY|THANK YOU|TRANSFER|\bXFER\b/;
+const CARD = /CARD|\bCRD\b|CREDIT|AMEX|CITI|CHASE|DISCOVER|CAPITAL ONE|GSBANK|SYNCHRONY/;
+
+/**
+ * Whether to offer "this is a transfer" on a lone row — money moving between the user's own
+ * accounts whose other side hasn't arrived (an Apple Card payment reports a month late).
+ * Offered, never applied: the user taps it (SPEC §3.3, §3.4).
+ */
+export function transferOffer(
+  t: Pick<QueueItem, 'descriptorRaw' | 'isTransfer' | 'amountCents'>,
+  accountKind: string | undefined,
+): 'card_payment' | 'transfer' | null {
+  if (t.isTransfer || t.amountCents === 0) return null;
+  const d = t.descriptorRaw.toUpperCase();
+  if (!MOVE.test(d)) return null;
+  if (accountKind === 'credit' || CARD.test(d)) return 'card_payment';
+  return 'transfer';
+}

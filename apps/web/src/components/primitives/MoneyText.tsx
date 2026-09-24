@@ -5,6 +5,8 @@ const TONE = {
   muted: 'text-ink-muted',
   /** Overspend and carried deficits. Never red (DESIGN-SYSTEM.md §1). */
   over: 'text-clay',
+  /** Money coming in. */
+  in: 'text-sage-700',
 } as const;
 
 export type MoneyTone = keyof typeof TONE;

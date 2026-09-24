@@ -392,6 +392,9 @@ Raw descriptors are noisy. Normalise before keying memory:
 
 1. Uppercase; collapse whitespace.
 2. Strip trailing reference tokens: `\*[A-Z0-9]{4,}$`, `#\d+$`, `\b\d{6,}\b`.
+   Strip a store number (`#N`, or a bare 4–5 digit token after the name) and everything
+   after it, so every location is one merchant (`CHIPOTLE 2231` → `CHIPOTLE`). Bare 3-digit
+   tokens stay — they are often part of a name. *(Decided 2026-09-24.)*
 3. Strip known processor prefixes: `SQ *`, `TST* `, `PAYPAL *`, `POS DEBIT `, `SP `.
 4. Strip trailing `CITY ST` when `ST` is a valid 2-letter state code.
 5. Map through a known-merchant table (`AMZN MKTP US` → `Amazon Marketplace`).

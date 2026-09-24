@@ -14,6 +14,12 @@ const PROCESSOR_PREFIXES = [/^SQ \*\s*/, /^TST\*\s*/, /^PAYPAL \*\s*/, /^POS DEB
 
 const TRAILING_REFS = [/\s*\*[A-Z0-9]{4,}$/, /\s*#\d+$/];
 const LONG_NUMBERS = /\b\d{6,}\b/g;
+/**
+ * A store number ("CHIPOTLE 2231", "ALDI #72031 BROKEN ARROW OK") and whatever location
+ * follows it. Caleb's call (2026-09-24): one merchant across all its locations, so memory
+ * learns it once. Three-digit bare numbers stay — too often part of a name ("PIZZA 360").
+ */
+const STORE_NUMBER = /^(.*?[A-Z].*?)\s+(?:#\s?\d+|\d{4,5})\b.*$/;
 
 /**
  * Known merchants, matched on the cleaned descriptor's prefix. Amazon's businesses map to
@@ -63,6 +69,7 @@ export function normalizeMerchant(descriptor: string): string {
   for (const [re, name] of KNOWN) if (re.test(s)) return name;
   for (const re of PROCESSOR_PREFIXES) s = s.replace(re, '');
   s = s.replace(LONG_NUMBERS, ' ').replace(/\s+/g, ' ').trim();
+  s = s.replace(STORE_NUMBER, '$1');
   s = stripTrailing(s);
   for (const [re, name] of KNOWN) if (re.test(s)) return name;
   return s === '' ? descriptor.toUpperCase().trim() : s;

@@ -635,3 +635,36 @@ describe('sync plumbing', () => {
     expect((await s.api('GET', '/accounts')).json).toHaveLength(7);
   });
 });
+
+describe('lone transfer legs', () => {
+  it('a card payment whose other side has not arrived can be marked, stops counting, and can be undone', async () => {
+    const s = await setup();
+    const checking = fake([
+      {
+        id: 'chk',
+        name: 'USAA Checking',
+        txns: [{ id: 'c1', date: '2026-09-03', cents: 29_005, desc: 'APPLECARD GSBANK PAYMENT' }],
+      },
+    ]);
+    await runSync(env.DB, s.userId, checking, { now: at('2026-09-04T20:00:00Z') });
+    const id = String((await s.txns())[0]?.id);
+    await s.api('PATCH', `/transactions/${id}`, { categoryId: s.food.id });
+    expect(await s.spent('2026-09', s.food.id)).toBe(29_005);
+
+    const marked = await s.api('POST', `/transactions/${id}/mark-transfer`);
+    expect(marked.json).toMatchObject({
+      isTransfer: true,
+      transferPairId: null,
+      reviewState: 'reviewed',
+    });
+    expect(await s.spent('2026-09', s.food.id)).toBe(0);
+    expect((await s.api('POST', `/transactions/${id}/mark-transfer`)).status).toBe(409);
+
+    const undone = await s.api('DELETE', `/transactions/${id}/transfer-link`);
+    expect(undone.json.items[0]).toMatchObject({ isTransfer: false, reviewState: 'needs_review' });
+    expect(await s.spent('2026-09', s.food.id)).toBe(29_005);
+    expect((await s.api('POST', `/transactions/${crypto.randomUUID()}/mark-transfer`)).status).toBe(
+      404,
+    );
+  });
+});

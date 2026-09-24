@@ -252,7 +252,7 @@ function Toggle({
       className={`relative h-7 w-12 rounded-full transition-colors ${on ? 'bg-sage-600' : 'bg-hairline'}`}
     >
       <span
-        className={`absolute top-0.5 size-6 rounded-full bg-surface shadow-soft transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`}
+        className={`absolute top-0.5 left-0 size-6 rounded-full bg-surface shadow-soft transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`}
       />
     </button>
   );

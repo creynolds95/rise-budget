@@ -1,7 +1,7 @@
 import type { Transaction } from '@rise/shared/schemas';
 import { Link } from 'react-router';
 import { shortDate } from '../lib/dates';
-import { MoneyText } from './primitives/MoneyText';
+import { TxnAmount } from './TxnAmount';
 import { Chevron } from './primitives/Rows';
 
 /** A transaction in a list: a NAV row. Pending shows italic with a P (SPEC §3.2). */
@@ -14,7 +14,6 @@ export function TxnRow({
   categoryName?: string | undefined;
   from?: string;
 }) {
-  const income = t.amountCents < 0;
   return (
     <Link
       to={`/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`}
@@ -45,11 +44,7 @@ export function TxnRow({
         </span>
       </span>
       <span className="flex items-center gap-2">
-        <MoneyText
-          cents={-t.amountCents}
-          sign={income ? 'always' : 'auto'}
-          tone={t.isTransfer ? 'muted' : 'ink'}
-        />
+        <TxnAmount t={t} />
         <Chevron />
       </span>
     </Link>

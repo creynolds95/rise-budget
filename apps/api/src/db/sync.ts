@@ -329,6 +329,31 @@ export function linkTransferStmts(
   return [link(a, b), link(b, a)];
 }
 
+/** A lone transfer leg, reviewed: its other side hasn't arrived (or never will). */
+export function markTransferStmt(userId: UserId, db: D1Database, id: string): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE txn SET is_transfer = 1, transfer_pair_id = NULL, suggested_category_id = NULL,
+         suggestion_confidence = 0, review_state = 'reviewed', updated_at = ?3
+       WHERE user_id = ?1 AND id = ?2`,
+    )
+    .bind(userId, id, nowIso());
+}
+
+/** Undo a lone mark: an ordinary transaction again, back in the queue to be filed. */
+export function unmarkTransferStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE txn SET is_transfer = 0, transfer_pair_id = NULL, review_state = 'needs_review', updated_at = ?3
+       WHERE user_id = ?1 AND id = ?2 AND transfer_pair_id IS NULL`,
+    )
+    .bind(userId, id, nowIso());
+}
+
 export function unlinkTransferStmts(
   userId: UserId,
   db: D1Database,

@@ -51,6 +51,15 @@ export function Chart(
             ))
           : bars(props.bars)}
       </svg>
+      {props.kind === 'bar' && props.bars.length > 0 && (
+        <div aria-hidden className="mt-1 flex type-caption text-ink-faint">
+          {props.bars.map((b) => (
+            <span key={b.label} className="flex-1 text-center">
+              {b.label}
+            </span>
+          ))}
+        </div>
+      )}
       {props.range && props.onRange && <RangeChips value={props.range} onChange={props.onRange} />}
     </figure>
   );

@@ -40,5 +40,10 @@ networth.get('/', async (c) => {
     from,
     to,
   );
-  return c.json({ from, to, points: series });
+  // Before the first balance anyone reported there is no net worth to show — not a $0 one.
+  const included = new Set(accts.filter((a) => a.includeInNetWorth).map((a) => a.id));
+  const first = snaps
+    .filter((s) => included.has(s.account_id))
+    .reduce<string | null>((m, s) => (m === null || s.as_of < m ? s.as_of : m), null);
+  return c.json({ from, to, points: first ? series.filter((p) => p.date >= first) : [] });
 });

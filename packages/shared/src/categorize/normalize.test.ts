@@ -69,6 +69,16 @@ describe('normalizeMerchant', () => {
     expect(normalizeMerchant('#12345')).toBe('#12345');
   });
 
+  it('one merchant across all its locations: store numbers and what follows go', () => {
+    expect(normalizeMerchant('CHIPOTLE 2231')).toBe('CHIPOTLE');
+    expect(normalizeMerchant('CHIPOTLE 0417 TULSA OK')).toBe('CHIPOTLE');
+    expect(normalizeMerchant('ALDI 72031 BROKEN ARROW OK')).toBe('ALDI');
+    expect(normalizeMerchant('TORCHYS TACOS #118 TULSA OK')).toBe('TORCHYS TACOS');
+    expect(normalizeMerchant('7-ELEVEN 34012')).toBe('7-ELEVEN');
+    // Three bare digits are often the name itself.
+    expect(normalizeMerchant('PIZZA 360')).toBe('PIZZA 360');
+  });
+
   it('flags only marketplace as ambiguous', () => {
     expect(isAmbiguousMerchant('Amazon Marketplace')).toBe(true);
     expect(isAmbiguousMerchant('Amazon Prime')).toBe(false);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { confidentCount, groupQueue, type QueueItem } from './review';
+import { chipsFor, confidentCount, groupQueue, transferOffer, type QueueItem } from './review';
 
 let n = 0;
 const txn = (p: Partial<QueueItem>): QueueItem => ({
@@ -89,5 +89,65 @@ describe('review queue grouping (SPEC §8)', () => {
         txn({ suggestedCategoryId: 'c', suggestionConfidence: 0.99, isTransfer: true }),
       ]),
     ).toBe(1);
+  });
+});
+
+describe('one-tap chips before Rise has learned anything', () => {
+  const kinds = new Map<string, 'income' | 'expense'>([
+    ['food', 'expense'],
+    ['gas', 'expense'],
+    ['fun', 'expense'],
+    ['home', 'expense'],
+    ['kids', 'expense'],
+    ['pay', 'income'],
+  ]);
+  const ctx = {
+    kinds,
+    ordered: ['food', 'gas', 'fun', 'home', 'kids', 'pay'],
+    frequent: ['home', 'gas'],
+  };
+  const row = (p: Partial<QueueItem>) => txn({ topCategoryIds: [], ...p });
+
+  it('fills from the merchant, then most-used, then display order', () => {
+    expect(chipsFor(row({ topCategoryIds: ['fun'] }), ctx)).toEqual(['fun', 'home', 'gas', 'food']);
+  });
+  it('skips the pre-filled suggestion, unknown and duplicate ids', () => {
+    expect(
+      chipsFor(row({ topCategoryIds: ['gone', 'gas'], suggestedCategoryId: 'home' }), ctx),
+    ).toEqual(['gas', 'food', 'fun', 'kids']);
+  });
+  it('money in leads with income categories', () => {
+    expect(chipsFor(row({ amountCents: -245_000 }), ctx)[0]).toBe('pay');
+  });
+  it('works with no history at all', () => {
+    expect(chipsFor(row({}), { ...ctx, frequent: [] }, 2)).toEqual(['food', 'gas']);
+  });
+});
+
+describe('transfer offer for a lone leg', () => {
+  it('names card payments, from either side', () => {
+    expect(transferOffer(txn({ descriptorRaw: 'APPLECARD GSBANK PAYMENT' }), 'depository')).toBe(
+      'card_payment',
+    );
+    expect(
+      transferOffer(
+        txn({ descriptorRaw: 'AUTOMATIC PAYMENT - THANK YOU', amountCents: -500 }),
+        'credit',
+      ),
+    ).toBe('card_payment');
+  });
+  it('offers a plain transfer between bank accounts', () => {
+    expect(transferOffer(txn({ descriptorRaw: 'USAA FUNDS TRANSFER DB' }), 'depository')).toBe(
+      'transfer',
+    );
+  });
+  it('stays quiet on purchases, zero rows and rows already linked', () => {
+    expect(transferOffer(txn({ descriptorRaw: 'KROGER #512' }), 'credit')).toBeNull();
+    expect(
+      transferOffer(txn({ descriptorRaw: 'PAYMENT', amountCents: 0 }), 'depository'),
+    ).toBeNull();
+    expect(
+      transferOffer(txn({ descriptorRaw: 'PAYMENT', isTransfer: true }), 'depository'),
+    ).toBeNull();
   });
 });

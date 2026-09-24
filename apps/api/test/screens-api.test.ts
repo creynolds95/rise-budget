@@ -122,5 +122,7 @@ describe('T36 review queue', () => {
       q.items.every((t: { topCategoryIds: string[] }) => t.topCategoryIds[0] === s.eat.id),
     ).toBe(true);
     expect(q.dropped).toHaveLength(1);
+    // Fallback chips for unlearned merchants: the categories actually used lately.
+    expect(q.frequentCategoryIds).toEqual([s.eat.id]);
   });
 });

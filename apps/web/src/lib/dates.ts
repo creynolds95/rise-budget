@@ -37,6 +37,14 @@ export function monthName(period: string, withYear = true): string {
   return withYear ? `${name} ${period.slice(0, 4)}` : name;
 }
 
+/** "2026-09" → "2026-09-30". */
+export function monthEnd(period: string): string {
+  const last = new Date(
+    Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0),
+  ).getUTCDate();
+  return `${period}-${String(last).padStart(2, '0')}`;
+}
+
 export function addMonths(period: string, n: number): string {
   const idx = Number(period.slice(0, 4)) * 12 + Number(period.slice(5, 7)) - 1 + n;
   return `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`;

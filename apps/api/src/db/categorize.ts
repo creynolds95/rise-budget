@@ -267,3 +267,23 @@ export function setSuggestionStmt(
     )
     .bind(userId, txnId, categoryId, confidence);
 }
+
+/** The user's most-used categories lately, most first: one-tap fallbacks before memory exists. */
+export async function frequentCategoryIds(
+  userId: UserId,
+  db: D1Database,
+  since: string,
+  limit: number,
+): Promise<string[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT s.category_id AS id, COUNT(*) AS n FROM split s
+         JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+         JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
+       WHERE s.user_id = ?1 AND t.posted_at >= ?2 AND c.archived_at IS NULL
+       GROUP BY s.category_id ORDER BY n DESC, s.category_id LIMIT ?3`,
+    )
+    .bind(userId, since, limit)
+    .all<{ id: string }>();
+  return results.map((r) => r.id);
+}

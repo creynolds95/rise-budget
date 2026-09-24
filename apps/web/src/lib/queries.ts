@@ -90,8 +90,8 @@ export function useInvalidateMoney() {
   const qc = useQueryClient();
   return () =>
     Promise.all(
-      ['period', 'txns', 'txn', 'accounts', 'recurring', 'networth', 'categories'].map((k) =>
-        qc.invalidateQueries({ queryKey: [k] }),
+      ['period', 'txns', 'txn', 'accounts', 'recurring', 'networth', 'categories', 'groups'].map(
+        (k) => qc.invalidateQueries({ queryKey: [k] }),
       ),
     );
 }
