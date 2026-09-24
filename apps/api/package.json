@@ -8,7 +8,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "migrate:local": "wrangler d1 migrations apply rise --local",
-    "seed:user": "node --experimental-strip-types scripts/seed-user.ts"
+    "seed:user": "node --experimental-strip-types scripts/seed-user.ts",
+    "simplefin:claim": "node --experimental-strip-types scripts/simplefin-claim.ts"
   },
   "dependencies": {
     "@rise/shared": "workspace:*",

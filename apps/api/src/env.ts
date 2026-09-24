@@ -7,6 +7,12 @@ export interface Env {
   RP_ID: string;
   RP_ORIGIN: string;
   RP_NAME: string;
+  /** SimpleFIN access URL from `pnpm simplefin:claim`. Worker Secret; never returned or logged. */
+  SIMPLEFIN_ACCESS_URL?: string;
+  /** "1" in local dev only: sync from the built-in mock bridge instead. */
+  SIMPLEFIN_MOCK?: string;
+  /** Whose data the scheduled sync writes (single-user app). */
+  SIMPLEFIN_OWNER_EMAIL?: string;
 }
 
 export interface AppEnv {

@@ -8,7 +8,9 @@
     "./budget": "./src/budget/index.ts",
     "./schemas": "./src/schemas/index.ts",
     "./networth": "./src/networth/index.ts",
-    "./categorize": "./src/categorize/index.ts"
+    "./categorize": "./src/categorize/index.ts",
+    "./sync": "./src/sync/index.ts",
+    "./import": "./src/import/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

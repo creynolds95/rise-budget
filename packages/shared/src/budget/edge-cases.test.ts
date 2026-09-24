@@ -27,9 +27,7 @@ describe('SPEC §11 edge cases', () => {
     expect(spentFrom([purchase, paymentFromChecking, paymentToCard])).toBe(8_450);
   });
 
-  it.todo(
-    '#4 pending → posted with a different amount updates in place, preserving review state (T28)',
-  );
+  // #4 lives in src/sync/sync.test.ts (planning) and apps/api/test/sync.test.ts (preservation).
 
   it('#5 a transaction posting into a closed period flags it and recalculates nothing', () => {
     const sept = { status: 'closed' as const, needsRecalc: false, recalcDeltaCents: 0 };
@@ -205,7 +203,7 @@ describe('SPEC §11 edge cases', () => {
     ).toEqual({ ok: false, code: 'SPLITS_DO_NOT_SUM', expectedCents: 10_000, actualCents: 9_999 });
   });
 
-  it.todo('#12 a repeated sync over the same window inserts zero rows (T27)');
+  // #12 lives in src/sync/sync.test.ts and apps/api/test/sync.test.ts.
 
   it('#13 a refund reduces spent and may push remaining positive', () => {
     const spent = spentFrom([

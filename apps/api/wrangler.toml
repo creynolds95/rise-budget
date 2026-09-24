@@ -14,4 +14,11 @@ migrations_dir = "migrations"
 RP_ID = "localhost"
 RP_ORIGIN = "http://localhost:5173"
 RP_NAME = "Rise"
-# Secrets (never here): JWT_SECRET, TOTP_KEY — `wrangler secret put`, or .dev.vars locally.
+# Whose data the scheduled sync writes. Set at deploy (T47).
+SIMPLEFIN_OWNER_EMAIL = ""
+# Secrets (never here): JWT_SECRET, TOTP_KEY, SIMPLEFIN_ACCESS_URL (`pnpm simplefin:claim`) —
+# `wrangler secret put`, or .dev.vars locally. SIMPLEFIN_MOCK=1 belongs in .dev.vars only.
+
+[triggers]
+# SimpleFIN sync 3× daily (ARCHITECTURE §6).
+crons = ["0 8,14,22 * * *"]

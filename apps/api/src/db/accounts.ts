@@ -169,7 +169,17 @@ export async function putSnapshot(
   accountId: string,
   s: { asOf: string; balanceCents: number; source: 'manual' | 'sync' },
 ): Promise<void> {
-  await db.batch([
+  await db.batch(putSnapshotStmts(userId, db, accountId, s));
+}
+
+/** A snapshot, and the account's current balance if this is its latest one. */
+export function putSnapshotStmts(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+  s: { asOf: string; balanceCents: number; source: 'manual' | 'sync' },
+): D1PreparedStatement[] {
+  return [
     db
       .prepare(
         `INSERT INTO balance_snapshot (id, user_id, account_id, as_of, balance_cents, source, created_at)
@@ -184,7 +194,7 @@ export async function putSnapshot(
          AND NOT EXISTS (SELECT 1 FROM balance_snapshot WHERE user_id = ?1 AND account_id = ?2 AND as_of > ?4)`,
       )
       .bind(userId, accountId, s.balanceCents, s.asOf),
-  ]);
+  ];
 }
 
 export async function listSnapshots(

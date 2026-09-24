@@ -63,7 +63,7 @@ const toTransaction = (r: TxnRow, splits: SplitRow[]): Transaction =>
     updatedAt: r.updated_at,
   });
 
-async function splitsFor(
+export async function splitsFor(
   userId: UserId,
   db: D1Database,
   txnIds: string[],
@@ -256,19 +256,29 @@ export async function replaceSplits(
     db
       .prepare('UPDATE txn SET updated_at = ?3 WHERE user_id = ?1 AND id = ?2')
       .bind(userId, txn.id, nowIso()),
-    ...(counts
-      ? [
-          db
-            .prepare(
-              `UPDATE period SET needs_recalc = 1, recalc_delta_cents = recalc_delta_cents + ?3
-               WHERE user_id = ?1 AND id = ?2 AND status = 'closed'`,
-            )
-            .bind(userId, periodId, delta),
-        ]
-      : []),
+    ...(counts ? [flagClosedPeriodStmt(userId, db, periodId, delta)] : []),
     ...refreshAggregateStmts(userId, db, periodId),
   ]);
   return true;
+}
+
+/**
+ * Splits changed in a period, moving its total by `deltaCents` (a recategorisation moves 0
+ * but still changes carry). If it's closed, flag it and accumulate the delta — nothing is
+ * recalculated (SPEC §2.5, edge 5). A no-op for open periods.
+ */
+export function flagClosedPeriodStmt(
+  userId: UserId,
+  db: D1Database,
+  periodId: string,
+  deltaCents: number,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE period SET needs_recalc = 1, recalc_delta_cents = recalc_delta_cents + ?3
+       WHERE user_id = ?1 AND id = ?2 AND status = 'closed'`,
+    )
+    .bind(userId, periodId, deltaCents);
 }
 
 export async function categoryIdsExist(

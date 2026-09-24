@@ -180,6 +180,23 @@ export function putMerchantMetaStmt(
     );
 }
 
+export async function displayNamesFor(
+  userId: UserId,
+  db: D1Database,
+  merchants: string[],
+): Promise<Map<string, string>> {
+  if (merchants.length === 0) return new Map();
+  const { results } = await db
+    .prepare(
+      `SELECT merchant_normalized, display_name FROM merchant_meta
+       WHERE user_id = ?1 AND display_name IS NOT NULL
+         AND merchant_normalized IN (SELECT value FROM json_each(?2))`,
+    )
+    .bind(userId, JSON.stringify([...new Set(merchants)]))
+    .all<{ merchant_normalized: string; display_name: string }>();
+  return new Map(results.map((r) => [r.merchant_normalized, r.display_name]));
+}
+
 /** A rename applies to every past transaction too (SPEC §4.7). */
 export function renameMerchantTxnsStmt(
   userId: UserId,

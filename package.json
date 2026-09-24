@@ -13,7 +13,8 @@
     "test": "pnpm -r test",
     "coverage": "pnpm -r coverage",
     "dev": "pnpm -r --parallel dev",
-    "seed:user": "pnpm --filter @rise/api seed:user"
+    "seed:user": "pnpm --filter @rise/api seed:user",
+    "simplefin:claim": "pnpm --filter @rise/api simplefin:claim"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

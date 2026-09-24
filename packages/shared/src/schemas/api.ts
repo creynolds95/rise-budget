@@ -102,6 +102,11 @@ export const BulkAcceptBody = z.union([
 
 export const TransferLinkBody = z.object({ otherTxnId: Id });
 
+export const RunSyncBody = z.object({
+  /** Backfill from this date instead of the usual window. */
+  since: IsoDate.optional(),
+});
+
 export const PatchPeriodBody = z.object({ expectedIncomeCents: Cents.nonnegative() });
 
 export const ClosePeriodBody = z.object({

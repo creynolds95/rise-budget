@@ -10,7 +10,12 @@ import { merchants, rules } from './routes/rules';
 import { me } from './routes/me';
 import { networth } from './routes/networth';
 import { allocations, periods } from './routes/periods';
+import { sync } from './routes/sync';
 import { transactions } from './routes/transactions';
+import { findUserIdByEmail } from './db';
+import type { Env } from './env';
+import { runSync } from './sync/run';
+import { sourceFromEnv } from './sync/source';
 
 export const app = new Hono<AppEnv>();
 
@@ -31,10 +36,19 @@ app.route('/merchants', merchants);
 app.route('/periods', periods);
 app.route('/allocations', allocations);
 app.route('/transactions', transactions);
+app.route('/sync', sync);
 
 app.notFound((c) =>
   c.json(errorBody('NOT_FOUND', `No route for ${c.req.method} ${c.req.path}`), 404),
 );
 app.onError(renderError);
 
-export default app;
+/** Cron (ARCHITECTURE §6): 3× daily. Single-user, so it syncs the configured owner. */
+export async function scheduled(_event: ScheduledController, env: Env): Promise<void> {
+  const source = sourceFromEnv(env);
+  if (!source || !env.SIMPLEFIN_OWNER_EMAIL) return;
+  const userId = await findUserIdByEmail(env.DB, env.SIMPLEFIN_OWNER_EMAIL);
+  if (userId) await runSync(env.DB, userId, source);
+}
+
+export default { fetch: app.fetch, scheduled } satisfies ExportedHandler<Env>;

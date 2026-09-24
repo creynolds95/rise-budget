@@ -6,18 +6,23 @@ import {
   PatchTransactionBody,
   ReplaceSplitsBody,
   TransactionQuery,
+  TransferLinkBody,
   type RuleOffer,
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
   categoryIdsExist,
+  countingChangeStmts,
   getAccount,
   getTransaction,
   getTransactionRow,
   insertManualTransaction,
   listAcceptable,
   listTransactions,
+  linkTransferStmts,
   replaceSplits,
+  splitsFor,
+  unlinkTransferStmts,
   updateTransactionFields,
   type TxnRow,
 } from '../db';
@@ -194,4 +199,57 @@ transactions.post('/bulk-accept', async (c) => {
     });
   }
   return c.json({ accepted: rows.map((r) => r.id) });
+});
+
+/**
+ * Link two rows as a transfer by hand (SPEC §3.3) — typically a medium-confidence pair,
+ * like checking → savings. Both legs stop counting as spending.
+ */
+transactions.post('/:id/transfer-link', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const { otherTxnId } = await body(c, TransferLinkBody);
+  const [a, b] = await Promise.all([
+    getTransactionRow(userId, db, c.req.param('id')),
+    getTransactionRow(userId, db, otherTxnId),
+  ]);
+  if (!a || !b) throw notFound();
+  if (a.account_id === b.account_id)
+    throw new AppError(422, 'BAD_REQUEST', 'A transfer moves money between two accounts');
+  if (a.amount_cents !== -b.amount_cents || a.amount_cents === 0)
+    throw new AppError(
+      422,
+      'BAD_REQUEST',
+      'The two sides of a transfer must be equal and opposite',
+    );
+  if (a.transfer_pair_id || b.transfer_pair_id)
+    throw new AppError(409, 'CONFLICT', 'Already linked to another transaction');
+  const splits = await splitsFor(userId, db, [a.id, b.id]);
+  await db.batch([
+    ...countingChangeStmts(userId, db, a, splits.get(a.id) ?? [], false),
+    ...countingChangeStmts(userId, db, b, splits.get(b.id) ?? [], false),
+    ...linkTransferStmts(userId, db, a.id, b.id),
+  ]);
+  return c.json({
+    items: [await getTransaction(userId, db, a.id), await getTransaction(userId, db, b.id)],
+  });
+});
+
+/** Unlink: both legs go back to being ordinary transactions. */
+transactions.delete('/:id/transfer-link', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const a = await getTransactionRow(userId, db, c.req.param('id'));
+  if (!a) throw notFound();
+  const b = a.transfer_pair_id ? await getTransactionRow(userId, db, a.transfer_pair_id) : null;
+  if (!b) throw new AppError(409, 'CONFLICT', 'Not linked as a transfer');
+  const splits = await splitsFor(userId, db, [a.id, b.id]);
+  await db.batch([
+    ...countingChangeStmts(userId, db, a, splits.get(a.id) ?? [], true),
+    ...countingChangeStmts(userId, db, b, splits.get(b.id) ?? [], true),
+    ...unlinkTransferStmts(userId, db, a.id, b.id),
+  ]);
+  return c.json({
+    items: [await getTransaction(userId, db, a.id), await getTransaction(userId, db, b.id)],
+  });
 });
