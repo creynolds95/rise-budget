@@ -28,6 +28,7 @@ interface CategoryRow {
   sort_order: number;
   plan_default_cents: number | null;
   plan_default_from: string | null;
+  is_catchall: number;
 }
 
 const toGroup = (r: GroupRow): CategoryGroup =>
@@ -47,6 +48,7 @@ const toCategory = (r: CategoryRow): Category =>
     sortOrder: r.sort_order,
     planDefaultCents: r.plan_default_cents,
     planDefaultFrom: r.plan_default_from,
+    isCatchall: r.is_catchall === 1,
   });
 
 /** The category's plan default in the engine's shape, if it has one (SPEC §2.9). */
@@ -112,6 +114,55 @@ export async function getCategory(
     .bind(userId, id)
     .first<CategoryRow>();
   return row ? toCategory(row) : null;
+}
+
+export async function getCatchallCategory(
+  userId: UserId,
+  db: D1Database,
+): Promise<Category | null> {
+  const row = await db
+    .prepare('SELECT * FROM category WHERE user_id = ?1 AND is_catchall = 1')
+    .bind(userId)
+    .first<CategoryRow>();
+  return row ? toCategory(row) : null;
+}
+
+/**
+ * H1: every user always has exactly one "Other" category to fall back to, so a transaction
+ * is never left without one — even a merchant with zero signal still lands somewhere real.
+ * Lazily created on first use rather than at signup, since not every user reaches this path.
+ */
+export async function ensureCatchallCategory(userId: UserId, db: D1Database): Promise<Category> {
+  const existing = await getCatchallCategory(userId, db);
+  if (existing) return existing;
+  let group = await db
+    .prepare(`SELECT id FROM category_group WHERE user_id = ?1 AND name = 'Other'`)
+    .bind(userId)
+    .first<{ id: string }>();
+  if (!group) {
+    const groupId = newId();
+    await db
+      .prepare(
+        'INSERT INTO category_group (id, user_id, name, kind, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)',
+      )
+      .bind(groupId, userId, 'Other', 'expense', 999)
+      .run();
+    group = { id: groupId };
+  }
+  try {
+    const id = newId();
+    await db
+      .prepare(
+        'INSERT INTO category (id, user_id, group_id, name, is_catchall) VALUES (?1, ?2, ?3, ?4, 1)',
+      )
+      .bind(id, userId, group.id, 'Other')
+      .run();
+    return (await getCategory(userId, db, id)) as Category;
+  } catch {
+    // Lost a race with another call creating it at the same time; the partial unique index
+    // rejected this insert, so it already exists — use that one.
+    return (await getCatchallCategory(userId, db)) as Category;
+  }
 }
 
 export async function createCategory(

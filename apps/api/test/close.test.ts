@@ -140,6 +140,31 @@ describe('T20 period close', () => {
     expect(out.status).toBe(409);
     expect(out.json.error.message).toContain('2026-06');
   });
+
+  // H2: a month nobody ever set income or a plan for has no `period` row at all, but a synced
+  // charge can still land in it. Closing past it must not skip it, and it must still be
+  // closeable afterward — not locked out because the month after it is already closed.
+  it('blocks closing past an untouched month that still has real spending', async () => {
+    const s = await setup();
+    await spend(s.userId, s.eat.id, 2_000, '2026-06-15');
+    const blocked = await s.api('POST', '/periods/2026-07/close', {});
+    expect(blocked.status).toBe(409);
+    expect(blocked.json.error.message).toContain('2026-06');
+
+    const june = await s.api('POST', '/periods/2026-06/close', {});
+    expect(june.status).toBe(200);
+    expect(june.json.alreadyClosed).toBe(false);
+    const july = await s.api('POST', '/periods/2026-07/close', {});
+    expect(july.status).toBe(200);
+  });
+
+  it('lets close skip past a month with truly nothing in it', async () => {
+    const s = await setup();
+    const out = await s.api('POST', '/periods/2026-07/close', {});
+    expect(out.status).toBe(200);
+    // June was never touched and never closed — that's fine, since it never had anything in it.
+    expect((await s.api('GET', '/periods/2026-06')).json.period.status).toBe('open');
+  });
 });
 
 describe('T20 recalculate', () => {

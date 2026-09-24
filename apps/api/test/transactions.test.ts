@@ -33,16 +33,32 @@ const spentIn = async (s: Awaited<ReturnType<typeof setup>>, period: string, cat
   ).spentCents;
 
 describe('T21 transactions & splits', () => {
-  it('manual entry normalises the merchant; uncategorised money counts nowhere', async () => {
+  it('manual entry normalises the merchant; a category with no signal still gets one (H1)', async () => {
     const s = await setup();
     const t = await s.add('2026-09-05', 4_599);
     expect(t.status).toBe(201);
     expect(t.json).toMatchObject({
       merchantNormalized: 'Amazon Marketplace',
-      reviewState: 'reviewed',
-      splits: [],
+      // No rule, memory, or recurring match for this merchant — falls back to the catch-all,
+      // but it's never left categoryless, and it counts as real spending right away.
+      reviewState: 'needs_review',
+      splits: [{ amountCents: 4_599 }],
     });
+    const other = (await s.api('GET', '/category-groups')).json.find(
+      (g: { name: string }) => g.name === 'Other',
+    );
+    expect(other).toBeTruthy();
     expect(await spentIn(s, '2026-09', s.home.id)).toBe(0);
+  });
+
+  it('picking a category by hand on manual entry is reviewed on the spot', async () => {
+    const s = await setup();
+    const t = await s.add('2026-09-05', 4_599, undefined, s.home.id);
+    expect(t.json).toMatchObject({
+      reviewState: 'reviewed',
+      splits: [{ categoryId: s.home.id, amountCents: 4_599 }],
+    });
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(4_599);
   });
 
   it('setting a category is one implicit split of the whole amount', async () => {
@@ -73,7 +89,10 @@ describe('T21 transactions & splits', () => {
       code: 'SPLITS_DO_NOT_SUM',
       detail: { expectedCents: 10_000, actualCents: 9_999 },
     });
-    expect((await s.api('GET', `/transactions/${t.json.id}`)).json.splits).toEqual([]);
+    // Rejected — the original auto-guess split (H1) is untouched, not wiped.
+    expect((await s.api('GET', `/transactions/${t.json.id}`)).json.splits).toMatchObject([
+      { amountCents: 10_000 },
+    ]);
 
     const ok = await s.api('POST', `/transactions/${t.json.id}/splits`, {
       splits: [

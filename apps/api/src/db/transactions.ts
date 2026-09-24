@@ -205,6 +205,8 @@ export async function insertManualTransaction(
     descriptor: string;
     merchant: string;
     notes: string | null;
+    /** H1: 'reviewed' when the user picked a category by hand, 'needs_review' for a guess. */
+    reviewState: ReviewState;
   },
 ): Promise<string> {
   const id = newId();
@@ -213,7 +215,7 @@ export async function insertManualTransaction(
     .prepare(
       `INSERT INTO txn (id, user_id, account_id, posted_at, amount_cents, descriptor_raw, merchant_normalized, notes,
          review_state, source, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'reviewed', 'manual', ?9, ?9)`,
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'manual', ?10, ?10)`,
     )
     .bind(
       id,
@@ -224,6 +226,7 @@ export async function insertManualTransaction(
       t.descriptor,
       t.merchant,
       t.notes,
+      t.reviewState,
       now,
     )
     .run();

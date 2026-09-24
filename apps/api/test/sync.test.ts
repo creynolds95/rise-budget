@@ -116,13 +116,14 @@ describe('T27 SimpleFIN sync', () => {
       includeInBudget: false,
       syncCadenceHours: 720,
     });
-    // Everything new waits for review; nothing is categorised.
+    // Everything new waits for review, but every row already has a real category (H1) — a
+    // guess, even if wrong, never nothing.
     const rows = await s.txns();
     expect(rows.every((t) => t.review_state === 'needs_review')).toBe(true);
     const splits = await env.DB.prepare('SELECT COUNT(*) AS n FROM split WHERE user_id = ?1')
       .bind(s.userId)
       .first<{ n: number }>();
-    expect(splits?.n).toBe(0);
+    expect(splits?.n).toBe(rows.length);
   });
 
   it('#12 re-running over the same window inserts zero rows (edge 12)', async () => {

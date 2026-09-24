@@ -1,4 +1,4 @@
-import { validateSplits } from '@rise/shared/budget';
+import { periodOf, validateSplits } from '@rise/shared/budget';
 import { normalizeMerchant } from '@rise/shared/categorize';
 import {
   BulkAcceptBody,
@@ -11,14 +11,20 @@ import {
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
+  bumpMemoryStmt,
   categoryIdsExist,
   countingChangeStmts,
+  ensureCatchallCategory,
+  flagClosedPeriodStmt,
   getAccount,
   getTransaction,
   getTransactionRow,
   insertManualTransaction,
   listAcceptable,
   listTransactions,
+  newId,
+  nowIso,
+  refreshAggregateStmts,
   sortKey,
   linkTransferStmts,
   replaceSplits,
@@ -30,7 +36,7 @@ import {
   type TxnRow,
 } from '../db';
 import type { AppEnv } from '../env';
-import { recordManualCategorisation } from '../lib/categorize';
+import { recordManualCategorisation, refreshSuggestions, suggestFor } from '../lib/categorize';
 import { b64urlDecode, b64urlEncode } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { body } from '../lib/validate';
@@ -91,35 +97,46 @@ transactions.get('/:id', async (c) => {
   return c.json(t);
 });
 
-/** Manual entry. Entered by hand, so already reviewed. */
+/**
+ * Manual entry. Picking a category by hand is reviewed on the spot. Leaving it blank still
+ * gets a real category (H1) — the same best guess sync would make, or the catch-all — so it
+ * counts as real spending immediately; it waits in the review queue like any other guess.
+ */
 transactions.post('/', async (c) => {
   const userId = c.get('userId');
+  const db = c.env.DB;
   const b = await body(c, CreateTransactionBody);
-  if (!(await getAccount(userId, c.env.DB, b.accountId)))
+  if (!(await getAccount(userId, db, b.accountId)))
     throw new AppError(400, 'BAD_REQUEST', 'Unknown account');
-  if (b.categoryId && !(await categoryIdsExist(userId, c.env.DB, [b.categoryId]))) {
+  if (b.categoryId && !(await categoryIdsExist(userId, db, [b.categoryId]))) {
     throw new AppError(400, 'BAD_REQUEST', 'Unknown category');
   }
-  const id = await insertManualTransaction(userId, c.env.DB, {
+  const merchant = normalizeMerchant(b.descriptor);
+  const categoryId =
+    b.categoryId ??
+    (await suggestFor(db, userId, [{ id: 'draft', descriptor: b.descriptor, merchant }])).get(
+      'draft',
+    )?.categoryId ??
+    (await ensureCatchallCategory(userId, db)).id;
+  const id = await insertManualTransaction(userId, db, {
     accountId: b.accountId,
     postedAt: b.postedAt,
     amountCents: b.amountCents,
     descriptor: b.descriptor,
-    merchant: normalizeMerchant(b.descriptor),
+    merchant,
     notes: b.notes ?? null,
+    reviewState: b.categoryId ? 'reviewed' : 'needs_review',
   });
+  const row = await getTransactionRow(userId, db, id);
+  if (!row) throw notFound();
+  await replaceSplits(userId, db, row, [{ categoryId, amountCents: b.amountCents }]);
   if (b.categoryId) {
-    const row = await getTransactionRow(userId, c.env.DB, id);
-    if (!row) throw notFound();
-    await replaceSplits(userId, c.env.DB, row, [
-      { categoryId: b.categoryId, amountCents: b.amountCents },
-    ]);
     // Entered by hand, so it teaches memory, but a rule offer belongs to the review flow.
-    await recordManualCategorisation(c.env.DB, userId, txnRef(row), b.categoryId, {
+    await recordManualCategorisation(db, userId, txnRef(row), b.categoryId, {
       countTowardOffer: false,
     });
   }
-  return c.json(await getTransaction(userId, c.env.DB, id), 201);
+  return c.json(await getTransaction(userId, db, id), 201);
 });
 
 /** Setting `categoryId` makes the transaction one split of its whole amount (SPEC §3.5). */
@@ -190,21 +207,71 @@ transactions.post('/:id/splits', async (c) => {
  * Accept stored suggestions: by id (a swipe on a pre-filled row) or every suggestion at or
  * above 0.90 (SPEC §8 "Accept all confident"). The user's tap is the confirmation. Accepting
  * teaches memory but doesn't count toward a rule offer.
+ *
+ * `listAcceptable` only ever returns rows with a live suggested category (it joins on
+ * `category`), so every row here is accepted. Batched into one `db.batch` plus one
+ * `refreshSuggestions` per distinct merchant, instead of ~5 round trips per row — the "accept
+ * all confident" tap can cover hundreds of rows. The merchant-meta write `replaceSplits`'s
+ * sibling path (`recordManualCategorisation` with `countTowardOffer: false`) would otherwise
+ * do is skipped: with `countTowardOffer: false` it always writes back the same meta it read,
+ * a no-op.
  */
 transactions.post('/bulk-accept', async (c) => {
   const userId = c.get('userId');
   const db = c.env.DB;
   const by = await body(c, BulkAcceptBody);
   const rows = await listAcceptable(userId, db, by);
+  if (rows.length === 0) return c.json({ accepted: [] });
+
+  const oldSplits = await splitsFor(
+    userId,
+    db,
+    rows.map((r) => r.id),
+  );
+  const now = nowIso();
+  const periods = new Set<string>();
+  const merchants = new Set<string>();
+  const stmts: D1PreparedStatement[] = [];
+
   for (const row of rows) {
     const categoryId = row.suggested_category_id;
     if (!categoryId) continue;
-    await replaceSplits(userId, db, row, [{ categoryId, amountCents: row.amount_cents }]);
-    await updateTransactionFields(userId, db, row.id, { reviewState: 'reviewed' });
-    await recordManualCategorisation(db, userId, txnRef(row), categoryId, {
-      countTowardOffer: false,
-    });
+    const periodId = periodOf(row.posted_at);
+    periods.add(periodId);
+    merchants.add(row.merchant_normalized);
+
+    const old = oldSplits.get(row.id) ?? [];
+    const same =
+      old.length === 1 &&
+      old[0]?.category_id === categoryId &&
+      old[0]?.amount_cents === row.amount_cents;
+    if (!same) {
+      const counts = row.is_transfer === 0 && row.review_state !== 'dropped';
+      const delta = row.amount_cents - old.reduce((n, s) => n + s.amount_cents, 0);
+      stmts.push(
+        db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, row.id),
+        db
+          .prepare(
+            'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)',
+          )
+          .bind(newId(), userId, row.id, categoryId, row.amount_cents, periodId),
+      );
+      if (counts) stmts.push(flagClosedPeriodStmt(userId, db, periodId, delta));
+    }
+    stmts.push(
+      db
+        .prepare(
+          "UPDATE txn SET review_state = 'reviewed', updated_at = ?3 WHERE user_id = ?1 AND id = ?2",
+        )
+        .bind(userId, row.id, now),
+      bumpMemoryStmt(userId, db, row.merchant_normalized, categoryId),
+    );
   }
+  for (const periodId of periods) stmts.push(...refreshAggregateStmts(userId, db, periodId));
+
+  await db.batch(stmts);
+  for (const merchant of merchants) await refreshSuggestions(db, userId, merchant);
+
   return c.json({ accepted: rows.map((r) => r.id) });
 });
 

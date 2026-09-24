@@ -49,6 +49,7 @@ import {
   readRefreshCookie,
   refreshExpiry,
   requireAuth,
+  requireStepUp,
   setRefreshCookie,
 } from '../lib/session';
 import {
@@ -58,6 +59,7 @@ import {
   parseRefresh,
   signAccess,
   signChallenge,
+  signStepUp,
   verifyChallenge,
   verifyRegistration,
 } from '../lib/tokens';
@@ -82,7 +84,7 @@ async function registeringUser(c: Context<AppEnv>, token?: string) {
   return reg.userId;
 }
 
-auth.post('/passkey/register/options', optionalAuth, async (c) => {
+auth.post('/passkey/register/options', optionalAuth, requireStepUp, async (c) => {
   const { registrationToken } = await body(c, RegisterOptionsBody);
   const userId = await registeringUser(c, registrationToken);
   const user = await getUser(userId, c.env.DB);
@@ -186,6 +188,42 @@ auth.post('/passkey/login/verify', async (c) => {
   return issueSession(c, userId);
 });
 
+/**
+ * H4: re-verify a passkey without starting a whole new session — for stepping up an already
+ * signed-in session before a sensitive change (enabling TOTP, generating recovery codes,
+ * adding another passkey). Reuses `/passkey/login/options` for the challenge.
+ */
+auth.post('/passkey/stepup/verify', requireAuth, async (c) => {
+  const userId = c.get('userId');
+  const b = await body(c, LoginVerifyBody);
+  const ch = await verifyChallenge(c.env, b.challengeToken, 'login');
+  if (!ch) throw unauthorized('Verification expired — try again');
+  const response = b.response as unknown as AuthenticationResponseJSON;
+  const cred = await getCredential(userId, c.env.DB, response.id);
+  if (!cred) throw unauthorized('Passkey could not be verified');
+  let result;
+  try {
+    result = await verifyAuthenticationResponse({
+      response,
+      expectedChallenge: ch.challenge,
+      expectedOrigin: c.env.RP_ORIGIN,
+      expectedRPID: c.env.RP_ID,
+      credential: {
+        id: cred.id,
+        publicKey: new Uint8Array(cred.public_key),
+        counter: cred.counter,
+        transports: cred.transports ? JSON.parse(cred.transports) : [],
+      },
+      requireUserVerification: true,
+    });
+  } catch {
+    throw unauthorized('Passkey could not be verified');
+  }
+  if (!result.verified) throw unauthorized('Passkey could not be verified');
+  await touchCredential(userId, c.env.DB, cred.id, result.authenticationInfo.newCounter);
+  return c.json({ stepUp: await signStepUp(c.env, userId) });
+});
+
 // ── TOTP + recovery fallback ──────────────────────────────────────────────────
 
 async function fallbackUser(c: Context<AppEnv>, email: string) {
@@ -278,7 +316,7 @@ auth.post('/logout', async (c) => {
 
 // ── signed-in setup of the fallbacks ──────────────────────────────────────────
 
-auth.post('/totp/setup', requireAuth, async (c) => {
+auth.post('/totp/setup', requireAuth, requireStepUp, async (c) => {
   const userId = c.get('userId');
   const user = await getUser(userId, c.env.DB);
   if (!user) throw unauthorized();
@@ -287,7 +325,7 @@ auth.post('/totp/setup', requireAuth, async (c) => {
   return c.json({ otpauthUri: otpauthUri(secret, user.email, c.env.RP_NAME), secret });
 });
 
-auth.post('/totp/confirm', requireAuth, async (c) => {
+auth.post('/totp/confirm', requireAuth, requireStepUp, async (c) => {
   const userId = c.get('userId');
   const { code } = await body(c, TotpConfirmBody);
   const row = await getTotp(userId, c.env.DB);
@@ -301,7 +339,7 @@ auth.post('/totp/confirm', requireAuth, async (c) => {
 });
 
 /** Generates 10 fresh codes, invalidating any previous set. Shown once; stored hashed. */
-auth.post('/recovery/generate', requireAuth, async (c) => {
+auth.post('/recovery/generate', requireAuth, requireStepUp, async (c) => {
   const userId = c.get('userId');
   const codes = Array.from({ length: 10 }, () => {
     const raw = b64urlEncode(randomBytes(8)).replace(/[-_]/g, 'X').slice(0, 10).toUpperCase();

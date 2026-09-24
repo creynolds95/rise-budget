@@ -73,10 +73,38 @@ describe('T14 passkeys + sessions', () => {
     expect(again.status).toBe(401);
   });
 
+  it('H4: adding a device needs a moments-old step-up, not just the access token', async () => {
+    const u = await signedInUser();
+    const noStepUp = await call('POST', '/auth/passkey/register/options', {
+      access: u.access,
+      body: {},
+    });
+    expect(noStepUp.status).toBe(401);
+    expect(noStepUp.json.error.code).toBe('STEP_UP_REQUIRED');
+
+    // A fresh passkey re-verification mints one that works.
+    const opts = await call('POST', '/auth/passkey/login/options');
+    const verify = await call('POST', '/auth/passkey/stepup/verify', {
+      access: u.access,
+      body: {
+        challengeToken: opts.json.challengeToken,
+        response: await u.device.login(opts.json.options),
+      },
+    });
+    expect(verify.status).toBe(200);
+    const ok = await call('POST', '/auth/passkey/register/options', {
+      access: u.access,
+      headers: { 'x-step-up': verify.json.stepUp },
+      body: {},
+    });
+    expect(ok.status).toBe(200);
+  });
+
   it('a signed-in user can add a second device, excluding existing ones', async () => {
     const u = await signedInUser();
     const opts = await call('POST', '/auth/passkey/register/options', {
       access: u.access,
+      headers: { 'x-step-up': u.stepUp },
       body: {},
     });
     expect(opts.json.options.excludeCredentials).toHaveLength(1);
@@ -103,6 +131,7 @@ describe('T14 passkeys + sessions', () => {
     const u = await signedInUser();
     const regOpts = await call('POST', '/auth/passkey/register/options', {
       access: u.access,
+      headers: { 'x-step-up': u.stepUp },
       body: {},
     });
     const res = await call('POST', '/auth/passkey/login/verify', {
@@ -129,7 +158,8 @@ describe('T14 passkeys + sessions', () => {
 describe('T15 TOTP, recovery codes, provisioning', () => {
   it('TOTP: setup → confirm → sign in; secret stored encrypted', async () => {
     const u = await signedInUser();
-    const setup = await call('POST', '/auth/totp/setup', { access: u.access });
+    const stepUp = { 'x-step-up': u.stepUp };
+    const setup = await call('POST', '/auth/totp/setup', { access: u.access, headers: stepUp });
     expect(setup.json.otpauthUri).toMatch(/^otpauth:\/\/totp\//);
     const secret = setup.json.secret as string;
 
@@ -143,6 +173,7 @@ describe('T15 TOTP, recovery codes, provisioning', () => {
       (
         await call('POST', '/auth/totp/confirm', {
           access: u.access,
+          headers: stepUp,
           body: { code: await totpAt(secret, Date.now()) },
         })
       ).status,
@@ -161,9 +192,11 @@ describe('T15 TOTP, recovery codes, provisioning', () => {
 
   it('TOTP: locks out after 5 failures in 15 minutes', async () => {
     const u = await signedInUser();
-    const { json } = await call('POST', '/auth/totp/setup', { access: u.access });
+    const stepUp = { 'x-step-up': u.stepUp };
+    const { json } = await call('POST', '/auth/totp/setup', { access: u.access, headers: stepUp });
     await call('POST', '/auth/totp/confirm', {
       access: u.access,
+      headers: stepUp,
       body: { code: await totpAt(json.secret, Date.now()) },
     });
     for (let i = 0; i < 5; i++) {
@@ -181,7 +214,10 @@ describe('T15 TOTP, recovery codes, provisioning', () => {
 
   it('recovery codes are single-use and stored hashed', async () => {
     const u = await signedInUser();
-    const gen = await call('POST', '/auth/recovery/generate', { access: u.access });
+    const gen = await call('POST', '/auth/recovery/generate', {
+      access: u.access,
+      headers: { 'x-step-up': u.stepUp },
+    });
     const codes = gen.json.codes as string[];
     expect(codes).toHaveLength(10);
 

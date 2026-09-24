@@ -27,6 +27,7 @@ import {
   getPeriod,
   getUser,
   listPeriodsFrom,
+  periodHasActivity,
   writeAudit,
   insertReallocationStmt,
   listAllocations,
@@ -89,14 +90,18 @@ periods.post('/:id/close', async (c) => {
   ]);
   const today = localToday(user?.timezone ?? 'America/Chicago');
 
-  // Close in order: a later month's carry-in depends on this one, and a closed month is never restated.
+  // Close in order: a later month's carry-in depends on this one, and a closed month is never
+  // restated. A month with no row is untouched (blankPeriod semantics), not closed — unless it
+  // truly has nothing in it (no row, no spending), in which case there's nothing to skip past.
   if (input.status === 'open') {
+    const prevId = prevPeriod(id);
     const [prev, next] = await Promise.all([
-      getPeriod(userId, db, prevPeriod(id)),
+      getPeriod(userId, db, prevId),
       getPeriod(userId, db, nextPeriod(id)),
     ]);
-    if (prev?.status === 'open' && hasEnded(prev.id, today)) {
-      throw new AppError(409, 'CONFLICT', `Close ${prev.id} first`);
+    const prevActivity = prev !== null || (await periodHasActivity(userId, db, prevId));
+    if (prev?.status !== 'closed' && prevActivity && hasEnded(prevId, today)) {
+      throw new AppError(409, 'CONFLICT', `Close ${prevId} first`);
     }
     if (next?.status === 'closed')
       throw new AppError(409, 'CONFLICT', `${next.id} is already closed`);

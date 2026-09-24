@@ -199,7 +199,8 @@ describe('T46 export', () => {
     expect(lines[0]).toBe(
       'Date,Account,Merchant,Category,Amount,Status,Notes,Original description',
     );
-    expect(lines[1]).toMatch(/^2026-09-15,"Cash","[^"]*","",2500\.00,Posted,"","PAYROLL"$/);
+    // No rule/memory for "PAYROLL" — H1 falls back to the catch-all category, never blank.
+    expect(lines[1]).toMatch(/^2026-09-15,"Cash","[^"]*","Other",2500\.00,Posted,"","PAYROLL"$/);
     expect(lines[2]).toMatch(
       /^2026-09-12,"Cash",".*","Groceries",-42\.31,Posted,"","'=HYPERLINK\(""x""\) O'BRIEN'S\nMARKET ☕"$/,
     );

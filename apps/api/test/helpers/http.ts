@@ -58,6 +58,7 @@ export async function signedInUser() {
     email,
     device,
     access: login.json.access as string,
+    stepUp: login.json.stepUp as string,
     cookie: refreshCookie(login.headers),
   };
 }

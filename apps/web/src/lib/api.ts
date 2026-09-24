@@ -110,6 +110,8 @@ export interface RequestOptions {
   idempotencyKey?: string;
   /** What the change is, in the person's words, if it has to wait in the offline queue. */
   label?: string;
+  /** H4: proof of a just-now passkey re-verification, for a route that requires it. */
+  stepUp?: string;
 }
 
 /** A change that couldn't reach the server was kept on the device and will send later. */
@@ -120,6 +122,7 @@ async function send(method: string, path: string, body: unknown, opts: RequestOp
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (access) headers['authorization'] = `Bearer ${access}`;
+  if (opts.stepUp) headers['x-step-up'] = opts.stepUp;
   if (MUTATING.has(method)) headers['idempotency-key'] = opts.idempotencyKey ?? crypto.randomUUID();
   try {
     const res = await fetch(`/api${path}`, {

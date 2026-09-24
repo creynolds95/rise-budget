@@ -95,7 +95,7 @@ describe('T31 recurring detection', () => {
     });
     const rows = (await s.api('GET', '/transactions?q=NETFLIX')).json.items as { id: string }[];
     for (const t of rows.slice(0, 2))
-      await s.api('PATCH', `/transactions/${t.id}`, { categoryId: s.subs.id });
+      await s.api('PATCH', `/transactions/${t.id}`, { categoryId: s.subs.id, reviewState: 'reviewed' });
     await refreshRecurring(env.DB, s.userId, '2026-08-20');
     expect((await s.api('GET', '/recurring')).json[0].categoryId).toBe(s.subs.id);
     const cat = (await s.api('GET', '/categories')).json.find(
@@ -201,10 +201,13 @@ describe('T32 late arrivals and close readiness through sync', () => {
       { now: new Date('2026-09-05T20:00:00Z'), since: '2026-08-01' },
     );
     const before = (await s.api('GET', '/periods/2026-08')).json.period;
-    expect(before).toMatchObject({ status: 'closed', needsRecalc: false }); // uncategorised: nothing counts yet
+    // H1: it landed with a real (guessed) category already, so it flags the closed month
+    // the moment it arrives — nobody needs to categorise it first for it to be real money.
+    expect(before).toMatchObject({ status: 'closed', needsRecalc: true, recalcDeltaCents: 1_549 });
     const [t] = (await s.api('GET', '/transactions?q=NETFLIX')).json.items as { id: string }[];
     await s.api('PATCH', `/transactions/${String(t?.id)}`, { categoryId: s.subs.id });
     const after = (await s.api('GET', '/periods/2026-08')).json;
+    // Correcting the category moves no money, so the flagged delta is unchanged.
     expect(after.period).toMatchObject({
       status: 'closed',
       needsRecalc: true,

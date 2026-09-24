@@ -1,3 +1,4 @@
+import { periodOf } from '@rise/shared/budget';
 import { normalizeMerchant } from '@rise/shared/categorize';
 import {
   SimpleFinAccount,
@@ -11,7 +12,9 @@ import { z } from 'zod';
 import {
   displayNamesFor,
   dropPendingStmts,
+  ensureCatchallCategory,
   finishSyncRun,
+  flagClosedPeriodStmt,
   getUser,
   insertSyncedAccountStmt,
   insertSyncedTxnStmt,
@@ -20,7 +23,9 @@ import {
   listSyncedAccounts,
   listTransferCandidates,
   newId,
+  refreshAggregateStmts,
   reportBalanceStmts,
+  splitEffectStmts,
   splitsFor,
   startSyncRun,
   updateSyncedTxnStmts,
@@ -77,8 +82,10 @@ export function windowStart(accounts: SyncedAccountRow[], today: string, since?:
 
 /**
  * One sync (SPEC §6.1, ARCHITECTURE §6). Each account is one atomic batch: a failing account
- * is recorded and skipped without touching the others. Nothing here categorises money —
- * new rows arrive in the review queue with suggestions only.
+ * is recorded and skipped without touching the others. New rows arrive in the review queue
+ * (H1) already carrying a real split — the best guess when there is one, the user's
+ * catch-all category otherwise — so nothing is ever left uncategorised; review means
+ * confirm-or-correct, not first-time filing.
  */
 export async function runSync(
   db: D1Database,
@@ -102,7 +109,11 @@ export async function runSync(
     return { id: runId, ...r, transfersLinked };
   };
 
-  const [user, known] = await Promise.all([getUser(userId, db), listSyncedAccounts(userId, db)]);
+  const [user, known, other] = await Promise.all([
+    getUser(userId, db),
+    listSyncedAccounts(userId, db),
+    ensureCatchallCategory(userId, db),
+  ]);
   const tz = user?.timezone ?? 'America/Chicago';
   const today = localToday(tz, now);
   const from = windowStart(known, today, opts.since);
@@ -162,10 +173,15 @@ export async function runSync(
       const stmts: D1PreparedStatement[] = [];
       if (!existing) stmts.push(insertSyncedAccountStmt(userId, db, accountId, acct));
       const insertAt = stmts.length;
+      // Landing in a closed period is real money too (H1) — `flagClosedPeriodStmt` itself
+      // no-ops on an open period, same as everywhere else that writes a split.
+      const insertDeltaByPeriod = new Map<string, number>();
       for (const o of inserts) {
         const s = suggestions.get(o.id);
+        const p = periodOf(o.incoming.postedAt);
+        insertDeltaByPeriod.set(p, (insertDeltaByPeriod.get(p) ?? 0) + o.incoming.amountCents);
         stmts.push(
-          insertSyncedTxnStmt(userId, db, {
+          ...insertSyncedTxnStmt(userId, db, {
             id: o.id,
             accountId,
             incoming: o.incoming,
@@ -173,8 +189,12 @@ export async function runSync(
             merchantDisplay: names.get(o.incoming.merchant) ?? null,
             suggestedCategoryId: s?.categoryId ?? null,
             suggestionConfidence: s?.confidence ?? 0,
+            assignedCategoryId: s?.categoryId ?? other.id,
           }),
         );
+      }
+      for (const [p, delta] of insertDeltaByPeriod) {
+        stmts.push(flagClosedPeriodStmt(userId, db, p, delta), ...refreshAggregateStmts(userId, db, p));
       }
       let updates = 0;
       for (const o of ops) {
@@ -203,8 +223,11 @@ export async function runSync(
 
       const results = await db.batch(stmts);
       accountsTouched++;
+      // Each insert is now two statements (txn, split — H1); count only the txn one, since a
+      // skipped txn insert (edge 12, a re-fetched overlap) always skips its split too.
       rowsInserted += results
-        .slice(insertAt, insertAt + inserts.length)
+        .slice(insertAt, insertAt + inserts.length * 2)
+        .filter((_, i) => i % 2 === 0)
         .reduce((n, r) => n + r.meta.changes, 0);
       rowsUpdated += updates;
       for (const i of incoming) if (i.postedAt < earliest) earliest = i.postedAt;
@@ -218,7 +241,7 @@ export async function runSync(
   try {
     const lo = dateFromDayNumber(Math.min(dayNumber(from), dayNumber(earliest)) - 4);
     const hi = dateFromDayNumber(dayNumber(today) + 4);
-    const candidates = await listTransferCandidates(userId, db, lo, hi);
+    const candidates = await listTransferCandidates(userId, db, lo, hi, other.id);
     const pairs = detectTransfers(
       candidates.map((c) => ({
         id: c.id,
@@ -229,7 +252,36 @@ export async function runSync(
       })),
     ).filter((p) => p.confidence === 'high');
     if (pairs.length > 0) {
-      await db.batch(pairs.flatMap((p) => linkTransferStmts(userId, db, p.a, p.b)));
+      // H1: every candidate already has a real split (its auto-guess or catch-all) that's
+      // been counting as spending since insert — linking must stop counting it, same as a
+      // manual transfer-link does.
+      const legSplits = await splitsFor(
+        userId,
+        db,
+        pairs.flatMap((p) => [p.a, p.b]),
+      );
+      const byId = new Map(candidates.map((c) => [c.id, c]));
+      const stopCounting = (id: string): D1PreparedStatement[] => {
+        const c = byId.get(id);
+        const rowSplits = legSplits.get(id) ?? [];
+        if (!c || rowSplits.length === 0) return [];
+        const period = periodOf(c.posted_at);
+        const total = rowSplits.reduce((n, s) => n + s.amount_cents, 0);
+        return splitEffectStmts(
+          userId,
+          db,
+          { period, total, counted: true },
+          { period, total, counted: false },
+          true,
+        );
+      };
+      await db.batch(
+        pairs.flatMap((p) => [
+          ...linkTransferStmts(userId, db, p.a, p.b),
+          ...stopCounting(p.a),
+          ...stopCounting(p.b),
+        ]),
+      );
       transfersLinked = pairs.length;
     }
   } catch (e) {
