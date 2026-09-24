@@ -147,7 +147,7 @@ export function SettingsSection() {
   const s = section as Section;
   return (
     <div className="mx-auto max-w-2xl pb-16">
-      <header className="gutter sticky top-0 z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur">
+      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur">
         <Link
           to="/settings"
           className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700"

@@ -8,7 +8,8 @@ import { TxnAmount } from '../components/TxnAmount';
 import { Button } from '../components/primitives/Button';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
-import { ApiError, api, get } from '../lib/api';
+import { ApiError, api, get, isQueuedOffline } from '../lib/api';
+import { usePendingChanges } from '../components/OfflineBar';
 import { shortDate } from '../lib/dates';
 import { useAccounts, useCategories, useGroups, useInvalidateMoney } from '../lib/queries';
 import {
@@ -87,6 +88,8 @@ export function Review() {
     try {
       await p.commit();
     } catch (e) {
+      // Offline, the change waits on this device and the row stays filed.
+      if (isQueuedOffline(e)) return;
       unhide(p.ids);
       setError(e instanceof ApiError ? e.message : `Could not save: ${p.label}`);
       return;
@@ -131,22 +134,39 @@ export function Review() {
   const name = (t: QueueItem) => t.merchantDisplay ?? t.merchantNormalized;
   const accept = (t: QueueItem) =>
     act([t.id], `${name(t)} → ${catName(t.suggestedCategoryId)}`, async () => {
-      await api('POST', '/transactions/bulk-accept', { ids: [t.id] });
+      await api(
+        'POST',
+        '/transactions/bulk-accept',
+        { ids: [t.id] },
+        { label: `${name(t)} → ${catName(t.suggestedCategoryId)}` },
+      );
     });
   const file = (t: QueueItem, categoryId: string) =>
     act([t.id], `${name(t)} → ${catName(categoryId)}`, async () => {
-      const res = await api<PatchedTransaction>('PATCH', `/transactions/${t.id}`, {
-        categoryId,
-        reviewState: 'reviewed',
-      });
+      const res = await api<PatchedTransaction>(
+        'PATCH',
+        `/transactions/${t.id}`,
+        { categoryId, reviewState: 'reviewed' },
+        { label: `${name(t)} → ${catName(categoryId)}` },
+      );
       if (res.ruleOffer) setOffer(res.ruleOffer);
     });
   const markTransfer = (t: QueueItem) =>
     act([t.id], `${name(t)} → not spending`, async () => {
-      await api('POST', `/transactions/${t.id}/mark-transfer`);
+      await api('POST', `/transactions/${t.id}/mark-transfer`, undefined, {
+        label: `${name(t)} as a transfer`,
+      });
     });
 
-  const items = (queue.data?.items ?? []).filter((t) => !hidden.has(t.id));
+  // Rows already filed offline stay filed across a restart, before the queue has sent.
+  const waiting = usePendingChanges();
+  const queued = (id: string) =>
+    waiting.some(
+      (e) =>
+        e.path.startsWith(`/transactions/${id}`) ||
+        ((e.body as { ids?: string[] } | null)?.ids ?? []).includes(id),
+    );
+  const items = (queue.data?.items ?? []).filter((t) => !hidden.has(t.id) && !queued(t.id));
   const days = groupQueue(items);
   const confident = items.filter(
     (t) => t.suggestedCategoryId && !t.isTransfer && t.suggestionConfidence >= 0.9,
@@ -199,7 +219,7 @@ export function Review() {
 
   return (
     <div className="mx-auto max-w-2xl pb-28">
-      <header className="gutter sticky top-0 z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur">
+      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur">
         <Link to="/" className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700">
           <span aria-hidden>‹</span>
           Dashboard

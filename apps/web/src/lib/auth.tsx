@@ -1,6 +1,24 @@
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api, onAuthChange, refresh, setAccess } from './api';
+import { api, onAuthChange, refreshSession, setAccess } from './api';
+
+/** Set while this device holds a session, so a cold start offline can still open the cache. */
+const HAD_SESSION = 'rise-had-session';
+const remember = (on: boolean) => {
+  try {
+    if (on) localStorage.setItem(HAD_SESSION, '1');
+    else localStorage.removeItem(HAD_SESSION);
+  } catch {
+    // Private mode: offline start just won't be available.
+  }
+};
+const hadSession = () => {
+  try {
+    return localStorage.getItem(HAD_SESSION) === '1';
+  } catch {
+    return false;
+  }
+};
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
 
@@ -18,8 +36,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading');
 
   useEffect(() => {
-    const off = onAuthChange((signedIn) => setStatus(signedIn ? 'signedIn' : 'signedOut'));
-    void refresh().then((ok) => setStatus(ok ? 'signedIn' : 'signedOut'));
+    const off = onAuthChange((signedIn) => {
+      remember(signedIn);
+      setStatus(signedIn ? 'signedIn' : 'signedOut');
+    });
+    // Offline with a session on this device: open on cached data. The next request that
+    // reaches the server refreshes the token, or signs out if the session has ended.
+    void refreshSession().then((r) =>
+      setStatus(r === 'ok' || (r === 'offline' && hadSession()) ? 'signedIn' : 'signedOut'),
+    );
     return off;
   }, []);
 

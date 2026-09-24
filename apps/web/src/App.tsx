@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router';
+import { OfflineBar } from './components/OfflineBar';
 import { Shell } from './components/Shell';
 import { Skeleton } from './components/primitives/Skeleton';
 import { useAuth } from './lib/auth';
@@ -32,20 +33,23 @@ export function App() {
     );
   }
   return (
-    <Routes>
-      <Route element={<Shell />}>
-        <Route index element={<Dashboard />} />
-        <Route path="accounts" element={<Accounts />} />
-        <Route path="transactions" element={<Transactions />} />
-        <Route path="budget" element={<Budget />} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-      <Route path="review" element={<Review />} />
-      <Route path="accounts/:id" element={<AccountDetail />} />
-      <Route path="transactions/:id" element={<TransactionDetail />} />
-      <Route path="budget/:categoryId" element={<CategoryDetail />} />
-      <Route path="settings/:section" element={<SettingsSection />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <OfflineBar />
+      <Routes>
+        <Route element={<Shell />}>
+          <Route index element={<Dashboard />} />
+          <Route path="accounts" element={<Accounts />} />
+          <Route path="transactions" element={<Transactions />} />
+          <Route path="budget" element={<Budget />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+        <Route path="review" element={<Review />} />
+        <Route path="accounts/:id" element={<AccountDetail />} />
+        <Route path="transactions/:id" element={<TransactionDetail />} />
+        <Route path="budget/:categoryId" element={<CategoryDetail />} />
+        <Route path="settings/:section" element={<SettingsSection />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   );
 }

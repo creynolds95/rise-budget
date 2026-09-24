@@ -29,7 +29,7 @@ export function DetailPage(p: DetailPageProps) {
     <article className="mx-auto max-w-2xl pb-24">
       <header
         data-zone="header"
-        className="gutter sticky top-0 z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur"
+        className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur"
       >
         <Link
           to={p.header.back.to}
