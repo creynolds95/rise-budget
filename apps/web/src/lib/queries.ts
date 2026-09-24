@@ -17,6 +17,7 @@ import { api, get } from './api';
 import { localToday } from './dates';
 import type {
   AccountWithStaleness,
+  CashToPaydayResponse,
   NetWorthResponse,
   PatchedTransaction,
   PeriodResponse,
@@ -53,6 +54,11 @@ export const useRecurring = () =>
   useQuery({ queryKey: ['recurring'], queryFn: () => get<RecurringSeries[]>('/recurring') });
 export const useSyncStatus = () =>
   useQuery({ queryKey: ['sync'], queryFn: () => get<SyncStatus>('/sync/status') });
+export const useCashToPayday = () =>
+  useQuery({
+    queryKey: ['cash-to-payday'],
+    queryFn: () => get<CashToPaydayResponse>('/cash-to-payday'),
+  });
 
 export const usePeriod = (id: string) =>
   useQuery({
@@ -107,9 +113,17 @@ export function useInvalidateMoney() {
   const qc = useQueryClient();
   return () =>
     Promise.all(
-      ['period', 'txns', 'txn', 'accounts', 'recurring', 'networth', 'categories', 'groups'].map(
-        (k) => qc.invalidateQueries({ queryKey: [k] }),
-      ),
+      [
+        'period',
+        'txns',
+        'txn',
+        'accounts',
+        'recurring',
+        'networth',
+        'categories',
+        'groups',
+        'cash-to-payday',
+      ].map((k) => qc.invalidateQueries({ queryKey: [k] })),
     );
 }
 

@@ -7,6 +7,7 @@ import { useAuth } from './lib/auth';
 import { AccountDetail } from './routes/AccountDetail';
 import { Accounts } from './routes/Accounts';
 import { Budget } from './routes/Budget';
+import { CashToPayday } from './routes/CashToPayday';
 import { CategoryDetail } from './routes/CategoryDetail';
 import { Dashboard } from './routes/Dashboard';
 import { Login, Register } from './routes/Login';
@@ -48,6 +49,7 @@ export function App() {
         <Route path="accounts/:id" element={<AccountDetail />} />
         <Route path="transactions/:id" element={<TransactionDetail />} />
         <Route path="budget/:categoryId" element={<CategoryDetail />} />
+        <Route path="cash-to-payday" element={<CashToPayday />} />
         <Route path="settings/:section" element={<SettingsSection />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -88,6 +88,7 @@ export function Dashboard() {
       )}
 
       <section className="mt-8">
+        <NavRow to="/cash-to-payday" label="Cash to payday" />
         {(queue.data?.count ?? 0) > 0 && (
           <NavRow
             to="/review"

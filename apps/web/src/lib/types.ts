@@ -54,3 +54,21 @@ export interface MerchantView {
   suppressRuleOffer: boolean;
   topCategoryIds: string[];
 }
+
+export interface CashToPaydayResponse {
+  points: { date: string; balanceCents: number; label: string }[];
+  lowestPoint: { date: string; balanceCents: number; label: string };
+  freeToMoveCents: number;
+  paySchedules: {
+    merchant: string;
+    displayName: string;
+    series: {
+      cadence: string;
+      expectedAmountCents: number;
+      nextExpectedDate: string;
+      anchorDays: [number, number] | null;
+    };
+  }[];
+  cashAccounts: { id: string; name: string }[];
+  cushionCents: number;
+}
