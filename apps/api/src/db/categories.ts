@@ -29,6 +29,7 @@ interface CategoryRow {
   plan_default_cents: number | null;
   plan_default_from: string | null;
   is_catchall: number;
+  budgeted: number;
 }
 
 const toGroup = (r: GroupRow): CategoryGroup =>
@@ -49,6 +50,7 @@ const toCategory = (r: CategoryRow): Category =>
     planDefaultCents: r.plan_default_cents,
     planDefaultFrom: r.plan_default_from,
     isCatchall: r.is_catchall === 1,
+    budgeted: r.budgeted === 1,
   });
 
 /** The category's plan default in the engine's shape, if it has one (SPEC §2.9). */
@@ -165,6 +167,45 @@ export async function ensureCatchallCategory(userId: UserId, db: D1Database): Pr
   }
 }
 
+/**
+ * The per-user unbudgeted "Transfer" category (pre-deploy-todo A5): moving money between the
+ * user's own accounts, or paying off a credit card, by default counts as nothing. The user
+ * can always recategorize either leg to a budgeted category later — nothing here is special
+ * beyond its `budgeted` flag, and `is_transfer`/`transfer_pair_id` stay a pure pairing marker.
+ */
+export async function ensureTransferCategory(userId: UserId, db: D1Database): Promise<Category> {
+  const existing = await db
+    .prepare(
+      `SELECT c.* FROM category c JOIN category_group g ON g.id = c.group_id AND g.user_id = c.user_id
+       WHERE c.user_id = ?1 AND g.name = 'Transfers' AND c.name = 'Transfer'`,
+    )
+    .bind(userId)
+    .first<CategoryRow>();
+  if (existing) return toCategory(existing);
+  let group = await db
+    .prepare(`SELECT id FROM category_group WHERE user_id = ?1 AND name = 'Transfers'`)
+    .bind(userId)
+    .first<{ id: string }>();
+  if (!group) {
+    const groupId = newId();
+    await db
+      .prepare(
+        'INSERT INTO category_group (id, user_id, name, kind, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)',
+      )
+      .bind(groupId, userId, 'Transfers', 'expense', 998)
+      .run();
+    group = { id: groupId };
+  }
+  const id = newId();
+  await db
+    .prepare(
+      'INSERT INTO category (id, user_id, group_id, name, budgeted) VALUES (?1, ?2, ?3, ?4, 0)',
+    )
+    .bind(id, userId, group.id, 'Transfer')
+    .run();
+  return (await getCategory(userId, db, id)) as Category;
+}
+
 export async function createCategory(
   userId: UserId,
   db: D1Database,
@@ -175,15 +216,26 @@ export async function createCategory(
     isBill: boolean;
     rolloverPolicy: RolloverPolicy;
     spendShape: SpendShape;
+    budgeted: boolean;
   },
 ): Promise<Category> {
   const id = newId();
   await db
     .prepare(
-      `INSERT INTO category (id, user_id, group_id, name, emoji, rollover_policy, spend_shape, is_bill)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+      `INSERT INTO category (id, user_id, group_id, name, emoji, rollover_policy, spend_shape, is_bill, budgeted)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
     )
-    .bind(id, userId, c.groupId, c.name, c.emoji, c.rolloverPolicy, c.spendShape, bool(c.isBill))
+    .bind(
+      id,
+      userId,
+      c.groupId,
+      c.name,
+      c.emoji,
+      c.rolloverPolicy,
+      c.spendShape,
+      bool(c.isBill),
+      bool(c.budgeted),
+    )
     .run();
   return (await getCategory(userId, db, id)) as Category;
 }
@@ -195,6 +247,7 @@ export interface CategoryPatch {
   rolloverPolicy?: RolloverPolicy | undefined;
   spendShape?: SpendShape | undefined;
   isBill?: boolean | undefined;
+  budgeted?: boolean | undefined;
 }
 
 const COLS: Record<keyof CategoryPatch, string> = {
@@ -204,6 +257,7 @@ const COLS: Record<keyof CategoryPatch, string> = {
   rolloverPolicy: 'rollover_policy',
   spendShape: 'spend_shape',
   isBill: 'is_bill',
+  budgeted: 'budgeted',
 };
 
 /** Changing a policy never rewrites history — it only affects the next close (SPEC §2.2). */

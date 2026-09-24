@@ -239,8 +239,9 @@ export async function listReallocations(userId: UserId, db: D1Database, periodId
 // ── spending ──────────────────────────────────────────────────────────────────
 
 /**
- * SPEC §2.1 `spent`, per category, for a period. Reads splits (never transactions),
- * excluding linked transfers and dropped pendings.
+ * SPEC §2.1 `spent`, per category, for a period. Reads splits (never transactions), excluding
+ * unbudgeted categories (pre-deploy A4 — transfers are just one, but any category can opt out)
+ * and dropped pendings.
  */
 export async function spentByCategory(
   userId: UserId,
@@ -250,8 +251,10 @@ export async function spentByCategory(
   const { results } = await db
     .prepare(
       `SELECT s.category_id, SUM(s.amount_cents) AS spent
-       FROM split s JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
-       WHERE s.user_id = ?1 AND s.period_id = ?2 AND t.is_transfer = 0 AND t.review_state != 'dropped'
+       FROM split s
+       JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+       JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
+       WHERE s.user_id = ?1 AND s.period_id = ?2 AND c.budgeted = 1 AND t.review_state != 'dropped'
        GROUP BY s.category_id`,
     )
     .bind(userId, periodId)

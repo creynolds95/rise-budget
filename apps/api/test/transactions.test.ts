@@ -249,9 +249,48 @@ describe('T21 transactions & splits', () => {
   it('transfers never count toward spent', async () => {
     const s = await setup();
     const pay = await s.add('2026-09-10', 8_450, 'APPLECARD GSBANK PAYMENT', s.home.id);
+    // Whether money counts follows the category's `budgeted` flag, not `is_transfer` (A4) — so
+    // flipping `is_transfer` alone (no category change) has no effect on spend.
     await env.DB.prepare('UPDATE txn SET is_transfer = 1 WHERE user_id = ?1 AND id = ?2')
       .bind(s.userId, pay.json.id)
       .run();
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(8_450);
+
+    // Marking it a transfer through the real route moves it to the unbudgeted Transfer
+    // category, which is what actually stops it counting.
+    await env.DB.prepare('UPDATE txn SET is_transfer = 0 WHERE user_id = ?1 AND id = ?2')
+      .bind(s.userId, pay.json.id)
+      .run();
+    await s.api('POST', `/transactions/${String(pay.json.id)}/mark-transfer`);
     expect(await spentIn(s, '2026-09', s.home.id)).toBe(0);
+  });
+
+  it('a savings withdrawal recategorized to a budgeted category nets a purchase like a refund (A7)', async () => {
+    const s = await setup();
+    const furniture = (
+      await s.api('POST', '/categories', { groupId: s.home.groupId, name: 'Furniture' })
+    ).json;
+    // The purchase: $500 of spending filed to Furniture.
+    await s.add('2026-09-05', 50_000, 'WEST ELM', furniture.id);
+    expect(await spentIn(s, '2026-09', furniture.id)).toBe(50_000);
+
+    // Money arriving from savings to cover it — a transfer leg, initially uncategorised
+    // (needs_review, catch-all). Recategorizing it to Furniture, same as any other split, is
+    // enough to net the purchase to ~$0 — "transfer" carries no special status of its own (A5).
+    const withdrawal = await s.add('2026-09-06', -50_000, 'TRANSFER FROM SAVINGS');
+    await s.api('PATCH', `/transactions/${String(withdrawal.json.id)}`, {
+      categoryId: furniture.id,
+    });
+    expect(await spentIn(s, '2026-09', furniture.id)).toBe(0);
+
+    // Variant: the withdrawal leg is split across multiple categories instead of filed whole.
+    await s.api('POST', `/transactions/${String(withdrawal.json.id)}/splits`, {
+      splits: [
+        { categoryId: furniture.id, amountCents: -30_000 },
+        { categoryId: s.kids.id, amountCents: -20_000 },
+      ],
+    });
+    expect(await spentIn(s, '2026-09', furniture.id)).toBe(20_000);
+    expect(await spentIn(s, '2026-09', s.kids.id)).toBe(-20_000);
   });
 });

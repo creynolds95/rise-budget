@@ -95,6 +95,9 @@ export const Category = z.object({
   planDefaultFrom: PeriodId.nullable(),
   /** H1: the one category a transaction with no real signal falls back to. Exactly one per user. */
   isCatchall: z.boolean(),
+  /** Whether a split filed here counts as spending (pre-deploy-todo A4). Transfer-like
+   * categories default to false; everything else defaults to true. */
+  budgeted: z.boolean(),
 });
 export type Category = z.infer<typeof Category>;
 

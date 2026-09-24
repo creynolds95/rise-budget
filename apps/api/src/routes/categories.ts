@@ -52,6 +52,7 @@ categories.post('/', async (c) => {
     name: b.name,
     emoji: b.emoji,
     isBill: b.isBill,
+    budgeted: b.budgeted,
     ...categoryDefaults(b),
   });
   return c.json(created, 201);

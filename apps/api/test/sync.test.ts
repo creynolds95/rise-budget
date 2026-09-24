@@ -558,7 +558,14 @@ describe('T29 transfers', () => {
       false,
       false,
     ]);
-    expect(await s.spent('2026-09', s.food.id)).toBe(20_000);
+    // Unlinking reverts each leg's category from the default Transfer category back to the
+    // catch-all, not to whatever it was categorized before linking (A5) — the row is back in
+    // the review queue to be filed, same as any other unconfirmed guess.
+    expect(unlink.json.items.map((t: { reviewState: string }) => t.reviewState)).toEqual([
+      'needs_review',
+      'needs_review',
+    ]);
+    expect(await s.spent('2026-09', s.food.id)).toBe(0);
     expect((await s.api('DELETE', `/transactions/${String(s1?.id)}/transfer-link`)).status).toBe(
       409,
     );
@@ -663,7 +670,10 @@ describe('lone transfer legs', () => {
 
     const undone = await s.api('DELETE', `/transactions/${id}/transfer-link`);
     expect(undone.json.items[0]).toMatchObject({ isTransfer: false, reviewState: 'needs_review' });
-    expect(await s.spent('2026-09', s.food.id)).toBe(29_005);
+    // As above: undoing the mark reverts the category from Transfer to the catch-all, not
+    // back to "food" — the user picked "food" before marking, but marking overwrote it, and
+    // undoing puts the row back in the review queue rather than guessing "food" was still right.
+    expect(await s.spent('2026-09', s.food.id)).toBe(0);
     expect((await s.api('POST', `/transactions/${crypto.randomUUID()}/mark-transfer`)).status).toBe(
       404,
     );

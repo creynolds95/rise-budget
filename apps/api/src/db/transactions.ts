@@ -270,6 +270,28 @@ export async function updateTransactionFields(
  * period. If that period is closed, flag it for recalculation and accumulate the change —
  * and do nothing else (SPEC §2.5, edge 5). The period's aggregates refresh in the same batch.
  */
+/**
+ * Sum of the splits filed to a budgeted category (pre-deploy A4) — the amount that actually
+ * counts as spending. A transaction can straddle budgeted and unbudgeted categories (e.g. a
+ * recategorized transfer leg split partly to "Furniture"), so this is per-split, not per-txn.
+ */
+async function countedSum(
+  userId: UserId,
+  db: D1Database,
+  splits: { categoryId: string; amountCents: number }[],
+): Promise<number> {
+  const ids = [...new Set(splits.map((s) => s.categoryId))];
+  if (ids.length === 0) return 0;
+  const { results } = await db
+    .prepare(
+      `SELECT id, budgeted FROM category WHERE user_id = ?1 AND id IN (${ids.map((_, i) => `?${i + 2}`).join(',')})`,
+    )
+    .bind(userId, ...ids)
+    .all<{ id: string; budgeted: number }>();
+  const budgeted = new Set(results.filter((r) => r.budgeted === 1).map((r) => r.id));
+  return splits.reduce((n, s) => n + (budgeted.has(s.categoryId) ? s.amountCents : 0), 0);
+}
+
 export async function replaceSplits(
   userId: UserId,
   db: D1Database,
@@ -285,9 +307,13 @@ export async function replaceSplits(
         o.category_id === splits[i]?.categoryId && o.amount_cents === splits[i]?.amountCents,
     );
   if (same) return false;
-  const counts = txn.is_transfer === 0 && txn.review_state !== 'dropped';
-  const delta =
-    splits.reduce((n, s) => n + s.amountCents, 0) - old.reduce((n, s) => n + s.amount_cents, 0);
+  const oldSplits = old.map((o) => ({ categoryId: o.category_id, amountCents: o.amount_cents }));
+  const dropped = txn.review_state === 'dropped';
+  const [newCounted, oldCounted] = await Promise.all([
+    dropped ? 0 : countedSum(userId, db, splits),
+    dropped ? 0 : countedSum(userId, db, oldSplits),
+  ]);
+  const delta = newCounted - oldCounted;
   await db.batch([
     db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, txn.id),
     ...splits.map((s, i) =>
@@ -300,10 +326,70 @@ export async function replaceSplits(
     db
       .prepare('UPDATE txn SET updated_at = ?3 WHERE user_id = ?1 AND id = ?2')
       .bind(userId, txn.id, nowIso()),
-    ...(counts ? [flagClosedPeriodStmt(userId, db, periodId, delta)] : []),
+    ...(delta !== 0 ? [flagClosedPeriodStmt(userId, db, periodId, delta)] : []),
     ...refreshAggregateStmts(userId, db, periodId),
   ]);
   return true;
+}
+
+/**
+ * Replace a transaction's splits with a single split at a new category, keeping the full
+ * amount — the transfer-link, mark-transfer and unlink flows default a leg's category this
+ * way (pre-deploy A5), without touching `is_transfer`/`transfer_pair_id`. Returns statements
+ * to batch atomically with whatever else changes alongside (e.g. `linkTransferStmts`), rather
+ * than executing them itself.
+ */
+export async function reassignSplitStmts(
+  userId: UserId,
+  db: D1Database,
+  txn: { id: string; posted_at: string; amount_cents: number },
+  oldSplits: { category_id: string; amount_cents: number }[],
+  categoryId: string,
+): Promise<D1PreparedStatement[]> {
+  if (oldSplits.length === 1 && oldSplits[0]?.category_id === categoryId) return [];
+  const periodId = periodOf(txn.posted_at);
+  const newSplits = [{ categoryId, amountCents: txn.amount_cents }];
+  const [newCounted, oldCounted] = await Promise.all([
+    countedSum(userId, db, newSplits),
+    countedSum(
+      userId,
+      db,
+      oldSplits.map((s) => ({ categoryId: s.category_id, amountCents: s.amount_cents })),
+    ),
+  ]);
+  const delta = newCounted - oldCounted;
+  return [
+    db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, txn.id),
+    db
+      .prepare(
+        'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)',
+      )
+      .bind(newId(), userId, txn.id, categoryId, txn.amount_cents, periodId),
+    db
+      .prepare('UPDATE txn SET updated_at = ?3 WHERE user_id = ?1 AND id = ?2')
+      .bind(userId, txn.id, nowIso()),
+    ...(delta !== 0 ? [flagClosedPeriodStmt(userId, db, periodId, delta)] : []),
+    ...refreshAggregateStmts(userId, db, periodId),
+  ];
+}
+
+/**
+ * Sum of a split set that counts as spending — a category's `budgeted` flag, filtered to
+ * `reviewState !== 'dropped'`. Used by sync's amount/period drift and pending-drop paths,
+ * which don't reassign category, only whether the same split still counts.
+ */
+export async function countedCentsOf(
+  userId: UserId,
+  db: D1Database,
+  splits: { category_id: string; amount_cents: number }[],
+  reviewState: string,
+): Promise<number> {
+  if (reviewState === 'dropped') return 0;
+  return countedSum(
+    userId,
+    db,
+    splits.map((s) => ({ categoryId: s.category_id, amountCents: s.amount_cents })),
+  );
 }
 
 /**

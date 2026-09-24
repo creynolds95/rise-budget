@@ -3,7 +3,7 @@ import type { IncomingAccount, IncomingTxn } from '@rise/shared/import';
 import type { StoredTxn } from '@rise/shared/sync';
 import { refreshAggregateStmts } from './aggregates';
 import { putSnapshotStmts } from './accounts';
-import { flagClosedPeriodStmt, type SplitRow, type TxnRow } from './transactions';
+import { countedCentsOf, flagClosedPeriodStmt, type SplitRow, type TxnRow } from './transactions';
 import { newId, nowIso, type UserId } from './util';
 
 /**
@@ -183,23 +183,21 @@ export function insertSyncedTxnStmt(
   ];
 }
 
-const counts = (isTransfer: number, reviewState: string) =>
-  isTransfer === 0 && reviewState !== 'dropped';
-
 /**
- * Spending effects of moving a transaction's splits from one (period, amounts, counted)
- * state to another: flag closed periods, refresh aggregates for both.
+ * Spending effects of moving a transaction's splits from one (period, counted-cents) state to
+ * another: flag closed periods, refresh aggregates for both. `countedCents` is already the
+ * budgeted (pre-deploy A4), non-dropped amount — callers compute it with `countedCentsOf`.
  */
 export function splitEffectStmts(
   userId: UserId,
   db: D1Database,
-  before: { period: string; total: number; counted: boolean },
-  after: { period: string; total: number; counted: boolean },
+  before: { period: string; countedCents: number },
+  after: { period: string; countedCents: number },
   hasSplits: boolean,
 ): D1PreparedStatement[] {
   if (!hasSplits) return [];
-  const b = before.counted ? before.total : 0;
-  const a = after.counted ? after.total : 0;
+  const b = before.countedCents;
+  const a = after.countedCents;
   const stmts: D1PreparedStatement[] = [];
   if (before.period === after.period) {
     if (b !== a) stmts.push(flagClosedPeriodStmt(userId, db, after.period, a - b));
@@ -222,14 +220,14 @@ export function splitEffectStmts(
  * drift is absorbed by the last split so they still sum to the transaction (§3.5).
  * A dropped row that comes back returns to the review queue.
  */
-export function updateSyncedTxnStmts(
+export async function updateSyncedTxnStmts(
   userId: UserId,
   db: D1Database,
   row: TxnRow,
   splits: SplitRow[],
   incoming: IncomingTxn,
   merchant: string,
-): D1PreparedStatement[] {
+): Promise<D1PreparedStatement[]> {
   const reviewState = row.review_state === 'dropped' ? 'needs_review' : row.review_state;
   const oldPeriod = periodOf(row.posted_at);
   const newPeriod = periodOf(incoming.postedAt);
@@ -264,13 +262,20 @@ export function updateSyncedTxnStmts(
         .bind(userId, s.id, s.amount_cents + (s === last ? drift : 0), newPeriod),
     );
   }
-  const total = splits.reduce((n, s) => n + s.amount_cents, 0);
+  const newSplits = splits.map((s) => ({
+    category_id: s.category_id,
+    amount_cents: s.amount_cents + (s === last ? drift : 0),
+  }));
+  const [beforeCounted, afterCounted] = await Promise.all([
+    countedCentsOf(userId, db, splits, row.review_state),
+    countedCentsOf(userId, db, newSplits, reviewState),
+  ]);
   stmts.push(
     ...splitEffectStmts(
       userId,
       db,
-      { period: oldPeriod, total, counted: counts(row.is_transfer, row.review_state) },
-      { period: newPeriod, total: total + drift, counted: counts(row.is_transfer, reviewState) },
+      { period: oldPeriod, countedCents: beforeCounted },
+      { period: newPeriod, countedCents: afterCounted },
       splits.length > 0,
     ),
   );
@@ -278,14 +283,14 @@ export function updateSyncedTxnStmts(
 }
 
 /** SPEC §3.2: a pending row with no match after 14 days no longer counts. */
-export function dropPendingStmts(
+export async function dropPendingStmts(
   userId: UserId,
   db: D1Database,
   row: TxnRow,
   splits: SplitRow[],
-): D1PreparedStatement[] {
+): Promise<D1PreparedStatement[]> {
   const period = periodOf(row.posted_at);
-  const total = splits.reduce((n, s) => n + s.amount_cents, 0);
+  const beforeCounted = await countedCentsOf(userId, db, splits, row.review_state);
   return [
     db
       .prepare(
@@ -295,8 +300,8 @@ export function dropPendingStmts(
     ...splitEffectStmts(
       userId,
       db,
-      { period, total, counted: counts(row.is_transfer, row.review_state) },
-      { period, total, counted: false },
+      { period, countedCents: beforeCounted },
+      { period, countedCents: 0 },
       splits.length > 0,
     ),
   ];
@@ -468,23 +473,4 @@ export async function listSyncRuns(
     .bind(userId, limit)
     .all<SyncRunRow>();
   return results;
-}
-
-/** A row starts or stops counting as spending (linked or unlinked as a transfer). */
-export function countingChangeStmts(
-  userId: UserId,
-  db: D1Database,
-  row: TxnRow,
-  splits: SplitRow[],
-  countsAfter: boolean,
-): D1PreparedStatement[] {
-  const period = periodOf(row.posted_at);
-  const total = splits.reduce((n, s) => n + s.amount_cents, 0);
-  return splitEffectStmts(
-    userId,
-    db,
-    { period, total, counted: counts(row.is_transfer, row.review_state) },
-    { period, total, counted: countsAfter && row.review_state !== 'dropped' },
-    splits.length > 0,
-  );
 }
