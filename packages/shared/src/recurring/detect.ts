@@ -190,15 +190,18 @@ export function nextSemimonthlyDate(from: string, anchors: readonly [number, num
   return future[0] as string;
 }
 
-/** Consecutive dates space out like semimonthly pay and actually touch both anchors. */
-function alternatesAnchors(dates: readonly string[], anchors: readonly [number, number]): boolean {
+/**
+ * Consecutive dates space out like semimonthly pay. Whether they actually touch both
+ * anchors is already guaranteed by `fitSemimonthly`'s clustering (every date lands in one
+ * of exactly two non-empty clusters, each within tolerance of its own anchor), so this only
+ * needs to check the gap between charges.
+ */
+function alternatesAnchors(dates: readonly string[]): boolean {
   for (let i = 1; i < dates.length; i++) {
     const gap = dayNumber(dates[i] as string) - dayNumber(dates[i - 1] as string);
     if (gap < MIN_SEMIMONTHLY_GAP_DAYS || gap > MAX_SEMIMONTHLY_GAP_DAYS) return false;
   }
-  const near = (d: string, anchor: number) =>
-    Math.abs(parts(d).d - anchor) <= INTERVAL_TOLERANCE_DAYS;
-  return dates.some((d) => near(d, anchors[0])) && dates.some((d) => near(d, anchors[1]));
+  return true;
 }
 
 /**
@@ -228,7 +231,7 @@ function fitSemimonthly(dates: readonly string[]): [number, number] | null {
     cluster.every((d) => anchor - d >= 0 && anchor - d <= INTERVAL_TOLERANCE_DAYS);
   if (!fitsCluster(clusterA, anchorA) || !fitsCluster(clusterB, anchorB)) return null;
   const anchors: [number, number] = [Math.min(anchorA, anchorB), Math.max(anchorA, anchorB)];
-  if (!alternatesAnchors(dates, anchors)) return null;
+  if (!alternatesAnchors(dates)) return null;
   return anchors;
 }
 
