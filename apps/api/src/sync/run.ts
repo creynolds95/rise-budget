@@ -13,6 +13,7 @@ import {
   displayNamesFor,
   dropPendingStmts,
   ensureCatchallCategory,
+  ensureTransferCategory,
   finishSyncRun,
   flagClosedPeriodStmt,
   getUser,
@@ -23,9 +24,9 @@ import {
   listSyncedAccounts,
   listTransferCandidates,
   newId,
+  reassignSplitStmts,
   refreshAggregateStmts,
   reportBalanceStmts,
-  splitEffectStmts,
   splitsFor,
   startSyncRun,
   updateSyncedTxnStmts,
@@ -109,10 +110,11 @@ export async function runSync(
     return { id: runId, ...r, transfersLinked };
   };
 
-  const [user, known, other] = await Promise.all([
+  const [user, known, other, transferCat] = await Promise.all([
     getUser(userId, db),
     listSyncedAccounts(userId, db),
     ensureCatchallCategory(userId, db),
+    ensureTransferCategory(userId, db),
   ]);
   const tz = user?.timezone ?? 'America/Chicago';
   const today = localToday(tz, now);
@@ -194,7 +196,10 @@ export async function runSync(
         );
       }
       for (const [p, delta] of insertDeltaByPeriod) {
-        stmts.push(flagClosedPeriodStmt(userId, db, p, delta), ...refreshAggregateStmts(userId, db, p));
+        stmts.push(
+          flagClosedPeriodStmt(userId, db, p, delta),
+          ...refreshAggregateStmts(userId, db, p),
+        );
       }
       let updates = 0;
       for (const o of ops) {
@@ -204,10 +209,17 @@ export async function runSync(
         const rowSplits = splits.get(o.id) ?? [];
         if (o.kind === 'update') {
           stmts.push(
-            ...updateSyncedTxnStmts(userId, db, row, rowSplits, o.incoming, o.incoming.merchant),
+            ...(await updateSyncedTxnStmts(
+              userId,
+              db,
+              row,
+              rowSplits,
+              o.incoming,
+              o.incoming.merchant,
+            )),
           );
         } else {
-          stmts.push(...dropPendingStmts(userId, db, row, rowSplits));
+          stmts.push(...(await dropPendingStmts(userId, db, row, rowSplits)));
         }
         updates++;
       }
@@ -252,36 +264,35 @@ export async function runSync(
       })),
     ).filter((p) => p.confidence === 'high');
     if (pairs.length > 0) {
-      // H1: every candidate already has a real split (its auto-guess or catch-all) that's
-      // been counting as spending since insert — linking must stop counting it, same as a
-      // manual transfer-link does.
+      // H1/A5: every candidate already has a real split (its auto-guess or catch-all) that's
+      // been counting as spending since insert. Linking defaults both legs to the unbudgeted
+      // Transfer category, same as a manual transfer-link does — the user can recategorize
+      // either leg later without affecting the pairing.
       const legSplits = await splitsFor(
         userId,
         db,
         pairs.flatMap((p) => [p.a, p.b]),
       );
       const byId = new Map(candidates.map((c) => [c.id, c]));
-      const stopCounting = (id: string): D1PreparedStatement[] => {
+      const reassign = async (id: string): Promise<D1PreparedStatement[]> => {
         const c = byId.get(id);
         const rowSplits = legSplits.get(id) ?? [];
-        if (!c || rowSplits.length === 0) return [];
-        const period = periodOf(c.posted_at);
-        const total = rowSplits.reduce((n, s) => n + s.amount_cents, 0);
-        return splitEffectStmts(
+        if (!c) return [];
+        return reassignSplitStmts(
           userId,
           db,
-          { period, total, counted: true },
-          { period, total, counted: false },
-          true,
+          { id: c.id, posted_at: c.posted_at, amount_cents: c.amount_cents },
+          rowSplits,
+          transferCat.id,
         );
       };
-      await db.batch(
-        pairs.flatMap((p) => [
-          ...linkTransferStmts(userId, db, p.a, p.b),
-          ...stopCounting(p.a),
-          ...stopCounting(p.b),
-        ]),
+      const reassignStmts = await Promise.all(
+        pairs.flatMap((p) => [p.a, p.b]).map((id) => reassign(id)),
       );
+      await db.batch([
+        ...pairs.flatMap((p) => linkTransferStmts(userId, db, p.a, p.b)),
+        ...reassignStmts.flat(),
+      ]);
       transfersLinked = pairs.length;
     }
   } catch (e) {

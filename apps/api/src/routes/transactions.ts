@@ -13,8 +13,8 @@ import { Hono } from 'hono';
 import {
   bumpMemoryStmt,
   categoryIdsExist,
-  countingChangeStmts,
   ensureCatchallCategory,
+  ensureTransferCategory,
   flagClosedPeriodStmt,
   getAccount,
   getTransaction,
@@ -24,6 +24,7 @@ import {
   listTransactions,
   newId,
   nowIso,
+  reassignSplitStmts,
   refreshAggregateStmts,
   sortKey,
   linkTransferStmts,
@@ -228,6 +229,11 @@ transactions.post('/bulk-accept', async (c) => {
     db,
     rows.map((r) => r.id),
   );
+  const { results: catRows } = await db
+    .prepare('SELECT id, budgeted FROM category WHERE user_id = ?1')
+    .bind(userId)
+    .all<{ id: string; budgeted: number }>();
+  const budgetedCats = new Set(catRows.filter((r) => r.budgeted === 1).map((r) => r.id));
   const now = nowIso();
   const periods = new Set<string>();
   const merchants = new Set<string>();
@@ -246,8 +252,12 @@ transactions.post('/bulk-accept', async (c) => {
       old[0]?.category_id === categoryId &&
       old[0]?.amount_cents === row.amount_cents;
     if (!same) {
-      const counts = row.is_transfer === 0 && row.review_state !== 'dropped';
-      const delta = row.amount_cents - old.reduce((n, s) => n + s.amount_cents, 0);
+      const dropped = row.review_state === 'dropped';
+      const newCounted = !dropped && budgetedCats.has(categoryId) ? row.amount_cents : 0;
+      const oldCounted = dropped
+        ? 0
+        : old.reduce((n, s) => n + (budgetedCats.has(s.category_id) ? s.amount_cents : 0), 0);
+      const delta = newCounted - oldCounted;
       stmts.push(
         db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, row.id),
         db
@@ -256,7 +266,7 @@ transactions.post('/bulk-accept', async (c) => {
           )
           .bind(newId(), userId, row.id, categoryId, row.amount_cents, periodId),
       );
-      if (counts) stmts.push(flagClosedPeriodStmt(userId, db, periodId, delta));
+      if (delta !== 0) stmts.push(flagClosedPeriodStmt(userId, db, periodId, delta));
     }
     stmts.push(
       db
@@ -298,10 +308,11 @@ transactions.post('/:id/transfer-link', async (c) => {
     );
   if (a.transfer_pair_id || b.transfer_pair_id)
     throw new AppError(409, 'CONFLICT', 'Already linked to another transaction');
+  const transferCat = await ensureTransferCategory(userId, db);
   const splits = await splitsFor(userId, db, [a.id, b.id]);
   await db.batch([
-    ...countingChangeStmts(userId, db, a, splits.get(a.id) ?? [], false),
-    ...countingChangeStmts(userId, db, b, splits.get(b.id) ?? [], false),
+    ...(await reassignSplitStmts(userId, db, a, splits.get(a.id) ?? [], transferCat.id)),
+    ...(await reassignSplitStmts(userId, db, b, splits.get(b.id) ?? [], transferCat.id)),
     ...linkTransferStmts(userId, db, a.id, b.id),
   ]);
   return c.json({
@@ -320,9 +331,10 @@ transactions.post('/:id/mark-transfer', async (c) => {
   const a = await getTransactionRow(userId, db, c.req.param('id'));
   if (!a) throw notFound();
   if (a.is_transfer === 1) throw new AppError(409, 'CONFLICT', 'Already a transfer');
+  const transferCat = await ensureTransferCategory(userId, db);
   const splits = await splitsFor(userId, db, [a.id]);
   await db.batch([
-    ...countingChangeStmts(userId, db, a, splits.get(a.id) ?? [], false),
+    ...(await reassignSplitStmts(userId, db, a, splits.get(a.id) ?? [], transferCat.id)),
     markTransferStmt(userId, db, a.id),
   ]);
   return c.json(await getTransaction(userId, db, a.id));
@@ -334,20 +346,26 @@ transactions.delete('/:id/transfer-link', async (c) => {
   const db = c.env.DB;
   const a = await getTransactionRow(userId, db, c.req.param('id'));
   if (!a) throw notFound();
+  const transferCat = await ensureTransferCategory(userId, db);
+  const catchall = await ensureCatchallCategory(userId, db);
+  // Only revert a leg's category if it's still the default Transfer category from link time
+  // (A5) — a leg the user has since recategorized (e.g. to "Furniture") keeps that choice.
+  const revertIfDefault = async (leg: TxnRow): Promise<D1PreparedStatement[]> => {
+    const own = (await splitsFor(userId, db, [leg.id])).get(leg.id) ?? [];
+    if (own.length === 1 && own[0]?.category_id === transferCat.id) {
+      return reassignSplitStmts(userId, db, leg, own, catchall.id);
+    }
+    return [];
+  };
   if (a.is_transfer === 1 && !a.transfer_pair_id) {
-    const own = await splitsFor(userId, db, [a.id]);
-    await db.batch([
-      ...countingChangeStmts(userId, db, a, own.get(a.id) ?? [], true),
-      unmarkTransferStmt(userId, db, a.id),
-    ]);
+    await db.batch([...(await revertIfDefault(a)), unmarkTransferStmt(userId, db, a.id)]);
     return c.json({ items: [await getTransaction(userId, db, a.id)] });
   }
   const b = a.transfer_pair_id ? await getTransactionRow(userId, db, a.transfer_pair_id) : null;
   if (!b) throw new AppError(409, 'CONFLICT', 'Not linked as a transfer');
-  const splits = await splitsFor(userId, db, [a.id, b.id]);
   await db.batch([
-    ...countingChangeStmts(userId, db, a, splits.get(a.id) ?? [], true),
-    ...countingChangeStmts(userId, db, b, splits.get(b.id) ?? [], true),
+    ...(await revertIfDefault(a)),
+    ...(await revertIfDefault(b)),
     ...unlinkTransferStmts(userId, db, a.id, b.id),
   ]);
   return c.json({

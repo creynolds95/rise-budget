@@ -95,7 +95,10 @@ describe('T31 recurring detection', () => {
     });
     const rows = (await s.api('GET', '/transactions?q=NETFLIX')).json.items as { id: string }[];
     for (const t of rows.slice(0, 2))
-      await s.api('PATCH', `/transactions/${t.id}`, { categoryId: s.subs.id, reviewState: 'reviewed' });
+      await s.api('PATCH', `/transactions/${t.id}`, {
+        categoryId: s.subs.id,
+        reviewState: 'reviewed',
+      });
     await refreshRecurring(env.DB, s.userId, '2026-08-20');
     expect((await s.api('GET', '/recurring')).json[0].categoryId).toBe(s.subs.id);
     const cat = (await s.api('GET', '/categories')).json.find(

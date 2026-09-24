@@ -2,9 +2,12 @@ import type { UserId } from './util';
 
 /**
  * T23. `period_aggregate` is a cache of what counts as spending per period and category —
- * the same rule as `spentByCategory`: transfers and dropped pendings don't count. Every
- * statement batch that changes a split, or whether a transaction counts, must include
- * `refreshAggregateStmts` for each touched period, so the cache never drifts.
+ * the same rule as `spentByCategory`: a split counts iff its category is budgeted (pre-deploy
+ * A4) and the transaction isn't dropped. Whether the whole transaction is a transfer no longer
+ * matters here — a transfer leg recategorized to a budgeted category counts, and a normal
+ * split filed to the unbudgeted Transfer category doesn't. Every statement batch that changes
+ * a split, or a category's `budgeted` flag, must include `refreshAggregateStmts` for each
+ * touched period, so the cache never drifts.
  */
 export function refreshAggregateStmts(
   userId: UserId,
@@ -19,8 +22,10 @@ export function refreshAggregateStmts(
       .prepare(
         `INSERT INTO period_aggregate (user_id, period_id, category_id, spent_cents, txn_count)
          SELECT s.user_id, s.period_id, s.category_id, SUM(s.amount_cents), COUNT(DISTINCT s.txn_id)
-         FROM split s JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
-         WHERE s.user_id = ?1 AND s.period_id = ?2 AND t.is_transfer = 0 AND t.review_state != 'dropped'
+         FROM split s
+         JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+         JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
+         WHERE s.user_id = ?1 AND s.period_id = ?2 AND c.budgeted = 1 AND t.review_state != 'dropped'
          GROUP BY s.category_id`,
       )
       .bind(userId, periodId),

@@ -136,6 +136,8 @@ export const CreateCategoryBody = z.object({
   /** Omitted → smart default from `isBill` (SPEC §2.2). */
   rolloverPolicy: RolloverPolicy.optional(),
   spendShape: SpendShape.optional(),
+  /** Whether a split filed here counts as spending. Default true. */
+  budgeted: z.boolean().default(true),
 });
 export type CreateCategoryBody = z.infer<typeof CreateCategoryBody>;
 
@@ -146,6 +148,7 @@ export const PatchCategoryBody = z.object({
   rolloverPolicy: RolloverPolicy.optional(),
   spendShape: SpendShape.optional(),
   isBill: z.boolean().optional(),
+  budgeted: z.boolean().optional(),
 });
 
 export const ForgiveBody = z.object({

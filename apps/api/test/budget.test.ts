@@ -35,6 +35,33 @@ async function spend(
   const txn = crypto.randomUUID();
   const now = new Date().toISOString();
   const date = opts.date ?? '2026-09-10';
+  // Whether money counts follows the category's `budgeted` flag, not `is_transfer` (A4) — a
+  // transfer split lands in the unbudgeted Transfer category, not the category passed in.
+  if (opts.transfer) {
+    const existing = await db
+      .prepare("SELECT id FROM category WHERE user_id = ?1 AND name = 'Transfer'")
+      .bind(userId)
+      .first<{ id: string }>();
+    categoryId =
+      existing?.id ??
+      (await (async () => {
+        const id = crypto.randomUUID();
+        const groupId = crypto.randomUUID();
+        await db.batch([
+          db
+            .prepare(
+              "INSERT INTO category_group (id, user_id, name, kind, sort_order) VALUES (?1, ?2, 'Transfers', 'expense', 998)",
+            )
+            .bind(groupId, userId),
+          db
+            .prepare(
+              'INSERT INTO category (id, user_id, group_id, name, budgeted) VALUES (?1, ?2, ?3, ?4, 0)',
+            )
+            .bind(id, userId, groupId, 'Transfer'),
+        ]);
+        return id;
+      })());
+  }
   await db.batch([
     db
       .prepare(
@@ -142,6 +169,11 @@ describe('T18 categories, groups, periods, allocations', () => {
       plannedCents: planned,
       spentCents: spent,
     });
+    // `spend(..., { transfer: true })` files its split to the (test-created) "Transfer"
+    // category — a real category like any other (A5), so it shows up in the view too.
+    const transferCat = (await s.api('GET', '/categories')).json.find(
+      (c: { name: string }) => c.name === 'Transfer',
+    );
     const expected = buildPeriodView({
       periodId: PERIOD,
       status: 'open',
@@ -153,6 +185,7 @@ describe('T18 categories, groups, periods, allocations', () => {
         cat(s.groceries.id, 'expense', 60_000, 19_500, s.groceries),
         cat(s.pay.id, 'income', 0, -260_000, s.pay),
         cat(s.rent.id, 'expense', 150_000, 150_000, s.rent),
+        cat(transferCat.id, 'expense', 0, 0, transferCat),
       ],
     });
     const { period, close, ...view } = res.json;
