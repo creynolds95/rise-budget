@@ -233,3 +233,13 @@ export const CreateCategoryGroupBody = z.object({
   kind: z.enum(['income', 'expense']),
   sortOrder: z.int().default(0),
 });
+
+/** T46. `json` is everything (no credentials); `csv` is transactions for a spreadsheet. */
+export const ExportQuery = z.object({ format: z.enum(['json', 'csv']).default('json') });
+export type ExportQuery = z.infer<typeof ExportQuery>;
+
+export const BackupStatus = z.object({
+  latest: z.object({ date: IsoDate, bytes: z.int().nonnegative() }).nullable(),
+  count: z.int().nonnegative(),
+});
+export type BackupStatus = z.infer<typeof BackupStatus>;

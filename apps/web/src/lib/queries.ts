@@ -27,6 +27,15 @@ import type {
 export const useMe = () =>
   useQuery({ queryKey: ['me'], queryFn: () => get<User>('/me'), staleTime: 5 * 60_000 });
 
+/** T46: whether the nightly backup is actually running, for Settings. */
+export const useBackupStatus = () =>
+  useQuery({
+    queryKey: ['backups'],
+    queryFn: () =>
+      get<{ latest: { date: string; bytes: number } | null; count: number }>('/export/backups'),
+    staleTime: 60_000,
+  });
+
 /** Today in the user's own timezone. */
 export function useToday(): string {
   return localToday(useMe().data?.timezone);

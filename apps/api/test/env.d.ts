@@ -15,6 +15,8 @@ declare global {
     }
     interface Env {
       DB: D1Database;
+      BACKUPS: R2Bucket;
+      RESTORE: D1Database;
       JWT_SECRET: string;
       TOTP_KEY: string;
       RP_ID: string;

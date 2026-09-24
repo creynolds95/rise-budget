@@ -1,5 +1,7 @@
 export interface Env {
   DB: D1Database;
+  /** R2 bucket for nightly backups (T46). Never served publicly. */
+  BACKUPS: R2Bucket;
   /** HS256 key for access JWTs and signed challenges. Worker Secret. */
   JWT_SECRET: string;
   /** base64 32-byte AES-GCM key encrypting TOTP secrets at rest. Worker Secret. */

@@ -21,8 +21,13 @@ describe('query layer scoping', () => {
       const statements = [...src.matchAll(SQL)].map((m) => m[2] as string);
       for (const sql of statements) {
         const loginLookup = file.endsWith('/auth.ts') && sql.includes('/* lookup:login */');
+        // T46: the disaster-recovery dump reads whole tables. Allowed in backup.ts only.
+        const systemBackup = file.endsWith('/backup.ts') && sql.includes('/* system:backup */');
         expect(
-          /\buser_id\b/.test(sql) || sql.includes('/* scoped:user.id */') || loginLookup,
+          /\buser_id\b/.test(sql) ||
+            sql.includes('/* scoped:user.id */') ||
+            loginLookup ||
+            systemBackup,
           sql,
         ).toBe(true);
       }
