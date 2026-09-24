@@ -1,8 +1,18 @@
-import type { CategoryGroupKind, Rule, RuleMatchField, RuleMatchType } from '@rise/shared/schemas';
+import type {
+  Category,
+  CategoryGroupKind,
+  Rule,
+  RuleMatchField,
+  RuleMatchType,
+} from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router';
+import { Link, Navigate, useParams, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
+import { CategoryEditSheet } from '../components/CategoryEditSheet';
+import { Group, GroupRow, RadioRow } from '../components/primitives/Group';
+import { Toggle } from '../components/primitives/Toggle';
+import { backFrom } from '../lib/nav';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
@@ -22,6 +32,7 @@ import {
 } from '../lib/queries';
 
 const SECTIONS = {
+  budget: 'Budget settings',
   categories: 'Categories',
   rules: 'Rules',
   sync: 'Bank sync',
@@ -44,12 +55,6 @@ export function Settings() {
   const accounts = useAccounts().data;
   const sync = useSyncStatus().data;
   const lastRun = sync?.runs[0];
-  const qc = useQueryClient();
-  const toggle = useMutation({
-    mutationFn: (rollIncomeVariance: boolean) =>
-      api('PATCH', '/me/settings', { rollIncomeVariance }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
-  });
 
   return (
     <div className="gutter mx-auto max-w-2xl pt-4 pb-12">
@@ -61,6 +66,19 @@ export function Settings() {
           {lastRun
             ? `Last run ${shortDate(localToday(me?.timezone, new Date(lastRun.startedAt)))} · ${lastRun.status}`
             : 'No runs yet'}
+        </Card>
+        <Card
+          to="/settings/budget"
+          title="Budget"
+          state={
+            me
+              ? me.settings.planChangesApplyToFuture
+                ? 'Plans carry to future months'
+                : 'Plans change one month at a time'
+              : undefined
+          }
+        >
+          How plan changes and month end work
         </Card>
         <Card
           to="/settings/categories"
@@ -87,24 +105,6 @@ export function Settings() {
           Add this device or another
         </Card>
       </div>
-
-      <section className="mt-8 rounded-card bg-surface p-4 shadow-soft">
-        <label className="flex min-h-11 items-center justify-between gap-4">
-          <span>
-            Carry income differences into next month
-            <span className="block type-caption text-ink-faint">
-              When a paycheck comes in above or below what you planned, the difference moves the
-              pool at month end.
-            </span>
-          </span>
-          <input
-            type="checkbox"
-            className="size-5 shrink-0 accent-sage-600"
-            checked={me?.settings.rollIncomeVariance ?? true}
-            onChange={(e) => toggle.mutate(e.target.checked)}
-          />
-        </label>
-      </section>
 
       <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
         Sign out
@@ -143,22 +143,25 @@ function Card({
 
 export function SettingsSection() {
   const { section = '' } = useParams();
+  const [params] = useSearchParams();
   if (!(section in SECTIONS)) return <Navigate to="/settings" replace />;
   const s = section as Section;
+  const back = backFrom(params.get('from'), { label: 'Settings', to: '/settings' });
   return (
     <div className="mx-auto max-w-2xl pb-16">
       <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur">
         <Link
-          to="/settings"
+          to={back.to}
           className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700"
         >
           <span aria-hidden>‹</span>
-          Settings
+          {back.label}
         </Link>
         <h1 className="type-body font-semibold">{SECTIONS[s]}</h1>
         <span />
       </header>
       <div className="gutter pt-4">
+        {s === 'budget' && <BudgetSection />}
         {s === 'categories' && <CategoriesSection />}
         {s === 'rules' && <RulesSection />}
         {s === 'sync' && <SyncSection />}
@@ -168,12 +171,85 @@ export function SettingsSection() {
   );
 }
 
+/** Monarch-style budget preferences, minus what Rise's model makes moot. */
+function BudgetSection() {
+  const me = useMe().data;
+  const qc = useQueryClient();
+  const patch = useMutation({
+    mutationFn: (b: { planChangesApplyToFuture?: boolean; rollIncomeVariance?: boolean }) =>
+      api('PATCH', '/me/settings', b),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+  const future = me?.settings.planChangesApplyToFuture ?? false;
+  return (
+    <>
+      <Group
+        title="When you change a plan"
+        footer="You can still pick either one each time, in the plan editor. Months that are already over never change."
+      >
+        <RadioRow
+          name="plan-scope"
+          label="This month only"
+          hint="An edit changes the month you're looking at."
+          checked={!future}
+          onSelect={() => patch.mutate({ planChangesApplyToFuture: false })}
+        />
+        <RadioRow
+          name="plan-scope"
+          label="All future months"
+          hint="An edit also becomes the plan for every month after it."
+          checked={future}
+          onSelect={() => patch.mutate({ planChangesApplyToFuture: true })}
+        />
+      </Group>
+      <Group title="Month end">
+        <GroupRow
+          label="Carry income differences"
+          hint="When pay comes in above or below what you expected, the difference moves next month's Ready to assign."
+        >
+          <Toggle
+            label="Carry income differences"
+            on={me?.settings.rollIncomeVariance ?? true}
+            onChange={(v) => patch.mutate({ rollIncomeVariance: v })}
+          />
+        </GroupRow>
+      </Group>
+      <Group title="Categories">
+        <Link
+          to="/settings/categories?from=Budget settings|/settings/budget"
+          className="flex min-h-13 items-center justify-between px-4 py-3 active:bg-sage-100"
+        >
+          <span>Categories and groups</span>
+          <Chevron />
+        </Link>
+      </Group>
+      <Group title="How Rise budgets">
+        <ol className="space-y-3 px-4 py-4 text-ink-muted">
+          <li>
+            <span className="font-medium text-ink">Every dollar gets a job.</span> Income lands in
+            Ready to assign; you hand it to categories.
+          </li>
+          <li>
+            <span className="font-medium text-ink">Leftovers roll.</span> Unspent money stays in its
+            category next month, unless you send it back.
+          </li>
+          <li>
+            <span className="font-medium text-ink">Going over is a debt, not a failure.</span>{' '}
+            Overspending carries into next month so it gets paid back.
+          </li>
+        </ol>
+      </Group>
+    </>
+  );
+}
+
 function CategoriesSection() {
   const groups = useGroups().data ?? [];
   const categories = useCategories().data ?? [];
   const invalidate = useInvalidateMoney();
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Category | null>(null);
   const [newGroup, setNewGroup] = useState<{ name: string; kind: CategoryGroupKind } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const save = async (fn: () => Promise<unknown>) => {
@@ -198,57 +274,29 @@ function CategoriesSection() {
           <h2 className="type-label text-ink-muted">
             {g.name} · {g.kind === 'income' ? 'Income' : 'Expense'}
           </h2>
-          <ul>
+          <ul className="mt-2 divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft">
             {categories
               .filter((c) => c.groupId === g.id)
               .map((c) => (
-                <li
-                  key={c.id}
-                  className="flex min-h-12 items-center gap-2 border-b border-hairline py-1"
-                >
-                  <input
-                    aria-label={`Name of ${c.name}`}
-                    className={input}
-                    defaultValue={c.name}
-                    onBlur={(e) => {
-                      const name = e.target.value.trim();
-                      if (name && name !== c.name)
-                        void save(() => api('PATCH', `/categories/${c.id}`, { name }));
-                    }}
-                  />
-                  {g.kind === 'expense' && (
-                    <label className="flex min-h-11 items-center gap-2 type-caption text-ink-muted">
-                      <input
-                        type="checkbox"
-                        className="size-5 accent-sage-600"
-                        checked={c.isBill}
-                        onChange={(e) =>
-                          void save(() =>
-                            api('PATCH', `/categories/${c.id}`, { isBill: e.target.checked }),
-                          )
-                        }
-                      />
-                      Bill
-                    </label>
-                  )}
-                  <select
-                    aria-label={`Group of ${c.name}`}
-                    className="min-h-11 max-w-32 rounded-input border border-hairline bg-surface px-2 type-caption"
-                    value={c.groupId}
-                    onChange={(e) =>
-                      void save(() =>
-                        api('PATCH', `/categories/${c.id}`, { groupId: e.target.value }),
-                      )
-                    }
+                <li key={c.id}>
+                  <button
+                    onClick={() => setEditing(c)}
+                    className="flex min-h-13 w-full items-center gap-3 px-4 py-3 text-left active:bg-sage-100"
                   >
-                    {groups
-                      .filter((x) => x.kind === g.kind)
-                      .map((x) => (
-                        <option key={x.id} value={x.id}>
-                          {x.name}
-                        </option>
-                      ))}
-                  </select>
+                    <span aria-hidden className="w-7 text-center text-xl leading-none">
+                      {c.emoji ?? '·'}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{c.name}</span>
+                      {g.kind === 'expense' && (
+                        <span className="block type-caption text-ink-faint">
+                          {c.rolloverPolicy === 'roll' ? 'Leftover carries' : 'Leftover returns'}
+                          {c.spendShape === 'fixed' ? ' · like a bill' : ''}
+                        </span>
+                      )}
+                    </span>
+                    <Chevron />
+                  </button>
                 </li>
               ))}
           </ul>
@@ -268,6 +316,7 @@ function CategoriesSection() {
         </Button>
       </div>
       <AddCategorySheet open={adding} groups={groups} onClose={() => setAdding(false)} />
+      <CategoryEditSheet category={editing} groups={groups} onClose={() => setEditing(null)} />
       <Sheet open={newGroup !== null} title="New group" onClose={() => setNewGroup(null)}>
         {newGroup && (
           <form

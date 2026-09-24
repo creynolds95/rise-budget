@@ -1,12 +1,12 @@
-import type { RolloverPolicy, SpendShape } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { CategoryEditSheet } from '../components/CategoryEditSheet';
+import { usePlanFlow } from '../components/PlanFlow';
 import { TxnRow } from '../components/TxnRow';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { Chart } from '../components/primitives/Chart';
-import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow, NavRow, StaticRow } from '../components/primitives/Rows';
 import { Sheet } from '../components/primitives/Sheet';
@@ -17,6 +17,7 @@ import { monthEnd, monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import {
   useCategories,
+  useGroups,
   useInvalidateMoney,
   usePeriod,
   useToday,
@@ -40,7 +41,6 @@ export function CategoryDetail() {
   const month = params.get('m') ?? today.slice(0, 7);
   const period = usePeriod(month);
   const categories = useCategories();
-  const invalidate = useInvalidateMoney();
   const [range, setRange] = useState<Range>('6M');
   const months = range === 'YTD' ? Number(today.slice(5, 7)) : RANGE_MONTHS[range];
   const history = useQuery({
@@ -52,6 +52,10 @@ export function CategoryDetail() {
   });
   const txns = useTransactions({ category: categoryId, from: `${month}-01`, to: monthEnd(month) });
   const [forgiving, setForgiving] = useState(false);
+  const [editingCat, setEditingCat] = useState(false);
+  const groups = useGroups();
+  const navigate = useNavigate();
+  const plan = usePlanFlow(month, categories.data ?? []);
 
   const cat = categories.data?.find((c) => c.id === categoryId);
   const row = period.data?.categories.find((c) => c.categoryId === categoryId);
@@ -68,17 +72,23 @@ export function CategoryDetail() {
     );
   }
   const open = period.data.period.status === 'open';
-  const patch = async (body: { rolloverPolicy?: RolloverPolicy; spendShape?: SpendShape }) => {
-    await api('PATCH', `/categories/${categoryId}`, body);
-    await invalidate();
-  };
   const list = txns.data?.pages.flatMap((p) => p.items) ?? [];
-  const select = 'min-h-11 rounded-input border border-hairline bg-surface px-2';
 
   return (
     <>
       <DetailPage
-        header={{ back, title: cat.name }}
+        header={{
+          back,
+          title: `${cat.emoji ? `${cat.emoji} ` : ''}${cat.name}`,
+          action: (
+            <button
+              onClick={() => setEditingCat(true)}
+              className="min-h-11 px-1 font-medium text-sage-700"
+            >
+              Edit
+            </button>
+          ),
+        }}
         identity={{
           label: `Left in ${monthName(month, false)}`,
           hero: (
@@ -109,24 +119,13 @@ export function CategoryDetail() {
               label="Planned"
               field={
                 open ? (
-                  <MoneyField
-                    label={`Planned for ${cat.name}`}
-                    cents={row.plannedCents}
-                    onCommit={async (v) => {
-                      try {
-                        await api('PATCH', `/allocations/${month}:${categoryId}`, {
-                          plannedCents: v,
-                          funding: [],
-                        });
-                      } catch (e) {
-                        if (!(e instanceof ApiError && e.code === 'INSUFFICIENT_POOL')) throw e;
-                        window.alert(
-                          'That needs money from another category — raise it from the Budget tab to choose where.',
-                        );
-                      }
-                      await invalidate();
-                    }}
-                  />
+                  <button
+                    onClick={() => plan.open(cat, row, period.data?.poolCents ?? 0)}
+                    aria-label={`Planned for ${cat.name}: ${formatCents(row.plannedCents)}. Change`}
+                    className="flex min-h-11 items-center rounded-full bg-sage-100 px-3.5 font-semibold text-sage-700 active:bg-sage-300"
+                  >
+                    <MoneyText cents={row.plannedCents} className="text-sage-700" />
+                  </button>
                 ) : (
                   <MoneyText cents={row.plannedCents} />
                 )
@@ -141,31 +140,13 @@ export function CategoryDetail() {
                 />
               }
             />
-            <EditRow
+            <StaticRow
               label="Leftover at month end"
-              field={
-                <select
-                  className={select}
-                  value={cat.rolloverPolicy}
-                  onChange={(e) => patch({ rolloverPolicy: e.target.value as RolloverPolicy })}
-                >
-                  <option value="roll">Carries forward</option>
-                  <option value="return_to_pool">Returns to pool</option>
-                </select>
-              }
+              value={cat.rolloverPolicy === 'roll' ? 'Carries forward' : 'Returns to pool'}
             />
-            <EditRow
+            <StaticRow
               label="Spending pattern"
-              field={
-                <select
-                  className={select}
-                  value={cat.spendShape}
-                  onChange={(e) => patch({ spendShape: e.target.value as SpendShape })}
-                >
-                  <option value="linear">Through the month</option>
-                  <option value="fixed">Once, like a bill</option>
-                </select>
-              }
+              value={cat.spendShape === 'fixed' ? 'All at once, like a bill' : 'Through the month'}
             />
             {cat.typicalPostDay && (
               <StaticRow label="Usually posts" value={`Day ${cat.typicalPostDay}`} />
@@ -196,6 +177,13 @@ export function CategoryDetail() {
             </Button>
           ) : undefined
         }
+      />
+      {plan.sheets}
+      <CategoryEditSheet
+        category={editingCat ? cat : null}
+        groups={groups.data ?? []}
+        onClose={() => setEditingCat(false)}
+        onDeleted={() => navigate(back.to)}
       />
       <ForgiveSheet
         open={forgiving}

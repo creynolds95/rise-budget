@@ -1,3 +1,4 @@
+import type { PlanDefault } from '@rise/shared/budget';
 import {
   Category,
   CategoryGroup,
@@ -5,7 +6,7 @@ import {
   type RolloverPolicy,
   type SpendShape,
 } from '@rise/shared/schemas';
-import { bool, newId, type UserId } from './util';
+import { bool, newId, nowIso, type UserId } from './util';
 
 interface GroupRow {
   id: string;
@@ -25,6 +26,8 @@ interface CategoryRow {
   typical_post_day: number | null;
   archived_at: string | null;
   sort_order: number;
+  plan_default_cents: number | null;
+  plan_default_from: string | null;
 }
 
 const toGroup = (r: GroupRow): CategoryGroup =>
@@ -42,7 +45,15 @@ const toCategory = (r: CategoryRow): Category =>
     typicalPostDay: r.typical_post_day,
     archivedAt: r.archived_at,
     sortOrder: r.sort_order,
+    planDefaultCents: r.plan_default_cents,
+    planDefaultFrom: r.plan_default_from,
   });
+
+/** The category's plan default in the engine's shape, if it has one (SPEC §2.9). */
+export const planDefaultOf = (c: Category): PlanDefault | null =>
+  c.planDefaultCents !== null && c.planDefaultFrom !== null
+    ? { cents: c.planDefaultCents, from: c.planDefaultFrom }
+    : null;
 
 export async function listGroups(userId: UserId, db: D1Database): Promise<CategoryGroup[]> {
   const { results } = await db
@@ -128,6 +139,7 @@ export async function createCategory(
 
 export interface CategoryPatch {
   name?: string | undefined;
+  emoji?: string | null | undefined;
   groupId?: string | undefined;
   rolloverPolicy?: RolloverPolicy | undefined;
   spendShape?: SpendShape | undefined;
@@ -136,6 +148,7 @@ export interface CategoryPatch {
 
 const COLS: Record<keyof CategoryPatch, string> = {
   name: 'name',
+  emoji: 'emoji',
   groupId: 'group_id',
   rolloverPolicy: 'rollover_policy',
   spendShape: 'spend_shape',
@@ -163,4 +176,68 @@ export async function updateCategory(
       .run();
   }
   return getCategory(userId, db, id);
+}
+
+export function setPlanDefaultStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  d: PlanDefault,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      'UPDATE category SET plan_default_cents = ?3, plan_default_from = ?4 WHERE user_id = ?1 AND id = ?2',
+    )
+    .bind(userId, id, d.cents, d.from);
+}
+
+/**
+ * SPEC §2.10: what keeps a category from being deleted, if anything — money in any open month.
+ * Null when it's free to go.
+ */
+export async function categoryMoneyInOpenMonths(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): Promise<{ periodId: string } | null> {
+  const row = await db
+    .prepare(
+      `SELECT a.period_id AS period_id FROM allocation a
+       LEFT JOIN period p ON p.user_id = a.user_id AND p.id = a.period_id
+       WHERE a.user_id = ?1 AND a.category_id = ?2 AND COALESCE(p.status, 'open') = 'open'
+         AND (a.planned_cents != 0 OR a.carried_in_cents != 0)
+       UNION ALL
+       SELECT s.period_id FROM split s
+       JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+       LEFT JOIN period p ON p.user_id = s.user_id AND p.id = s.period_id
+       WHERE s.user_id = ?1 AND s.category_id = ?2 AND COALESCE(p.status, 'open') = 'open'
+         AND t.review_state != 'dropped'
+       LIMIT 1`,
+    )
+    .bind(userId, id)
+    .first<{ period_id: string }>();
+  return row ? { periodId: row.period_id } : null;
+}
+
+export function archiveCategoryStmts(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): D1PreparedStatement[] {
+  return [
+    db.prepare('DELETE FROM rule WHERE user_id = ?1 AND category_id = ?2').bind(userId, id),
+    // Learned suggestions must not point at a category the picker no longer shows.
+    db
+      .prepare('DELETE FROM merchant_memory WHERE user_id = ?1 AND category_id = ?2')
+      .bind(userId, id),
+    db
+      .prepare(
+        `UPDATE txn SET suggested_category_id = NULL, suggestion_confidence = 0
+         WHERE user_id = ?1 AND suggested_category_id = ?2`,
+      )
+      .bind(userId, id),
+    db
+      .prepare('UPDATE category SET archived_at = ?3 WHERE user_id = ?1 AND id = ?2')
+      .bind(userId, id, nowIso()),
+  ];
 }

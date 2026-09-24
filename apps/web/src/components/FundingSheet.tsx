@@ -11,6 +11,8 @@ export interface FundingRequest {
   plannedCents: number;
   shortfallCents: number;
   candidates: { categoryId: string; slackCents: number }[];
+  /** Carried through from the plan editor so funding doesn't drop the choice. */
+  applyToFuture?: boolean;
 }
 
 /** Greedy first draft: the most slack first, until the shortfall is covered. */

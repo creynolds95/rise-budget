@@ -145,6 +145,64 @@ describe('T21 transactions & splits', () => {
     expect(res.json.items.map((t: { descriptorRaw: string }) => t.descriptorRaw)).toEqual(['B']);
   });
 
+  it('filters by several categories and accounts at once', async () => {
+    const s = await setup();
+    const cash = (await s.api('POST', '/accounts', { name: 'Cash', kind: 'depository' })).json;
+    await s.add('2026-09-02', 500, 'A', s.home.id);
+    await s.add('2026-09-03', 700, 'B', s.kids.id);
+    await s.add('2026-09-04', 900, 'C');
+    await s.api('POST', '/transactions', {
+      accountId: cash.id,
+      postedAt: '2026-09-05',
+      amountCents: 300,
+      descriptor: 'D',
+    });
+    const both = await s.api('GET', `/transactions?category=${s.home.id},${s.kids.id}`);
+    expect(both.json.items.map((t: { descriptorRaw: string }) => t.descriptorRaw)).toEqual([
+      'B',
+      'A',
+    ]);
+    const acct = await s.api('GET', `/transactions?account=${cash.id}`);
+    expect(acct.json.items.map((t: { descriptorRaw: string }) => t.descriptorRaw)).toEqual(['D']);
+    expect((await s.api('GET', '/transactions?account=,')).status).toBe(400);
+  });
+
+  it('filters by direction and amount size', async () => {
+    const s = await setup();
+    await s.add('2026-09-02', 500, 'small');
+    await s.add('2026-09-03', 12_000, 'big');
+    await s.add('2026-09-04', -250_000, 'paycheck');
+    const names = async (qs: string) =>
+      (await s.api('GET', `/transactions?${qs}`)).json.items.map(
+        (t: { descriptorRaw: string }) => t.descriptorRaw,
+      );
+    expect(await names('direction=in')).toEqual(['paycheck']);
+    expect(await names('direction=out')).toEqual(['big', 'small']);
+    expect(await names('min=1000&max=200000')).toEqual(['big']);
+    expect(await names('min=100000')).toEqual(['paycheck']);
+  });
+
+  it('sorts by amount with a cursor that neither skips nor repeats', async () => {
+    const s = await setup();
+    // Ties on amount make the id tiebreak do real work across the page boundary.
+    for (let i = 0; i < 60; i++) await s.add('2026-09-10', 100 * (i % 7) + 100, `T${i}`);
+    const p1 = await s.api('GET', '/transactions?sort=amount_desc');
+    const p2 = await s.api('GET', `/transactions?sort=amount_desc&cursor=${p1.json.nextCursor}`);
+    const all = [...p1.json.items, ...p2.json.items] as { id: string; amountCents: number }[];
+    expect(new Set(all.map((t) => t.id)).size).toBe(60);
+    const amounts = all.map((t) => t.amountCents);
+    expect(amounts).toEqual([...amounts].sort((a, b) => b - a));
+    const asc = (await s.api('GET', '/transactions?sort=amount_asc')).json.items as {
+      amountCents: number;
+    }[];
+    expect(asc[0]?.amountCents).toBe(100);
+    const old = (await s.api('GET', '/transactions?sort=date_asc')).json.items as {
+      postedAt: string;
+    }[];
+    expect(old[0]?.postedAt).toBe('2026-09-10');
+    expect((await s.api('GET', '/transactions?sort=sideways')).status).toBe(400);
+  });
+
   it('rejects unknown or foreign categories and accounts; users cannot see each other', async () => {
     const a = await setup();
     const b = await setup();

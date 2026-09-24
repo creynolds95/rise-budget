@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
-import { FundingSheet, type FundingRequest } from '../components/FundingSheet';
+import { usePlanFlow } from '../components/PlanFlow';
+import { Icon } from '../components/primitives/Icon';
 import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -14,6 +15,7 @@ import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
 import { addMonths, monthName, shortDate } from '../lib/dates';
+import { formatCents } from '../lib/money';
 
 import {
   useCategories,
@@ -34,34 +36,9 @@ export function Budget() {
   const groups = useGroups();
   const categories = useCategories();
   const invalidate = useInvalidateMoney();
-  const [funding, setFunding] = useState<FundingRequest | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const setPlanned = async (
-    categoryId: string,
-    plannedCents: number,
-    fund: { fromCategoryId: string; amountCents: number }[] = [],
-  ) => {
-    setError(null);
-    try {
-      await api('PATCH', `/allocations/${month}:${categoryId}`, { plannedCents, funding: fund });
-      setFunding(null);
-      await invalidate();
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'INSUFFICIENT_POOL') {
-        const d = e.detail as { shortfallCents: number; candidates: FundingRequest['candidates'] };
-        setFunding({
-          categoryId,
-          plannedCents,
-          shortfallCents: d.shortfallCents,
-          candidates: d.candidates,
-        });
-      } else {
-        setError(e instanceof ApiError ? e.message : 'Could not save.');
-      }
-    }
-  };
+  const plan = usePlanFlow(month, categories.data ?? []);
 
   if (!period.data || !groups.data || !categories.data) return <BudgetSkeleton />;
   const p = period.data;
@@ -78,9 +55,18 @@ export function Budget() {
       />
 
       <header className="gutter pt-2 pb-6">
-        <p className="type-label text-ink-muted">
-          {closed ? 'Returned to the pool' : 'Ready to assign'}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="type-label text-ink-muted">
+            {closed ? 'Returned to the pool' : 'Ready to assign'}
+          </p>
+          <Link
+            to={`/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`}
+            aria-label="Budget settings"
+            className="-mr-2 flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+          >
+            <Icon name="sliders" />
+          </Link>
+        </div>
         <p className="mt-1 type-display">
           <MoneyText
             cents={closed ? p.period.returnedSurplusCents : p.poolCents}
@@ -142,7 +128,7 @@ export function Budget() {
         )}
       </section>
 
-      {error && <p className="gutter mt-4 text-clay">{error}</p>}
+      {(error ?? plan.error) && <p className="gutter mt-4 text-clay">{error ?? plan.error}</p>}
 
       {expenseGroups.length === 0 ? (
         <EmptyBudget onAdd={() => setAdding(true)} />
@@ -155,7 +141,10 @@ export function Budget() {
             byId={byId}
             month={month}
             editable={!closed}
-            onPlanned={setPlanned}
+            onEdit={(row) => {
+              const category = byId.get(row.categoryId);
+              if (category) plan.open(category, row, p.poolCents);
+            }}
           />
         ))
       )}
@@ -171,14 +160,7 @@ export function Budget() {
       <Upcoming month={month} today={today} categories={categories.data} />
       <Moves month={month} categories={categories.data} />
 
-      <FundingSheet
-        request={funding}
-        categories={categories.data}
-        onClose={() => setFunding(null)}
-        onConfirm={(f) =>
-          funding ? setPlanned(funding.categoryId, funding.plannedCents, f) : Promise.resolve()
-        }
-      />
+      {plan.sheets}
       <AddCategorySheet open={adding} groups={groups.data} onClose={() => setAdding(false)} />
     </div>
   );
@@ -220,14 +202,14 @@ function GroupSection({
   byId,
   month,
   editable,
-  onPlanned,
+  onEdit,
 }: {
   group: CategoryGroup;
   rows: ViewCategory[];
   byId: Map<string, Category>;
   month: string;
   editable: boolean;
-  onPlanned: (categoryId: string, cents: number) => Promise<void>;
+  onEdit: (row: ViewCategory) => void;
 }) {
   const [open, setOpen] = useState(true);
   const available = rows.reduce((n, r) => n + r.availableCents, 0);
@@ -263,7 +245,7 @@ function GroupSection({
                 category={byId.get(r.categoryId)}
                 month={month}
                 editable={editable}
-                onPlanned={onPlanned}
+                onEdit={() => onEdit(r)}
               />
             ))}
         </ul>
@@ -277,20 +259,28 @@ function BudgetRow({
   category,
   month,
   editable,
-  onPlanned,
+  onEdit,
 }: {
   row: ViewCategory;
   category: Category | undefined;
   month: string;
   editable: boolean;
-  onPlanned: (categoryId: string, cents: number) => Promise<void>;
+  onEdit: () => void;
 }) {
   const over = row.remainingCents < 0;
   return (
-    <li className="gutter border-b border-hairline py-4">
+    <li className="gutter border-b border-hairline py-3">
       <div className="flex items-baseline justify-between gap-3">
-        <Link to={`/budget/${row.categoryId}?m=${month}`} className="min-h-11 truncate font-medium">
-          {category?.name ?? 'Category'}
+        <Link
+          to={`/budget/${row.categoryId}?m=${month}`}
+          className="flex min-h-11 min-w-0 items-center gap-2 font-medium"
+        >
+          {category?.emoji && (
+            <span aria-hidden className="text-xl leading-none">
+              {category.emoji}
+            </span>
+          )}
+          <span className="truncate">{category?.name ?? 'Category'}</span>
         </Link>
         <span className="shrink-0 text-right">
           {row.carriedInCents !== 0 && (
@@ -329,13 +319,22 @@ function BudgetRow({
           )}
         </span>
         {editable ? (
-          <MoneyField
-            label={`Planned for ${category?.name ?? 'category'}`}
-            cents={row.plannedCents}
-            onCommit={(v) => onPlanned(row.categoryId, v)}
-          />
+          <button
+            onClick={onEdit}
+            aria-label={`Planned for ${category?.name ?? 'category'}: ${formatCents(row.plannedCents)}. Change`}
+            className="-my-1 flex min-h-11 items-center gap-1.5 rounded-full bg-sage-100 px-3.5 text-sage-700 active:bg-sage-300"
+          >
+            <MoneyText
+              cents={row.plannedCents}
+              className="font-semibold text-sage-700"
+              whole={row.plannedCents % 100 === 0}
+            />
+            <span className="type-caption">planned</span>
+          </button>
         ) : (
-          <MoneyText cents={row.plannedCents} tone="muted" />
+          <span className="type-caption text-ink-muted">
+            <MoneyText cents={row.plannedCents} tone="muted" /> planned
+          </span>
         )}
       </div>
     </li>

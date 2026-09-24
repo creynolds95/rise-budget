@@ -1,5 +1,5 @@
 import { periodOf } from '@rise/shared/budget';
-import { Transaction, type ReviewState } from '@rise/shared/schemas';
+import { Transaction, type ReviewState, type TxnSort } from '@rise/shared/schemas';
 import { refreshAggregateStmts } from './aggregates';
 import { newId, nowIso, type UserId } from './util';
 
@@ -84,13 +84,46 @@ export async function splitsFor(
 export interface TxnFilters {
   from?: string | undefined;
   to?: string | undefined;
-  accountId?: string | undefined;
-  categoryId?: string | undefined;
+  accountIds?: string[] | undefined;
+  categoryIds?: string[] | undefined;
   q?: string | undefined;
   reviewState?: ReviewState | undefined;
-  /** Keyset cursor: rows strictly after (postedAt, id) in newest-first order. */
-  after?: { postedAt: string; id: string } | undefined;
+  direction?: 'in' | 'out' | undefined;
+  minCents?: number | undefined;
+  maxCents?: number | undefined;
+  sort?: TxnSort | undefined;
+  /** Keyset cursor: rows strictly after (key, id) in the chosen order. */
+  after?: { key: string; id: string } | undefined;
 }
+
+/**
+ * Each sort is a fixed ORDER BY and the matching keyset condition on (?8 key, ?9 id), so a
+ * page boundary never skips or repeats a row.
+ */
+const SORTS: Record<TxnSort, { order: string; after: string }> = {
+  date_desc: {
+    order: 't.posted_at DESC, t.id DESC',
+    after: '(t.posted_at < ?8 OR (t.posted_at = ?8 AND t.id < ?9))',
+  },
+  date_asc: {
+    order: 't.posted_at ASC, t.id ASC',
+    after: '(t.posted_at > ?8 OR (t.posted_at = ?8 AND t.id > ?9))',
+  },
+  amount_desc: {
+    order: 'ABS(t.amount_cents) DESC, t.id DESC',
+    after:
+      '(ABS(t.amount_cents) < CAST(?8 AS INTEGER) OR (ABS(t.amount_cents) = CAST(?8 AS INTEGER) AND t.id < ?9))',
+  },
+  amount_asc: {
+    order: 'ABS(t.amount_cents) ASC, t.id ASC',
+    after:
+      '(ABS(t.amount_cents) > CAST(?8 AS INTEGER) OR (ABS(t.amount_cents) = CAST(?8 AS INTEGER) AND t.id > ?9))',
+  },
+};
+
+/** The cursor key for a row under a sort: its date, or the size of its amount. */
+export const sortKey = (t: Transaction, sort: TxnSort): string =>
+  sort.startsWith('amount') ? String(Math.abs(t.amountCents)) : t.postedAt;
 
 export async function listTransactions(
   userId: UserId,
@@ -99,30 +132,38 @@ export async function listTransactions(
   limit: number,
 ): Promise<Transaction[]> {
   const like = f.q ? `%${f.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
+  const sort = SORTS[f.sort ?? 'date_desc'];
   const { results } = await db
     .prepare(
       `SELECT * FROM txn t WHERE t.user_id = ?1
          AND (?2 IS NULL OR t.posted_at >= ?2)
          AND (?3 IS NULL OR t.posted_at <= ?3)
-         AND (?4 IS NULL OR t.account_id = ?4)
-         AND (?5 IS NULL OR EXISTS (SELECT 1 FROM split s WHERE s.user_id = ?1 AND s.txn_id = t.id AND s.category_id = ?5))
+         AND (?4 IS NULL OR t.account_id IN (SELECT value FROM json_each(?4)))
+         AND (?5 IS NULL OR EXISTS (SELECT 1 FROM split s WHERE s.user_id = ?1 AND s.txn_id = t.id
+              AND s.category_id IN (SELECT value FROM json_each(?5))))
          AND (?6 IS NULL OR t.descriptor_raw LIKE ?6 ESCAPE '\\' OR t.merchant_normalized LIKE ?6 ESCAPE '\\'
               OR t.merchant_display LIKE ?6 ESCAPE '\\' OR t.notes LIKE ?6 ESCAPE '\\')
          AND (?7 IS NULL OR t.review_state = ?7)
-         AND (?8 IS NULL OR t.posted_at < ?8 OR (t.posted_at = ?8 AND t.id < ?9))
-       ORDER BY t.posted_at DESC, t.id DESC LIMIT ?10`,
+         AND (?8 IS NULL OR ${sort.after})
+         AND (?11 IS NULL OR (?11 = 'out' AND t.amount_cents > 0) OR (?11 = 'in' AND t.amount_cents < 0))
+         AND (?12 IS NULL OR ABS(t.amount_cents) >= ?12)
+         AND (?13 IS NULL OR ABS(t.amount_cents) <= ?13)
+       ORDER BY ${sort.order} LIMIT ?10`,
     )
     .bind(
       userId,
       f.from ?? null,
       f.to ?? null,
-      f.accountId ?? null,
-      f.categoryId ?? null,
+      f.accountIds?.length ? JSON.stringify(f.accountIds) : null,
+      f.categoryIds?.length ? JSON.stringify(f.categoryIds) : null,
       like,
       f.reviewState ?? null,
-      f.after?.postedAt ?? null,
+      f.after?.key ?? null,
       f.after?.id ?? null,
       limit,
+      f.direction ?? null,
+      f.minCents ?? null,
+      f.maxCents ?? null,
     )
     .all<TxnRow>();
   const splits = await splitsFor(

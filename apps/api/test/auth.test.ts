@@ -266,6 +266,10 @@ describe('T16 auth middleware + error contract', () => {
   it('settings patch keeps unspecified values', async () => {
     const u = await signedInUser();
     const res = await call('PATCH', '/me/settings', { access: u.access, body: { appLock: '5m' } });
-    expect(res.json).toEqual({ rollIncomeVariance: true, appLock: '5m' });
+    expect(res.json).toEqual({
+      rollIncomeVariance: true,
+      appLock: '5m',
+      planChangesApplyToFuture: false,
+    });
   });
 });

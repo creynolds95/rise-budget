@@ -9,10 +9,13 @@ export function TxnRow({
   t,
   categoryName,
   from,
+  hideDate = false,
 }: {
   t: Transaction;
   categoryName?: string | undefined;
   from?: string;
+  /** Under a date header the date would only repeat it. */
+  hideDate?: boolean;
 }) {
   return (
     <Link
@@ -32,15 +35,13 @@ export function TxnRow({
           )}
         </span>
         <span className="block truncate type-caption text-ink-faint">
-          {shortDate(t.postedAt)}
-          {t.isTransfer
-            ? ' · Transfer'
-            : categoryName
-              ? ` · ${categoryName}`
-              : t.splits.length > 1
-                ? ' · Split'
-                : ''}
-          {t.reviewState === 'needs_review' ? ' · To review' : ''}
+          {[
+            hideDate ? null : shortDate(t.postedAt),
+            t.isTransfer ? 'Transfer' : (categoryName ?? (t.splits.length > 1 ? 'Split' : null)),
+            t.reviewState === 'needs_review' ? 'To review' : null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || 'Uncategorized'}
         </span>
       </span>
       <span className="flex items-center gap-2">

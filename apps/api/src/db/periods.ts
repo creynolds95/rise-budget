@@ -1,3 +1,4 @@
+import { resolvePlanned, type PlanDefault } from '@rise/shared/budget';
 import { Period } from '@rise/shared/schemas';
 import { nowIso, type UserId } from './util';
 
@@ -96,21 +97,71 @@ export function parseAllocationId(id: string): { periodId: string; categoryId: s
   return m ? { periodId: m[1] as string, categoryId: m[2] as string } : null;
 }
 
-/** Applies a planned-amount delta (upserting the row). Used inside an atomic batch. */
+/**
+ * Applies a planned-amount delta (upserting the row). Used inside an atomic batch. A new row
+ * starts from `seedCents`, the month's resolved plan (SPEC §2.9), so creating it changes nothing.
+ */
 export function addPlannedStmt(
   userId: UserId,
   db: D1Database,
   periodId: string,
   categoryId: string,
   deltaCents: number,
+  seedCents = 0,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO allocation (id, user_id, period_id, category_id, planned_cents) VALUES (?1, ?2, ?3, ?4, ?6 + ?5)
+       ON CONFLICT(user_id, period_id, category_id) DO UPDATE SET planned_cents = planned_cents + ?5
+       WHERE allocation.user_id = ?2`,
+    )
+    .bind(allocationId(periodId, categoryId), userId, periodId, categoryId, deltaCents, seedCents);
+}
+
+/** Writes a month's plan down if it has no row yet; an existing row is left alone. */
+export function seedAllocationStmt(
+  userId: UserId,
+  db: D1Database,
+  periodId: string,
+  categoryId: string,
+  plannedCents: number,
 ): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO allocation (id, user_id, period_id, category_id, planned_cents) VALUES (?1, ?2, ?3, ?4, ?5)
-       ON CONFLICT(user_id, period_id, category_id) DO UPDATE SET planned_cents = planned_cents + excluded.planned_cents
-       WHERE allocation.user_id = ?2`,
+       ON CONFLICT(user_id, period_id, category_id) DO NOTHING`,
     )
-    .bind(allocationId(periodId, categoryId), userId, periodId, categoryId, deltaCents);
+    .bind(allocationId(periodId, categoryId), userId, periodId, categoryId, plannedCents);
+}
+
+/** Sets the plan on an existing row. Only ever for open months after the one being edited. */
+export function setPlannedStmt(
+  userId: UserId,
+  db: D1Database,
+  periodId: string,
+  categoryId: string,
+  plannedCents: number,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE allocation SET planned_cents = ?4
+       WHERE user_id = ?1 AND period_id = ?2 AND category_id = ?3
+         AND NOT EXISTS (SELECT 1 FROM period p WHERE p.user_id = ?1 AND p.id = ?2 AND p.status = 'closed')`,
+    )
+    .bind(userId, periodId, categoryId, plannedCents);
+}
+
+/** Months that have an allocation row for a category. */
+export async function allocationPeriods(
+  userId: UserId,
+  db: D1Database,
+  categoryId: string,
+): Promise<string[]> {
+  const { results } = await db
+    .prepare('SELECT period_id FROM allocation WHERE user_id = ?1 AND category_id = ?2')
+    .bind(userId, categoryId)
+    .all<{ period_id: string }>();
+  return results.map((r) => r.period_id);
 }
 
 export function insertReallocationStmt(
@@ -200,6 +251,9 @@ export interface CloseWrite {
   returnedSurplusCents: number;
 }
 
+/** A category's resolved plan for a month with no row yet, by category id (SPEC §2.9). */
+export type PlanSeeds = (periodId: string, categoryId: string) => number;
+
 /**
  * Statements that freeze one close outcome: carry-ins on P+1, returned surplus and status on P.
  * The caller runs them (possibly several outcomes) in a single atomic batch.
@@ -209,6 +263,7 @@ export function closeWriteStmts(
   db: D1Database,
   w: CloseWrite,
   closedAt: string,
+  seeds: PlanSeeds = () => 0,
 ): D1PreparedStatement[] {
   return [
     ensurePeriodStmt(userId, db, w.periodId),
@@ -216,7 +271,8 @@ export function closeWriteStmts(
     ...w.carryIn.map((c) =>
       db
         .prepare(
-          `INSERT INTO allocation (id, user_id, period_id, category_id, carried_in_cents) VALUES (?1, ?2, ?3, ?4, ?5)
+          `INSERT INTO allocation (id, user_id, period_id, category_id, carried_in_cents, planned_cents)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6)
            ON CONFLICT(user_id, period_id, category_id) DO UPDATE SET carried_in_cents = excluded.carried_in_cents
            WHERE allocation.user_id = ?2`,
         )
@@ -226,6 +282,7 @@ export function closeWriteStmts(
           w.nextPeriodId,
           c.categoryId,
           c.carriedInCents,
+          seeds(w.nextPeriodId, c.categoryId),
         ),
     ),
     db
@@ -294,6 +351,7 @@ export async function categoryHistory(
   categoryId: string,
   from: string,
   to: string,
+  planDefault: PlanDefault | null = null,
 ): Promise<CategoryHistoryRow[]> {
   const [alloc, agg] = await Promise.all([
     db
@@ -318,7 +376,7 @@ export async function categoryHistory(
     const a = plan.get(p);
     out.push({
       periodId: p,
-      plannedCents: a?.planned_cents ?? 0,
+      plannedCents: resolvePlanned(a && { plannedCents: a.planned_cents }, planDefault, p),
       carriedInCents: a?.carried_in_cents ?? 0,
       spentCents: spent.get(p) ?? 0,
     });

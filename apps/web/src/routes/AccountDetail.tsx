@@ -6,6 +6,7 @@ import { staleText } from '../components/StaleNotes';
 import { TxnRow } from '../components/TxnRow';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
+import { Toggle } from '../components/primitives/Toggle';
 import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -231,29 +232,5 @@ export function AccountDetail() {
         ) : undefined
       }
     />
-  );
-}
-
-function Toggle({
-  label,
-  on,
-  onChange,
-}: {
-  label: string;
-  on: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={() => onChange(!on)}
-      className={`relative h-7 w-12 rounded-full transition-colors ${on ? 'bg-sage-600' : 'bg-hairline'}`}
-    >
-      <span
-        className={`absolute top-0.5 left-0 size-6 rounded-full bg-surface shadow-soft transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`}
-      />
-    </button>
   );
 }

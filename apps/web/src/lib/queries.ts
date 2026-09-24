@@ -55,14 +55,22 @@ export const usePeriod = (id: string) =>
 export const useTransaction = (id: string) =>
   useQuery({ queryKey: ['txn', id], queryFn: () => get<Transaction>(`/transactions/${id}`) });
 
-export interface TxnFilters {
-  q?: string;
-  account?: string;
-  category?: string;
-  reviewState?: 'needs_review' | 'reviewed' | 'dropped';
-  from?: string;
-  to?: string;
-}
+/** Query-string filters, exactly as `GET /transactions` takes them. */
+export type TxnFilters = Partial<
+  Record<
+    | 'q'
+    | 'account'
+    | 'category'
+    | 'reviewState'
+    | 'from'
+    | 'to'
+    | 'direction'
+    | 'min'
+    | 'max'
+    | 'sort',
+    string
+  >
+>;
 
 export function useTransactions(f: TxnFilters) {
   return useInfiniteQuery({

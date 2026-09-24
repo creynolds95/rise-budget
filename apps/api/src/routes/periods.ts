@@ -1,4 +1,5 @@
 import {
+  applyPlanDefault,
   buildReallocation,
   closePeriod,
   hasEnded,
@@ -7,6 +8,7 @@ import {
   planAllocationChange,
   prevPeriod,
   recalculateCascade,
+  resolvePlanned,
   type SlackInput,
 } from '@rise/shared/budget';
 import {
@@ -18,6 +20,7 @@ import {
 import { Hono } from 'hono';
 import {
   addPlannedStmt,
+  allocationPeriods,
   closeWriteStmts,
   dismissRecalcFlag,
   ensurePeriodStmt,
@@ -26,9 +29,16 @@ import {
   listPeriodsFrom,
   writeAudit,
   insertReallocationStmt,
+  listAllocations,
+  listCategories,
   listReallocations,
   parseAllocationId,
+  planDefaultOf,
+  seedAllocationStmt,
   setExpectedIncome,
+  setPlanDefaultStmt,
+  setPlannedStmt,
+  type PlanSeeds,
 } from '../db';
 import type { AppEnv } from '../env';
 import { loadCloseInput, loadCloseStatus } from '../lib/close';
@@ -39,6 +49,13 @@ import { body } from '../lib/validate';
 
 export const periods = new Hono<AppEnv>();
 export const allocations = new Hono<AppEnv>();
+
+/** Each category's resolved plan for a month with no row yet (SPEC §2.9). */
+async function planSeeds(userId: string, db: D1Database): Promise<PlanSeeds> {
+  const defaults = new Map((await listCategories(userId, db)).map((x) => [x.id, planDefaultOf(x)]));
+  return (periodId, categoryId) =>
+    resolvePlanned(undefined, defaults.get(categoryId) ?? null, periodId);
+}
 
 function periodParam(id: string): string {
   if (!PeriodId.safeParse(id).success)
@@ -101,7 +118,15 @@ periods.post('/:id/close', async (c) => {
     case 'already_closed':
       return c.json({ period: await getPeriod(userId, db, id), alreadyClosed: true });
     case 'closed':
-      await db.batch(closeWriteStmts(userId, db, result.outcome, new Date().toISOString()));
+      await db.batch(
+        closeWriteStmts(
+          userId,
+          db,
+          result.outcome,
+          new Date().toISOString(),
+          await planSeeds(userId, db),
+        ),
+      );
       await writeAudit(userId, db, 'period.closed', {
         type: 'period',
         id,
@@ -144,7 +169,8 @@ periods.post('/:id/recalculate', async (c) => {
   );
   const outcomes = recalculateCascade(inputs);
   const closedAt = new Date().toISOString();
-  await db.batch(outcomes.flatMap((o) => closeWriteStmts(userId, db, o, closedAt)));
+  const seeds = await planSeeds(userId, db);
+  await db.batch(outcomes.flatMap((o) => closeWriteStmts(userId, db, o, closedAt, seeds)));
   await writeAudit(userId, db, 'period.recalculated', {
     type: 'period',
     id,
@@ -235,14 +261,45 @@ allocations.patch('/:id', async (c) => {
   }
 
   const db = c.env.DB;
+  const [cats, rows] = await Promise.all([
+    listCategories(userId, db),
+    listAllocations(userId, db, periodId),
+  ]);
+  const defaults = new Map(cats.map((x) => [x.id, planDefaultOf(x)]));
+  const hasRow = new Set(rows.map((r) => r.category_id));
+  // A new row starts from the month's resolved plan, so creating it changes nothing (§2.9).
+  const seed = (id: string) =>
+    hasRow.has(id) ? 0 : resolvePlanned(undefined, defaults.get(id) ?? null, periodId);
+
+  const future: D1PreparedStatement[] = [];
+  if (b.applyToFuture) {
+    const applied = applyPlanDefault({
+      periodId,
+      plannedCents: b.plannedCents,
+      existing: defaults.get(categoryId) ?? null,
+      rowPeriods: await allocationPeriods(userId, db, categoryId),
+    });
+    future.push(
+      ...applied.backfill
+        .filter((f) => f.periodId !== periodId)
+        .map((f) => seedAllocationStmt(userId, db, f.periodId, categoryId, f.plannedCents)),
+      ...applied.overwrite.map((p) => setPlannedStmt(userId, db, p, categoryId, b.plannedCents)),
+      setPlanDefaultStmt(userId, db, categoryId, applied.next),
+    );
+  }
+
   await db.batch([
     ensurePeriodStmt(userId, db, periodId),
+    // The edited month's own row: seeded even when the plan doesn't move, so a default
+    // change can never reach back into it.
+    seedAllocationStmt(userId, db, periodId, categoryId, seed(categoryId)),
     ...result.plannedDeltas.map((d) =>
-      addPlannedStmt(userId, db, periodId, d.categoryId, d.deltaCents),
+      addPlannedStmt(userId, db, periodId, d.categoryId, d.deltaCents, seed(d.categoryId)),
     ),
     ...result.rows.map((r) =>
       insertReallocationStmt(userId, db, { periodId, ...r, note: b.note ?? null }),
     ),
+    ...future,
   ]);
   const after = await loadPeriodView(c.env, userId, periodId);
   return c.json({ period: after.period, ...after.view });

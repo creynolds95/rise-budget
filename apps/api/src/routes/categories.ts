@@ -7,7 +7,9 @@ import {
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
+  archiveCategoryStmts,
   categoryHistory,
+  categoryMoneyInOpenMonths,
   clearCarriedInStmt,
   createCategory,
   createGroup,
@@ -18,6 +20,8 @@ import {
   listAllocations,
   listCategories,
   listGroups,
+  listRules,
+  planDefaultOf,
   updateCategory,
   writeAudit,
 } from '../db';
@@ -70,14 +74,45 @@ categories.patch('/:id', async (c) => {
   return c.json(await updateCategory(userId, c.env.DB, id, b));
 });
 
+/**
+ * SPEC §2.10: archive, never erase. Refused while the category holds money in an open month;
+ * its rules go with it, each audited.
+ */
+categories.delete('/:id', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const id = c.req.param('id');
+  const cat = await getCategory(userId, db, id);
+  if (!cat || cat.archivedAt) throw new AppError(404, 'NOT_FOUND', 'Category not found');
+  const inUse = await categoryMoneyInOpenMonths(userId, db, id);
+  if (inUse) {
+    throw new AppError(
+      409,
+      'CATEGORY_IN_USE',
+      `${cat.name} still has money or spending in ${inUse.periodId}. Move it to another category first.`,
+      inUse,
+    );
+  }
+  const rules = (await listRules(userId, db)).filter((r) => r.categoryId === id);
+  await db.batch(archiveCategoryStmts(userId, db, id));
+  for (const r of rules) {
+    await writeAudit(userId, db, 'rule.deleted', {
+      type: 'rule',
+      id: r.id,
+      detail: { reason: 'category_deleted', categoryId: id },
+    });
+  }
+  return c.json({ archived: id, rulesDeleted: rules.length });
+});
+
 const MONTHS_MAX = 36;
 
 /** Month by month for the category page's chart (reads aggregates, not raw splits). */
 categories.get('/:id/history', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
-  if (!(await getCategory(userId, c.env.DB, id)))
-    throw new AppError(404, 'NOT_FOUND', 'Category not found');
+  const cat = await getCategory(userId, c.env.DB, id);
+  if (!cat) throw new AppError(404, 'NOT_FOUND', 'Category not found');
   const months = Math.min(Math.max(Number(c.req.query('months') ?? 12) || 12, 1), MONTHS_MAX);
   const user = await getUser(userId, c.env.DB);
   const to = localToday(user?.timezone ?? 'America/Chicago').slice(0, 7);
@@ -86,7 +121,7 @@ categories.get('/:id/history', async (c) => {
     const [y, m] = [Number(from.slice(0, 4)), Number(from.slice(5, 7))];
     from = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
   }
-  return c.json(await categoryHistory(userId, c.env.DB, id, from, to));
+  return c.json(await categoryHistory(userId, c.env.DB, id, from, to, planDefaultOf(cat)));
 });
 
 /**

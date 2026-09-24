@@ -238,6 +238,42 @@ period, writing an audit row with the amount and the user's reason. It appears i
 category's history. It lives in the **Manage** zone of the category detail page, styled as
 a destructive-adjacent action, and requires confirmation naming the amount.
 
+### 2.9 Plan defaults ("apply to all future months")
+
+A new month starts with every category's `planned` at 0 unless the user has set a default.
+When editing a category's plan for open period `P`, the user may tick **Apply to all future
+months**. That does three things, atomically, and nothing else:
+
+1. Sets `planned(c, P)` like any other edit (§2.6 funding rules apply to `P` only).
+2. Records `category.plan_default_cents = new_planned` and `plan_default_from = P + 1`.
+3. Sets `planned` on every existing allocation row of `c` in a period after `P` (all such
+   periods are open, because months close in order).
+
+The **resolved** plan for `(Q, c)` is:
+
+```
+if an allocation row exists for (Q, c):      its planned_cents
+elif plan_default_from <= Q:                 plan_default_cents
+else:                                        0
+```
+
+Every reader (period view, close, history) uses the resolved plan. Every writer that
+creates an allocation row (a plan edit, a funding source, a close writing carry-in) first
+seeds it with the resolved plan, so a row's existence never changes a month's numbers.
+
+**A default never restates a closed month.** Before moving `plan_default_from` from `F` to
+`P + 1`, every month in `[F, P]` lacking a row is given one holding the old default, so its
+resolved plan is unchanged. The per-edit toggle starts from the user setting
+`settings.planChangesApplyToFuture` (default **off**: this month only). (Decided 2026-09-24.)
+
+### 2.10 Deleting a category
+
+Deleting archives the category; its past splits and history stay intact. It is refused
+while the category holds money in any open month (non-zero planned, carried-in or spent),
+because hiding it would silently move the pool. The user moves that money first. Rules that
+file into the category are deleted with it, audited as `rule.deleted`, and the confirmation
+names how many.
+
 ---
 
 ## 3. Transactions

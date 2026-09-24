@@ -19,6 +19,7 @@ import {
   insertManualTransaction,
   listAcceptable,
   listTransactions,
+  sortKey,
   linkTransferStmts,
   replaceSplits,
   splitsFor,
@@ -43,16 +44,16 @@ const txnRef = (r: TxnRow) => ({ descriptor: r.descriptor_raw, merchant: r.merch
 function decodeCursor(cursor: string | undefined) {
   if (!cursor) return undefined;
   try {
-    const [postedAt, id] = new TextDecoder().decode(b64urlDecode(cursor)).split('|');
-    if (postedAt && id) return { postedAt, id };
+    const [key, id] = new TextDecoder().decode(b64urlDecode(cursor)).split('|');
+    if (key && id) return { key, id };
   } catch {
     /* fall through */
   }
   throw new AppError(400, 'BAD_REQUEST', 'Invalid cursor');
 }
 
-const encodeCursor = (postedAt: string, id: string) =>
-  b64urlEncode(new TextEncoder().encode(`${postedAt}|${id}`));
+const encodeCursor = (key: string, id: string) =>
+  b64urlEncode(new TextEncoder().encode(`${key}|${id}`));
 
 transactions.get('/', async (c) => {
   const q = TransactionQuery.safeParse(c.req.query());
@@ -64,10 +65,14 @@ transactions.get('/', async (c) => {
     {
       from: f.from,
       to: f.to,
-      accountId: f.account,
-      categoryId: f.category,
+      accountIds: f.account,
+      categoryIds: f.category,
       q: f.q,
       reviewState: f.reviewState,
+      direction: f.direction,
+      minCents: f.min,
+      maxCents: f.max,
+      sort: f.sort,
       after: decodeCursor(f.cursor),
     },
     PAGE + 1,
@@ -76,7 +81,7 @@ transactions.get('/', async (c) => {
   const last = page.at(-1);
   return c.json({
     items: page,
-    nextCursor: items.length > PAGE && last ? encodeCursor(last.postedAt, last.id) : null,
+    nextCursor: items.length > PAGE && last ? encodeCursor(sortKey(last, f.sort), last.id) : null,
   });
 });
 

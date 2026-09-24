@@ -1,6 +1,9 @@
 import type { AccountKind } from '@rise/shared/schemas';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
+import { IconButton } from '../components/primitives/Icon';
+import { Menu } from '../components/primitives/Menu';
 import { StaleNotes, staleText } from '../components/StaleNotes';
 import { Button } from '../components/primitives/Button';
 import { Chart } from '../components/primitives/Chart';
@@ -12,7 +15,14 @@ import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api } from '../lib/api';
 import { allowsPercentChange, rangeStart, type Range } from '../lib/chart';
 import { daysBetween, shortDate } from '../lib/dates';
-import { useAccounts, useMe, useNetWorth, useToday } from '../lib/queries';
+import {
+  useAccounts,
+  useInvalidateMoney,
+  useMe,
+  useNetWorth,
+  useSyncStatus,
+  useToday,
+} from '../lib/queries';
 import type { AccountWithStaleness } from '../lib/types';
 
 export const KIND_GROUPS: { kind: AccountKind; label: string }[] = [
@@ -40,6 +50,9 @@ export function Accounts() {
   const start = rangeStart(range, today);
   const nw = useNetWorth(start, today);
   const [adding, setAdding] = useState(false);
+  const qc = useQueryClient();
+  const invalidate = useInvalidateMoney();
+  const navigate = useNavigate();
 
   const points = nw.data?.points ?? [];
   const first = points[0];
@@ -51,8 +64,63 @@ export function Accounts() {
       : null;
   const live = (accounts.data ?? []).filter((a) => !a.archivedAt);
 
+  const syncMode = useSyncStatus().data?.mode;
+  const refresh = useMutation({
+    mutationFn: () => api('POST', '/sync/run', {}),
+    onSuccess: () =>
+      Promise.all([
+        invalidate(),
+        ...['sync', 'review-queue', 'queue-count'].map((k) =>
+          qc.invalidateQueries({ queryKey: [k] }),
+        ),
+      ]),
+  });
+
   return (
     <div className="mx-auto max-w-2xl pb-12">
+      <header className="gutter flex items-center justify-between pt-3">
+        <h1 className="type-title">Accounts</h1>
+        <div className="-mr-2 flex items-center">
+          <Menu
+            label="Account options"
+            items={[
+              {
+                label: refresh.isPending ? 'Refreshing…' : 'Refresh all',
+                icon: 'refresh',
+                disabled: refresh.isPending || !syncMode || syncMode === 'off',
+                hint: syncMode === 'off' ? 'Connect SimpleFIN first' : undefined,
+                onSelect: () => refresh.mutate(),
+              },
+              {
+                label: 'Add a manual account',
+                icon: 'wallet',
+                onSelect: () => setAdding(true),
+              },
+              {
+                label: 'Bank connection',
+                icon: 'bank',
+                onSelect: () => navigate('/settings/sync?from=Accounts|/accounts'),
+              },
+            ]}
+          />
+          <IconButton icon="plus" label="Add a manual account" onClick={() => setAdding(true)} />
+        </div>
+      </header>
+      {refresh.isPending && (
+        <p role="status" className="gutter type-caption text-ink-muted">
+          Asking your banks for anything new…
+        </p>
+      )}
+      {refresh.isError && (
+        <p role="alert" className="gutter type-caption text-clay">
+          {refresh.error instanceof ApiError ? refresh.error.message : 'Refresh failed.'}
+        </p>
+      )}
+      {refresh.isSuccess && (
+        <p role="status" className="gutter type-caption text-ink-muted">
+          Up to date as of just now.
+        </p>
+      )}
       <section className="gutter pt-4">
         <p className="type-label text-ink-muted">Net worth</p>
         <p className="mt-1 type-display">
@@ -130,11 +198,6 @@ export function Accounts() {
           No accounts yet. Synced accounts appear after the first sync; add anything else by hand.
         </p>
       )}
-      <div className="gutter mt-6">
-        <Button variant="quiet" className="-ml-4" onClick={() => setAdding(true)}>
-          Add a manual account
-        </Button>
-      </div>
       <AddAccountSheet open={adding} onClose={() => setAdding(false)} />
     </div>
   );

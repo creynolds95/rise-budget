@@ -1,6 +1,7 @@
 import {
   buildPeriodView,
   prevPeriod,
+  resolvePlanned,
   type PeriodView,
   type ViewCategoryInput,
 } from '@rise/shared/budget';
@@ -12,6 +13,7 @@ import {
   listAllocations,
   listCategories,
   listGroups,
+  planDefaultOf,
   spentByCategory,
 } from '../db';
 import type { Env } from '../env';
@@ -48,7 +50,11 @@ export async function loadPeriodView(
     spendShape: c.spendShape,
     typicalPostDay: c.typicalPostDay,
     carriedInCents: alloc.get(c.id)?.carried_in_cents ?? 0,
-    plannedCents: alloc.get(c.id)?.planned_cents ?? 0,
+    plannedCents: resolvePlanned(
+      alloc.has(c.id) ? { plannedCents: alloc.get(c.id)?.planned_cents ?? 0 } : undefined,
+      planDefaultOf(c),
+      periodId,
+    ),
     spentCents: spent.get(c.id) ?? 0,
   }));
   const view = buildPeriodView({

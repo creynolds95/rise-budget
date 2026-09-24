@@ -22,6 +22,7 @@ export const ErrorCode = z.enum([
   'SPLITS_DO_NOT_SUM',
   'PERIOD_NOT_ENDED',
   'PERIOD_NOT_READY',
+  'CATEGORY_IN_USE',
   'PERIOD_CLOSED',
   'NOTHING_TO_FORGIVE',
   'AMOUNT_MISMATCH',
@@ -47,6 +48,7 @@ export type ApiError = z.infer<typeof ApiError>;
 export const PatchSettingsBody = z.object({
   rollIncomeVariance: z.boolean().optional(),
   appLock: AppLock.optional(),
+  planChangesApplyToFuture: z.boolean().optional(),
 });
 
 export const CreateAccountBody = z.object({
@@ -121,6 +123,8 @@ export const PatchAllocationBody = z.object({
   plannedCents: Cents.nonnegative(),
   funding: z.array(FundingSource).default([]),
   note: z.string().max(500).optional(),
+  /** SPEC §2.9: also make this the plan for every later month. */
+  applyToFuture: z.boolean().default(false),
 });
 
 export const CreateCategoryBody = z.object({
@@ -135,7 +139,8 @@ export const CreateCategoryBody = z.object({
 export type CreateCategoryBody = z.infer<typeof CreateCategoryBody>;
 
 export const PatchCategoryBody = z.object({
-  name: z.string().min(1).optional(),
+  name: z.string().trim().min(1).optional(),
+  emoji: z.string().trim().max(16).nullable().optional(),
   groupId: Id.optional(),
   rolloverPolicy: RolloverPolicy.optional(),
   spendShape: SpendShape.optional(),
@@ -166,13 +171,28 @@ export const PatchMerchantBody = z.object({
 export const RuleOffer = z.object({ merchant: z.string(), categoryId: Id });
 export type RuleOffer = z.infer<typeof RuleOffer>;
 
+/** Comma-separated ids in a query string, e.g. `account=a,b`. */
+const IdList = z
+  .string()
+  .transform((s) => s.split(',').filter(Boolean))
+  .pipe(z.array(Id).min(1).max(50));
+
+export const TxnSort = z.enum(['date_desc', 'date_asc', 'amount_desc', 'amount_asc']);
+export type TxnSort = z.infer<typeof TxnSort>;
+
 export const TransactionQuery = z.object({
   from: IsoDate.optional(),
   to: IsoDate.optional(),
-  account: Id.optional(),
-  category: Id.optional(),
+  account: IdList.optional(),
+  category: IdList.optional(),
   q: z.string().optional(),
   reviewState: ReviewState.optional(),
+  /** `out` is spending (positive), `in` is money arriving (negative). */
+  direction: z.enum(['in', 'out']).optional(),
+  /** Bounds on the size of the amount, in cents, whichever way it went. */
+  min: z.coerce.number().int().nonnegative().optional(),
+  max: z.coerce.number().int().nonnegative().optional(),
+  sort: TxnSort.default('date_desc'),
   cursor: z.string().optional(),
 });
 

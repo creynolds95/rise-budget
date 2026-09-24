@@ -25,6 +25,8 @@ import {
 export const UserSettings = z.object({
   rollIncomeVariance: z.boolean().default(true),
   appLock: AppLock.default('off'),
+  /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
+  planChangesApplyToFuture: z.boolean().default(false),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 
@@ -88,6 +90,9 @@ export const Category = z.object({
   typicalPostDay: z.int().min(1).max(31).nullable(),
   archivedAt: IsoDateTime.nullable(),
   sortOrder: z.int(),
+  /** SPEC §2.9: the plan for months with no allocation row, from `planDefaultFrom` on. */
+  planDefaultCents: Cents.nullable(),
+  planDefaultFrom: PeriodId.nullable(),
 });
 export type Category = z.infer<typeof Category>;
 
