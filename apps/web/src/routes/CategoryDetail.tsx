@@ -39,6 +39,28 @@ export function CategoryDetail() {
   const [params] = useSearchParams();
   const today = useToday();
   const month = params.get('m') ?? today.slice(0, 7);
+  const back = {
+    label: 'Budget',
+    to: month === today.slice(0, 7) ? '/budget' : `/budget?m=${month}`,
+  };
+  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} />;
+}
+
+/**
+ * The category detail content, shared by the mobile full-page push (`CategoryDetail`
+ * above) and the desktop master/detail panel (`CategoryDetailPanel` in Budget.tsx) — same
+ * five-zone template, same logic, just a different `back` target.
+ */
+function CategoryDetailBody({
+  categoryId,
+  month,
+  back,
+}: {
+  categoryId: string;
+  month: string;
+  back: { label: string; to: string };
+}) {
+  const today = useToday();
   const period = usePeriod(month);
   const categories = useCategories();
   const [range, setRange] = useState<Range>('6M');
@@ -59,10 +81,6 @@ export function CategoryDetail() {
 
   const cat = categories.data?.find((c) => c.id === categoryId);
   const row = period.data?.categories.find((c) => c.categoryId === categoryId);
-  const back = {
-    label: 'Budget',
-    to: month === today.slice(0, 7) ? '/budget' : `/budget?m=${month}`,
-  };
   if (!cat || !row || !period.data) {
     return (
       <DetailPage
@@ -195,6 +213,20 @@ export function CategoryDetail() {
       />
     </>
   );
+}
+
+/**
+ * The desktop master/detail panel (H5): same five-zone content as the mobile push, just
+ * placed beside the category list instead of replacing it. "Close" clears the panel by
+ * dropping `?category=` rather than navigating away from `/budget`.
+ */
+export function CategoryDetailPanel({ categoryId, month }: { categoryId: string; month: string }) {
+  const today = useToday();
+  const back = {
+    label: 'Close',
+    to: month === today.slice(0, 7) ? '/budget' : `/budget?m=${month}`,
+  };
+  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} />;
 }
 
 /** SPEC §2.8: the confirm names the amount and asks why. */
