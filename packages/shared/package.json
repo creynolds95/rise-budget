@@ -10,7 +10,8 @@
     "./networth": "./src/networth/index.ts",
     "./categorize": "./src/categorize/index.ts",
     "./sync": "./src/sync/index.ts",
-    "./import": "./src/import/index.ts"
+    "./import": "./src/import/index.ts",
+    "./recurring": "./src/recurring/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

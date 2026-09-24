@@ -4,3 +4,4 @@ export * as networth from './networth';
 export * as categorize from './categorize';
 export * as sync from './sync';
 export * as ingest from './import';
+export * as recurring from './recurring';

@@ -11,6 +11,7 @@ export default defineConfig({
         'src/categorize/**/*.ts',
         'src/sync/**/*.ts',
         'src/import/**/*.ts',
+        'src/recurring/**/*.ts',
       ],
       exclude: [
         'src/**/*.test.ts',
@@ -19,6 +20,7 @@ export default defineConfig({
         'src/categorize/index.ts',
         'src/sync/index.ts',
         'src/import/index.ts',
+        'src/recurring/index.ts',
       ],
       // SPEC gate for Phase 2: the engine is fully covered.
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },

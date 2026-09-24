@@ -10,3 +10,4 @@ export * from './idempotency';
 export * from './aggregates';
 export * from './categorize';
 export * from './sync';
+export * from './recurring';

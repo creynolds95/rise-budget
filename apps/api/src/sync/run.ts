@@ -29,6 +29,7 @@ import {
 } from '../db';
 import { suggestFor } from '../lib/categorize';
 import { localToday } from '../lib/dates';
+import { refreshRecurring } from '../lib/recurring';
 import type { SimpleFinSource } from './source';
 
 /** Overlap re-fetched on every sync to absorb late posts (ARCHITECTURE §6). */
@@ -233,6 +234,12 @@ export async function runSync(
     }
   } catch (e) {
     errors.push({ message: `Transfer detection: ${message(e)}` });
+  }
+
+  try {
+    await refreshRecurring(db, userId, today);
+  } catch (e) {
+    errors.push({ message: `Recurring detection: ${message(e)}` });
   }
 
   return finish();
