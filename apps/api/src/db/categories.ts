@@ -96,6 +96,58 @@ export async function createGroup(
   return (await getGroup(userId, db, id)) as CategoryGroup;
 }
 
+export interface CategoryGroupPatch {
+  name?: string | undefined;
+  sortOrder?: number | undefined;
+}
+
+/** L6: rename or reorder a group. Its kind never changes after creation — that would silently
+ * reclassify every category inside it as income or expense. */
+export async function updateGroup(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  patch: CategoryGroupPatch,
+): Promise<CategoryGroup | null> {
+  const cols: Record<string, string> = { name: 'name', sortOrder: 'sort_order' };
+  const entries = (Object.keys(cols) as (keyof CategoryGroupPatch)[])
+    .filter((k) => patch[k] !== undefined)
+    .map((k) => [cols[k], patch[k]] as const);
+  if (entries.length > 0) {
+    const sets = entries.map(([col], i) => `${col} = ?${i + 3}`).join(', ');
+    await db
+      .prepare(`UPDATE category_group SET ${sets} WHERE user_id = ?1 AND id = ?2`)
+      .bind(userId, id, ...entries.map(([, v]) => v))
+      .run();
+  }
+  return getGroup(userId, db, id);
+}
+
+/**
+ * L6: a group can only be deleted once nothing has ever lived in it — same "archive, never
+ * orphan" rule as a category (SPEC §2.10), one level up. Archiving a category doesn't free its
+ * group either: the row (and its `group_id`) stays for history, so a group that has ever held
+ * a category is permanent, same as the category itself.
+ */
+export async function groupHasCategories(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare('SELECT 1 FROM category WHERE user_id = ?1 AND group_id = ?2 LIMIT 1')
+    .bind(userId, id)
+    .first();
+  return row !== null;
+}
+
+export async function deleteGroup(userId: UserId, db: D1Database, id: string): Promise<void> {
+  await db
+    .prepare('DELETE FROM category_group WHERE user_id = ?1 AND id = ?2')
+    .bind(userId, id)
+    .run();
+}
+
 export async function listCategories(userId: UserId, db: D1Database): Promise<Category[]> {
   const { results } = await db
     .prepare(
@@ -248,6 +300,7 @@ export interface CategoryPatch {
   spendShape?: SpendShape | undefined;
   isBill?: boolean | undefined;
   budgeted?: boolean | undefined;
+  sortOrder?: number | undefined;
 }
 
 const COLS: Record<keyof CategoryPatch, string> = {
@@ -258,6 +311,7 @@ const COLS: Record<keyof CategoryPatch, string> = {
   spendShape: 'spend_shape',
   isBill: 'is_bill',
   budgeted: 'budgeted',
+  sortOrder: 'sort_order',
 };
 
 /** Changing a policy never rewrites history — it only affects the next close (SPEC §2.2). */

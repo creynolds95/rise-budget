@@ -149,6 +149,14 @@ export const PatchCategoryBody = z.object({
   spendShape: SpendShape.optional(),
   isBill: z.boolean().optional(),
   budgeted: z.boolean().optional(),
+  /** L6: manual drag-reorder within (or across) a group. */
+  sortOrder: z.int().optional(),
+});
+
+/** L6: rename or reorder a group from the settings page. Kind never changes after creation. */
+export const PatchCategoryGroupBody = z.object({
+  name: z.string().trim().min(1).optional(),
+  sortOrder: z.int().optional(),
 });
 
 export const ForgiveBody = z.object({

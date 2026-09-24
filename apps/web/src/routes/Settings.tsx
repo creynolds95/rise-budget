@@ -1,6 +1,7 @@
 import type {
   AppLock,
   Category,
+  CategoryGroup,
   CategoryGroupKind,
   Rule,
   RuleMatchField,
@@ -18,6 +19,7 @@ import { clearPin, hasPin, lockKeys, setPin, store as lockStore, validPin } from
 import { CategoryPicker } from '../components/CategoryPicker';
 import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
+import { IconButton } from '../components/primitives/Icon';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
@@ -280,6 +282,7 @@ function CategoriesSection() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
   const [newGroup, setNewGroup] = useState<{ name: string; kind: CategoryGroupKind } | null>(null);
+  const [renaming, setRenaming] = useState<CategoryGroup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const save = async (fn: () => Promise<unknown>) => {
     setError(null);
@@ -291,6 +294,17 @@ function CategoriesSection() {
     }
   };
   const input = 'min-h-11 min-w-0 flex-1 rounded-input border border-hairline bg-surface px-3';
+  const move = (g: CategoryGroup, dir: -1 | 1) => {
+    const i = groups.findIndex((x) => x.id === g.id);
+    const other = groups[i + dir];
+    if (!other) return;
+    void save(() =>
+      Promise.all([
+        api('PATCH', `/category-groups/${g.id}`, { sortOrder: other.sortOrder }),
+        api('PATCH', `/category-groups/${other.id}`, { sortOrder: g.sortOrder }),
+      ]),
+    );
+  };
   return (
     <>
       <p className="text-ink-muted">
@@ -298,19 +312,44 @@ function CategoriesSection() {
         spend.
       </p>
       {error && <p className="mt-2 text-clay">{error}</p>}
-      {groups.map((g) => (
+      {groups.map((g, i) => (
         <section key={g.id} className="mt-6">
-          <h2 className="type-label text-ink-muted">
-            {g.name} · {g.kind === 'income' ? 'Income' : 'Expense'}
-          </h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="type-label text-ink-muted">
+              {g.name} · {g.kind === 'income' ? 'Income' : 'Expense'}
+            </h2>
+            <div className="flex items-center">
+              <IconButton
+                icon="chevronDown"
+                iconClassName="rotate-180"
+                label="Move up"
+                disabled={i === 0}
+                onClick={() => move(g, -1)}
+              />
+              <IconButton
+                icon="chevronDown"
+                label="Move down"
+                disabled={i === groups.length - 1}
+                onClick={() => move(g, 1)}
+              />
+              <IconButton icon="pencil" label={`Rename ${g.name}`} onClick={() => setRenaming(g)} />
+              {categories.filter((c) => c.groupId === g.id).length === 0 && (
+                <IconButton
+                  icon="trash"
+                  label={`Delete ${g.name}`}
+                  onClick={() => void save(() => api('DELETE', `/category-groups/${g.id}`))}
+                />
+              )}
+            </div>
+          </div>
           <ul className="mt-2 divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft">
             {categories
               .filter((c) => c.groupId === g.id)
-              .map((c) => (
-                <li key={c.id}>
+              .map((c, ci, own) => (
+                <li key={c.id} className="flex items-center">
                   <button
                     onClick={() => setEditing(c)}
-                    className="flex min-h-13 w-full items-center gap-3 px-4 py-3 text-left active:bg-sage-100"
+                    className="flex min-h-13 min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left active:bg-sage-100"
                   >
                     <span aria-hidden className="w-7 text-center text-xl leading-none">
                       {c.emoji ?? '·'}
@@ -326,6 +365,37 @@ function CategoriesSection() {
                     </span>
                     <Chevron />
                   </button>
+                  <IconButton
+                    icon="chevronDown"
+                    iconClassName="rotate-180"
+                    label={`Move ${c.name} up`}
+                    disabled={ci === 0}
+                    onClick={() => {
+                      const other = own[ci - 1];
+                      if (!other) return;
+                      void save(() =>
+                        Promise.all([
+                          api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
+                          api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
+                        ]),
+                      );
+                    }}
+                  />
+                  <IconButton
+                    icon="chevronDown"
+                    label={`Move ${c.name} down`}
+                    disabled={ci === own.length - 1}
+                    onClick={() => {
+                      const other = own[ci + 1];
+                      if (!other) return;
+                      void save(() =>
+                        Promise.all([
+                          api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
+                          api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
+                        ]),
+                      );
+                    }}
+                  />
                 </li>
               ))}
           </ul>
@@ -380,6 +450,31 @@ function CategoriesSection() {
               <option value="expense">Expense</option>
             </select>
             <Button type="submit">Add group</Button>
+          </form>
+        )}
+      </Sheet>
+      <Sheet open={renaming !== null} title="Rename group" onClose={() => setRenaming(null)}>
+        {renaming && (
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save(() =>
+                api('PATCH', `/category-groups/${renaming.id}`, { name: renaming.name.trim() }),
+              ).then(() => setRenaming(null));
+            }}
+          >
+            <input
+              aria-label="Group name"
+              className={input}
+              value={renaming.name}
+              onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
+              required
+              autoFocus
+            />
+            <Button type="submit" disabled={!renaming.name.trim()}>
+              Save
+            </Button>
           </form>
         )}
       </Sheet>
