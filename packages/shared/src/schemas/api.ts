@@ -150,6 +150,17 @@ export const CreateRuleBody = z.object({
   priority: z.int().default(0),
 });
 
+export const PatchMerchantBody = z.object({
+  /** Rename; applies to every past and future transaction. Null clears it. */
+  displayName: z.string().trim().min(1).max(100).nullable().optional(),
+  /** "No" to a rule offer. */
+  suppressRuleOffer: z.boolean().optional(),
+});
+
+/** SPEC §4.6: returned after the third identical categorisation. Yes → POST /rules. */
+export const RuleOffer = z.object({ merchant: z.string(), categoryId: Id });
+export type RuleOffer = z.infer<typeof RuleOffer>;
+
 export const TransactionQuery = z.object({
   from: IsoDate.optional(),
   to: IsoDate.optional(),

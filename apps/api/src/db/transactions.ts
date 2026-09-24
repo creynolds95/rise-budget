@@ -222,7 +222,7 @@ export async function updateTransactionFields(
 }
 
 /**
- * Replace a transaction's full split set atomically (SPEC §3.5). Splits inherit the parent's
+ * Replace a transaction's full split set atomically (SPEC §3.5). Returns false if nothing changed. Splits inherit the parent's
  * period. If that period is closed, flag it for recalculation and accumulate the change —
  * and do nothing else (SPEC §2.5, edge 5). The period's aggregates refresh in the same batch.
  */
@@ -231,7 +231,7 @@ export async function replaceSplits(
   db: D1Database,
   txn: TxnRow,
   splits: { categoryId: string; amountCents: number }[],
-): Promise<void> {
+): Promise<boolean> {
   const periodId = periodOf(txn.posted_at);
   const old = (await splitsFor(userId, db, [txn.id])).get(txn.id) ?? [];
   const same =
@@ -240,7 +240,7 @@ export async function replaceSplits(
       (o, i) =>
         o.category_id === splits[i]?.categoryId && o.amount_cents === splits[i]?.amountCents,
     );
-  if (same) return;
+  if (same) return false;
   const counts = txn.is_transfer === 0 && txn.review_state !== 'dropped';
   const delta =
     splits.reduce((n, s) => n + s.amountCents, 0) - old.reduce((n, s) => n + s.amount_cents, 0);
@@ -268,6 +268,7 @@ export async function replaceSplits(
       : []),
     ...refreshAggregateStmts(userId, db, periodId),
   ]);
+  return true;
 }
 
 export async function categoryIdsExist(
@@ -283,4 +284,28 @@ export async function categoryIdsExist(
     .bind(userId, JSON.stringify(unique))
     .first<{ n: number }>();
   return row?.n === unique.length;
+}
+
+/**
+ * Review-queue rows whose stored suggestion can be accepted: by id (a swipe, any pre-fill),
+ * or every one at or above a confidence (SPEC §8 "Accept all confident").
+ */
+export async function listAcceptable(
+  userId: UserId,
+  db: D1Database,
+  by: { ids: string[] } | { minConfidence: number },
+): Promise<TxnRow[]> {
+  const ids = 'ids' in by ? JSON.stringify(by.ids) : null;
+  const min = 'minConfidence' in by ? by.minConfidence : null;
+  const { results } = await db
+    .prepare(
+      `SELECT t.* FROM txn t JOIN category c ON c.id = t.suggested_category_id AND c.user_id = t.user_id
+       WHERE t.user_id = ?1 AND t.review_state = 'needs_review' AND c.archived_at IS NULL
+         AND (?2 IS NULL OR t.id IN (SELECT value FROM json_each(?2)))
+         AND (?3 IS NULL OR t.suggestion_confidence >= ?3)
+       ORDER BY t.posted_at, t.id`,
+    )
+    .bind(userId, ids, min)
+    .all<TxnRow>();
+  return results;
 }

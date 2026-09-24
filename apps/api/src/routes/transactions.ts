@@ -1,10 +1,12 @@
 import { validateSplits } from '@rise/shared/budget';
 import { normalizeMerchant } from '@rise/shared/categorize';
 import {
+  BulkAcceptBody,
   CreateTransactionBody,
   PatchTransactionBody,
   ReplaceSplitsBody,
   TransactionQuery,
+  type RuleOffer,
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
@@ -13,11 +15,14 @@ import {
   getTransaction,
   getTransactionRow,
   insertManualTransaction,
+  listAcceptable,
   listTransactions,
   replaceSplits,
   updateTransactionFields,
+  type TxnRow,
 } from '../db';
 import type { AppEnv } from '../env';
+import { recordManualCategorisation } from '../lib/categorize';
 import { b64urlDecode, b64urlEncode } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { body } from '../lib/validate';
@@ -26,6 +31,7 @@ export const transactions = new Hono<AppEnv>();
 
 const PAGE = 50;
 const notFound = () => new AppError(404, 'NOT_FOUND', 'Transaction not found');
+const txnRef = (r: TxnRow) => ({ descriptor: r.descriptor_raw, merchant: r.merchant_normalized });
 
 function decodeCursor(cursor: string | undefined) {
   if (!cursor) return undefined;
@@ -96,6 +102,10 @@ transactions.post('/', async (c) => {
     await replaceSplits(userId, c.env.DB, row, [
       { categoryId: b.categoryId, amountCents: b.amountCents },
     ]);
+    // Entered by hand, so it teaches memory, but a rule offer belongs to the review flow.
+    await recordManualCategorisation(c.env.DB, userId, txnRef(row), b.categoryId, {
+      countTowardOffer: false,
+    });
   }
   return c.json(await getTransaction(userId, c.env.DB, id), 201);
 });
@@ -109,15 +119,19 @@ transactions.patch('/:id', async (c) => {
   const b = await body(c, PatchTransactionBody);
   if (b.reviewState === 'dropped')
     throw new AppError(400, 'BAD_REQUEST', 'Only sync can drop a pending transaction');
+  let ruleOffer: RuleOffer | null = null;
   if (b.categoryId) {
     if (!(await categoryIdsExist(userId, c.env.DB, [b.categoryId])))
       throw new AppError(400, 'BAD_REQUEST', 'Unknown category');
-    await replaceSplits(userId, c.env.DB, row, [
+    const changed = await replaceSplits(userId, c.env.DB, row, [
       { categoryId: b.categoryId, amountCents: row.amount_cents },
     ]);
+    if (changed || row.review_state === 'needs_review') {
+      ruleOffer = await recordManualCategorisation(c.env.DB, userId, txnRef(row), b.categoryId);
+    }
   }
   await updateTransactionFields(userId, c.env.DB, id, b);
-  return c.json(await getTransaction(userId, c.env.DB, id));
+  return c.json({ ...(await getTransaction(userId, c.env.DB, id)), ruleOffer });
 });
 
 /** Replace the full split set. Amounts must sum exactly to the parent (edge 11). */
@@ -147,6 +161,37 @@ transactions.post('/:id/splits', async (c) => {
   ) {
     throw new AppError(400, 'BAD_REQUEST', 'Unknown category');
   }
-  await replaceSplits(userId, c.env.DB, row, splits);
+  if (await replaceSplits(userId, c.env.DB, row, splits)) {
+    const single = new Set(splits.map((s) => s.categoryId));
+    const [only] = single;
+    await recordManualCategorisation(
+      c.env.DB,
+      userId,
+      txnRef(row),
+      single.size === 1 && only ? only : null,
+    );
+  }
   return c.json(await getTransaction(userId, c.env.DB, id));
+});
+
+/**
+ * Accept stored suggestions: by id (a swipe on a pre-filled row) or every suggestion at or
+ * above 0.90 (SPEC §8 "Accept all confident"). The user's tap is the confirmation. Accepting
+ * teaches memory but doesn't count toward a rule offer.
+ */
+transactions.post('/bulk-accept', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const by = await body(c, BulkAcceptBody);
+  const rows = await listAcceptable(userId, db, by);
+  for (const row of rows) {
+    const categoryId = row.suggested_category_id;
+    if (!categoryId) continue;
+    await replaceSplits(userId, db, row, [{ categoryId, amountCents: row.amount_cents }]);
+    await updateTransactionFields(userId, db, row.id, { reviewState: 'reviewed' });
+    await recordManualCategorisation(db, userId, txnRef(row), categoryId, {
+      countTowardOffer: false,
+    });
+  }
+  return c.json({ accepted: rows.map((r) => r.id) });
 });

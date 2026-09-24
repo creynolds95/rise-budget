@@ -8,3 +8,4 @@ export * from './periods';
 export * from './transactions';
 export * from './idempotency';
 export * from './aggregates';
+export * from './categorize';
