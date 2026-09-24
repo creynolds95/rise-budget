@@ -176,6 +176,8 @@ function MonthSwitcher({
   onChange: (m: string) => void;
 }) {
   const current = today.slice(0, 7);
+  // H6/A9: plan up to 12 months ahead of the current month.
+  const furthest = addMonths(current, 12);
   return (
     <nav aria-label="Month" className="gutter flex items-center justify-between pt-4">
       <button
@@ -187,7 +189,7 @@ function MonthSwitcher({
       <h1 className="type-title">{monthName(month, month.slice(0, 4) !== current.slice(0, 4))}</h1>
       <button
         className="min-h-11 min-w-11 text-sage-700 disabled:opacity-0"
-        disabled={month >= current}
+        disabled={month >= furthest}
         onClick={() => onChange(addMonths(month, 1))}
       >
         {monthName(addMonths(month, 1), false).slice(0, 3)} ›
