@@ -39,12 +39,16 @@ export function IconButton({
   label,
   onClick,
   badge,
+  iconClassName,
+  disabled,
   ...rest
 }: {
   icon: IconName;
   label: string;
   onClick?: () => void;
   badge?: number | undefined;
+  iconClassName?: string | undefined;
+  disabled?: boolean;
   'aria-expanded'?: boolean;
   'aria-haspopup'?: 'menu';
 }) {
@@ -53,10 +57,13 @@ export function IconButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="relative flex size-11 items-center justify-center rounded-full text-ink active:bg-sage-100"
+      disabled={disabled}
+      className="relative flex size-11 items-center justify-center rounded-full text-ink active:bg-sage-100 disabled:opacity-30"
       {...rest}
     >
-      <Icon name={icon} />
+      <span className={iconClassName}>
+        <Icon name={icon} />
+      </span>
       {badge ? (
         <span className="absolute top-1 right-1 flex min-w-4 items-center justify-center rounded-full bg-sage-600 px-1 text-[10px] leading-4 font-semibold text-surface">
           {badge}

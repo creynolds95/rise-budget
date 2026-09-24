@@ -4,6 +4,7 @@ import {
   CreateCategoryGroupBody,
   ForgiveBody,
   PatchCategoryBody,
+  PatchCategoryGroupBody,
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
@@ -13,16 +14,19 @@ import {
   clearCarriedInStmt,
   createCategory,
   createGroup,
+  deleteGroup,
   getCategory,
   getGroup,
   getPeriod,
   getUser,
+  groupHasCategories,
   listAllocations,
   listCategories,
   listGroups,
   listRules,
   planDefaultOf,
   updateCategory,
+  updateGroup,
   writeAudit,
 } from '../db';
 import type { AppEnv } from '../env';
@@ -38,6 +42,29 @@ categoryGroups.get('/', async (c) => c.json(await listGroups(c.get('userId'), c.
 categoryGroups.post('/', async (c) => {
   const b = await body(c, CreateCategoryGroupBody);
   return c.json(await createGroup(c.get('userId'), c.env.DB, b), 201);
+});
+
+/** L6: rename or reorder from the settings page. */
+categoryGroups.patch('/:id', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  if (!(await getGroup(userId, c.env.DB, id)))
+    throw new AppError(404, 'NOT_FOUND', 'Category group not found');
+  const b = await body(c, PatchCategoryGroupBody);
+  return c.json(await updateGroup(userId, c.env.DB, id, b));
+});
+
+/** L6: only once it holds nothing — same "archive, never orphan" rule as a category. */
+categoryGroups.delete('/:id', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const id = c.req.param('id');
+  if (!(await getGroup(userId, db, id)))
+    throw new AppError(404, 'NOT_FOUND', 'Category group not found');
+  if (await groupHasCategories(userId, db, id))
+    throw new AppError(409, 'CATEGORY_IN_USE', 'Move or delete its categories first');
+  await deleteGroup(userId, db, id);
+  return c.json({ deleted: id });
 });
 
 categories.get('/', async (c) => c.json(await listCategories(c.get('userId'), c.env.DB)));

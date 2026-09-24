@@ -37,8 +37,114 @@ const insert =
   `INSERT INTO user (id, email, display_name, timezone, settings_json, created_at) VALUES ` +
   `(${sql(id)}, ${sql(values.email)}, ${sql(values.name)}, 'America/Chicago', ${sql(settings)}, ${sql(now)});`;
 
+/**
+ * Starter categories (pre-deploy-todo decision, 2026-09-24): a new user gets generic budget
+ * lines to edit rather than an empty list. Savings/debt payoff are budgeted (A6 — the outgoing
+ * checking leg of a savings/loan transfer counts as spending); Transfers group is not, except
+ * where noted. Named "Transfer" so it's the same row `ensureTransferCategory` finds-or-creates
+ * (apps/api/src/db/categories.ts) — seeding it here just means that lookup finds it immediately.
+ * Mirrors `categoryDefaults` in packages/shared/src/budget/defaults.ts (kept inline: this script
+ * runs via plain `node --experimental-strip-types`, which can't resolve `@rise/shared`'s
+ * extensionless internal imports).
+ */
+interface StarterCategory {
+  name: string;
+  isBill?: boolean;
+  budgeted?: boolean;
+  isCatchall?: boolean;
+}
+interface StarterGroup {
+  name: string;
+  kind: 'income' | 'expense';
+  categories: StarterCategory[];
+}
+const STARTER_GROUPS: StarterGroup[] = [
+  { name: 'Income', kind: 'income', categories: [{ name: 'Paycheck' }, { name: 'Other Income' }] },
+  {
+    name: 'Home',
+    kind: 'expense',
+    categories: [
+      { name: 'Rent/Mortgage', isBill: true },
+      { name: 'Utilities', isBill: true },
+      { name: 'Home Supplies' },
+    ],
+  },
+  { name: 'Food', kind: 'expense', categories: [{ name: 'Groceries' }, { name: 'Dining Out' }] },
+  {
+    name: 'Transport',
+    kind: 'expense',
+    categories: [
+      { name: 'Gas' },
+      { name: 'Car Payment', isBill: true },
+      { name: 'Car Insurance', isBill: true },
+      { name: 'Public Transit' },
+    ],
+  },
+  {
+    name: 'Health',
+    kind: 'expense',
+    categories: [
+      { name: 'Health Insurance', isBill: true },
+      { name: 'Medical' },
+      { name: 'Fitness' },
+    ],
+  },
+  {
+    name: 'Personal',
+    kind: 'expense',
+    categories: [
+      { name: 'Subscriptions' },
+      { name: 'Shopping' },
+      { name: 'Entertainment' },
+      { name: 'Personal Care' },
+    ],
+  },
+  {
+    name: 'Savings & Debt',
+    kind: 'expense',
+    categories: [
+      { name: 'Savings', budgeted: true },
+      { name: 'Debt Payoff', budgeted: true },
+    ],
+  },
+  {
+    name: 'Other',
+    kind: 'expense',
+    categories: [{ name: 'Other', isCatchall: true }, { name: 'Gifts' }, { name: 'Miscellaneous' }],
+  },
+  {
+    name: 'Transfers',
+    kind: 'expense',
+    categories: [
+      { name: 'Credit Card Payment', budgeted: false },
+      { name: 'Transfer', budgeted: false },
+    ],
+  },
+];
+
+const categoryInserts = STARTER_GROUPS.flatMap((g, groupIdx) => {
+  const groupId = randomUUID();
+  const groupStmt =
+    `INSERT INTO category_group (id, user_id, name, kind, sort_order) VALUES ` +
+    `(${sql(groupId)}, ${sql(id)}, ${sql(g.name)}, ${sql(g.kind)}, ${groupIdx});`;
+  const categoryStmts = g.categories.map((c, catIdx) => {
+    const isBill = c.isBill ?? false;
+    const rolloverPolicy = isBill ? 'return_to_pool' : 'roll';
+    const spendShape = isBill ? 'fixed' : 'linear';
+    const budgeted = c.budgeted ?? true;
+    return (
+      `INSERT INTO category (id, user_id, group_id, name, is_bill, rollover_policy, spend_shape, sort_order, is_catchall, budgeted) VALUES ` +
+      `(${sql(randomUUID())}, ${sql(id)}, ${sql(groupId)}, ${sql(c.name)}, ${isBill ? 1 : 0}, ` +
+      `${sql(rolloverPolicy)}, ${sql(spendShape)}, ${catIdx}, ${c.isCatchall ? 1 : 0}, ${budgeted ? 1 : 0});`
+    );
+  });
+  return [groupStmt, ...categoryStmts];
+});
+
+const fullScript = [insert, ...categoryInserts].join('\n');
+
 if (values['dry-run']) {
-  console.log(`-- dry run, nothing written:\n${insert}`);
+  console.log(`-- dry run, nothing written:\n${fullScript}`);
 } else {
   execFileSync(
     'npx',
@@ -49,7 +155,7 @@ if (values['dry-run']) {
       'rise',
       values.remote ? '--remote' : '--local',
       '--command',
-      insert,
+      fullScript,
     ],
     {
       stdio: 'inherit',
