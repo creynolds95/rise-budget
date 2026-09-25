@@ -130,6 +130,13 @@ const statements: string[] = [];
 const report: string[] = [];
 const groupSortByName = new Map<string, number>();
 
+// `allocation` FKs to `period`; the app only creates a period row once someone opens it
+// (apps/api/src/db/periods.ts ensurePeriodStmt). A future period nobody has viewed yet
+// won't exist, so make sure it does before any allocation insert.
+statements.push(
+  `INSERT INTO period (id, user_id) VALUES (${sql(periodId)}, ${sql(userId)}) ON CONFLICT(user_id, id) DO NOTHING;`,
+);
+
 for (const spec of SPEC) {
   let group = groupByName.get(spec.group.toLowerCase());
   if (!group) {
