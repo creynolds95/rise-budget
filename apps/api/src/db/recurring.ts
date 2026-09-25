@@ -138,16 +138,17 @@ export function upsertManualRuleStmt(
   cadence: string,
   amountCents: number,
   nextExpectedDate: string,
+  anchorDays: [number, number] | null = null,
 ): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO recurring_series (id, user_id, merchant_normalized, category_id, cadence,
          expected_amount_cents, next_expected_date, status, updated_at, source, anchor_days)
-       VALUES (?2, ?1, ?3, NULL, ?4, ?5, ?6, 'active', ?7, 'manual', NULL)
+       VALUES (?2, ?1, ?3, NULL, ?4, ?5, ?6, 'active', ?7, 'manual', ?8)
        ON CONFLICT (id) DO UPDATE SET
          cadence = excluded.cadence, expected_amount_cents = excluded.expected_amount_cents,
          next_expected_date = excluded.next_expected_date, status = 'active',
-         updated_at = excluded.updated_at, source = 'manual'
+         updated_at = excluded.updated_at, source = 'manual', anchor_days = excluded.anchor_days
        WHERE recurring_series.user_id = ?1`,
     )
     .bind(
@@ -158,6 +159,7 @@ export function upsertManualRuleStmt(
       amountCents,
       nextExpectedDate,
       nowIso(),
+      anchorDays ? JSON.stringify(anchorDays) : null,
     );
 }
 

@@ -10,8 +10,12 @@ import {
   SpendShape,
 } from './enums';
 
-/** Semimonthly needs two anchor days, which this transaction-tag flow doesn't collect. */
-export const ManualCadence = z.enum(['weekly', 'biweekly', 'monthly', 'annual']);
+export const ManualCadence = z.enum(['weekly', 'biweekly', 'monthly', 'semimonthly', 'annual']);
+
+export const AnchorDays = z.tuple([
+  z.number().int().min(1).max(31),
+  z.number().int().min(1).max(31),
+]);
 
 // ── error contract (ARCHITECTURE §4) ──────────────────────────────────────────
 
@@ -117,11 +121,18 @@ export const BulkAcceptBody = z.union([
 export const TransferLinkBody = z.object({ otherTxnId: Id });
 
 /** Caleb's "Recurring Cash Withdrawal" tag (cash-to-payday, not a category setting). */
-export const RecurringCashWithdrawalBody = z.object({
-  cadence: ManualCadence,
-  /** Defaults in the UI to the tagged transaction's own date; editable before saving. */
-  dueDate: IsoDate,
-});
+export const RecurringCashWithdrawalBody = z
+  .object({
+    cadence: ManualCadence,
+    /** Defaults in the UI to the tagged transaction's own date; editable before saving. */
+    dueDate: IsoDate,
+    /** Required, and only meaningful, for cadence 'semimonthly' (e.g. paid the 5th and 20th). */
+    anchorDays: AnchorDays.optional(),
+  })
+  .refine((b) => b.cadence !== 'semimonthly' || b.anchorDays, {
+    message: 'anchorDays is required for a semimonthly cadence',
+    path: ['anchorDays'],
+  });
 
 /**
  * A hand-declared paycheck or bill for Runway, with no transaction to tag it from (a cold
