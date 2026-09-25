@@ -8,9 +8,9 @@ import { usePlanFlow } from '../components/PlanFlow';
 import { Icon } from '../components/primitives/Icon';
 import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
+import { FillBar } from '../components/primitives/FillBar';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Rail } from '../components/primitives/Rail';
-import { EditRow } from '../components/primitives/Rows';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { CategoryDetailPanel } from './CategoryDetail';
@@ -49,6 +49,11 @@ export function Budget() {
   const closed = p.period.status === 'closed';
   const byId = new Map(categories.data.map((c) => [c.id, c]));
   const expenseGroups = groups.data.filter((g) => g.kind === 'expense');
+  const incomeGroups = groups.data.filter((g) => g.kind === 'income');
+  const expenseCarriedCents = p.categories.reduce((n, c) => {
+    const cat = byId.get(c.categoryId);
+    return c.groupKind === 'expense' && cat?.budgeted ? n + c.carriedInCents : n;
+  }, 0);
 
   const selectCategory = (categoryId: string) => {
     const next = new URLSearchParams(params);
@@ -94,52 +99,26 @@ export function Budget() {
 
         <CloseControl month={month} data={p} />
 
-        <section className="gutter">
-          <EditRow
-            label="Expected income"
-            field={
-              closed ? (
-                <MoneyText cents={p.expectedIncomeCents} />
-              ) : (
-                <MoneyField
-                  label="Expected income"
-                  cents={p.expectedIncomeCents}
-                  onCommit={async (v) => {
-                    await api('PATCH', `/periods/${month}`, { expectedIncomeCents: v });
-                    await invalidate();
-                  }}
-                />
-              )
-            }
-          />
-          <div className="flex min-h-12 items-center justify-between border-b border-hairline py-3">
-            <span className="text-ink-muted">Income so far</span>
-            <MoneyText cents={p.actualIncomeCents} />
+        <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
+
+        {(error ?? plan.error) && <p className="gutter mt-4 text-clay">{error ?? plan.error}</p>}
+
+        <section className="mt-8">
+          <div className="gutter flex items-baseline justify-between">
+            <h2 className="type-title">Income</h2>
+            {!closed && (
+              <MoneyField
+                label="Expected income"
+                cents={p.expectedIncomeCents}
+                onCommit={async (v) => {
+                  await api('PATCH', `/periods/${month}`, { expectedIncomeCents: v });
+                  await invalidate();
+                }}
+              />
+            )}
           </div>
-          {p.expectedIncomeCents > 0 && (
-            <div className="border-b border-hairline py-3">
-              <div
-                role="img"
-                aria-label={`${formatCents(p.actualIncomeCents)} of ${formatCents(p.expectedIncomeCents)} expected received`}
-                className="relative h-2 w-full overflow-visible rounded-full bg-hairline"
-              >
-                <span
-                  className="absolute inset-y-0 left-0 rounded-full bg-sage-600"
-                  style={{
-                    width: `${Math.min(100, (p.actualIncomeCents / p.expectedIncomeCents) * 100)}%`,
-                  }}
-                />
-              </div>
-              {p.actualIncomeCents > p.expectedIncomeCents && (
-                <p className="mt-1.5 type-caption text-sage-700">
-                  <MoneyText cents={p.actualIncomeCents - p.expectedIncomeCents} sign="always" />{' '}
-                  over expected
-                </p>
-              )}
-            </div>
-          )}
-          {!groups.data.some((g) => g.kind === 'income') && (
-            <p className="py-3 type-caption text-ink-muted">
+          {incomeGroups.length === 0 ? (
+            <p className="gutter py-3 type-caption text-ink-muted">
               Paychecks count once they're filed under an income category.{' '}
               <button
                 className="min-h-11 font-medium text-sage-700"
@@ -160,37 +139,57 @@ export function Budget() {
                 Add a Paycheck category
               </button>
             </p>
+          ) : (
+            incomeGroups.map((g) => (
+              <GroupSection
+                key={g.id}
+                group={g}
+                rows={p.categories.filter((c) => byId.get(c.categoryId)?.groupId === g.id)}
+                byId={byId}
+                month={month}
+                editable={!closed}
+                onEdit={(row) => {
+                  const category = byId.get(row.categoryId);
+                  if (category) plan.open(category, row, p.poolCents);
+                }}
+                isDesktop={isDesktop}
+                onSelect={selectCategory}
+                kind="income"
+              />
+            ))
           )}
         </section>
 
-        {(error ?? plan.error) && <p className="gutter mt-4 text-clay">{error ?? plan.error}</p>}
-
-        {expenseGroups.length === 0 ? (
-          <EmptyBudget onAdd={() => setAdding(true)} />
-        ) : (
-          expenseGroups.map((g) => (
-            <GroupSection
-              key={g.id}
-              group={g}
-              rows={p.categories.filter((c) => {
-                const cat = byId.get(c.categoryId);
-                // C8: unbudgeted categories (Transfer, Credit Card Payment, Other) have a
-                // real category row for splits and rules, but never a budget line — showing
-                // one here would let the user "plan" money for something that isn't spending.
-                return cat?.groupId === g.id && cat.budgeted;
-              })}
-              byId={byId}
-              month={month}
-              editable={!closed}
-              onEdit={(row) => {
-                const category = byId.get(row.categoryId);
-                if (category) plan.open(category, row, p.poolCents);
-              }}
-              isDesktop={isDesktop}
-              onSelect={selectCategory}
-            />
-          ))
-        )}
+        <section className="mt-8">
+          <h2 className="gutter type-title">Expenses</h2>
+          {expenseGroups.length === 0 ? (
+            <EmptyBudget onAdd={() => setAdding(true)} />
+          ) : (
+            expenseGroups.map((g) => (
+              <GroupSection
+                key={g.id}
+                group={g}
+                rows={p.categories.filter((c) => {
+                  const cat = byId.get(c.categoryId);
+                  // C8: unbudgeted categories (Transfer, Credit Card Payment, Other) have a
+                  // real category row for splits and rules, but never a budget line — showing
+                  // one here would let the user "plan" money for something that isn't spending.
+                  return cat?.groupId === g.id && cat.budgeted;
+                })}
+                byId={byId}
+                month={month}
+                editable={!closed}
+                onEdit={(row) => {
+                  const category = byId.get(row.categoryId);
+                  if (category) plan.open(category, row, p.poolCents);
+                }}
+                isDesktop={isDesktop}
+                onSelect={selectCategory}
+                kind="expense"
+              />
+            ))
+          )}
+        </section>
 
         {expenseGroups.length > 0 && !closed && (
           <div className="gutter mt-6">
@@ -214,6 +213,111 @@ export function Budget() {
           <CategoryDetailPanel categoryId={selected} month={month} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** The collapsible "Summary" tile: Income and Expenses at a glance, before the group cards. */
+function SummaryCard({
+  p,
+  expenseCarriedCents,
+}: {
+  p: PeriodResponse;
+  expenseCarriedCents: number;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section className="gutter mt-6">
+      <div className="rounded-card bg-surface shadow-soft">
+        <button
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="flex min-h-11 w-full items-center gap-1 px-4 pt-3 text-left"
+        >
+          <span aria-hidden className="inline-block w-3">
+            {open ? '▾' : '▸'}
+          </span>
+          <h2 className="type-label text-ink-muted">Summary</h2>
+        </button>
+        {open && (
+          <div className="px-4 pb-1">
+            <SummaryRow
+              label="Income"
+              plannedCents={p.expectedIncomeCents}
+              filledCents={p.actualIncomeCents}
+              doneLabel="earned"
+              tick={p.pace}
+              good
+            />
+            <SummaryRow
+              label="Expenses"
+              plannedCents={p.totals.plannedCents}
+              filledCents={p.totals.spentCents}
+              doneLabel="spent"
+              tick={p.pace}
+              carriedCents={expenseCarriedCents}
+            />
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SummaryRow({
+  label,
+  plannedCents,
+  filledCents,
+  doneLabel,
+  tick,
+  good = false,
+  carriedCents = 0,
+}: {
+  label: string;
+  plannedCents: number;
+  filledCents: number;
+  doneLabel: string;
+  tick: PeriodResponse['pace'];
+  /** Income: going past `plannedCents` is a good thing, never an overspend warning. */
+  good?: boolean;
+  carriedCents?: number;
+}) {
+  const remainingCents = plannedCents - filledCents;
+  const over = remainingCents < 0;
+  return (
+    <div className="border-b border-hairline py-3 last:border-b-0">
+      <div className="flex items-baseline justify-between">
+        <span className="font-medium">{label}</span>
+        <span className="text-ink-muted">
+          <MoneyText cents={plannedCents} tone="muted" /> planned
+        </span>
+      </div>
+      <div className="mt-1.5">
+        <FillBar
+          filledCents={filledCents}
+          targetCents={plannedCents}
+          tick={tick}
+          over={!good && over}
+        />
+      </div>
+      <div className="mt-1.5 flex items-center justify-between type-caption">
+        <span className="text-ink-muted">
+          <MoneyText cents={filledCents} tone="muted" /> {doneLabel}
+        </span>
+        <span className="flex items-center gap-0.5">
+          {carriedCents !== 0 && (
+            <span className="text-sage-700">
+              <Icon name="refresh" size={13} />
+            </span>
+          )}
+          <MoneyText
+            cents={Math.abs(remainingCents)}
+            tone={over ? (good ? 'in' : 'over') : 'ink'}
+            className="font-semibold"
+          />
+          <span className="ml-1 text-ink-muted">{over ? 'over' : 'remaining'}</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -259,6 +363,7 @@ function GroupSection({
   onEdit,
   isDesktop,
   onSelect,
+  kind,
 }: {
   group: CategoryGroup;
   rows: ViewCategory[];
@@ -268,47 +373,52 @@ function GroupSection({
   onEdit: (row: ViewCategory) => void;
   isDesktop: boolean;
   onSelect: (categoryId: string) => void;
+  kind: 'income' | 'expense';
 }) {
   const [open, setOpen] = useState(true);
   const available = rows.reduce((n, r) => n + r.availableCents, 0);
   const spent = rows.reduce((n, r) => n + r.spentCents, 0);
   return (
-    <section className="mt-8">
+    <section className="mt-4 first:mt-0">
       <button
         aria-expanded={open}
         onClick={() => setOpen(!open)}
         className="gutter flex min-h-11 w-full items-baseline justify-between text-left"
       >
-        <h2 className="type-label text-ink-muted">
+        <h3 className="type-label text-ink-muted">
           <span aria-hidden className="mr-1 inline-block w-3">
             {open ? '▾' : '▸'}
           </span>
           {group.name}
-        </h2>
+        </h3>
         <span className="type-caption text-ink-muted">
           <MoneyText cents={spent} tone="muted" /> of <MoneyText cents={available} tone="muted" />
         </span>
       </button>
       {open && (
-        <ul>
-          {rows
-            .sort(
-              (a, b) =>
-                (byId.get(a.categoryId)?.sortOrder ?? 0) - (byId.get(b.categoryId)?.sortOrder ?? 0),
-            )
-            .map((r) => (
-              <BudgetRow
-                key={r.categoryId}
-                row={r}
-                category={byId.get(r.categoryId)}
-                month={month}
-                editable={editable}
-                onEdit={() => onEdit(r)}
-                isDesktop={isDesktop}
-                onSelect={onSelect}
-              />
-            ))}
-        </ul>
+        <div className="gutter">
+          <ul className="overflow-hidden rounded-card bg-surface shadow-soft">
+            {rows
+              .sort(
+                (a, b) =>
+                  (byId.get(a.categoryId)?.sortOrder ?? 0) -
+                  (byId.get(b.categoryId)?.sortOrder ?? 0),
+              )
+              .map((r) => (
+                <BudgetRow
+                  key={r.categoryId}
+                  row={r}
+                  category={byId.get(r.categoryId)}
+                  month={month}
+                  editable={editable}
+                  onEdit={() => onEdit(r)}
+                  isDesktop={isDesktop}
+                  onSelect={onSelect}
+                  kind={kind}
+                />
+              ))}
+          </ul>
+        </div>
       )}
     </section>
   );
@@ -322,6 +432,7 @@ function BudgetRow({
   onEdit,
   isDesktop,
   onSelect,
+  kind,
 }: {
   row: ViewCategory;
   category: Category | undefined;
@@ -330,10 +441,17 @@ function BudgetRow({
   onEdit: () => void;
   isDesktop: boolean;
   onSelect: (categoryId: string) => void;
+  kind: 'income' | 'expense';
 }) {
-  const over = row.remainingCents < 0;
+  // For income, "spent" is money received, stored negative (SPEC §2.1's engine is spending-
+  // shaped); earned/remaining-to-earn flip that back to what the row shows.
+  const earnedCents = kind === 'income' ? -row.spentCents : row.spentCents;
+  const remainingCents = kind === 'income' ? row.availableCents - earnedCents : row.remainingCents;
+  const over = remainingCents < 0;
+  // Earning more than planned is good, never an overspend warning (DESIGN-SYSTEM.md §1).
+  const overTone = kind === 'income' ? 'in' : 'over';
   return (
-    <li className="gutter border-b border-hairline py-2">
+    <li className="gutter border-b border-hairline py-2 last:border-b-0">
       <div className="flex items-baseline justify-between gap-3">
         <Link
           to={`/budget/${row.categoryId}?m=${month}`}
@@ -375,25 +493,29 @@ function BudgetRow({
             </span>
           )}
           <MoneyText
-            cents={row.remainingCents}
-            tone={over ? 'over' : 'ink'}
+            cents={Math.abs(remainingCents)}
+            tone={over ? overTone : 'ink'}
             className="font-semibold"
           />
           <span className="ml-1 type-caption text-ink-muted">{over ? 'over' : 'left'}</span>
         </span>
       </div>
       <div className="mt-1.5">
-        <Rail
-          carriedInCents={row.carriedInCents}
-          plannedCents={row.plannedCents}
-          spentCents={row.spentCents}
-          availableCents={row.availableCents}
-          tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
-        />
+        {kind === 'income' ? (
+          <FillBar filledCents={earnedCents} targetCents={row.availableCents} tick={null} />
+        ) : (
+          <Rail
+            carriedInCents={row.carriedInCents}
+            plannedCents={row.plannedCents}
+            spentCents={row.spentCents}
+            availableCents={row.availableCents}
+            tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
+          />
+        )}
       </div>
       <div className="mt-1.5 flex items-center justify-between">
         <span className="type-caption text-ink-muted">
-          <MoneyText cents={row.spentCents} tone="muted" /> spent
+          <MoneyText cents={earnedCents} tone="muted" /> {kind === 'income' ? 'earned' : 'spent'}
           {row.pace && row.pace.status === 'over' && row.spendShape === 'linear' && (
             <span className="text-clay"> · ahead of pace</span>
           )}
