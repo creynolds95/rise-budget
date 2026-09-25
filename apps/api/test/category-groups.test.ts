@@ -35,7 +35,7 @@ describe('L6 category groups: rename, reorder, delete', () => {
     ).toBe(404);
   });
 
-  it('refuses to delete a group that has ever held a category, even archived (archive, never orphan)', async () => {
+  it('refuses to delete a group with a live category, then allows it once that category is deleted', async () => {
     const s = await setup();
     const group = (await s.api('POST', '/category-groups', { name: 'Everyday', kind: 'expense' }))
       .json;
@@ -44,10 +44,13 @@ describe('L6 category groups: rename, reorder, delete', () => {
     const blocked = await s.api('DELETE', `/category-groups/${group.id}`);
     expect(blocked.status).toBe(409);
 
-    // Archiving the category doesn't free the group either — the row (and its group_id) lives
-    // on for history, same as a category never truly disappears (SPEC §2.10).
+    // Deleting the (unused) category frees the group — it's archived rather than hard-deleted,
+    // since its row has held a category and stays for history (SPEC §2.10), but it drops out
+    // of the visible list same as an archived category would.
     await s.api('DELETE', `/categories/${cat.id}`);
-    expect((await s.api('DELETE', `/category-groups/${group.id}`)).status).toBe(409);
+    const freed = await s.api('DELETE', `/category-groups/${group.id}`);
+    expect(freed.status).toBe(200);
+    expect((await s.api('GET', '/category-groups')).json).toEqual([]);
   });
 
   it('deletes a group that never held a category', async () => {
