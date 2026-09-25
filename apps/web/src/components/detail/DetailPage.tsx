@@ -18,7 +18,11 @@ export interface DetailPageProps {
   identity?: { label: string; hero: ReactNode; context?: ReactNode } | undefined;
   shape?: ReactNode;
   facts?: ReactNode;
-  related?: { title: ReactNode; children: ReactNode } | undefined;
+  /** One card, or several side by side in the same zone (e.g. income and expenses split out). */
+  related?:
+    | { title: ReactNode; children: ReactNode }
+    | { title: ReactNode; children: ReactNode }[]
+    | undefined;
   manage?: ReactNode;
 }
 
@@ -61,14 +65,15 @@ export function DetailPage(p: DetailPageProps) {
           <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">{p.facts}</div>
         </section>
       )}
-      {p.related && (
-        <section data-zone="related" className="gutter pt-8">
-          <h2 className="type-label text-ink-muted">{p.related.title}</h2>
-          <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-            {p.related.children}
-          </div>
-        </section>
-      )}
+      {p.related &&
+        (Array.isArray(p.related) ? p.related : [p.related]).map((r, i) => (
+          <section key={i} data-zone="related" className="gutter pt-8">
+            <h2 className="type-label text-ink-muted">{r.title}</h2>
+            <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+              {r.children}
+            </div>
+          </section>
+        ))}
       {p.manage && (
         <section data-zone="manage" className="gutter mt-12">
           <h2 className="type-label text-ink-muted">Manage</h2>

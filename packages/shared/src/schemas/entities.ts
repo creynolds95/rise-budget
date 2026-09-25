@@ -31,6 +31,12 @@ export const UserSettings = z.object({
   cushionCents: Cents.default(50_000),
   /** Cash-to-payday: which accounts count as spendable cash. Empty = every budgeted depository account. */
   cashAccountIds: z.array(Id).default([]),
+  /** Cash-to-payday: detected merchants to stop treating as a recurring pay/bill, with the
+   * name shown at dismiss time (detection skips a dismissed merchant, so there's no other
+   * way to label it if the user wants to undo). */
+  dismissedPayMerchants: z
+    .array(z.object({ merchant: z.string(), displayName: z.string() }))
+    .default([]),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 

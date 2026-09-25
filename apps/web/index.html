@@ -21,8 +21,45 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap"
     />
+    <style>
+      /*
+       * A cold PWA launch shows a blank canvas-colored screen while the JS bundle parses.
+       * This covers that gap with the app icon; main.tsx fades and removes it once mounted.
+       */
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fafaf7;
+        transition: opacity 240ms ease-out;
+      }
+      #splash img {
+        width: 72px;
+        height: 72px;
+        border-radius: 16px;
+        animation: splash-rise 1400ms ease-in-out infinite;
+      }
+      @keyframes splash-rise {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash img {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="splash" aria-hidden="true"><img src="/icon-192.png" alt="" /></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

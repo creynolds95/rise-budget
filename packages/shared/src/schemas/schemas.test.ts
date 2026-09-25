@@ -50,6 +50,7 @@ describe('schemas', () => {
       planChangesApplyToFuture: false,
       cushionCents: 50_000,
       cashAccountIds: [],
+      dismissedPayMerchants: [],
     });
     expect(u.timezone).toBe('America/Chicago');
   });

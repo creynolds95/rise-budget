@@ -55,6 +55,9 @@ export const PatchSettingsBody = z.object({
   planChangesApplyToFuture: z.boolean().optional(),
   cushionCents: Cents.optional(),
   cashAccountIds: z.array(Id).optional(),
+  dismissedPayMerchants: z
+    .array(z.object({ merchant: z.string(), displayName: z.string() }))
+    .optional(),
 });
 
 export const CreateAccountBody = z.object({

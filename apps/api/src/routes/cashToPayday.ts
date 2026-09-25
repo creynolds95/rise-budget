@@ -23,7 +23,7 @@ cashToPayday.get('/', async (c) => {
   if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
 
   const accounts = await listAccounts(userId, c.env.DB);
-  const { cashAccountIds, cushionCents } = user.settings;
+  const { cashAccountIds, cushionCents, dismissedPayMerchants } = user.settings;
   // Empty selection: every budgeted depository account counts as cash.
   const cashAccounts =
     cashAccountIds.length > 0
@@ -38,11 +38,13 @@ cashToPayday.get('/', async (c) => {
     today,
     startBalanceCents,
     cushionCents,
+    dismissedPayMerchants.map((d) => d.merchant),
   );
   return c.json({
     ...projection,
     cashAccounts: cashAccounts.map((a) => ({ id: a.id, name: a.name })),
     cushionCents,
+    dismissedPayMerchants,
   });
 });
 
