@@ -183,14 +183,16 @@ export function Accounts() {
         const total = group.reduce((n, a) => n + (a.includeInNetWorth ? a.balanceCents : 0), 0);
         return (
           <section key={kind} className="gutter mt-6">
-            <h2 className="flex items-baseline justify-between type-label text-ink-muted">
-              <span>{label}</span>
-              <MoneyText cents={total} tone="muted" />
-            </h2>
-            <div className="mt-1 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-              {group.map((a) => (
-                <AccountRow key={a.id} a={a} today={today} tz={tz} />
-              ))}
+            <div className="overflow-hidden rounded-card bg-surface shadow-soft">
+              <h2 className="flex items-baseline justify-between border-b border-hairline px-4 py-3 type-label text-ink-muted">
+                <span>{label}</span>
+                <MoneyText cents={total} tone="muted" />
+              </h2>
+              <div className="px-4">
+                {group.map((a) => (
+                  <AccountRow key={a.id} a={a} today={today} tz={tz} />
+                ))}
+              </div>
             </div>
           </section>
         );
