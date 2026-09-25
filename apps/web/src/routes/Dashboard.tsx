@@ -9,6 +9,7 @@ import { get } from '../lib/api';
 import { addMonths, monthName, shortDate } from '../lib/dates';
 import {
   useAccounts,
+  useCashToPayday,
   useCategories,
   useMe,
   usePeriod,
@@ -25,6 +26,7 @@ export function Dashboard() {
   const last = usePeriod(addMonths(month, -1));
   const accounts = useAccounts();
   const recurring = useRecurring();
+  const surplus = useCashToPayday();
   const categories = useCategories();
   const queue = useQuery({
     queryKey: ['queue-count'],
@@ -86,7 +88,15 @@ export function Dashboard() {
       )}
 
       <section className="mt-8">
-        <NavRow to="/cash-to-payday" label="Cash to payday" />
+        <NavRow
+          to="/cash-to-payday"
+          label="Surplus"
+          value={
+            surplus.data && surplus.data.paySchedules.length > 0 ? (
+              <MoneyText cents={surplus.data.freeToMoveCents} whole />
+            ) : undefined
+          }
+        />
         {(queue.data?.count ?? 0) > 0 && (
           <NavRow
             to="/review"
@@ -118,7 +128,7 @@ export function Dashboard() {
             No bills expected for the rest of {monthName(month, false)}.
           </p>
         ) : (
-          <ul className="mt-2">
+          <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
             {upcoming.map((s) => (
               <li
                 key={s.id}

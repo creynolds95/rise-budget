@@ -74,7 +74,8 @@ describe('money-flow (Sankey) report', () => {
       call(method, path, { access: u.access, body });
     const expense = (await api('POST', '/category-groups', { name: 'Food', kind: 'expense' })).json;
     const income = (await api('POST', '/category-groups', { name: 'In', kind: 'income' })).json;
-    const food = (await api('POST', '/categories', { groupId: expense.id, name: 'Groceries' })).json;
+    const food = (await api('POST', '/categories', { groupId: expense.id, name: 'Groceries' }))
+      .json;
     const pay = (await api('POST', '/categories', { groupId: income.id, name: 'Paycheck' })).json;
     const card = (await api('POST', '/accounts', { name: 'Card', kind: 'credit' })).json;
     const txn = async (postedAt: string, amountCents: number, categoryId: string) =>

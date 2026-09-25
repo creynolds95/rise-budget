@@ -18,6 +18,8 @@ export interface PaySchedule {
   merchant: string;
   displayName: string;
   series: DetectedSeries;
+  /** Hand-declared (tagged from a transaction or added from Surplus directly), never detected. */
+  isManual: boolean;
 }
 
 export interface CashToPaydayResult extends CashProjection {
@@ -75,6 +77,11 @@ export async function buildCashToPaydayProjection(
     db,
     detected.map((d) => d.merchant),
   );
+  // A hand-declared event (no real transaction behind it) has no merchant_meta row to look
+  // its display name up from — its own label is the only name it has.
+  for (const r of manualRules) {
+    if (r.label) displayNames.set(r.merchant_normalized, r.label);
+  }
 
   // Income transactions carry a negative amount_cents (SPEC §1.1): these are paychecks.
   const paySchedules = detected.filter((d) => d.series.expectedAmountCents < 0);
@@ -109,6 +116,7 @@ export async function buildCashToPaydayProjection(
       merchant,
       displayName: displayNames.get(merchant) ?? merchant,
       series,
+      isManual: manualMerchants.has(merchant),
     })),
   };
 }

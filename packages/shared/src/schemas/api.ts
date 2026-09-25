@@ -120,6 +120,20 @@ export const RecurringCashWithdrawalBody = z.object({
   dueDate: IsoDate,
 });
 
+/**
+ * A hand-declared paycheck or bill for Runway, with no transaction to tag it from (a cold
+ * start, or income Rise hasn't seen post yet). Same shape as the transaction-tagged manual
+ * rule, just without a real merchant behind it.
+ */
+export const ManualCashEventBody = z.object({
+  label: z.string().trim().min(1).max(60),
+  kind: z.enum(['income', 'expense']),
+  amountCents: Cents.positive(),
+  cadence: ManualCadence,
+  /** The first (or most recent) date it happens; projected forward from today. */
+  anchorDate: IsoDate,
+});
+
 export const RunSyncBody = z.object({
   /** Backfill from this date instead of the usual window. */
   since: IsoDate.optional(),

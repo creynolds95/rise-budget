@@ -20,6 +20,7 @@ import { localToday } from './dates';
 import type {
   AccountWithStaleness,
   CashToPaydayResponse,
+  ManualCashEvent,
   NetWorthResponse,
   PatchedTransaction,
   PeriodResponse,
@@ -60,6 +61,11 @@ export const useCashToPayday = () =>
   useQuery({
     queryKey: ['cash-to-payday'],
     queryFn: () => get<CashToPaydayResponse>('/cash-to-payday'),
+  });
+export const useManualCashEvents = () =>
+  useQuery({
+    queryKey: ['cash-to-payday', 'manual-events'],
+    queryFn: () => get<ManualCashEvent[]>('/cash-to-payday/manual-events'),
   });
 
 export const usePeriod = (id: string) =>

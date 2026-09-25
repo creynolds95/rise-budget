@@ -668,7 +668,7 @@ function Upcoming({
   return (
     <section className="gutter mt-10">
       <h2 className="type-title">Recurring</h2>
-      <ul className="mt-2">
+      <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         {rows.map((s) => (
           <li
             key={s.id}

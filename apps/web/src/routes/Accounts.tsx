@@ -185,7 +185,7 @@ export function Accounts() {
               <span>{label}</span>
               <MoneyText cents={total} tone="muted" />
             </h2>
-            <div className="mt-1">
+            <div className="mt-1 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
               {group.map((a) => (
                 <AccountRow key={a.id} a={a} today={today} tz={tz} />
               ))}

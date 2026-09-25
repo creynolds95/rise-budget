@@ -54,20 +54,24 @@ export function DetailPage(p: DetailPageProps) {
         </section>
       )}
       {p.facts && (
-        <section data-zone="facts" className="gutter border-t border-hairline">
-          {p.facts}
+        <section data-zone="facts" className="gutter">
+          <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">{p.facts}</div>
         </section>
       )}
       {p.related && (
         <section data-zone="related" className="gutter pt-8">
           <h2 className="type-label text-ink-muted">{p.related.title}</h2>
-          <div className="mt-2">{p.related.children}</div>
+          <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+            {p.related.children}
+          </div>
         </section>
       )}
       {p.manage && (
-        <section data-zone="manage" className="gutter mt-12 border-t border-hairline pt-6">
+        <section data-zone="manage" className="gutter mt-12">
           <h2 className="type-label text-ink-muted">Manage</h2>
-          <div className="mt-2">{p.manage}</div>
+          <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+            {p.manage}
+          </div>
         </section>
       )}
     </article>

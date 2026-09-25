@@ -129,7 +129,12 @@ categories.delete('/:id', async (c) => {
   const id = c.req.param('id');
   const cat = await getCategory(userId, db, id);
   if (!cat || cat.archivedAt) throw new AppError(404, 'NOT_FOUND', 'Category not found');
-  if (cat.isCatchall) throw new AppError(409, 'CONFLICT', `${cat.name} is the fallback category and can't be deleted.`);
+  if (cat.isCatchall)
+    throw new AppError(
+      409,
+      'CONFLICT',
+      `${cat.name} is the fallback category and can't be deleted.`,
+    );
   const inUse = await categoryMoneyInOpenMonths(userId, db, id);
   const reassign = c.req.query('reassign') === 'true';
   if (inUse && !reassign) {

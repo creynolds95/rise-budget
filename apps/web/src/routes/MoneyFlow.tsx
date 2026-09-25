@@ -66,13 +66,7 @@ export function MoneyFlow() {
   );
 }
 
-function SankeyChart({
-  nodes,
-  links,
-}: {
-  nodes: readonly FlowNode[];
-  links: readonly FlowLink[];
-}) {
+function SankeyChart({ nodes, links }: { nodes: readonly FlowNode[]; links: readonly FlowLink[] }) {
   const layout = useMemo(() => {
     const height = Math.max(180, nodes.length * 36);
     const graph = sankey<Node, { source: string; target: string; value: number }>()
