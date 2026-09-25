@@ -177,19 +177,27 @@ describe('transfer detection (SPEC §3.3, §3.4)', () => {
     ]);
   });
 
-  it('medium: two depository accounts, or more than a day apart', () => {
+  it('high: same-day or next-day, any account kind (checking to savings included, C3/A6)', () => {
     const toSavings = row({ id: 'sav', accountId: 'savings', amountCents: -84_500 });
-    expect(pairConfidence(fromChecking, toSavings)).toBe('medium');
-    expect(pairConfidence(fromChecking, { ...toCard, postedAt: '2026-09-13' })).toBe('medium');
+    expect(pairConfidence(fromChecking, toSavings)).toBe('high');
   });
 
-  it('rejects same account, unequal amounts, zero, and gaps over 4 days', () => {
+  it(
+    'medium: more than a day apart, up to the max window (banks post legs on separate days,' +
+      ' and a monthly card can take a statement cycle — C3)',
+    () => {
+      expect(pairConfidence(fromChecking, { ...toCard, postedAt: '2026-09-13' })).toBe('medium');
+      expect(pairConfidence(fromChecking, { ...toCard, postedAt: '2026-09-15' })).toBe('medium');
+    },
+  );
+
+  it('rejects same account, unequal amounts, zero, and gaps over the max window', () => {
     expect(pairConfidence(fromChecking, { ...toCard, accountId: 'checking' })).toBeNull();
     expect(pairConfidence(fromChecking, { ...toCard, amountCents: -84_501 })).toBeNull();
     expect(
       pairConfidence(row({ amountCents: 0 }), row({ id: 'y', accountId: 'z', amountCents: 0 })),
     ).toBeNull();
-    expect(pairConfidence(fromChecking, { ...toCard, postedAt: '2026-09-15' })).toBeNull();
+    expect(pairConfidence(fromChecking, { ...toCard, postedAt: '2026-10-20' })).toBeNull();
     expect(pairConfidence(fromChecking, { ...toCard, postedAt: '2026-09-14' })).toBe('medium');
   });
 
@@ -198,7 +206,7 @@ describe('transfer detection (SPEC §3.3, §3.4)', () => {
       id: 'sav',
       accountId: 'savings',
       amountCents: -84_500,
-      postedAt: '2026-09-10',
+      postedAt: '2026-09-20',
     });
     const later = row({
       id: 'card2',

@@ -150,7 +150,13 @@ export function Budget() {
             <GroupSection
               key={g.id}
               group={g}
-              rows={p.categories.filter((c) => byId.get(c.categoryId)?.groupId === g.id)}
+              rows={p.categories.filter((c) => {
+                const cat = byId.get(c.categoryId);
+                // C8: unbudgeted categories (Transfer, Credit Card Payment, Other) have a
+                // real category row for splits and rules, but never a budget line — showing
+                // one here would let the user "plan" money for something that isn't spending.
+                return cat?.groupId === g.id && cat.budgeted;
+              })}
               byId={byId}
               month={month}
               editable={!closed}
@@ -305,7 +311,7 @@ function BudgetRow({
 }) {
   const over = row.remainingCents < 0;
   return (
-    <li className="gutter border-b border-hairline py-3">
+    <li className="gutter border-b border-hairline py-2">
       <div className="flex items-baseline justify-between gap-3">
         <Link
           to={`/budget/${row.categoryId}?m=${month}`}
@@ -316,16 +322,16 @@ function BudgetRow({
               onSelect(row.categoryId);
             }
           }}
-          className="flex min-h-11 min-w-0 items-center gap-2 font-medium"
+          className="flex min-h-9 min-w-0 items-center gap-1.5 text-sm font-medium"
         >
           {category?.emoji && (
-            <span aria-hidden className="text-xl leading-none">
+            <span aria-hidden className="text-base leading-none">
               {category.emoji}
             </span>
           )}
           <span className="truncate">{category?.name ?? 'Category'}</span>
         </Link>
-        <span className="shrink-0 text-right">
+        <span className="shrink-0 text-right text-sm">
           {row.carriedInCents !== 0 && (
             <>
               <MoneyText
@@ -345,7 +351,7 @@ function BudgetRow({
           <span className="ml-1 type-caption text-ink-muted">{over ? 'over' : 'left'}</span>
         </span>
       </div>
-      <div className="mt-2">
+      <div className="mt-1.5">
         <Rail
           carriedInCents={row.carriedInCents}
           plannedCents={row.plannedCents}
@@ -354,7 +360,7 @@ function BudgetRow({
           tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
         />
       </div>
-      <div className="mt-2 flex items-center justify-between">
+      <div className="mt-1.5 flex items-center justify-between">
         <span className="type-caption text-ink-muted">
           <MoneyText cents={row.spentCents} tone="muted" /> spent
           {row.pace && row.pace.status === 'over' && row.spendShape === 'linear' && (
@@ -365,11 +371,11 @@ function BudgetRow({
           <button
             onClick={onEdit}
             aria-label={`Planned for ${category?.name ?? 'category'}: ${formatCents(row.plannedCents)}. Change`}
-            className="-my-1 flex min-h-11 items-center gap-1.5 rounded-full bg-sage-100 px-3.5 text-sage-700 active:bg-sage-300"
+            className="-my-1 flex min-h-9 items-center gap-1 rounded-full bg-sage-100 px-3 text-sage-700 active:bg-sage-300"
           >
             <MoneyText
               cents={row.plannedCents}
-              className="font-semibold text-sage-700"
+              className="text-sm font-semibold text-sage-700"
               whole={row.plannedCents % 100 === 0}
             />
             <span className="type-caption">planned</span>

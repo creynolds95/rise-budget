@@ -203,7 +203,7 @@ export function Review() {
         return;
       }
       const t = first.t;
-      const chips = chipsFor(t, ctx, 3);
+      const chips = chipsFor(t, ctx, 2);
       const n = Number(e.key);
       if (n >= 1 && n <= chips.length) file(t, chips[n - 1] as string);
       else if (e.key === 'Enter' && t.suggestedCategoryId && first.band !== 'none') accept(t);
@@ -290,7 +290,7 @@ export function Review() {
                   focused={row === first}
                   account={account(row.t.accountId)?.name ?? ''}
                   suggestion={catName(row.t.suggestedCategoryId)}
-                  chips={chipsFor(row.t, ctx, 3).map((id) => ({ id, name: catName(id) }))}
+                  chips={chipsFor(row.t, ctx, 2).map((id) => ({ id, name: catName(id) }))}
                   offer={transferOffer(row.t, account(row.t.accountId)?.kind)}
                   onAccept={() => accept(row.t)}
                   onFile={(id) => file(row.t, id)}
@@ -447,7 +447,7 @@ function ReviewRow({
             {band === 'confident' ? `✓ ${suggestion}` : `${suggestion}?`}
           </button>
         )}
-        {offer && (
+        {offer && suggestion !== 'Transfer' && suggestion !== 'Credit Card Payment' && (
           <button
             onClick={onTransfer}
             className={`${chip} border border-hairline bg-surface text-ink-muted`}

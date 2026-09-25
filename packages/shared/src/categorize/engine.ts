@@ -35,7 +35,15 @@ export interface CategorizeInput {
   /** Category of the detected recurring series this transaction belongs to, if any. */
   recurringCategoryId: string | null;
   /** The user's active categories. Anything pointing elsewhere is ignored. */
-  categories: readonly { id: string; name: string }[];
+  categories: readonly { id: string; name: string; groupKind: 'income' | 'expense' }[];
+  /** Rise convention: expense positive, income negative (SPEC §1.1). Used to keep a guess
+   * from crossing direction — a deposit never auto-files to an expense category or vice
+   * versa (C2), since that silently nets spending or income wrong. */
+  amountCents: number;
+  /** The direction check only makes sense on a cash account: a credit card's own ledger
+   * records a payment as a negative amount that isn't "income" in any real sense, so
+   * direction filtering is skipped there (undefined behaves the same as 'depository'). */
+  accountKind?: 'depository' | 'credit' | 'loan' | 'investment' | 'other' | undefined;
 }
 
 export type Layer = 'rule' | 'memory' | 'recurring' | 'seed';
@@ -138,8 +146,21 @@ export function memoryConfidence(topCount: number, total: number): number {
 }
 
 export function categorize(input: CategorizeInput): Suggestion {
+  const checkDirection = (input.accountKind ?? 'depository') === 'depository';
+  const expectedKind: 'income' | 'expense' = input.amountCents < 0 ? 'income' : 'expense';
+  // A guess (memory, recurring series, seed) must land on the right side of the ledger; an
+  // explicit rule is the user's own instruction and is trusted regardless of direction. Off
+  // a cash account, direction is meaningless (a card's own ledger runs the other way), so
+  // every category stays eligible.
+  const onSide = new Set(
+    checkDirection
+      ? input.categories.filter((c) => c.groupKind === expectedKind).map((c) => c.id)
+      : input.categories.map((c) => c.id),
+  );
   const active = new Set(input.categories.map((c) => c.id));
-  const memory = rankMemory(input.memory.filter((m) => active.has(m.categoryId)));
+  const memory = rankMemory(
+    input.memory.filter((m) => active.has(m.categoryId) && onSide.has(m.categoryId)),
+  );
   const topCategoryIds = memory.slice(0, 3).map((m) => m.categoryId);
   const result = (
     layer: Layer,
@@ -183,12 +204,31 @@ export function categorize(input: CategorizeInput): Suggestion {
     return result('memory', top.categoryId, memoryConfidence(top.count, total));
   }
 
-  if (input.recurringCategoryId && active.has(input.recurringCategoryId)) {
+  if (
+    input.recurringCategoryId &&
+    active.has(input.recurringCategoryId) &&
+    onSide.has(input.recurringCategoryId)
+  ) {
     return result('recurring', input.recurringCategoryId, RECURRING_CONFIDENCE);
   }
 
-  const seed = resolveSeed(input.merchant, input.categories);
-  if (seed) return { ...result('seed', seed, SEED_CONFIDENCE), topCategoryIds: [seed] };
+  const seed = resolveSeed(
+    input.merchant,
+    input.categories.filter((c) => onSide.has(c.id)),
+  );
+  // C1: a seed match is always the best guess we have, even though 0.5 sits below the
+  // pre-fill line — the money must land on the seeded category, not the catch-all, and the
+  // low band still makes the review queue show it as an unconfirmed guess.
+  if (seed) {
+    return {
+      categoryId: seed,
+      confidence: SEED_CONFIDENCE,
+      layer: 'seed',
+      band: bandOf(SEED_CONFIDENCE),
+      ruleId: null,
+      topCategoryIds: [seed],
+    };
+  }
 
   return {
     categoryId: null,

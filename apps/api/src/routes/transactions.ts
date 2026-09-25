@@ -108,17 +108,25 @@ transactions.post('/', async (c) => {
   const userId = c.get('userId');
   const db = c.env.DB;
   const b = await body(c, CreateTransactionBody);
-  if (!(await getAccount(userId, db, b.accountId)))
-    throw new AppError(400, 'BAD_REQUEST', 'Unknown account');
+  const account = await getAccount(userId, db, b.accountId);
+  if (!account) throw new AppError(400, 'BAD_REQUEST', 'Unknown account');
   if (b.categoryId && !(await categoryIdsExist(userId, db, [b.categoryId]))) {
     throw new AppError(400, 'BAD_REQUEST', 'Unknown category');
   }
   const merchant = normalizeMerchant(b.descriptor);
   const categoryId =
     b.categoryId ??
-    (await suggestFor(db, userId, [{ id: 'draft', descriptor: b.descriptor, merchant }])).get(
-      'draft',
-    )?.categoryId ??
+    (
+      await suggestFor(db, userId, [
+        {
+          id: 'draft',
+          descriptor: b.descriptor,
+          merchant,
+          amountCents: b.amountCents,
+          accountKind: account.kind,
+        },
+      ])
+    ).get('draft')?.categoryId ??
     (await ensureCatchallCategory(userId, db)).id;
   const id = await insertManualTransaction(userId, db, {
     accountId: b.accountId,

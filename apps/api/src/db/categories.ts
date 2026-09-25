@@ -220,6 +220,45 @@ export async function ensureCatchallCategory(userId: UserId, db: D1Database): Pr
 }
 
 /**
+ * H1/C2: every user always has one income-side fallback too, so a deposit with no rule,
+ * memory or seed match lands on "Other Income" (an income category) instead of the
+ * expense-kind "Other" — which would otherwise silently net spending down (C2).
+ */
+export async function ensureIncomeCatchallCategory(
+  userId: UserId,
+  db: D1Database,
+): Promise<Category> {
+  const existing = await db
+    .prepare(
+      `SELECT c.* FROM category c JOIN category_group g ON g.id = c.group_id AND g.user_id = c.user_id
+       WHERE c.user_id = ?1 AND g.kind = 'income' AND c.name = 'Other Income'`,
+    )
+    .bind(userId)
+    .first<CategoryRow>();
+  if (existing) return toCategory(existing);
+  let group = await db
+    .prepare(`SELECT id FROM category_group WHERE user_id = ?1 AND kind = 'income'`)
+    .bind(userId)
+    .first<{ id: string }>();
+  if (!group) {
+    const groupId = newId();
+    await db
+      .prepare(
+        'INSERT INTO category_group (id, user_id, name, kind, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)',
+      )
+      .bind(groupId, userId, 'Income', 'income', 0)
+      .run();
+    group = { id: groupId };
+  }
+  const id = newId();
+  await db
+    .prepare('INSERT INTO category (id, user_id, group_id, name) VALUES (?1, ?2, ?3, ?4)')
+    .bind(id, userId, group.id, 'Other Income')
+    .run();
+  return (await getCategory(userId, db, id)) as Category;
+}
+
+/**
  * The per-user unbudgeted "Transfer" category (pre-deploy-todo A5): moving money between the
  * user's own accounts, or paying off a credit card, by default counts as nothing. The user
  * can always recategorize either leg to a budgeted category later — nothing here is special

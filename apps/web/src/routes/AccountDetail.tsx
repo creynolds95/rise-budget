@@ -98,6 +98,23 @@ export function AccountDetail() {
       }
       facts={
         <>
+          <EditRow
+            label="Type"
+            field={
+              <select
+                aria-label="Account type"
+                className="min-h-11 rounded-input border border-hairline bg-surface px-2"
+                value={a.kind}
+                onChange={(e) => void patch({ kind: e.target.value })}
+              >
+                <option value="depository">Cash</option>
+                <option value="credit">Credit card</option>
+                <option value="loan">Loan</option>
+                <option value="investment">Investment</option>
+                <option value="other">Other</option>
+              </select>
+            }
+          />
           {manual && (
             <EditRow
               label={owes ? 'Owed today' : 'Balance today'}

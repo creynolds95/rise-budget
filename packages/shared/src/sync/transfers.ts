@@ -20,7 +20,10 @@ export interface TransferPair {
   dayGap: number;
 }
 
-export const TRANSFER_MAX_DAYS = 4;
+// C3: banks often post linked legs on different days, and a monthly-cadence card (Apple Card)
+// can take up to about a statement cycle to show its payment leg — a same-day-only window
+// misses those pairs entirely rather than just downgrading their confidence.
+export const TRANSFER_MAX_DAYS = 35;
 
 export function pairConfidence(
   a: TransferCandidate,
@@ -30,8 +33,10 @@ export function pairConfidence(
     return null;
   const gap = Math.abs(dayNumber(a.postedAt) - dayNumber(b.postedAt));
   if (gap > TRANSFER_MAX_DAYS) return null;
-  const kinds = new Set([a.accountKind, b.accountKind]);
-  return gap <= 1 && kinds.has('credit') && kinds.has('depository') ? 'high' : 'medium';
+  // Same-or-next-day is auto-linked regardless of account kind: a checking->savings transfer
+  // is just as real a pair as a checking->credit-card payment (C3/A6). Anything wider still
+  // shows in review as a linkable pair, but isn't auto-applied.
+  return gap <= 1 ? 'high' : 'medium';
 }
 
 /**

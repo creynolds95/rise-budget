@@ -523,15 +523,18 @@ describe('T29 transfers', () => {
     const c2 = rows.find((t) => t.source_id === 'c2');
     const s1 = rows.find((t) => t.source_id === 's1');
     const k2 = rows.find((t) => t.source_id === 'k2');
+    // k2 (KROGER) is auto-seeded straight to this same "Groceries" category on sync (C1), so
+    // it's already counted here before c2 is ever touched.
+    expect(await s.spent('2026-09', s.food.id)).toBe(6_150);
     await s.api('PATCH', `/transactions/${String(c2?.id)}`, { categoryId: s.food.id });
-    expect(await s.spent('2026-09', s.food.id)).toBe(20_000);
+    expect(await s.spent('2026-09', s.food.id)).toBe(6_150 + 20_000);
 
     const link = await s.api('POST', `/transactions/${String(c2?.id)}/transfer-link`, {
       otherTxnId: s1?.id,
     });
     expect(link.status).toBe(200);
     expect(link.json.items.map((t: { isTransfer: boolean }) => t.isTransfer)).toEqual([true, true]);
-    expect(await s.spent('2026-09', s.food.id)).toBe(0);
+    expect(await s.spent('2026-09', s.food.id)).toBe(6_150);
 
     expect(
       (await s.api('POST', `/transactions/${String(c2?.id)}/transfer-link`, { otherTxnId: s1?.id }))
@@ -565,7 +568,7 @@ describe('T29 transfers', () => {
       'needs_review',
       'needs_review',
     ]);
-    expect(await s.spent('2026-09', s.food.id)).toBe(0);
+    expect(await s.spent('2026-09', s.food.id)).toBe(6_150);
     expect((await s.api('DELETE', `/transactions/${String(s1?.id)}/transfer-link`)).status).toBe(
       409,
     );

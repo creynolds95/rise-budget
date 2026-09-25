@@ -23,6 +23,31 @@ const SEEDS: [RegExp, string[]][] = [
   ],
   [/\b(UBER|LYFT|PARKING|TOLL|TOLLWAY)\b/i, ['Transportation', 'Transport', 'Rideshare', 'Auto']],
   [/\b(CVS|WALGREENS|RITE AID|PHARMACY)\b/i, ['Health', 'Pharmacy', 'Medical']],
+  [
+    /\b(RENT|APARTMENTS?|PROPERTY MGMT|PROPERTY MANAGEMENT|MORTGAGE|LOAN SERVICING|MR\. ?COOPER|ROCKET MORTGAGE|WELLS FARGO HOME|QUICKEN LOANS)\b/i,
+    ['Rent/Mortgage', 'Home'],
+  ],
+  [
+    /\b(ELECTRIC|UTILITY|UTILITIES|WATER|GAS COMPANY|OG&E|OGE ENERGY|CENTERPOINT|ATMOS ENERGY|POWER CO|POWER COMPANY|SEWER|TRASH|WASTE MANAGEMENT|COX COMM|SPECTRUM|XFINITY|COMCAST|AT&T|ATT\b|VERIZON|T-MOBILE)\b/i,
+    ['Utilities', 'Home'],
+  ],
+  [
+    /\b(INSURANCE|GEICO|PROGRESSIVE|STATE FARM|ALLSTATE|USAA INSURANCE|LIBERTY MUTUAL|FARMERS INSURANCE)\b/i,
+    ['Car Insurance', 'Health Insurance', 'Insurance'],
+  ],
+  [
+    /\b(PAYROLL|DIRECT DEP|DIRECT DEPOSIT|DIR DEP|PAYCHECK|SALARY|ADP\b|GUSTO PAY)\b/i,
+    ['Paycheck', 'Income', 'Other Income'],
+  ],
+  [/\b(AUTO LOAN|CAR LOAN)\b/i, ['Car Payment', 'Loans', 'Auto']],
+  [
+    /\b(STUDENT LOAN|SALLIE MAE|NAVIENT|NELNET|GREAT LAKES LOAN)\b/i,
+    ['Loans', 'Debt Payoff', 'Personal'],
+  ],
+  [
+    /\b(CREDIT CARD PAYMENT|CARD PAYMENT|GSBANK PAYMENT|APPLECARD.*PAYMENT|CHASE CARD.*PAYMENT|CAPITAL ONE.*PAYMENT|DISCOVER.*PAYMENT|AMEX.*PAYMENT|SYNCHRONY.*PAYMENT|BARCLAYCARD.*PAYMENT)\b/i,
+    ['Credit Card Payment', 'Transfer'],
+  ],
 ];
 
 export function resolveSeed(
