@@ -468,71 +468,73 @@ function BudgetRow({
   const navigate = useNavigate();
   const to = `/budget/${row.categoryId}?m=${month}`;
   return (
-    <li className="gutter border-b border-hairline py-2 last:border-b-0">
-      <div className="flex items-baseline justify-between gap-3">
-        <Link
-          to={to}
-          onClick={(e) => {
-            // H5: desktop opens the category beside the list instead of pushing over it.
-            if (isDesktop) {
-              e.preventDefault();
-              onSelect(row.categoryId);
-              return;
-            }
-            transitionClick(navigate, to)(e);
-          }}
-          className="flex min-h-9 min-w-0 items-center gap-1.5 text-sm font-medium"
-        >
-          {category?.emoji && (
-            <span aria-hidden className="text-base leading-none">
-              {category.emoji}
-            </span>
+    <li className="gutter border-b border-hairline last:border-b-0">
+      <Link
+        to={to}
+        onClick={(e) => {
+          // H5: desktop opens the category beside the list instead of pushing over it.
+          if (isDesktop) {
+            e.preventDefault();
+            onSelect(row.categoryId);
+            return;
+          }
+          transitionClick(navigate, to)(e);
+        }}
+        className="block py-2 active:bg-sage-100"
+      >
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="flex min-h-9 min-w-0 items-center gap-1.5 text-sm font-medium">
+            {category?.emoji && (
+              <span aria-hidden className="text-base leading-none">
+                {category.emoji}
+              </span>
+            )}
+            <span className="truncate">{category?.name ?? 'Category'}</span>
+          </span>
+          <span className="shrink-0 text-right text-sm">
+            {row.carriedInCents !== 0 && (
+              <span
+                className={`mr-1 inline-flex items-center gap-0.5 ${
+                  row.carriedInCents < 0 ? 'text-clay' : 'text-sage-700'
+                }`}
+                title={
+                  row.carriedInCents < 0
+                    ? `Carried a ${formatCents(-row.carriedInCents)} deficit`
+                    : `Carried ${formatCents(row.carriedInCents)} forward`
+                }
+              >
+                <Icon name="refresh" size={13} />
+                <MoneyText
+                  cents={row.carriedInCents}
+                  tone={row.carriedInCents < 0 ? 'over' : 'in'}
+                  whole
+                  sign="always"
+                />
+              </span>
+            )}
+            <MoneyText
+              cents={Math.abs(remainingCents)}
+              tone={over ? overTone : 'ink'}
+              className="font-semibold"
+            />
+            <span className="ml-1 type-caption text-ink-muted">{over ? 'over' : 'left'}</span>
+          </span>
+        </div>
+        <div className="mt-1.5">
+          {kind === 'income' ? (
+            <FillBar filledCents={earnedCents} targetCents={row.availableCents} tick={null} />
+          ) : (
+            <Rail
+              carriedInCents={row.carriedInCents}
+              plannedCents={row.plannedCents}
+              spentCents={row.spentCents}
+              availableCents={row.availableCents}
+              tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
+            />
           )}
-          <span className="truncate">{category?.name ?? 'Category'}</span>
-        </Link>
-        <span className="shrink-0 text-right text-sm">
-          {row.carriedInCents !== 0 && (
-            <span
-              className={`mr-1 inline-flex items-center gap-0.5 ${
-                row.carriedInCents < 0 ? 'text-clay' : 'text-sage-700'
-              }`}
-              title={
-                row.carriedInCents < 0
-                  ? `Carried a ${formatCents(-row.carriedInCents)} deficit`
-                  : `Carried ${formatCents(row.carriedInCents)} forward`
-              }
-            >
-              <Icon name="refresh" size={13} />
-              <MoneyText
-                cents={row.carriedInCents}
-                tone={row.carriedInCents < 0 ? 'over' : 'in'}
-                whole
-                sign="always"
-              />
-            </span>
-          )}
-          <MoneyText
-            cents={Math.abs(remainingCents)}
-            tone={over ? overTone : 'ink'}
-            className="font-semibold"
-          />
-          <span className="ml-1 type-caption text-ink-muted">{over ? 'over' : 'left'}</span>
-        </span>
-      </div>
-      <div className="mt-1.5">
-        {kind === 'income' ? (
-          <FillBar filledCents={earnedCents} targetCents={row.availableCents} tick={null} />
-        ) : (
-          <Rail
-            carriedInCents={row.carriedInCents}
-            plannedCents={row.plannedCents}
-            spentCents={row.spentCents}
-            availableCents={row.availableCents}
-            tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
-          />
-        )}
-      </div>
-      <div className="mt-1.5 flex items-center justify-between">
+        </div>
+      </Link>
+      <div className="pb-2 flex items-center justify-between">
         <span className="type-caption text-ink-muted">
           <MoneyText cents={earnedCents} tone="muted" /> {kind === 'income' ? 'earned' : 'spent'}
           {row.pace && row.pace.status === 'over' && row.spendShape === 'linear' && (
