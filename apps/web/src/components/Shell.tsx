@@ -6,7 +6,7 @@ const ICON: Record<Tab, string> = {
   dashboard: 'M4 13h6V4H4zm10 7h6v-9h-6zM4 20h6v-4H4zm10-11h6V4h-6z',
   accounts: 'M3 9l9-5 9 5M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18',
   transactions: 'M5 7h14M5 12h14M5 17h9',
-  budget: 'M4 7h16M4 12h10M4 17h6',
+  budget: 'M6 20V10M12 20V4M18 20v6',
 };
 
 /**
@@ -25,7 +25,7 @@ export function Shell() {
     .toUpperCase();
   return (
     <div className="min-h-dvh pb-[calc(64px+env(safe-area-inset-bottom))] lg:flex lg:pb-0">
-      <aside className="hidden lg:flex lg:h-dvh lg:w-60 lg:flex-shrink-0 lg:flex-col lg:justify-between lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
+      <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-60 lg:flex-shrink-0 lg:flex-col lg:justify-between lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
         <div className="flex flex-col gap-7">
           <span className="px-3 font-serif text-xl tracking-tight text-sage-700">Rise</span>
           <nav aria-label="Tabs" className="flex flex-col gap-0.5">
@@ -100,19 +100,29 @@ export function Shell() {
                   }`
                 }
               >
-                <svg
-                  aria-hidden
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  className="fill-none stroke-current"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d={ICON[t.tab]} />
-                </svg>
-                {t.label}
+                {({ isActive }) => (
+                  <>
+                    <span
+                      className={`flex size-8 items-center justify-center rounded-full ${
+                        isActive ? 'bg-sage-100' : ''
+                      }`}
+                    >
+                      <svg
+                        aria-hidden
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        className="fill-none stroke-current"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d={ICON[t.tab]} />
+                      </svg>
+                    </span>
+                    {t.label}
+                  </>
+                )}
               </NavLink>
             </li>
           ))}

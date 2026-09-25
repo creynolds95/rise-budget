@@ -81,17 +81,44 @@ export async function getGroup(
   return row ? toGroup(row) : null;
 }
 
+/** A brand-new group or category always sorts last — never at the schema's default 0, which
+ * would tie it with every other unordered row and make the reorder arrows a no-op swap. */
+async function nextGroupSortOrder(db: D1Database, userId: UserId): Promise<number> {
+  const row = await db
+    .prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM category_group WHERE user_id = ?1',
+    )
+    .bind(userId)
+    .first<{ next: number }>();
+  return row?.next ?? 0;
+}
+
+async function nextCategorySortOrder(
+  db: D1Database,
+  userId: UserId,
+  groupId: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM category WHERE user_id = ?1 AND group_id = ?2',
+    )
+    .bind(userId, groupId)
+    .first<{ next: number }>();
+  return row?.next ?? 0;
+}
+
 export async function createGroup(
   userId: UserId,
   db: D1Database,
-  g: { name: string; kind: CategoryGroupKind; sortOrder: number },
+  g: { name: string; kind: CategoryGroupKind; sortOrder?: number | undefined },
 ): Promise<CategoryGroup> {
   const id = newId();
+  const sortOrder = g.sortOrder ?? (await nextGroupSortOrder(db, userId));
   await db
     .prepare(
       'INSERT INTO category_group (id, user_id, name, kind, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)',
     )
-    .bind(id, userId, g.name, g.kind, g.sortOrder)
+    .bind(id, userId, g.name, g.kind, sortOrder)
     .run();
   return (await getGroup(userId, db, id)) as CategoryGroup;
 }
@@ -311,10 +338,11 @@ export async function createCategory(
   },
 ): Promise<Category> {
   const id = newId();
+  const sortOrder = await nextCategorySortOrder(db, userId, c.groupId);
   await db
     .prepare(
-      `INSERT INTO category (id, user_id, group_id, name, emoji, rollover_policy, spend_shape, is_bill, budgeted)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+      `INSERT INTO category (id, user_id, group_id, name, emoji, rollover_policy, spend_shape, is_bill, budgeted, sort_order)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
     )
     .bind(
       id,
@@ -326,6 +354,7 @@ export async function createCategory(
       c.spendShape,
       bool(c.isBill),
       bool(c.budgeted),
+      sortOrder,
     )
     .run();
   return (await getCategory(userId, db, id)) as Category;
