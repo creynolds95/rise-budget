@@ -95,6 +95,7 @@ function Editor({
         </>
       }
       onClose={onClose}
+      fullScreen
       action={{
         label: busy ? 'Saving…' : 'Save',
         onClick: () => void save(),
