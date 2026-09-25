@@ -33,7 +33,7 @@ export const INTERVAL_TOLERANCE_DAYS = 4;
 export const AMOUNT_TOLERANCE_PERCENT = 5;
 export const BROKEN_AFTER_DAYS = 7;
 
-function parts(date: string) {
+export function parts(date: string) {
   return { y: Number(date.slice(0, 4)), m: Number(date.slice(5, 7)), d: Number(date.slice(8, 10)) };
 }
 
@@ -303,4 +303,72 @@ export function projectOccurrences(series: DetectedSeries, count: number): Proje
         : nextDate(series.cadence, date, anchorDay);
   }
   return out;
+}
+
+/**
+ * A user-declared cash withdrawal (SPEC-adjacent: Caleb's cash-to-payday tool). Unlike a
+ * `DetectedSeries`, its cadence and next date are declared up front from one transaction
+ * rather than inferred from three — for a bill that's real but too new, too irregularly
+ * amounted, or too easily confused with a sibling (two different student loans) to detect.
+ */
+export interface ManualRule {
+  cadence: Cadence;
+  anchorDays: [number, number] | null;
+  expectedAmountCents: number;
+  /** The declared due date, or the date it last advanced to after a confirming charge. */
+  nextExpectedDate: string;
+}
+
+/** Caleb: 2 days late without notice is worth flagging — shorter than a detected series's 7. */
+export const MISSED_AFTER_DAYS = 2;
+
+/**
+ * The first occurrence of a cadence starting from `anchorDate` that lands on or after
+ * `today` — the declared due date itself is usually in the past (it's the transaction the
+ * user just tagged), so a fresh manual rule's `nextExpectedDate` starts here, not at the
+ * anchor.
+ */
+export function firstUpcoming(
+  cadence: Cadence,
+  anchorDate: string,
+  anchorDays: [number, number] | null,
+  today: string,
+): string {
+  let date = anchorDate;
+  while (dayNumber(date) < dayNumber(today)) {
+    date =
+      cadence === 'semimonthly'
+        ? nextSemimonthlyDate(date, anchorDays as [number, number])
+        : nextDate(cadence, date, parts(anchorDate).d);
+  }
+  return date;
+}
+
+/**
+ * Advance a manual rule against fresh occurrences of its merchant: a charge on or after the
+ * due date (within tolerance) confirms it and rolls `nextExpectedDate` to the next cycle;
+ * otherwise it stays put, and reads `broken` once it's more than `MISSED_AFTER_DAYS` overdue
+ * — same status a detected series uses, so the existing "hasn't charged since..." banner
+ * covers this too.
+ */
+export function advanceManualRule(
+  rule: ManualRule,
+  occurrences: readonly Occurrence[],
+  today: string,
+): { nextExpectedDate: string; status: 'active' | 'broken' } {
+  const confirming = occurrences
+    .filter((o) => Math.sign(o.amountCents) === Math.sign(rule.expectedAmountCents))
+    .filter((o) => steadyAmounts([o.amountCents, rule.expectedAmountCents]))
+    .filter((o) => dayNumber(o.date) >= dayNumber(rule.nextExpectedDate) - INTERVAL_TOLERANCE_DAYS)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  let next = rule.nextExpectedDate;
+  for (const o of confirming) {
+    if (dayNumber(o.date) < dayNumber(next) - INTERVAL_TOLERANCE_DAYS) continue;
+    next =
+      rule.cadence === 'semimonthly'
+        ? nextSemimonthlyDate(o.date, rule.anchorDays as [number, number])
+        : nextDate(rule.cadence, o.date, parts(o.date).d);
+  }
+  const status = dayNumber(today) - dayNumber(next) > MISSED_AFTER_DAYS ? 'broken' : 'active';
+  return { nextExpectedDate: next, status };
 }

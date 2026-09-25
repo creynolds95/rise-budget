@@ -10,6 +10,9 @@ import {
   SpendShape,
 } from './enums';
 
+/** Semimonthly needs two anchor days, which this transaction-tag flow doesn't collect. */
+export const ManualCadence = z.enum(['weekly', 'biweekly', 'monthly', 'annual']);
+
 // ── error contract (ARCHITECTURE §4) ──────────────────────────────────────────
 
 export const ErrorCode = z.enum([
@@ -109,6 +112,13 @@ export const BulkAcceptBody = z.union([
 ]);
 
 export const TransferLinkBody = z.object({ otherTxnId: Id });
+
+/** Caleb's "Recurring Cash Withdrawal" tag (cash-to-payday, not a category setting). */
+export const RecurringCashWithdrawalBody = z.object({
+  cadence: ManualCadence,
+  /** Defaults in the UI to the tagged transaction's own date; editable before saving. */
+  dueDate: IsoDate,
+});
 
 export const RunSyncBody = z.object({
   /** Backfill from this date instead of the usual window. */

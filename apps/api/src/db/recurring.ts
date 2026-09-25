@@ -45,6 +45,97 @@ export async function listOccurrences(
 
 export const seriesId = (userId: UserId, merchant: string) => `${userId}|${merchant}`;
 
+/** Merchants with a manually-declared cash-withdrawal rule — skip these in auto-detection. */
+export async function manualRuleMerchants(userId: UserId, db: D1Database): Promise<Set<string>> {
+  const { results } = await db
+    .prepare(
+      "SELECT merchant_normalized FROM recurring_series WHERE user_id = ?1 AND source = 'manual'",
+    )
+    .bind(userId)
+    .all<{ merchant_normalized: string }>();
+  return new Set(results.map((r) => r.merchant_normalized));
+}
+
+interface ManualRuleRow {
+  id: string;
+  merchant_normalized: string;
+  cadence: string;
+  expected_amount_cents: number;
+  next_expected_date: string;
+  anchor_days: string | null;
+}
+
+/** Every manual rule (Caleb's "Recurring Cash Withdrawal" tag), for `refreshRecurring`. */
+export async function listManualRules(userId: UserId, db: D1Database): Promise<ManualRuleRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
+         anchor_days
+       FROM recurring_series WHERE user_id = ?1 AND source = 'manual'`,
+    )
+    .bind(userId)
+    .all<ManualRuleRow>();
+  return results;
+}
+
+/** Create (or replace) a manual rule from a tagged transaction. One per merchant. */
+export function upsertManualRuleStmt(
+  userId: UserId,
+  db: D1Database,
+  merchant: string,
+  cadence: string,
+  amountCents: number,
+  nextExpectedDate: string,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO recurring_series (id, user_id, merchant_normalized, category_id, cadence,
+         expected_amount_cents, next_expected_date, status, updated_at, source, anchor_days)
+       VALUES (?2, ?1, ?3, NULL, ?4, ?5, ?6, 'active', ?7, 'manual', NULL)
+       ON CONFLICT (id) DO UPDATE SET
+         cadence = excluded.cadence, expected_amount_cents = excluded.expected_amount_cents,
+         next_expected_date = excluded.next_expected_date, status = 'active',
+         updated_at = excluded.updated_at, source = 'manual'
+       WHERE recurring_series.user_id = ?1`,
+    )
+    .bind(
+      userId,
+      seriesId(userId, merchant),
+      merchant,
+      cadence,
+      amountCents,
+      nextExpectedDate,
+      nowIso(),
+    );
+}
+
+/** Advancing a manual rule after a confirming (or missed) check — never changes its cadence. */
+export function advanceManualRuleStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  nextExpectedDate: string,
+  status: 'active' | 'broken',
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE recurring_series SET next_expected_date = ?3, status = ?4, updated_at = ?5
+       WHERE user_id = ?1 AND id = ?2`,
+    )
+    .bind(userId, id, nextExpectedDate, status, nowIso());
+}
+
+/** Untag: delete the manual rule (never a detected one — the route checks `source` first). */
+export function deleteManualRuleStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): D1PreparedStatement {
+  return db
+    .prepare("DELETE FROM recurring_series WHERE user_id = ?1 AND id = ?2 AND source = 'manual'")
+    .bind(userId, id);
+}
+
 /** A series the user marked `ended` stays ended. */
 export function upsertSeriesStmt(
   userId: UserId,
@@ -101,6 +192,7 @@ interface SeriesRow {
   next_expected_date: string | null;
   status: string;
   updated_at: string;
+  source: string;
 }
 
 export async function listSeries(userId: UserId, db: D1Database): Promise<RecurringSeries[]> {
@@ -119,6 +211,7 @@ export async function listSeries(userId: UserId, db: D1Database): Promise<Recurr
       expectedAmountCents: r.expected_amount_cents,
       nextExpectedDate: r.next_expected_date,
       status: r.status,
+      source: r.source,
       updatedAt: r.updated_at,
     }),
   );

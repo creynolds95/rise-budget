@@ -1,5 +1,6 @@
 import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
 import {
+  advanceManualRule,
   BROKEN_AFTER_DAYS,
   detectSemimonthly,
   detectSeries,
@@ -7,7 +8,10 @@ import {
   type DetectedSeries,
 } from '@rise/shared/recurring';
 import {
+  advanceManualRuleStmt,
+  listManualRules,
   listOccurrences,
+  manualRuleMerchants,
   markOverdueBrokenStmt,
   setTypicalPostDayStmt,
   upsertSeriesStmt,
@@ -23,9 +27,17 @@ export const LOOKBACK_DAYS = 3 * 366 + 8;
  */
 export async function refreshRecurring(db: D1Database, userId: UserId, today: string) {
   const from = dateFromDayNumber(dayNumber(today) - LOOKBACK_DAYS);
-  const byMerchant = await listOccurrences(userId, db, from);
+  const [byMerchant, manual, manualMerchants] = await Promise.all([
+    listOccurrences(userId, db, from),
+    listManualRules(userId, db),
+    manualRuleMerchants(userId, db),
+  ]);
   const found: [string, DetectedSeries][] = [];
   for (const [merchant, occ] of byMerchant) {
+    // A merchant Caleb has tagged "Recurring Cash Withdrawal" owns its own rule — never
+    // let auto-detection reassign or overwrite it, even once it naturally clears the
+    // 3-occurrence bar.
+    if (manualMerchants.has(merchant)) continue;
     // Semimonthly first: a true 5th/20th-style pay date is ~15 days apart, which also
     // slips inside biweekly's ±4-day tolerance — but biweekly's fixed 14-day step drifts
     // off the real anchor days over time, so a genuine semimonthly fit wins the tie.
@@ -40,8 +52,22 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
     const prev = billDay.get(s.categoryId);
     if (!prev || size > prev.size) billDay.set(s.categoryId, { day, size });
   }
+  const manualUpdates = manual.map((r) => {
+    const advanced = advanceManualRule(
+      {
+        cadence: r.cadence as DetectedSeries['cadence'],
+        anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
+        expectedAmountCents: r.expected_amount_cents,
+        nextExpectedDate: r.next_expected_date,
+      },
+      byMerchant.get(r.merchant_normalized) ?? [],
+      today,
+    );
+    return advanceManualRuleStmt(userId, db, r.id, advanced.nextExpectedDate, advanced.status);
+  });
   await db.batch([
     ...found.map(([merchant, s]) => upsertSeriesStmt(userId, db, merchant, s)),
+    ...manualUpdates,
     markOverdueBrokenStmt(userId, db, dateFromDayNumber(dayNumber(today) - BROKEN_AFTER_DAYS)),
     ...[...billDay].map(([categoryId, b]) => setTypicalPostDayStmt(userId, db, categoryId, b.day)),
   ]);
