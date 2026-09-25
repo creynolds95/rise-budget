@@ -116,6 +116,28 @@ export function Budget() {
             <span className="text-ink-muted">Income so far</span>
             <MoneyText cents={p.actualIncomeCents} />
           </div>
+          {p.expectedIncomeCents > 0 && (
+            <div className="border-b border-hairline py-3">
+              <div
+                role="img"
+                aria-label={`${formatCents(p.actualIncomeCents)} of ${formatCents(p.expectedIncomeCents)} expected received`}
+                className="relative h-2 w-full overflow-visible rounded-full bg-hairline"
+              >
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full bg-sage-600"
+                  style={{
+                    width: `${Math.min(100, (p.actualIncomeCents / p.expectedIncomeCents) * 100)}%`,
+                  }}
+                />
+              </div>
+              {p.actualIncomeCents > p.expectedIncomeCents && (
+                <p className="mt-1.5 type-caption text-sage-700">
+                  <MoneyText cents={p.actualIncomeCents - p.expectedIncomeCents} sign="always" />{' '}
+                  over expected
+                </p>
+              )}
+            </div>
+          )}
           {!groups.data.some((g) => g.kind === 'income') && (
             <p className="py-3 type-caption text-ink-muted">
               Paychecks count once they're filed under an income category.{' '}
