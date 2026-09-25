@@ -333,15 +333,24 @@ function BudgetRow({
         </Link>
         <span className="shrink-0 text-right text-sm">
           {row.carriedInCents !== 0 && (
-            <>
+            <span
+              className={`mr-1 inline-flex items-center gap-0.5 ${
+                row.carriedInCents < 0 ? 'text-clay' : 'text-sage-700'
+              }`}
+              title={
+                row.carriedInCents < 0
+                  ? `Carried a ${formatCents(-row.carriedInCents)} deficit`
+                  : `Carried ${formatCents(row.carriedInCents)} forward`
+              }
+            >
+              <Icon name="refresh" size={13} />
               <MoneyText
                 cents={row.carriedInCents}
-                tone={row.carriedInCents < 0 ? 'over' : 'muted'}
+                tone={row.carriedInCents < 0 ? 'over' : 'in'}
                 whole
                 sign="always"
               />
-              <span className="mx-1 text-ink-faint">▸</span>
-            </>
+            </span>
           )}
           <MoneyText
             cents={row.remainingCents}
