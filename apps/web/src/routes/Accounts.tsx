@@ -123,45 +123,47 @@ export function Accounts() {
       )}
       <section className="gutter pt-4">
         <p className="type-label text-ink-muted">Net worth</p>
-        <p className="mt-1 type-display">
-          {last ? (
-            <MoneyText
-              cents={last.netWorthCents}
-              tone={last.netWorthCents < 0 ? 'over' : 'ink'}
-              whole
-            />
-          ) : (
-            <Skeleton className="h-11 w-48" />
+        <div className="mt-1 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+          <p className="type-display">
+            {last ? (
+              <MoneyText
+                cents={last.netWorthCents}
+                tone={last.netWorthCents < 0 ? 'over' : 'ink'}
+                whole
+              />
+            ) : (
+              <Skeleton className="h-11 w-48" />
+            )}
+          </p>
+          {first && last && first.date === last.date && (
+            <p className="mt-1 text-ink-muted">
+              History starts {shortDate(first.date)}, the first balance Rise saw.
+            </p>
           )}
-        </p>
-        {first && last && first.date === last.date && (
-          <p className="mt-1 text-ink-muted">
-            History starts {shortDate(first.date)}, the first balance Rise saw.
-          </p>
-        )}
-        {first && last && first.date !== last.date && (
-          <p className="mt-1 text-ink-muted">
-            <MoneyText
-              cents={last.netWorthCents - first.netWorthCents}
-              sign="always"
-              tone="muted"
-              whole
+          {first && last && first.date !== last.date && (
+            <p className="mt-1 text-ink-muted">
+              <MoneyText
+                cents={last.netWorthCents - first.netWorthCents}
+                sign="always"
+                tone="muted"
+                whole
+              />
+              {pct && ` (${pct})`}{' '}
+              {first.date > start
+                ? `since ${shortDate(first.date)}`
+                : `over ${range === 'ALL' ? 'three years' : range === 'YTD' ? 'this year' : range}`}
+              {last.inferred && ' · includes estimated balances'}
+            </p>
+          )}
+          <div className="mt-4">
+            <Chart
+              kind="line"
+              label="Net worth over time. Dashed where balances are estimated between reports."
+              points={points.map((p) => ({ cents: p.netWorthCents, inferred: p.inferred }))}
+              range={range}
+              onRange={setRange}
             />
-            {pct && ` (${pct})`}{' '}
-            {first.date > start
-              ? `since ${shortDate(first.date)}`
-              : `over ${range === 'ALL' ? 'three years' : range === 'YTD' ? 'this year' : range}`}
-            {last.inferred && ' · includes estimated balances'}
-          </p>
-        )}
-        <div className="mt-4">
-          <Chart
-            kind="line"
-            label="Net worth over time. Dashed where balances are estimated between reports."
-            points={points.map((p) => ({ cents: p.netWorthCents, inferred: p.inferred }))}
-            range={range}
-            onRange={setRange}
-          />
+          </div>
         </div>
       </section>
 

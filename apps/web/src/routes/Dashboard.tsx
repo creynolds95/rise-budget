@@ -62,24 +62,26 @@ export function Dashboard() {
   return (
     <div className="gutter mx-auto max-w-2xl pt-6 pb-12">
       <p className="type-label text-ink-muted">{monthName(month, false)} · left to spend</p>
-      <p className="mt-1 type-display">
-        <MoneyText cents={t.remainingCents} tone={t.remainingCents < 0 ? 'over' : 'ink'} whole />
-      </p>
-      <p className="mt-1 text-ink-muted">
-        {t.availableCents === 0 ? (
-          'Nothing planned yet this month.'
-        ) : ahead > 0 ? (
-          <>
-            <MoneyText cents={ahead} tone="over" whole /> ahead of pace · day {p.pace.elapsedDays}{' '}
-            of {p.pace.totalDays}
-          </>
-        ) : (
-          <>
-            On pace, <MoneyText cents={-ahead} whole /> to spare · day {p.pace.elapsedDays} of{' '}
-            {p.pace.totalDays}
-          </>
-        )}
-      </p>
+      <div className="mt-1 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+        <p className="type-display">
+          <MoneyText cents={t.remainingCents} tone={t.remainingCents < 0 ? 'over' : 'ink'} whole />
+        </p>
+        <p className="mt-1 text-ink-muted">
+          {t.availableCents === 0 ? (
+            'Nothing planned yet this month.'
+          ) : ahead > 0 ? (
+            <>
+              <MoneyText cents={ahead} tone="over" whole /> ahead of pace · day {p.pace.elapsedDays}{' '}
+              of {p.pace.totalDays}
+            </>
+          ) : (
+            <>
+              On pace, <MoneyText cents={-ahead} whole /> to spare · day {p.pace.elapsedDays} of{' '}
+              {p.pace.totalDays}
+            </>
+          )}
+        </p>
+      </div>
 
       {accounts.data && (
         <div className="mt-6">
@@ -88,37 +90,39 @@ export function Dashboard() {
       )}
 
       <section className="mt-8">
-        <NavRow
-          to="/cash-to-payday"
-          label="Surplus"
-          value={
-            surplus.data && surplus.data.paySchedules.length > 0 ? (
-              <MoneyText cents={surplus.data.freeToMoveCents} whole />
-            ) : undefined
-          }
-        />
-        {(queue.data?.count ?? 0) > 0 && (
+        <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <NavRow
-            to="/review"
-            label="To review"
+            to="/cash-to-payday"
+            label="Surplus"
             value={
-              <span className="rounded-full bg-sage-600 px-2 py-0.5 type-caption font-semibold text-surface money">
-                {queue.data?.count}
-              </span>
-            }
-          />
-        )}
-        {p.period.needsRecalc && (
-          <NavRow
-            to="/budget"
-            label="A closed month changed"
-            value={
-              p.period.recalcDeltaCents !== 0 ? (
-                <MoneyText cents={p.period.recalcDeltaCents} />
+              surplus.data && surplus.data.paySchedules.length > 0 ? (
+                <MoneyText cents={surplus.data.freeToMoveCents} whole />
               ) : undefined
             }
           />
-        )}
+          {(queue.data?.count ?? 0) > 0 && (
+            <NavRow
+              to="/review"
+              label="To review"
+              value={
+                <span className="rounded-full bg-sage-600 px-2 py-0.5 type-caption font-semibold text-surface money">
+                  {queue.data?.count}
+                </span>
+              }
+            />
+          )}
+          {p.period.needsRecalc && (
+            <NavRow
+              to="/budget"
+              label="A closed month changed"
+              value={
+                p.period.recalcDeltaCents !== 0 ? (
+                  <MoneyText cents={p.period.recalcDeltaCents} />
+                ) : undefined
+              }
+            />
+          )}
+        </div>
       </section>
 
       <section className="mt-8">

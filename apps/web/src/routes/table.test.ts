@@ -15,7 +15,13 @@ describe('navigation depth (DESIGN-SYSTEM.md §4)', () => {
       expect(r.depth, r.path).toBe(expected);
     }
   });
-  it('exactly four tabs, no drawer', () => {
-    expect(TABS.map((t) => t.label)).toEqual(['Dashboard', 'Accounts', 'Transactions', 'Budget']);
+  it('exactly five tabs, no drawer', () => {
+    expect(TABS.map((t) => t.label)).toEqual([
+      'Dashboard',
+      'Accounts',
+      'Transactions',
+      'Budget',
+      'Reports',
+    ]);
   });
 });
