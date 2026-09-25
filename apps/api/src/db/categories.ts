@@ -63,7 +63,8 @@ export const planDefaultOf = (c: Category): PlanDefault | null =>
 export async function listGroups(userId: UserId, db: D1Database): Promise<CategoryGroup[]> {
   const { results } = await db
     .prepare(
-      'SELECT id, name, kind, sort_order FROM category_group WHERE user_id = ?1 ORDER BY sort_order, name',
+      `SELECT id, name, kind, sort_order FROM category_group
+       WHERE user_id = ?1 AND archived_at IS NULL ORDER BY sort_order, name`,
     )
     .bind(userId)
     .all<GroupRow>();
@@ -76,7 +77,10 @@ export async function getGroup(
   id: string,
 ): Promise<CategoryGroup | null> {
   const row = await db
-    .prepare('SELECT id, name, kind, sort_order FROM category_group WHERE user_id = ?1 AND id = ?2')
+    .prepare(
+      `SELECT id, name, kind, sort_order FROM category_group
+       WHERE user_id = ?1 AND id = ?2 AND archived_at IS NULL`,
+    )
     .bind(userId, id)
     .first<GroupRow>();
   return row ? toGroup(row) : null;
@@ -152,10 +156,9 @@ export async function updateGroup(
 }
 
 /**
- * L6: a group can only be deleted once nothing has ever lived in it — same "archive, never
- * orphan" rule as a category (SPEC §2.10), one level up. Archiving a category doesn't free its
- * group either: the row (and its `group_id`) stays for history, so a group that has ever held
- * a category is permanent, same as the category itself.
+ * L6: whether the group has ever held a category, archived or not — a group that has is
+ * never hard-deleted (its row and `group_id` stay for history, same as a category, SPEC
+ * §2.10). It's archived instead, once nothing active is left in it (see `groupHasActiveCategories`).
  */
 export async function groupHasCategories(
   userId: UserId,
@@ -169,10 +172,33 @@ export async function groupHasCategories(
   return row !== null;
 }
 
+/** Whether the group still has a live (non-archived) category in it. */
+export async function groupHasActiveCategories(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare(
+      'SELECT 1 FROM category WHERE user_id = ?1 AND group_id = ?2 AND archived_at IS NULL LIMIT 1',
+    )
+    .bind(userId, id)
+    .first();
+  return row !== null;
+}
+
 export async function deleteGroup(userId: UserId, db: D1Database, id: string): Promise<void> {
   await db
     .prepare('DELETE FROM category_group WHERE user_id = ?1 AND id = ?2')
     .bind(userId, id)
+    .run();
+}
+
+/** Once nothing active is left in it, a group is archived rather than deleted (SPEC §2.10). */
+export async function archiveGroup(userId: UserId, db: D1Database, id: string): Promise<void> {
+  await db
+    .prepare('UPDATE category_group SET archived_at = ?3 WHERE user_id = ?1 AND id = ?2')
+    .bind(userId, id, nowIso())
     .run();
 }
 

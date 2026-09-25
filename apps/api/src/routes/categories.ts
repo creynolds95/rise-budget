@@ -9,6 +9,7 @@ import {
 import { Hono } from 'hono';
 import {
   archiveCategoryStmts,
+  archiveGroup,
   categoryHistory,
   categoryMoneyInOpenMonths,
   clearCarriedInStmt,
@@ -21,6 +22,7 @@ import {
   getGroup,
   getPeriod,
   getUser,
+  groupHasActiveCategories,
   groupHasCategories,
   listAllocations,
   listCategories,
@@ -57,16 +59,24 @@ categoryGroups.patch('/:id', async (c) => {
   return c.json(await updateGroup(userId, c.env.DB, id, b));
 });
 
-/** L6: only once it holds nothing — same "archive, never orphan" rule as a category. */
+/**
+ * L6: refused while a live category remains in it. Once every category in it has been
+ * deleted, the group itself is removable — hard-deleted if nothing ever lived in it, else
+ * archived (same "archive, never orphan" rule as a category, one level up).
+ */
 categoryGroups.delete('/:id', async (c) => {
   const userId = c.get('userId');
   const db = c.env.DB;
   const id = c.req.param('id');
   if (!(await getGroup(userId, db, id)))
     throw new AppError(404, 'NOT_FOUND', 'Category group not found');
-  if (await groupHasCategories(userId, db, id))
+  if (await groupHasActiveCategories(userId, db, id))
     throw new AppError(409, 'CATEGORY_IN_USE', 'Move or delete its categories first');
-  await deleteGroup(userId, db, id);
+  if (await groupHasCategories(userId, db, id)) {
+    await archiveGroup(userId, db, id);
+  } else {
+    await deleteGroup(userId, db, id);
+  }
   return c.json({ deleted: id });
 });
 
