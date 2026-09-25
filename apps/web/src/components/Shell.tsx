@@ -1,4 +1,5 @@
-import { Link, NavLink, Outlet } from 'react-router';
+import { Link, NavLink, Outlet, useLocation } from 'react-router';
+import { Icon } from './primitives/Icon';
 import { useMe } from '../lib/queries';
 import { TABS, type Tab } from '../routes/table';
 
@@ -18,6 +19,11 @@ const ICON: Record<Tab, string> = {
  */
 export function Shell() {
   const me = useMe().data;
+  const location = useLocation();
+  const onDashboard = location.pathname === '/';
+  const currentTab = TABS.find((t) =>
+    t.path === '/' ? onDashboard : location.pathname.startsWith(t.path),
+  );
   const initials = (me?.displayName ?? '')
     .split(/\s+/)
     .map((w) => w[0])
@@ -74,14 +80,16 @@ export function Shell() {
 
       <div className="min-w-0">
         <div className="gutter mx-auto flex max-w-2xl items-center justify-between pt-[max(12px,env(safe-area-inset-top))] lg:hidden">
-          <span className="font-serif text-xl tracking-tight text-sage-700">Rise</span>
-          <Link
-            to="/settings"
-            aria-label="Settings"
-            className="flex size-11 items-center justify-center rounded-full bg-sage-100 type-caption font-semibold text-sage-700"
-          >
-            {initials || '•'}
-          </Link>
+          <span className="type-title">{currentTab?.label ?? 'Rise'}</span>
+          {onDashboard && (
+            <Link
+              to="/settings"
+              aria-label="Settings"
+              className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+            >
+              <Icon name="gear" />
+            </Link>
+          )}
         </div>
         <main>
           <Outlet />
