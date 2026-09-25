@@ -1,10 +1,11 @@
 import type { ViewCategory } from '@rise/shared/budget';
 import { averageCents, cumulativeSpend, sameDayTotal, type MonthSpend } from '@rise/shared/reports';
 import type { Category } from '@rise/shared/schemas';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { series } from '../design/tokens';
 import { addMonths, monthName } from '../lib/dates';
 import { useSpendingReport } from '../lib/queries';
+import { transitionClick } from '../lib/transition';
 import { Chart } from './primitives/Chart';
 import { MoneyText } from './primitives/MoneyText';
 import { NavRow } from './primitives/Rows';
@@ -191,6 +192,7 @@ function WhereItWent(props: {
   const lastBy = new Map((props.lastCategories ?? []).map((c) => [c.categoryId, c.spentCents]));
   const cat = (id: string) => props.names?.find((c) => c.id === id);
   const rest = spent.length - top.length;
+  const navigate = useNavigate();
 
   return (
     <section className="mt-10" aria-labelledby="where-h">
@@ -201,10 +203,12 @@ function WhereItWent(props: {
         {top.map((c) => {
           const info = cat(c.categoryId);
           const was = lastBy.get(c.categoryId);
+          const to = `/budget/${c.categoryId}?from=${encodeURIComponent('Dashboard|/')}`;
           return (
             <li key={c.categoryId} className="border-b border-hairline">
               <Link
-                to={`/budget/${c.categoryId}?from=${encodeURIComponent('Dashboard|/')}`}
+                to={to}
+                onClick={transitionClick(navigate, to)}
                 className="block py-3 active:bg-sage-100"
               >
                 <span className="flex items-baseline justify-between gap-3">

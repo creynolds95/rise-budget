@@ -140,3 +140,70 @@
     transform: translateX(8px);
   }
 }
+
+/*
+ * Push/pop screen transitions (DESIGN-SYSTEM.md §4's depth model). Only routes wired through
+ * navigateWithTransition() (lib/transition.ts) ever set data-page-transition, so a plain tab
+ * switch never triggers this — it stays instant, as a native tab bar would.
+ */
+::view-transition-image-pair(root) {
+  isolation: isolate;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  animation-fill-mode: both;
+}
+html[data-page-transition='forward']::view-transition-old(root) {
+  animation-name: rise-push-back;
+}
+html[data-page-transition='forward']::view-transition-new(root) {
+  animation-name: rise-push-in;
+}
+html[data-page-transition='back']::view-transition-old(root) {
+  z-index: 1;
+  animation-name: rise-pop-out;
+}
+html[data-page-transition='back']::view-transition-new(root) {
+  z-index: 0;
+  animation-name: rise-pop-in;
+}
+@keyframes rise-push-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes rise-push-back {
+  from {
+    transform: translateX(0);
+    filter: brightness(1);
+  }
+  to {
+    transform: translateX(-25%);
+    filter: brightness(0.85);
+  }
+}
+@keyframes rise-pop-out {
+  from {
+    transform: translateX(0);
+    filter: brightness(1);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes rise-pop-in {
+  from {
+    transform: translateX(-25%);
+    filter: brightness(0.85);
+  }
+  to {
+    transform: translateX(0);
+    filter: brightness(1);
+  }
+}

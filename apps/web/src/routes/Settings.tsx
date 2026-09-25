@@ -9,12 +9,13 @@ import type {
 } from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, Navigate, useParams, useSearchParams } from 'react-router';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { CategoryEditSheet } from '../components/CategoryEditSheet';
 import { Group, GroupRow, RadioRow } from '../components/primitives/Group';
 import { Toggle } from '../components/primitives/Toggle';
 import { backFrom } from '../lib/nav';
+import { transitionClick } from '../lib/transition';
 import { passkeyMessage } from '../lib/passkey';
 import { clearPin, hasPin, lockKeys, setPin, store as lockStore, validPin } from '../lib/lock';
 import { CategoryPicker } from '../components/CategoryPicker';
@@ -158,10 +159,12 @@ function Card({
   state?: string | undefined;
   children: string;
 }) {
+  const navigate = useNavigate();
   return (
     <li className="border-b border-hairline">
       <Link
         to={to}
+        onClick={transitionClick(navigate, to)}
         className="grid min-h-16 grid-cols-[6.5rem_1fr_auto] items-center gap-x-4 py-3.5 active:bg-sage-100 sm:grid-cols-[9rem_1fr_auto]"
       >
         <span className="type-label text-ink-muted">{title}</span>
@@ -178,6 +181,7 @@ function Card({
 export function SettingsSection() {
   const { section = '' } = useParams();
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   if (!(section in SECTIONS)) return <Navigate to="/settings" replace />;
   const s = section as Section;
   const back = backFrom(params.get('from'), { label: 'Settings', to: '/settings' });
@@ -186,6 +190,7 @@ export function SettingsSection() {
       <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur">
         <Link
           to={back.to}
+          onClick={transitionClick(navigate, back.to, 'back')}
           className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700"
         >
           <span aria-hidden>‹</span>
@@ -216,6 +221,7 @@ function BudgetSection() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
   });
   const future = me?.settings.planChangesApplyToFuture ?? false;
+  const navigate = useNavigate();
   return (
     <>
       <Group
@@ -252,6 +258,10 @@ function BudgetSection() {
       <Group title="Categories">
         <Link
           to="/settings/categories?from=Budget settings|/settings/budget"
+          onClick={transitionClick(
+            navigate,
+            '/settings/categories?from=Budget settings|/settings/budget',
+          )}
           className="flex min-h-13 items-center justify-between px-4 py-3 active:bg-sage-100"
         >
           <span>Categories and groups</span>

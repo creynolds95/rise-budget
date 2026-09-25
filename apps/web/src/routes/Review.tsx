@@ -12,6 +12,7 @@ import { ApiError, api, get, isQueuedOffline } from '../lib/api';
 import { usePendingChanges } from '../components/OfflineBar';
 import { shortDate } from '../lib/dates';
 import { useAccounts, useCategories, useGroups, useInvalidateMoney } from '../lib/queries';
+import { transitionClick } from '../lib/transition';
 import {
   chipsFor,
   confidentCount,
@@ -385,6 +386,8 @@ function ReviewRow({
   const [dx, setDx] = useState(0);
   const prefilled = band !== 'none' && suggestion !== '';
   const amazon = isAmazon(t.merchantNormalized);
+  const navigate = useNavigate();
+  const detailTo = `/transactions/${t.id}?from=${encodeURIComponent(FROM)}`;
   const onDown = (e: PointerEvent) => {
     if (e.pointerType !== 'mouse') start.current = { x: e.clientX, y: e.clientY };
   };
@@ -414,7 +417,8 @@ function ReviewRow({
       onPointerCancel={onUp}
     >
       <Link
-        to={`/transactions/${t.id}?from=${encodeURIComponent(FROM)}`}
+        to={detailTo}
+        onClick={transitionClick(navigate, detailTo)}
         className={`gutter flex items-baseline justify-between gap-3 ${t.isPending ? 'italic' : ''}`}
       >
         <span className="flex min-w-0 items-baseline gap-2">
@@ -469,6 +473,10 @@ function ReviewRow({
         </button>
         <Link
           to={`/transactions/${t.id}?split=1&from=${encodeURIComponent(FROM)}`}
+          onClick={transitionClick(
+            navigate,
+            `/transactions/${t.id}?split=1&from=${encodeURIComponent(FROM)}`,
+          )}
           className={`${chip} flex items-center ${amazon ? 'bg-sage-100 font-medium text-sage-700' : 'px-3 text-ink-muted'}`}
         >
           Split

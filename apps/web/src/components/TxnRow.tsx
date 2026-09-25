@@ -1,6 +1,7 @@
 import type { Transaction } from '@rise/shared/schemas';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { shortDate } from '../lib/dates';
+import { transitionClick } from '../lib/transition';
 import { TxnAmount } from './TxnAmount';
 import { Chevron } from './primitives/Rows';
 
@@ -20,12 +21,15 @@ export function TxnRow({
   /** Batch review: a tap on the category opens a picker here instead of navigating away. */
   onRecategorize?: (() => void) | undefined;
 }) {
+  const navigate = useNavigate();
+  const to = `/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`;
   return (
     <div
       className={`flex min-h-14 items-center justify-between gap-3 border-b border-hairline py-2 ${t.isPending ? 'italic' : ''}`}
     >
       <Link
-        to={`/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`}
+        to={to}
+        onClick={transitionClick(navigate, to)}
         className="min-w-0 flex-1 active:opacity-70"
       >
         <span className="block truncate">
@@ -73,7 +77,7 @@ export function TxnRow({
             </svg>
           </button>
         ) : (
-          <Link to={`/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`}>
+          <Link to={to} onClick={transitionClick(navigate, to)}>
             <Chevron />
           </Link>
         )}
