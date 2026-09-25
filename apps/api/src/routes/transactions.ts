@@ -1,9 +1,11 @@
 import { periodOf, validateSplits } from '@rise/shared/budget';
 import { normalizeMerchant } from '@rise/shared/categorize';
+import { firstUpcoming } from '@rise/shared/recurring';
 import {
   BulkAcceptBody,
   CreateTransactionBody,
   PatchTransactionBody,
+  RecurringCashWithdrawalBody,
   ReplaceSplitsBody,
   TransactionQuery,
   TransferLinkBody,
@@ -13,12 +15,14 @@ import { Hono } from 'hono';
 import {
   bumpMemoryStmt,
   categoryIdsExist,
+  deleteManualRuleStmt,
   ensureCatchallCategory,
   ensureTransferCategory,
   flagClosedPeriodStmt,
   getAccount,
   getTransaction,
   getTransactionRow,
+  getUser,
   insertManualTransaction,
   listAcceptable,
   listTransactions,
@@ -26,6 +30,7 @@ import {
   nowIso,
   reassignSplitStmts,
   refreshAggregateStmts,
+  seriesId,
   sortKey,
   linkTransferStmts,
   movePostedAtStmts,
@@ -35,11 +40,13 @@ import {
   markTransferStmt,
   unmarkTransferStmt,
   updateTransactionFields,
+  upsertManualRuleStmt,
   type TxnRow,
 } from '../db';
 import type { AppEnv } from '../env';
 import { recordManualCategorisation, refreshSuggestions, suggestFor } from '../lib/categorize';
 import { b64urlDecode, b64urlEncode } from '../lib/crypto';
+import { localToday } from '../lib/dates';
 import { AppError } from '../lib/errors';
 import { body } from '../lib/validate';
 
@@ -386,4 +393,41 @@ transactions.delete('/:id/transfer-link', async (c) => {
   return c.json({
     items: [await getTransaction(userId, db, a.id), await getTransaction(userId, db, b.id)],
   });
+});
+
+/**
+ * Caleb's "Recurring Cash Withdrawal" tag (cash-to-payday tool, SPEC-adjacent): a real cash
+ * auto-draft too new or too easily confused with a sibling to auto-detect from 3 charges.
+ * One rule per merchant — tagging again from another of its transactions replaces it.
+ */
+transactions.post('/:id/recurring-cash-withdrawal', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const row = await getTransactionRow(userId, db, c.req.param('id'));
+  if (!row) throw notFound();
+  const b = await body(c, RecurringCashWithdrawalBody);
+  const user = await getUser(userId, db);
+  const today = localToday(user?.timezone ?? 'America/Chicago');
+  const nextExpectedDate = firstUpcoming(b.cadence, b.dueDate, null, today);
+  await db.batch([
+    upsertManualRuleStmt(
+      userId,
+      db,
+      row.merchant_normalized,
+      b.cadence,
+      row.amount_cents,
+      nextExpectedDate,
+    ),
+  ]);
+  return c.json({ id: seriesId(userId, row.merchant_normalized) }, 201);
+});
+
+/** Untag: only ever removes a manual rule, never a detected series. */
+transactions.delete('/:id/recurring-cash-withdrawal', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const row = await getTransactionRow(userId, db, c.req.param('id'));
+  if (!row) throw notFound();
+  await db.batch([deleteManualRuleStmt(userId, db, seriesId(userId, row.merchant_normalized))]);
+  return c.body(null, 204);
 });

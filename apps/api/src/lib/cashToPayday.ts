@@ -6,7 +6,7 @@ import {
   projectOccurrences,
   type DetectedSeries,
 } from '@rise/shared/recurring';
-import { displayNamesFor, listOccurrences, type UserId } from '../db';
+import { displayNamesFor, listManualRules, listOccurrences, type UserId } from '../db';
 import { LOOKBACK_DAYS } from './recurring';
 
 /** How far ahead to project: through this many upcoming paychecks. */
@@ -26,9 +26,10 @@ export interface CashToPaydayResult extends CashProjection {
 
 /**
  * The cash-to-payday projection (design: no autopay — a card payment is never one of these
- * events, only real cash in and out). Detection runs live against fresh transactions rather
- * than the persisted `recurring_series` table, since that table doesn't carry the semimonthly
- * anchor days this needs.
+ * events, only real cash in and out). Auto-detection runs live against fresh transactions
+ * rather than the persisted `recurring_series` table, since that table doesn't carry the
+ * semimonthly anchor days this needs. Manually-tagged "Recurring Cash Withdrawal" rules are
+ * read from that same table (they're never re-detected) and always projected forward.
  */
 export async function buildCashToPaydayProjection(
   db: D1Database,
@@ -38,12 +39,36 @@ export async function buildCashToPaydayProjection(
   cushionCents: number,
 ): Promise<CashToPaydayResult> {
   const from = dateFromDayNumber(dayNumber(today) - LOOKBACK_DAYS);
-  const byMerchant = await listOccurrences(userId, db, from);
+  const [byMerchant, manualRules] = await Promise.all([
+    listOccurrences(userId, db, from),
+    listManualRules(userId, db),
+  ]);
+  const manualMerchants = new Set(manualRules.map((r) => r.merchant_normalized));
   const detected: { merchant: string; series: DetectedSeries }[] = [];
   for (const [merchant, occ] of byMerchant) {
+    // A merchant Caleb tagged "Recurring Cash Withdrawal" owns its own rule below — never
+    // let live auto-detection compete with it for the same merchant.
+    if (manualMerchants.has(merchant)) continue;
     // Semimonthly first — see the same note in lib/recurring.ts's refreshRecurring.
     const series = detectSemimonthly(occ, today) ?? detectSeries(occ, today);
     if (series && series.status === 'active') detected.push({ merchant, series });
+  }
+  // A manual rule projects even while flagged `broken` (unconfirmed) — Caleb still wants it
+  // planned for; `broken` only ever surfaces as the Dashboard's "hasn't charged since" note.
+  for (const r of manualRules) {
+    detected.push({
+      merchant: r.merchant_normalized,
+      series: {
+        cadence: r.cadence as DetectedSeries['cadence'],
+        expectedAmountCents: r.expected_amount_cents,
+        lastDate: r.next_expected_date,
+        nextExpectedDate: r.next_expected_date,
+        status: 'active',
+        categoryId: null,
+        occurrences: 0,
+        anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
+      },
+    });
   }
   const displayNames = await displayNamesFor(
     userId,

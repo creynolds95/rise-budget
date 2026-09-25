@@ -22,11 +22,19 @@ import {
   useCategories,
   useInvalidateMoney,
   usePatchTransaction,
+  useRecurring,
   useTransaction,
   useTransactions,
 } from '../lib/queries';
 import { splitProblem, withRemainder, type DraftSplit } from '../lib/splits';
 import type { MerchantView, TransactionPage } from '../lib/types';
+
+const CADENCES = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'biweekly', label: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'annual', label: 'Annually' },
+] as const;
 
 const isAmazon = (m: string) => /AMAZON|AMZN/.test(m.toUpperCase());
 
@@ -44,8 +52,10 @@ export function TransactionDetail() {
   const [picking, setPicking] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [linking, setLinking] = useState(false);
+  const [taggingWithdrawal, setTaggingWithdrawal] = useState(false);
   const [offer, setOffer] = useState<Parameters<typeof RuleOfferSheet>[0]['offer']>(null);
   const [error, setError] = useState<string | null>(null);
+  const recurring = useRecurring();
   const splitting = params.get('split') === '1';
   const setSplitting = (on: boolean) =>
     setParams(
@@ -82,10 +92,13 @@ export function TransactionDetail() {
   const account = accounts.find((a) => a.id === t.accountId);
   const name = t.merchantDisplay ?? t.merchantNormalized;
   const income = t.amountCents < 0;
+  const withdrawalRule = recurring.data?.find(
+    (s) => s.source === 'manual' && s.merchantNormalized === t.merchantNormalized,
+  );
   const refresh = async () => {
     await invalidate();
     await Promise.all(
-      ['review-queue', 'queue-count', 'merchant'].map((k) =>
+      ['review-queue', 'queue-count', 'merchant', 'recurring'].map((k) =>
         qc.invalidateQueries({ queryKey: [k] }),
       ),
     );
@@ -254,6 +267,27 @@ export function TransactionDetail() {
                 Link as a transfer…
               </Button>
             )}
+            {!t.isTransfer &&
+              !income &&
+              (withdrawalRule ? (
+                <Button
+                  variant="danger"
+                  onClick={async () => {
+                    try {
+                      await api('DELETE', `/transactions/${id}/recurring-cash-withdrawal`);
+                      await refresh();
+                    } catch (e) {
+                      setError(e instanceof ApiError ? e.message : 'Could not untag.');
+                    }
+                  }}
+                >
+                  Untag recurring cash withdrawal
+                </Button>
+              ) : (
+                <Button variant="quiet" onClick={() => setTaggingWithdrawal(true)}>
+                  Recurring cash withdrawal…
+                </Button>
+              ))}
           </div>
         }
       />
@@ -283,6 +317,13 @@ export function TransactionDetail() {
         onSaved={refresh}
       />
       {linking && <LinkTransferSheet t={t} onClose={() => setLinking(false)} onLinked={refresh} />}
+      {taggingWithdrawal && (
+        <RecurringWithdrawalSheet
+          t={t}
+          onClose={() => setTaggingWithdrawal(false)}
+          onSaved={refresh}
+        />
+      )}
       <RuleOfferSheet offer={offer} onClose={() => setOffer(null)} />
     </>
   );
@@ -491,6 +532,83 @@ function RenameSheet({
           Go back to {merchant}
         </Button>
       )}
+    </Sheet>
+  );
+}
+
+/**
+ * Caleb's "Recurring Cash Withdrawal" tag: a real cash auto-draft (a specific student loan,
+ * a mortgage) too new or too easily confused with a sibling for auto-detection to find on its
+ * own. Feeds the cash-to-payday tool only — it doesn't touch this transaction's category or
+ * create another transaction.
+ */
+function RecurringWithdrawalSheet({
+  t,
+  onClose,
+  onSaved,
+}: {
+  t: Transaction;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [cadence, setCadence] = useState<(typeof CADENCES)[number]['value']>('monthly');
+  const [dueDate, setDueDate] = useState(t.postedAt);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  return (
+    <Sheet open title="Recurring cash withdrawal" onClose={onClose}>
+      <p className="text-ink-muted">
+        Plan for this cash to leave your account again, on a schedule — for the cash-to-payday tool
+        only. It won't change this transaction's category.
+      </p>
+      <label className="mt-4 flex flex-col gap-1">
+        <span className="type-caption text-ink-muted">Repeats</span>
+        <select
+          aria-label="Repeats"
+          className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
+          value={cadence}
+          onChange={(e) => setCadence(e.target.value as (typeof CADENCES)[number]['value'])}
+        >
+          {CADENCES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="mt-3 flex flex-col gap-1">
+        <span className="type-caption text-ink-muted">Due date</span>
+        <input
+          type="date"
+          aria-label="Due date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
+        />
+      </label>
+      {error && <p className="mt-2 text-clay">{error}</p>}
+      <Button
+        className="mt-4 w-full"
+        disabled={saving}
+        onClick={async () => {
+          setSaving(true);
+          setError(null);
+          try {
+            await api('POST', `/transactions/${t.id}/recurring-cash-withdrawal`, {
+              cadence,
+              dueDate,
+            });
+            await onSaved();
+            onClose();
+          } catch (e) {
+            setError(e instanceof ApiError ? e.message : 'Could not save.');
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </Button>
     </Sheet>
   );
 }

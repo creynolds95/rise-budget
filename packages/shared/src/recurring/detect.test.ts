@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   addMonths,
+  advanceManualRule,
   detectSemimonthly,
   detectSeries,
+  firstUpcoming,
   nextDate,
   nextSemimonthlyDate,
   projectOccurrences,
   shiftWeekendToFriday,
   steadyAmounts,
   typicalPostDay,
+  type ManualRule,
   type Occurrence,
 } from './detect';
 
@@ -268,5 +271,104 @@ describe('projecting a series forward (cash-to-payday)', () => {
       { date: '2026-08-05', amountCents: -310_000 },
       { date: '2026-08-20', amountCents: -310_000 },
     ]);
+  });
+});
+
+describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to auto-detect)', () => {
+  it('walks a monthly anchor forward to the first date on or after today', () => {
+    expect(firstUpcoming('monthly', '2026-09-01', null, '2026-09-25')).toBe('2026-10-01');
+    // Already in the future: stays put.
+    expect(firstUpcoming('monthly', '2026-10-15', null, '2026-09-25')).toBe('2026-10-15');
+    // Lands exactly on today: stays put (the loop condition is strictly less-than).
+    expect(firstUpcoming('monthly', '2026-09-25', null, '2026-09-25')).toBe('2026-09-25');
+  });
+
+  it('walks a semimonthly anchor forward using both days', () => {
+    expect(firstUpcoming('semimonthly', '2026-09-05', [5, 20], '2026-09-25')).toBe('2026-10-05');
+  });
+
+  const rule = (over: Partial<ManualRule> = {}): ManualRule => ({
+    cadence: 'monthly',
+    anchorDays: null,
+    expectedAmountCents: 106_054,
+    nextExpectedDate: '2026-10-01',
+    ...over,
+  });
+
+  it('stays active and unchanged with no confirming charge yet, before the grace period', () => {
+    expect(advanceManualRule(rule(), [], '2026-10-02')).toEqual({
+      nextExpectedDate: '2026-10-01',
+      status: 'active',
+    });
+  });
+
+  it('goes broken 3+ days late with nothing confirming it', () => {
+    expect(advanceManualRule(rule(), [], '2026-10-04')).toEqual({
+      nextExpectedDate: '2026-10-01',
+      status: 'broken',
+    });
+  });
+
+  it('a confirming charge rolls the due date to the next month and stays active', () => {
+    const occ: Occurrence[] = [{ date: '2026-10-01', amountCents: 106_054, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-10-02')).toEqual({
+      nextExpectedDate: '2026-11-01',
+      status: 'active',
+    });
+  });
+
+  it('a charge outside the amount tolerance does not confirm it', () => {
+    const occ: Occurrence[] = [{ date: '2026-10-01', amountCents: 200_000, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-10-04').status).toBe('broken');
+  });
+
+  it('a charge with the wrong sign does not confirm it', () => {
+    const occ: Occurrence[] = [{ date: '2026-10-01', amountCents: -106_054, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-10-04').status).toBe('broken');
+  });
+
+  it('a charge more than 4 days before the due date is too early to confirm it', () => {
+    const occ: Occurrence[] = [{ date: '2026-09-20', amountCents: 106_054, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-10-04').status).toBe('broken');
+  });
+
+  it('rolls through more than one cycle when several charges confirm in order', () => {
+    const occ: Occurrence[] = [
+      { date: '2026-10-01', amountCents: 106_054, categoryId: null },
+      { date: '2026-11-02', amountCents: 106_054, categoryId: null },
+    ];
+    expect(advanceManualRule(rule(), occ, '2026-11-03')).toEqual({
+      nextExpectedDate: '2026-12-02',
+      status: 'active',
+    });
+  });
+
+  it('ignores a stray extra charge once a later one has already confirmed the cycle', () => {
+    // The 10-05 charge is within tolerance of the *original* due date but stale once 10-01
+    // (sorted first) has already rolled `next` forward to 11-01 — it must be skipped, not
+    // treated as confirming yet another cycle.
+    const occ: Occurrence[] = [
+      { date: '2026-10-01', amountCents: 106_054, categoryId: null },
+      { date: '2026-10-05', amountCents: 106_054, categoryId: null },
+      { date: '2026-11-01', amountCents: 106_054, categoryId: null },
+    ];
+    expect(advanceManualRule(rule(), occ, '2026-11-02')).toEqual({
+      nextExpectedDate: '2026-12-01',
+      status: 'active',
+    });
+  });
+
+  it('advances a semimonthly manual rule from its confirming charge', () => {
+    const occ: Occurrence[] = [{ date: '2026-10-05', amountCents: 1_000, categoryId: null }];
+    const r = rule({
+      cadence: 'semimonthly',
+      anchorDays: [5, 20],
+      nextExpectedDate: '2026-10-05',
+      expectedAmountCents: 1_000,
+    });
+    expect(advanceManualRule(r, occ, '2026-10-06')).toEqual({
+      nextExpectedDate: '2026-10-20',
+      status: 'active',
+    });
   });
 });
