@@ -1,4 +1,28 @@
-import { useEffect, useId, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
+
+/**
+ * iOS Safari doesn't shrink `dvh` for the keyboard until it's fully open, so a sheet sized
+ * by `92dvh` alone briefly renders taller than what's actually visible above the keyboard —
+ * the tail of its content sits behind the keyboard instead of being scrollable into view.
+ * `visualViewport` reports the real visible height as the keyboard animates, so the sheet's
+ * cap tracks it directly.
+ */
+function useVisibleViewportHeight() {
+  const [height, setHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setHeight(vv.height);
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
+  return height;
+}
 
 /**
  * A bottom sheet: the way past the two-push depth limit (§4). Plain sheets close with ✕;
@@ -22,6 +46,7 @@ export function Sheet({
   children: ReactNode;
 }) {
   const id = useId();
+  const viewportHeight = useVisibleViewportHeight();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -47,6 +72,7 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={id}
+        style={viewportHeight ? { maxHeight: `${viewportHeight * 0.92}px` } : undefined}
         className="animate-sheet-in relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] bg-canvas shadow-soft md:max-w-lg md:rounded-[20px]"
       >
         <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-hairline" />

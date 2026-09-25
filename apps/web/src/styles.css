@@ -51,6 +51,10 @@
     outline: 2px solid var(--color-sage-600);
     outline-offset: 2px;
   }
+  ::selection {
+    background: var(--color-sage-300);
+    color: var(--color-ink);
+  }
 }
 
 /* §2 type scale. Money is always tabular. */
