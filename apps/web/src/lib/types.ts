@@ -68,7 +68,17 @@ export interface CashToPaydayResponse {
       nextExpectedDate: string;
       anchorDays: [number, number] | null;
     };
+    isManual: boolean;
   }[];
   cashAccounts: { id: string; name: string }[];
   cushionCents: number;
+}
+
+export interface ManualCashEvent {
+  id: string;
+  label: string;
+  kind: 'income' | 'expense';
+  amountCents: number;
+  cadence: string;
+  nextExpectedDate: string;
 }

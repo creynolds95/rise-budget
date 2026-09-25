@@ -117,3 +117,52 @@ describe('cash to payday', () => {
     expect(res.json.freeToMoveCents).toBe(150_000); // 200,000 - 50,000, no events
   });
 });
+
+describe('hand-declared manual cash events (cold start, no transactions yet)', () => {
+  it('projects a manually declared income and expense, and lists/removes them', async () => {
+    const s = await setup();
+    const income = (
+      await s.api('POST', '/cash-to-payday/manual-events', {
+        label: "Wife's paycheck",
+        kind: 'income',
+        amountCents: 250_000,
+        cadence: 'monthly',
+        anchorDate: '2020-01-01',
+      })
+    ).json;
+    await s.api('POST', '/cash-to-payday/manual-events', {
+      label: 'Car payment',
+      kind: 'expense',
+      amountCents: 40_000,
+      cadence: 'monthly',
+      anchorDate: '2020-01-01',
+    });
+
+    const list = (await s.api('GET', '/cash-to-payday/manual-events')).json;
+    expect(list).toHaveLength(2);
+    expect(list).toContainEqual(
+      expect.objectContaining({ label: "Wife's paycheck", kind: 'income', amountCents: 250_000 }),
+    );
+    expect(list).toContainEqual(
+      expect.objectContaining({ label: 'Car payment', kind: 'expense', amountCents: 40_000 }),
+    );
+
+    const projection = (await s.api('GET', '/cash-to-payday')).json;
+    expect(projection.paySchedules).toContainEqual(
+      expect.objectContaining({ displayName: "Wife's paycheck" }),
+    );
+    expect(projection.points.some((p: { label: string }) => p.label === 'Car payment')).toBe(true);
+
+    const del = await s.api('DELETE', `/cash-to-payday/manual-events/${income.id}`);
+    expect(del.status).toBe(204);
+    const after = (await s.api('GET', '/cash-to-payday/manual-events')).json;
+    expect(after).toHaveLength(1);
+    expect(after[0].label).toBe('Car payment');
+  });
+
+  it('404s deleting an event that is not yours or does not exist', async () => {
+    const s = await setup();
+    const res = await s.api('DELETE', '/cash-to-payday/manual-events/not-real');
+    expect(res.status).toBe(404);
+  });
+});

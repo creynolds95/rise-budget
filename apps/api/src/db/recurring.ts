@@ -63,6 +63,7 @@ interface ManualRuleRow {
   expected_amount_cents: number;
   next_expected_date: string;
   anchor_days: string | null;
+  label: string | null;
 }
 
 /** Every manual rule (Caleb's "Recurring Cash Withdrawal" tag), for `refreshRecurring`. */
@@ -70,8 +71,59 @@ export async function listManualRules(userId: UserId, db: D1Database): Promise<M
   const { results } = await db
     .prepare(
       `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
-         anchor_days
+         anchor_days, label
        FROM recurring_series WHERE user_id = ?1 AND source = 'manual'`,
+    )
+    .bind(userId)
+    .all<ManualRuleRow>();
+  return results;
+}
+
+/**
+ * A hand-declared paycheck or bill for Runway (no transaction behind it), keyed on a
+ * synthetic merchant id so it never collides with a real one. `amountCents` carries the
+ * SPEC §1.1 sign (negative = income) same as every other manual rule.
+ */
+export function upsertManualEventStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  label: string,
+  cadence: string,
+  amountCents: number,
+  nextExpectedDate: string,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO recurring_series (id, user_id, merchant_normalized, category_id, cadence,
+         expected_amount_cents, next_expected_date, status, updated_at, source, anchor_days,
+         label)
+       VALUES (?2, ?1, ?2, NULL, ?3, ?4, ?5, 'active', ?6, 'manual', NULL, ?7)`,
+    )
+    .bind(userId, seriesId(userId, id), cadence, amountCents, nextExpectedDate, nowIso(), label);
+}
+
+/** A hand-declared manual event, never one tagged from a real transaction. */
+export function deleteManualEventStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      "DELETE FROM recurring_series WHERE user_id = ?1 AND id = ?2 AND source = 'manual' AND label IS NOT NULL",
+    )
+    .bind(userId, id);
+}
+
+/** Every hand-declared paycheck/bill (never one tagged from a transaction), for Runway. */
+export async function listManualEvents(userId: UserId, db: D1Database): Promise<ManualRuleRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
+         anchor_days, label
+       FROM recurring_series WHERE user_id = ?1 AND source = 'manual' AND label IS NOT NULL
+       ORDER BY next_expected_date`,
     )
     .bind(userId)
     .all<ManualRuleRow>();

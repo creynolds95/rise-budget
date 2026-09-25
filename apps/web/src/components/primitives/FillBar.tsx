@@ -23,7 +23,11 @@ export function FillBar({
   const tickPct =
     tick && tick.totalDays > 0 ? Math.min(100, (tick.elapsedDays / tick.totalDays) * 100) : null;
   return (
-    <div role="img" aria-hidden className="relative h-2 w-full overflow-visible rounded-full bg-hairline">
+    <div
+      role="img"
+      aria-hidden
+      className="relative h-2 w-full overflow-visible rounded-full bg-hairline"
+    >
       <span
         data-seg="fill"
         className={`absolute inset-y-0 left-0 rounded-full ${over ? 'bg-clay' : 'bg-sage-600'}`}

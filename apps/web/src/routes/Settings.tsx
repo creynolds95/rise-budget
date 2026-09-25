@@ -72,7 +72,7 @@ export function Settings() {
       <h1 className="type-title">{me?.displayName ?? 'Settings'}</h1>
       <p className="text-ink-muted">{me?.email}</p>
 
-      <ul className="mt-6 border-t border-hairline">
+      <ul className="mt-6 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         <Card to="/settings/sync" title="Bank sync" state={sync ? MODE[sync.mode] : undefined}>
           {lastRun
             ? `Last run ${shortDate(localToday(me?.timezone, new Date(lastRun.startedAt)))} · ${lastRun.status}`
@@ -537,7 +537,7 @@ function RulesSection() {
           one.
         </p>
       )}
-      <ul className="mt-4">
+      <ul className="mt-4 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         {rules.data?.map((r) => (
           <li
             key={r.id}
@@ -716,7 +716,7 @@ function SyncSection() {
       {error && <p className="mt-2 text-clay">{error}</p>}
       <h2 className="mt-8 type-label text-ink-muted">Recent runs</h2>
       {status.data?.runs.length === 0 && <p className="mt-2 text-ink-muted">None yet.</p>}
-      <ul className="mt-1">
+      <ul className="mt-1 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         {status.data?.runs.slice(0, 20).map((r) => (
           <li key={r.id} className="border-b border-hairline py-2">
             <span className="flex justify-between">

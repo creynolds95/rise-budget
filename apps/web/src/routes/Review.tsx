@@ -310,7 +310,7 @@ export function Review() {
             These sat pending for 14 days with no matching charge, so they no longer count toward
             spending.
           </p>
-          <ul className="mt-2">
+          <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
             {queue.data.dropped.map((t) => (
               <li
                 key={t.id}

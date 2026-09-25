@@ -117,8 +117,20 @@ describe('buildMoneyFlow', () => {
   it('flows income through its group total into each category, with leftover', () => {
     const flow = buildMoneyFlow([
       cat({ categoryId: 'pay', categoryName: 'Paycheck', groupKind: 'income', spentCents: -1_000 }),
-      cat({ categoryId: 'gro', categoryName: 'Groceries', groupId: 'food', groupName: 'Food', spentCents: 300 }),
-      cat({ categoryId: 'res', categoryName: 'Restaurants', groupId: 'food', groupName: 'Food', spentCents: 200 }),
+      cat({
+        categoryId: 'gro',
+        categoryName: 'Groceries',
+        groupId: 'food',
+        groupName: 'Food',
+        spentCents: 300,
+      }),
+      cat({
+        categoryId: 'res',
+        categoryName: 'Restaurants',
+        groupId: 'food',
+        groupName: 'Food',
+        spentCents: 200,
+      }),
     ]);
     expect(flow.nodes.map((n) => n.id)).toEqual([
       'income',

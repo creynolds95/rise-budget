@@ -195,7 +195,7 @@ function WhereItWent(props: {
       <h2 id="where-h" className="type-title">
         Where it went
       </h2>
-      <ul className="mt-2">
+      <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         {top.map((c) => {
           const info = cat(c.categoryId);
           const was = lastBy.get(c.categoryId);
