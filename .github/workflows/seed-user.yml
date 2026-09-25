@@ -1,0 +1,33 @@
+name: seed-user
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        required: true
+        type: string
+      name:
+        required: true
+        type: string
+jobs:
+  seed-user:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Set JWT_SECRET and seed the user
+        working-directory: apps/api
+        run: |
+          secret=$(openssl rand -hex 32)
+          echo "::add-mask::$secret"
+          printf '%s' "$secret" | npx wrangler secret put JWT_SECRET
+          JWT_SECRET="$secret" node --experimental-strip-types scripts/seed-user.ts \
+            --email "${{ inputs.email }}" --name "${{ inputs.name }}" \
+            --remote --origin "https://rise.upforbatterycalendar.workers.dev"
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
