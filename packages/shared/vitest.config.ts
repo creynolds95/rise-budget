@@ -12,6 +12,7 @@ export default defineConfig({
         'src/sync/**/*.ts',
         'src/import/**/*.ts',
         'src/recurring/**/*.ts',
+        'src/reports/**/*.ts',
       ],
       exclude: [
         'src/**/*.test.ts',

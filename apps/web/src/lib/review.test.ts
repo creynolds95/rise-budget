@@ -119,6 +119,14 @@ describe('one-tap chips before Rise has learned anything', () => {
   it('money in leads with income categories', () => {
     expect(chipsFor(row({ amountCents: -245_000 }), ctx)[0]).toBe('pay');
   });
+  it('fills with neither transfer-like categories nor the catch-all, unless the merchant uses them', () => {
+    const quiet = new Set(['home', 'gas']);
+    expect(chipsFor(row({}), { ...ctx, quiet })).toEqual(['food', 'fun', 'kids']);
+    expect(chipsFor(row({ topCategoryIds: ['gas'] }), { ...ctx, quiet }, 2)).toEqual([
+      'gas',
+      'food',
+    ]);
+  });
   it('works with no history at all', () => {
     expect(chipsFor(row({}), { ...ctx, frequent: [] }, 2)).toEqual(['food', 'gas']);
   });

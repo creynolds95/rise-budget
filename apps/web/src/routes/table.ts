@@ -19,6 +19,8 @@ export const ROUTES = [
   { path: '/settings', depth: 0 },
   /** Pushed from the Dashboard's review count. */
   { path: '/review', depth: 1, from: '/' },
+  /** Pushed from the Dashboard. */
+  { path: '/cash-to-payday', depth: 1, from: '/' },
   { path: '/accounts/:id', depth: 1 },
   { path: '/transactions/:id', depth: 1 },
   { path: '/budget/:categoryId', depth: 1 },

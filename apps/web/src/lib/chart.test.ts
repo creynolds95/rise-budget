@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allowsPercentChange, lineSegments, rangeStart } from './chart';
+import { allowsPercentChange, lineSegments, rangeStart, sharedScalePaths } from './chart';
 
 describe('line segments', () => {
   it('splits measured and inferred runs; a step touching an inferred point is dashed', () => {
@@ -24,7 +24,7 @@ describe('line segments', () => {
   it('handles empty, single and flat series', () => {
     expect(lineSegments([], 10, 10)).toEqual([]);
     expect(lineSegments([{ cents: 5, inferred: true }], 10, 10, 0)).toEqual([
-      { dashed: true, points: [[5, 10]] },
+      { dashed: true, points: [[5, 5]] },
     ]);
     expect(
       lineSegments(
@@ -37,8 +37,8 @@ describe('line segments', () => {
         0,
       )[0]?.points,
     ).toEqual([
-      [0, 10],
-      [10, 10],
+      [0, 5],
+      [10, 5],
     ]);
   });
 });
@@ -55,5 +55,36 @@ describe('ranges', () => {
   it('no percent change under three months', () => {
     expect(allowsPercentChange('1M')).toBe(false);
     expect(allowsPercentChange('3M')).toBe(true);
+  });
+});
+
+describe('sharedScalePaths', () => {
+  it('puts every series on one scale from zero to the overall max', () => {
+    const [a, b] = sharedScalePaths(
+      [
+        [0, 50],
+        [0, 50, 100],
+      ],
+      3,
+      200,
+      108,
+    );
+    expect(a?.points).toEqual([
+      [0, 104],
+      [100, 54],
+    ]);
+    expect(a?.last).toEqual([100, 54]);
+    expect(b?.points.at(-1)).toEqual([200, 4]);
+  });
+  it('drops below the baseline when a refund makes a total negative', () => {
+    const [s] = sharedScalePaths([[-100, 100]], 2, 10, 10, 0);
+    expect(s?.points).toEqual([
+      [0, 10],
+      [10, 0],
+    ]);
+  });
+  it('handles empty and flat input without dividing by zero', () => {
+    expect(sharedScalePaths([[]], 30, 10, 10)).toEqual([{ points: [], last: null }]);
+    expect(sharedScalePaths([[0]], 1, 10, 10, 0)).toEqual([{ points: [[5, 10]], last: [5, 10] }]);
   });
 });

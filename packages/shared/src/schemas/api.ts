@@ -260,3 +260,15 @@ export const BackupStatus = z.object({
   count: z.int().nonnegative(),
 });
 export type BackupStatus = z.infer<typeof BackupStatus>;
+
+// ── reports (T41) ─────────────────────────────────────────────────────────────
+
+export const SpendingReportQuery = z.object({ month: PeriodId });
+
+/** Dashboard spending: per-day for this and last month, per-month for the last six. */
+export const SpendingReport = z.object({
+  month: PeriodId,
+  days: z.array(z.object({ date: IsoDate, cents: Cents })),
+  months: z.array(z.object({ periodId: PeriodId, cents: Cents })),
+});
+export type SpendingReport = z.infer<typeof SpendingReport>;

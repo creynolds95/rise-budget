@@ -15,6 +15,7 @@ import { CategoryEditSheet } from '../components/CategoryEditSheet';
 import { Group, GroupRow, RadioRow } from '../components/primitives/Group';
 import { Toggle } from '../components/primitives/Toggle';
 import { backFrom } from '../lib/nav';
+import { passkeyMessage } from '../lib/passkey';
 import { clearPin, hasPin, lockKeys, setPin, store as lockStore, validPin } from '../lib/lock';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { Button } from '../components/primitives/Button';
@@ -52,7 +53,10 @@ const MODE = {
   off: 'Not connected yet',
 } as const;
 
-/** T43. Not a stock grouped list: each area is a card that says its current state. */
+/**
+ * T43. Not a stock grouped list, and not a card per area either (DESIGN-SYSTEM §3): an index
+ * where each area leads with its current state, grouped by hairlines and type alone.
+ */
 export function Settings() {
   const me = useMe().data;
   const { signOut } = useAuth();
@@ -68,7 +72,7 @@ export function Settings() {
       <h1 className="type-title">{me?.displayName ?? 'Settings'}</h1>
       <p className="text-ink-muted">{me?.email}</p>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+      <ul className="mt-6 border-t border-hairline">
         <Card to="/settings/sync" title="Bank sync" state={sync ? MODE[sync.mode] : undefined}>
           {lastRun
             ? `Last run ${shortDate(localToday(me?.timezone, new Date(lastRun.startedAt)))} · ${lastRun.status}`
@@ -134,7 +138,7 @@ export function Settings() {
         >
           Export, and nightly backups
         </Card>
-      </div>
+      </ul>
 
       <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
         Sign out
@@ -155,19 +159,19 @@ function Card({
   children: string;
 }) {
   return (
-    <Link
-      to={to}
-      className="flex min-h-24 items-center justify-between gap-3 rounded-card bg-surface p-4 shadow-soft active:bg-sage-100"
-    >
-      <span>
+    <li className="border-b border-hairline">
+      <Link
+        to={to}
+        className="grid min-h-16 grid-cols-[6.5rem_1fr_auto] items-center gap-x-4 py-3.5 active:bg-sage-100 sm:grid-cols-[9rem_1fr_auto]"
+      >
         <span className="type-label text-ink-muted">{title}</span>
-        <span className="mt-1 block font-semibold">
-          {state ?? <Skeleton className="h-5 w-24" />}
+        <span className="min-w-0">
+          <span className="block font-medium">{state ?? <Skeleton className="h-5 w-24" />}</span>
+          <span className="block type-caption text-ink-faint">{children}</span>
         </span>
-        <span className="block type-caption text-ink-faint">{children}</span>
-      </span>
-      <Chevron />
-    </Link>
+        <Chevron />
+      </Link>
+    </li>
   );
 }
 
@@ -822,7 +826,7 @@ function SecuritySection() {
               await registerPasskey();
               setMsg('Passkey added.');
             } catch (e) {
-              setMsg(e instanceof ApiError ? e.message : 'Passkey was not added.');
+              setMsg(passkeyMessage(e, 'The passkey wasn’t added.'));
             }
           }}
           className="flex min-h-13 w-full items-center justify-between px-4 text-left active:bg-sage-100"

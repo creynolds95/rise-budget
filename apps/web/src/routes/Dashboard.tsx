@@ -1,13 +1,12 @@
 import type { RecurringSeries } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
+import { SpendingSection } from '../components/SpendingSection';
 import { StaleNotes } from '../components/StaleNotes';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { get } from '../lib/api';
 import { addMonths, monthName, shortDate } from '../lib/dates';
-import { formatCents } from '../lib/money';
 import {
   useAccounts,
   useCategories,
@@ -56,7 +55,6 @@ export function Dashboard() {
       s.expectedAmountCents > 0,
   );
   const broken = (recurring.data ?? []).filter((s) => s.status === 'broken');
-  const lastSpent = last.data?.totals.spentCents ?? null;
   const catName = (id: string | null) => categories.data?.find((c) => c.id === id)?.name;
 
   return (
@@ -146,27 +144,15 @@ export function Dashboard() {
         )}
       </section>
 
-      <section className="mt-8">
-        <h2 className="type-title">Spending</h2>
-        <div className="mt-3 grid grid-cols-2 gap-4">
-          <div>
-            <p className="type-label text-ink-muted">This month</p>
-            <p className="money-lg">{formatCents(t.spentCents, { whole: true })}</p>
-          </div>
-          <div>
-            <p className="type-label text-ink-muted">{monthName(addMonths(month, -1), false)}</p>
-            <p className="money-lg text-ink-muted">
-              {lastSpent === null ? '—' : formatCents(lastSpent, { whole: true })}
-            </p>
-          </div>
-        </div>
-        <p className="mt-2 type-caption text-ink-faint">
-          Last month's full total; this month is {p.pace.elapsedDays} days in.
-        </p>
-        <Link to="/budget" className="mt-4 flex min-h-11 items-center text-sage-700">
-          Open the budget ›
-        </Link>
-      </section>
+      <SpendingSection
+        month={month}
+        spentCents={t.spentCents}
+        elapsedDays={p.pace.elapsedDays}
+        incomeCents={p.actualIncomeCents}
+        categories={p.categories}
+        lastCategories={last.data?.categories}
+        names={categories.data}
+      />
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '../components/primitives/Button';
-import { ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { passkeyMessage } from '../lib/passkey';
 
 /** Passkey first; a code is the fallback (SPEC §9). */
 export function Login() {
@@ -21,7 +21,7 @@ export function Login() {
       await fn();
       void nav('/', { replace: true });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Sign-in was cancelled or failed. Try again.');
+      setError(passkeyMessage(e, 'You weren’t signed in.'));
     } finally {
       setBusy(false);
     }
@@ -111,12 +111,17 @@ export function Register() {
           setError(null);
           try {
             await auth.registerPasskey(token);
+          } catch (e) {
+            setError(passkeyMessage(e, 'The passkey wasn’t created.'));
+            setBusy(false);
+            return;
+          }
+          try {
             await auth.signInWithPasskey();
             void nav('/', { replace: true });
-          } catch (e) {
-            setError(
-              e instanceof ApiError ? e.message : 'Passkey creation was cancelled or failed.',
-            );
+          } catch {
+            // The passkey exists now; the link is spent. Signing in is the only way forward.
+            void nav('/', { replace: true });
           } finally {
             setBusy(false);
           }

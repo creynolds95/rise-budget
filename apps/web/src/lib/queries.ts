@@ -3,6 +3,7 @@ import type {
   CategoryGroup,
   RecurringSeries,
   Rule,
+  SpendingReport,
   Transaction,
   User,
 } from '@rise/shared/schemas';
@@ -67,6 +68,14 @@ export const usePeriod = (id: string) =>
     placeholderData: keepPreviousData,
   });
 
+/** T41: per-day spending for this and last month, and the last six months' totals. */
+export const useSpendingReport = (month: string) =>
+  useQuery({
+    queryKey: ['reports', 'spending', month],
+    queryFn: () => get<SpendingReport>(`/reports/spending?month=${month}`),
+    placeholderData: keepPreviousData,
+  });
+
 export const useTransaction = (id: string) =>
   useQuery({ queryKey: ['txn', id], queryFn: () => get<Transaction>(`/transactions/${id}`) });
 
@@ -123,6 +132,7 @@ export function useInvalidateMoney() {
         'categories',
         'groups',
         'cash-to-payday',
+        'reports',
       ].map((k) => qc.invalidateQueries({ queryKey: [k] })),
     );
 }

@@ -15,6 +15,7 @@ import { ApiError, api, get } from '../lib/api';
 import type { Range } from '../lib/chart';
 import { monthEnd, monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
+import { backFrom } from '../lib/nav';
 import {
   useCategories,
   useGroups,
@@ -39,10 +40,11 @@ export function CategoryDetail() {
   const [params] = useSearchParams();
   const today = useToday();
   const month = params.get('m') ?? today.slice(0, 7);
-  const back = {
+  // Opened from somewhere other than the Budget (the Dashboard), the back control says so.
+  const back = backFrom(params.get('from'), {
     label: 'Budget',
     to: month === today.slice(0, 7) ? '/budget' : `/budget?m=${month}`,
-  };
+  });
   return <CategoryDetailBody categoryId={categoryId} month={month} back={back} />;
 }
 
