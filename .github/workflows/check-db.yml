@@ -3,8 +3,8 @@ on:
   workflow_dispatch:
     inputs:
       name:
-        description: 'category_group name to check for'
-        required: true
+        description: 'category_group name to check for (optional)'
+        required: false
         type: string
 jobs:
   check-db:
@@ -21,7 +21,7 @@ jobs:
         working-directory: apps/api
         run: |
           node --experimental-strip-types scripts/check-db.ts \
-            --name "${{ inputs.name }}" \
+            ${{ inputs.name && format('--name "{0}"', inputs.name) || '' }} \
             --remote
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
