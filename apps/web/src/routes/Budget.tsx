@@ -132,6 +132,7 @@ export function Budget() {
               />
             )}
           </div>
+          {incomeGroups.length > 0 && <ColumnHeadings />}
           {incomeGroups.length === 0 ? (
             <p className="gutter py-3 type-caption text-ink-muted">
               Paychecks count once they're filed under an income category.{' '}
@@ -177,6 +178,7 @@ export function Budget() {
 
         <section className="mt-8">
           <h2 className="gutter type-title">Expenses</h2>
+          {expenseGroups.length > 0 && <ColumnHeadings />}
           {expenseGroups.length === 0 ? (
             <EmptyBudget onAdd={() => setAdding(true)} />
           ) : (
@@ -369,6 +371,16 @@ function MonthSwitcher({
   );
 }
 
+/** Column labels once per section (Income/Expenses), over the fixed-width Planned/Remaining columns every row and group total line up under. */
+function ColumnHeadings() {
+  return (
+    <div className="gutter mb-1 flex items-center justify-end gap-1.5 type-caption text-ink-muted">
+      <span className="w-[72px] text-center">Planned</span>
+      <span className="w-[72px] text-center">Remaining</span>
+    </div>
+  );
+}
+
 function GroupSection({
   group,
   rows,
@@ -402,7 +414,7 @@ function GroupSection({
       <button
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="gutter flex min-h-11 w-full items-baseline justify-between text-left"
+        className="gutter flex min-h-11 w-full items-center justify-between text-left"
       >
         <h3 className="type-label text-ink-muted">
           <span aria-hidden className="mr-1 inline-block w-3">
@@ -410,14 +422,13 @@ function GroupSection({
           </span>
           {group.name}
         </h3>
-        <span className="type-caption text-ink-muted">
-          Planned <MoneyText cents={plannedTotal} tone="muted" whole />
-          <span className="mx-1">·</span>
-          Remaining{' '}
+        <span className="flex items-center gap-1.5 text-sm font-semibold">
+          <MoneyText cents={plannedTotal} tone="ink" whole className="w-[72px] text-center" />
           <MoneyText
             cents={Math.abs(remainingTotal)}
             tone={groupOver ? (kind === 'income' ? 'in' : 'over') : 'ink'}
             whole
+            className="w-[72px] text-center"
           />
         </span>
       </button>
@@ -514,58 +525,46 @@ function BudgetRow({
           )}
         </div>
       </Link>
-      <div className="flex items-center justify-between gap-2 pt-1.5 pb-2">
-        <span className="min-w-0 truncate type-caption text-ink-muted">
-          <MoneyText cents={earnedCents} tone="muted" /> {kind === 'income' ? 'earned' : 'spent'}
-          {row.pace && row.pace.status === 'over' && row.spendShape === 'linear' && (
-            <span className="text-clay"> · ahead of pace</span>
-          )}
-        </span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {editable ? (
-            <button
-              onClick={onEdit}
-              aria-label={`Planned for ${category?.name ?? 'category'}: ${formatCents(row.plannedCents)}. Change`}
-              className="flex min-h-9 items-center rounded-input border border-hairline px-2.5 text-sm font-semibold text-ink active:bg-sage-100"
-            >
-              <MoneyText cents={row.plannedCents} whole={row.plannedCents % 100 === 0} />
-            </button>
-          ) : (
-            <span className="flex min-h-9 items-center rounded-input border border-hairline px-2.5 text-sm text-ink-muted">
-              <MoneyText
-                cents={row.plannedCents}
-                tone="muted"
-                whole={row.plannedCents % 100 === 0}
-              />
-            </span>
-          )}
-          <span
-            aria-label={`${over ? 'Over' : 'Remaining'}: ${formatCents(Math.abs(remainingCents))}`}
-            className={`flex min-h-9 items-center gap-1 rounded-full px-2.5 text-sm font-semibold ${
-              remainingCents === 0
-                ? 'bg-sage-100 text-ink-muted'
-                : over
-                  ? 'bg-clay-100 text-clay'
-                  : 'bg-sage-100 text-sage-700'
-            }`}
+      <div className="flex items-center justify-end gap-1.5 pt-1.5 pb-2">
+        {editable ? (
+          <button
+            onClick={onEdit}
+            aria-label={`Planned for ${category?.name ?? 'category'}: ${formatCents(row.plannedCents)}. Change`}
+            className="flex min-h-9 w-[72px] items-center justify-center rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
           >
-            {row.carriedInCents !== 0 && (
-              <span
-                aria-hidden
-                title={
-                  row.carriedInCents < 0
-                    ? `Carried a ${formatCents(-row.carriedInCents)} deficit`
-                    : `Carried ${formatCents(row.carriedInCents)} forward`
-                }
-              >
-                <Icon name="refresh" size={12} />
-              </span>
-            )}
-            <span className="money">
-              {formatCents(Math.abs(remainingCents), { whole: remainingCents % 100 === 0 })}
-            </span>
+            <MoneyText cents={row.plannedCents} whole={row.plannedCents % 100 === 0} />
+          </button>
+        ) : (
+          <span className="flex min-h-9 w-[72px] items-center justify-center rounded-input border border-hairline px-2 text-sm text-ink-muted">
+            <MoneyText cents={row.plannedCents} tone="muted" whole={row.plannedCents % 100 === 0} />
           </span>
-        </div>
+        )}
+        <span
+          aria-label={`${over ? 'Over' : 'Remaining'}: ${formatCents(Math.abs(remainingCents))}`}
+          className={`flex min-h-9 w-[72px] items-center justify-center gap-1 rounded-full px-2 text-sm font-semibold ${
+            remainingCents === 0
+              ? 'bg-sage-100 text-ink-muted'
+              : over
+                ? 'bg-clay-100 text-clay'
+                : 'bg-sage-100 text-sage-700'
+          }`}
+        >
+          {row.carriedInCents !== 0 && (
+            <span
+              aria-hidden
+              title={
+                row.carriedInCents < 0
+                  ? `Carried a ${formatCents(-row.carriedInCents)} deficit`
+                  : `Carried ${formatCents(row.carriedInCents)} forward`
+              }
+            >
+              <Icon name="refresh" size={12} />
+            </span>
+          )}
+          <span className="money">
+            {formatCents(Math.abs(remainingCents), { whole: remainingCents % 100 === 0 })}
+          </span>
+        </span>
       </div>
     </li>
   );
