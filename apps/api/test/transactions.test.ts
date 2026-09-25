@@ -294,3 +294,55 @@ describe('T21 transactions & splits', () => {
     expect(await spentIn(s, '2026-09', s.kids.id)).toBe(-20_000);
   });
 });
+
+describe('recurring cash withdrawal / paycheck tag (cash-to-payday tool)', () => {
+  it('tags an income transaction as a semimonthly paycheck, using its own amount', async () => {
+    const s = await setup();
+    const paycheck = await s.add('2026-09-18', -145_019, 'SOUTHWEST AIRLIN PAYROLLACH');
+    const tag = await s.api(
+      'POST',
+      `/transactions/${String(paycheck.json.id)}/recurring-cash-withdrawal`,
+      {
+        cadence: 'semimonthly',
+        dueDate: paycheck.json.postedAt,
+        anchorDays: [5, 20],
+      },
+    );
+    expect(tag.status).toBe(201);
+
+    const projection = (await s.api('GET', '/cash-to-payday')).json;
+    expect(projection.paySchedules).toContainEqual(
+      expect.objectContaining({
+        merchant: 'SOUTHWEST AIRLIN PAYROLLACH',
+        isManual: true,
+        series: expect.objectContaining({
+          cadence: 'semimonthly',
+          anchorDays: [5, 20],
+          expectedAmountCents: -145_019,
+        }),
+      }),
+    );
+
+    const untag = await s.api(
+      'DELETE',
+      `/transactions/${String(paycheck.json.id)}/recurring-cash-withdrawal`,
+    );
+    expect(untag.status).toBe(204);
+    const after = (await s.api('GET', '/cash-to-payday')).json;
+    expect(after.paySchedules).toEqual([]);
+  });
+
+  it('rejects a semimonthly tag with no anchor days', async () => {
+    const s = await setup();
+    const paycheck = await s.add('2026-09-18', -145_019, 'SOUTHWEST AIRLIN PAYROLLACH');
+    const tag = await s.api(
+      'POST',
+      `/transactions/${String(paycheck.json.id)}/recurring-cash-withdrawal`,
+      {
+        cadence: 'semimonthly',
+        dueDate: paycheck.json.postedAt,
+      },
+    );
+    expect(tag.status).toBe(400);
+  });
+});

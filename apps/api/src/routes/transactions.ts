@@ -398,7 +398,10 @@ transactions.delete('/:id/transfer-link', async (c) => {
 /**
  * Caleb's "Recurring Cash Withdrawal" tag (cash-to-payday tool, SPEC-adjacent): a real cash
  * auto-draft too new or too easily confused with a sibling to auto-detect from 3 charges.
- * One rule per merchant — tagging again from another of its transactions replaces it.
+ * Also used the same way for a paycheck (income transactions carry a negative amount_cents,
+ * SPEC §1.1) too new or irregular for auto-detection to pick up on its own — e.g. Caleb's
+ * semimonthly schedule paid the 5th and 20th. One rule per merchant — tagging again from
+ * another of its transactions replaces it.
  */
 transactions.post('/:id/recurring-cash-withdrawal', async (c) => {
   const userId = c.get('userId');
@@ -408,7 +411,8 @@ transactions.post('/:id/recurring-cash-withdrawal', async (c) => {
   const b = await body(c, RecurringCashWithdrawalBody);
   const user = await getUser(userId, db);
   const today = localToday(user?.timezone ?? 'America/Chicago');
-  const nextExpectedDate = firstUpcoming(b.cadence, b.dueDate, null, today);
+  const anchorDays = b.anchorDays ?? null;
+  const nextExpectedDate = firstUpcoming(b.cadence, b.dueDate, anchorDays, today);
   await db.batch([
     upsertManualRuleStmt(
       userId,
@@ -417,6 +421,7 @@ transactions.post('/:id/recurring-cash-withdrawal', async (c) => {
       b.cadence,
       row.amount_cents,
       nextExpectedDate,
+      anchorDays,
     ),
   ]);
   return c.json({ id: seriesId(userId, row.merchant_normalized) }, 201);

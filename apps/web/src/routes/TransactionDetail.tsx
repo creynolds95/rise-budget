@@ -32,6 +32,7 @@ import type { MerchantView, TransactionPage } from '../lib/types';
 const CADENCES = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'biweekly', label: 'Every 2 weeks' },
+  { value: 'semimonthly', label: 'Twice a month' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'annual', label: 'Annually' },
 ] as const;
@@ -268,7 +269,6 @@ export function TransactionDetail() {
               </Button>
             )}
             {!t.isTransfer &&
-              !income &&
               (withdrawalRule ? (
                 <Button
                   variant="danger"
@@ -281,11 +281,11 @@ export function TransactionDetail() {
                     }
                   }}
                 >
-                  Untag recurring cash withdrawal
+                  Untag recurring {income ? 'paycheck' : 'cash withdrawal'}
                 </Button>
               ) : (
                 <Button variant="quiet" onClick={() => setTaggingWithdrawal(true)}>
-                  Recurring cash withdrawal…
+                  Recurring {income ? 'paycheck' : 'cash withdrawal'}…
                 </Button>
               ))}
           </div>
@@ -320,6 +320,7 @@ export function TransactionDetail() {
       {taggingWithdrawal && (
         <RecurringWithdrawalSheet
           t={t}
+          income={income}
           onClose={() => setTaggingWithdrawal(false)}
           onSaved={refresh}
         />
@@ -537,29 +538,40 @@ function RenameSheet({
 }
 
 /**
- * Caleb's "Recurring Cash Withdrawal" tag: a real cash auto-draft (a specific student loan,
- * a mortgage) too new or too easily confused with a sibling for auto-detection to find on its
- * own. Feeds the cash-to-payday tool only — it doesn't touch this transaction's category or
- * create another transaction.
+ * Caleb's "Recurring Cash Withdrawal" tag, and the same for a paycheck: a real cash auto-draft
+ * (a specific student loan, a mortgage) or income (a semimonthly paycheck) too new or too
+ * easily confused with a sibling for auto-detection to find on its own. The amount comes from
+ * this transaction, never typed in. Feeds the cash-to-payday tool only — it doesn't touch this
+ * transaction's category or create another transaction.
  */
 function RecurringWithdrawalSheet({
   t,
+  income,
   onClose,
   onSaved,
 }: {
   t: Transaction;
+  income: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
-  const [cadence, setCadence] = useState<(typeof CADENCES)[number]['value']>('monthly');
+  const [cadence, setCadence] = useState<(typeof CADENCES)[number]['value']>(
+    income ? 'semimonthly' : 'monthly',
+  );
   const [dueDate, setDueDate] = useState(t.postedAt);
+  const [anchorDay1, setAnchorDay1] = useState(5);
+  const [anchorDay2, setAnchorDay2] = useState(20);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   return (
-    <Sheet open title="Recurring cash withdrawal" onClose={onClose}>
+    <Sheet
+      open
+      title={income ? 'Recurring paycheck' : 'Recurring cash withdrawal'}
+      onClose={onClose}
+    >
       <p className="text-ink-muted">
-        Plan for this cash to leave your account again, on a schedule — for the cash-to-payday tool
-        only. It won't change this transaction's category.
+        Plan for this {income ? 'paycheck to arrive' : 'cash to leave your account'} again, on a
+        schedule — for the cash-to-payday tool only. It won't change this transaction's category.
       </p>
       <label className="mt-4 flex flex-col gap-1">
         <span className="type-caption text-ink-muted">Repeats</span>
@@ -576,16 +588,45 @@ function RecurringWithdrawalSheet({
           ))}
         </select>
       </label>
-      <label className="mt-3 flex flex-col gap-1">
-        <span className="type-caption text-ink-muted">Due date</span>
-        <input
-          type="date"
-          aria-label="Due date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-          className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
-        />
-      </label>
+      {cadence === 'semimonthly' ? (
+        <div className="mt-3 flex gap-3">
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="type-caption text-ink-muted">First day of month</span>
+            <input
+              type="number"
+              aria-label="First day of month"
+              min={1}
+              max={31}
+              value={anchorDay1}
+              onChange={(e) => setAnchorDay1(Number(e.target.value))}
+              className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
+            />
+          </label>
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="type-caption text-ink-muted">Second day of month</span>
+            <input
+              type="number"
+              aria-label="Second day of month"
+              min={1}
+              max={31}
+              value={anchorDay2}
+              onChange={(e) => setAnchorDay2(Number(e.target.value))}
+              className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
+            />
+          </label>
+        </div>
+      ) : (
+        <label className="mt-3 flex flex-col gap-1">
+          <span className="type-caption text-ink-muted">Due date</span>
+          <input
+            type="date"
+            aria-label="Due date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
+          />
+        </label>
+      )}
       {error && <p className="mt-2 text-clay">{error}</p>}
       <Button
         className="mt-4 w-full"
@@ -597,6 +638,7 @@ function RecurringWithdrawalSheet({
             await api('POST', `/transactions/${t.id}/recurring-cash-withdrawal`, {
               cadence,
               dueDate,
+              anchorDays: cadence === 'semimonthly' ? [anchorDay1, anchorDay2] : undefined,
             });
             await onSaved();
             onClose();
