@@ -14,10 +14,10 @@ import {
 import { resolveSeed } from './seeds';
 
 const cats = [
-  { id: 'gas', name: 'Gas' },
-  { id: 'groc', name: 'Groceries' },
-  { id: 'home', name: 'Home' },
-  { id: 'kids', name: 'Kids' },
+  { id: 'gas', name: 'Gas', groupKind: 'expense' as const },
+  { id: 'groc', name: 'Groceries', groupKind: 'expense' as const },
+  { id: 'home', name: 'Home', groupKind: 'expense' as const },
+  { id: 'kids', name: 'Kids', groupKind: 'expense' as const },
 ];
 
 const rule = (over: Partial<RuleInput> = {}): RuleInput => ({
@@ -38,6 +38,7 @@ const input = (over: Partial<CategorizeInput> = {}): CategorizeInput => ({
   memory: [],
   recurringCategoryId: null,
   categories: cats,
+  amountCents: 5_000,
   ...over,
 });
 
@@ -150,13 +151,32 @@ describe('categorize precedence (SPEC §4)', () => {
     });
   });
 
-  it('a keyword seed never pre-fills; it becomes the one-tap button', () => {
+  it('a keyword seed assigns the guess despite its low band (C1) and still offers the one-tap button', () => {
     expect(categorize(input())).toMatchObject({
-      categoryId: null,
+      categoryId: 'gas',
       layer: 'seed',
       confidence: 0.5,
       band: 'none',
       topCategoryIds: ['gas'],
+    });
+  });
+
+  it('a seed never crosses direction: an income-signed transaction ignores an expense-only seed match', () => {
+    // amountCents < 0 is income (SPEC §1.1); the only category on this side is 'gas' filtered
+    // out entirely, so no rule/memory/recurring/seed layer can offer it.
+    expect(categorize(input({ amountCents: -5_000 }))).toMatchObject({
+      categoryId: null,
+      layer: null,
+      band: 'none',
+    });
+  });
+
+  it("off a cash account, direction is skipped: a card ledger's own negative amount can still match an expense-only seed", () => {
+    // Same income-signed amount as above, but on a credit account — its own ledger sign
+    // doesn't mean "income" the way a checking account's would, so nothing is filtered out.
+    expect(categorize(input({ amountCents: -5_000, accountKind: 'credit' }))).toMatchObject({
+      categoryId: 'gas',
+      layer: 'seed',
     });
   });
 

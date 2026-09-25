@@ -1,11 +1,21 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
+import { CategoryPicker } from '../components/CategoryPicker';
 import { FilterSheet } from '../components/FilterSheet';
 import { TxnRow } from '../components/TxnRow';
 import { Button } from '../components/primitives/Button';
 import { Icon, IconButton } from '../components/primitives/Icon';
 import { Skeleton } from '../components/primitives/Skeleton';
-import { useAccounts, useCategories, useGroups, useToday, useTransactions } from '../lib/queries';
+import { api } from '../lib/api';
+import {
+  useAccounts,
+  useCategories,
+  useGroups,
+  useInvalidateMoney,
+  useToday,
+  useTransactions,
+} from '../lib/queries';
 import {
   apiQuery,
   chips,
@@ -26,6 +36,10 @@ export function Transactions() {
   const filters = parseFilters(params);
   const [q, setQ] = useState(filters.q);
   const [sheet, setSheet] = useState(false);
+  const [recategorizing, setRecategorizing] = useState<string | null>(null);
+  const [marking, setMarking] = useState(false);
+  const qc = useQueryClient();
+  const invalidate = useInvalidateMoney();
   const apply = (f: Filters) => setParams(filtersToParams(f), { replace: true });
 
   // Search as you type, without a request per keystroke.
@@ -45,6 +59,26 @@ export function Transactions() {
   });
   const back = `Transactions|/transactions${params.size ? `?${params}` : ''}`;
   const byDate = filters.sort.startsWith('date');
+  const batchReview = filters.review === 'needs_review';
+
+  const afterChange = () =>
+    Promise.all([
+      invalidate(),
+      qc.invalidateQueries({ queryKey: ['queue-count'] }),
+      qc.invalidateQueries({ queryKey: ['review-queue'] }),
+    ]);
+
+  const markAllReviewed = async () => {
+    setMarking(true);
+    try {
+      await Promise.all(
+        items.map((t) => api('PATCH', `/transactions/${t.id}`, { reviewState: 'reviewed' })),
+      );
+      await afterChange();
+    } finally {
+      setMarking(false);
+    }
+  };
 
   const row = (t: (typeof items)[number]) => {
     const c = t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
@@ -55,6 +89,7 @@ export function Transactions() {
         categoryName={c ? `${c.emoji ? `${c.emoji} ` : ''}${c.name}` : undefined}
         from={back}
         hideDate={byDate}
+        onRecategorize={batchReview ? () => setRecategorizing(t.id) : undefined}
       />
     );
   };
@@ -132,6 +167,14 @@ export function Transactions() {
         </div>
       )}
 
+      {batchReview && items.length > 0 && (
+        <div className="gutter mt-3">
+          <Button className="w-full" onClick={() => void markAllReviewed()} disabled={marking}>
+            {marking ? 'Marking…' : `Mark all reviewed (${items.length})`}
+          </Button>
+        </div>
+      )}
+
       <div className="gutter mt-3">
         {list.isPending &&
           [0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="mb-2 h-12 w-full" />)}
@@ -194,6 +237,19 @@ export function Transactions() {
         onApply={(f) => {
           apply({ ...f, q: q.trim() });
           setSheet(false);
+        }}
+      />
+
+      <CategoryPicker
+        open={recategorizing !== null}
+        onClose={() => setRecategorizing(null)}
+        onPick={(categoryId) => {
+          const id = recategorizing;
+          setRecategorizing(null);
+          if (!id) return;
+          void api('PATCH', `/transactions/${id}`, { categoryId, reviewState: 'reviewed' }).then(
+            afterChange,
+          );
         }}
       />
     </div>

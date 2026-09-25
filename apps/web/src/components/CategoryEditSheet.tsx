@@ -10,56 +10,74 @@ import { Icon } from './primitives/Icon';
 import { Sheet } from './primitives/Sheet';
 import { Toggle } from './primitives/Toggle';
 
-const EMOJI = [
-  '🛒',
-  '🍔',
-  '☕',
-  '🍕',
-  '🍻',
-  '🥡',
-  '⛽',
-  '🚗',
-  '🚌',
-  '✈️',
-  '🏠',
-  '💡',
-  '💧',
-  '📱',
-  '🌐',
-  '📺',
-  '🎵',
-  '🎮',
-  '🎬',
-  '📚',
-  '👕',
-  '💇',
-  '💊',
-  '🏥',
-  '🦷',
-  '🏋️',
-  '🐶',
-  '👶',
-  '🎁',
-  '🎉',
-  '🎓',
-  '🧾',
-  '💳',
-  '🏦',
-  '💰',
-  '📈',
-  '🛠️',
-  '🧹',
-  '🌱',
-  '❤️',
-  '⛪',
-  '🏖️',
-  '🎄',
-  '🧸',
-  '💼',
-  '🔌',
-  '🛡️',
-  '🚿',
+const EMOJI: { char: string; keywords: string }[] = [
+  { char: '🛒', keywords: 'cart grocery groceries shopping food' },
+  { char: '🍔', keywords: 'burger dining eating out fast food' },
+  { char: '☕', keywords: 'coffee cafe drink' },
+  { char: '🍕', keywords: 'pizza dining food' },
+  { char: '🍻', keywords: 'beer bar drinks alcohol' },
+  { char: '🥡', keywords: 'takeout delivery food' },
+  { char: '⛽', keywords: 'gas fuel gasoline auto car' },
+  { char: '🚗', keywords: 'car auto transport payment' },
+  { char: '🚌', keywords: 'bus transit public transport' },
+  { char: '✈️', keywords: 'flight travel airplane vacation' },
+  { char: '🏠', keywords: 'home house rent mortgage housing' },
+  { char: '💡', keywords: 'utilities electric power light bulb' },
+  { char: '💧', keywords: 'water utilities' },
+  { char: '📱', keywords: 'phone cell mobile subscription' },
+  { char: '🌐', keywords: 'internet wifi web' },
+  { char: '📺', keywords: 'tv streaming cable entertainment' },
+  { char: '🎵', keywords: 'music streaming spotify entertainment' },
+  { char: '🎮', keywords: 'games gaming entertainment' },
+  { char: '🎬', keywords: 'movies entertainment streaming' },
+  { char: '📚', keywords: 'books education school' },
+  { char: '👕', keywords: 'clothes clothing shopping apparel' },
+  { char: '💇', keywords: 'haircut salon personal care' },
+  { char: '💊', keywords: 'medicine pharmacy health medical' },
+  { char: '🏥', keywords: 'hospital medical health insurance' },
+  { char: '🦷', keywords: 'dental dentist health' },
+  { char: '🏋️', keywords: 'gym fitness workout health' },
+  { char: '🐶', keywords: 'dog pet pets' },
+  { char: '👶', keywords: 'baby kids child childcare' },
+  { char: '🎁', keywords: 'gift gifts present' },
+  { char: '🎉', keywords: 'party celebration entertainment' },
+  { char: '🎓', keywords: 'education school student loan tuition' },
+  { char: '🧾', keywords: 'receipt bill payment' },
+  { char: '💳', keywords: 'credit card payment debt' },
+  { char: '🏦', keywords: 'bank transfer savings' },
+  { char: '💰', keywords: 'money savings income' },
+  { char: '📈', keywords: 'investment income growth paycheck' },
+  { char: '🛠️', keywords: 'repair maintenance tools' },
+  { char: '🧹', keywords: 'cleaning supplies home' },
+  { char: '🌱', keywords: 'garden plants lawn yard' },
+  { char: '❤️', keywords: 'health love care' },
+  { char: '⛪', keywords: 'church donation giving' },
+  { char: '🏖️', keywords: 'vacation travel beach' },
+  { char: '🎄', keywords: 'holiday christmas gifts' },
+  { char: '🧸', keywords: 'kids toys childcare' },
+  { char: '💼', keywords: 'work business income paycheck' },
+  { char: '🔌', keywords: 'electric utilities power' },
+  { char: '🛡️', keywords: 'insurance protection' },
+  { char: '🚿', keywords: 'water utilities shower' },
+  { char: '💵', keywords: 'cash income paycheck salary money' },
+  { char: '🧑‍💻', keywords: 'salary income paycheck work' },
+  { char: '🚙', keywords: 'car auto suv transport' },
+  { char: '🅿️', keywords: 'parking' },
+  { char: '🛡', keywords: 'insurance' },
+  { char: '📦', keywords: 'shipping package delivery amazon' },
+  { char: '🧴', keywords: 'personal care toiletries' },
+  { char: '👟', keywords: 'shoes clothing shopping' },
+  { char: '🍼', keywords: 'baby childcare' },
+  { char: '🚕', keywords: 'rideshare uber lyft taxi transport' },
+  { char: '🅾️', keywords: 'other misc miscellaneous' },
 ];
+
+/** Loose match: every search word must appear somewhere in the emoji's keywords. */
+function matchesEmojiSearch(entry: { keywords: string }, query: string): boolean {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  return words.every((w) => entry.keywords.includes(w));
+}
 
 /**
  * Everything about a category in one sheet: what it's called, where it sits, how leftovers
@@ -106,9 +124,12 @@ function Editor({
   const [name, setName] = useState(category.name);
   const [emoji, setEmoji] = useState<string | null>(category.emoji);
   const [picking, setPicking] = useState(false);
+  const [emojiSearch, setEmojiSearch] = useState('');
+  const filteredEmoji = EMOJI.filter((e) => matchesEmojiSearch(e, emojiSearch));
   const [groupId, setGroupId] = useState(category.groupId);
   const [roll, setRoll] = useState(category.rolloverPolicy === 'roll');
   const [once, setOnce] = useState(category.spendShape === 'fixed');
+  const [budgeted, setBudgeted] = useState(category.budgeted);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +145,7 @@ function Editor({
     if (policy !== category.rolloverPolicy) patch.rolloverPolicy = policy;
     const shape = once ? 'fixed' : 'linear';
     if (shape !== category.spendShape) patch.spendShape = shape;
+    if (budgeted !== category.budgeted) patch.budgeted = budgeted;
   }
   const dirty = Object.keys(patch).length > 0;
 
@@ -177,25 +199,38 @@ function Editor({
         </button>
         {picking && (
           <div className="px-3 pt-1 pb-3">
-            <div role="listbox" aria-label="Emoji" className="grid grid-cols-8 gap-1">
-              {EMOJI.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  role="option"
-                  aria-selected={e === emoji}
-                  onClick={() => {
-                    setEmoji(e);
-                    setPicking(false);
-                  }}
-                  className={`flex aspect-square items-center justify-center rounded-input text-2xl ${
-                    e === emoji ? 'bg-sage-100 ring-2 ring-sage-600' : 'active:bg-sage-100'
-                  }`}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
+            <input
+              aria-label="Search emoji"
+              placeholder="Search (e.g. car, food, gift)"
+              value={emojiSearch}
+              onChange={(e) => setEmojiSearch(e.target.value)}
+              className="mb-2 min-h-11 w-full rounded-input border border-hairline bg-canvas px-3"
+            />
+            {filteredEmoji.length > 0 ? (
+              <div role="listbox" aria-label="Emoji" className="grid grid-cols-8 gap-1">
+                {filteredEmoji.map((e) => (
+                  <button
+                    key={e.char}
+                    type="button"
+                    role="option"
+                    aria-selected={e.char === emoji}
+                    onClick={() => {
+                      setEmoji(e.char);
+                      setPicking(false);
+                    }}
+                    className={`flex aspect-square items-center justify-center rounded-input text-2xl ${
+                      e.char === emoji ? 'bg-sage-100 ring-2 ring-sage-600' : 'active:bg-sage-100'
+                    }`}
+                  >
+                    {e.char}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="py-2 type-caption text-ink-muted">
+                No match — type any emoji below instead.
+              </p>
+            )}
             <div className="mt-2 flex items-center gap-2">
               <input
                 aria-label="Or type any emoji"
@@ -242,6 +277,20 @@ function Editor({
         </GroupRow>
       </Group>
 
+      {kind === 'expense' && (
+        <Group title="Budget">
+          <GroupRow
+            label="Counts toward the budget"
+            hint={
+              budgeted
+                ? 'Shows up in Budget and Ready to assign, like any spending category.'
+                : 'Hidden from Budget and Ready to assign — for transfers and card payments.'
+            }
+          >
+            <Toggle label="Counts toward the budget" on={budgeted} onChange={setBudgeted} />
+          </GroupRow>
+        </Group>
+      )}
       {kind === 'expense' && (
         <Group title="Month end">
           <GroupRow

@@ -248,7 +248,7 @@ export const AccessTokenResponse = z.object({ access: z.string() });
 export const CreateCategoryGroupBody = z.object({
   name: z.string().min(1),
   kind: z.enum(['income', 'expense']),
-  sortOrder: z.int().default(0),
+  sortOrder: z.int().optional(),
 });
 
 /** T46. `json` is everything (no credentials); `csv` is transactions for a spreadsheet. */

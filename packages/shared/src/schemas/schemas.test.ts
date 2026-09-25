@@ -48,7 +48,7 @@ describe('schemas', () => {
       rollIncomeVariance: true,
       appLock: 'off',
       planChangesApplyToFuture: false,
-      cushionCents: 0,
+      cushionCents: 50_000,
       cashAccountIds: [],
     });
     expect(u.timezone).toBe('America/Chicago');

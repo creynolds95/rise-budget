@@ -237,6 +237,8 @@ export interface QueueRow {
   id: string;
   descriptor_raw: string;
   merchant_normalized: string;
+  amount_cents: number;
+  account_kind: string;
 }
 
 export async function listNeedsReview(
@@ -246,8 +248,10 @@ export async function listNeedsReview(
 ): Promise<QueueRow[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, descriptor_raw, merchant_normalized FROM txn
-       WHERE user_id = ?1 AND review_state = 'needs_review' AND (?2 IS NULL OR merchant_normalized = ?2)`,
+      `SELECT t.id, t.descriptor_raw, t.merchant_normalized, t.amount_cents, a.kind AS account_kind
+       FROM txn t JOIN account a ON a.id = t.account_id AND a.user_id = t.user_id
+       WHERE t.user_id = ?1 AND t.review_state = 'needs_review'
+         AND (?2 IS NULL OR t.merchant_normalized = ?2)`,
     )
     .bind(userId, merchant)
     .all<QueueRow>();

@@ -81,17 +81,44 @@ export async function getGroup(
   return row ? toGroup(row) : null;
 }
 
+/** A brand-new group or category always sorts last — never at the schema's default 0, which
+ * would tie it with every other unordered row and make the reorder arrows a no-op swap. */
+async function nextGroupSortOrder(db: D1Database, userId: UserId): Promise<number> {
+  const row = await db
+    .prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM category_group WHERE user_id = ?1',
+    )
+    .bind(userId)
+    .first<{ next: number }>();
+  return row?.next ?? 0;
+}
+
+async function nextCategorySortOrder(
+  db: D1Database,
+  userId: UserId,
+  groupId: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM category WHERE user_id = ?1 AND group_id = ?2',
+    )
+    .bind(userId, groupId)
+    .first<{ next: number }>();
+  return row?.next ?? 0;
+}
+
 export async function createGroup(
   userId: UserId,
   db: D1Database,
-  g: { name: string; kind: CategoryGroupKind; sortOrder: number },
+  g: { name: string; kind: CategoryGroupKind; sortOrder?: number | undefined },
 ): Promise<CategoryGroup> {
   const id = newId();
+  const sortOrder = g.sortOrder ?? (await nextGroupSortOrder(db, userId));
   await db
     .prepare(
       'INSERT INTO category_group (id, user_id, name, kind, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)',
     )
-    .bind(id, userId, g.name, g.kind, g.sortOrder)
+    .bind(id, userId, g.name, g.kind, sortOrder)
     .run();
   return (await getGroup(userId, db, id)) as CategoryGroup;
 }
@@ -220,6 +247,45 @@ export async function ensureCatchallCategory(userId: UserId, db: D1Database): Pr
 }
 
 /**
+ * H1/C2: every user always has one income-side fallback too, so a deposit with no rule,
+ * memory or seed match lands on "Other Income" (an income category) instead of the
+ * expense-kind "Other" — which would otherwise silently net spending down (C2).
+ */
+export async function ensureIncomeCatchallCategory(
+  userId: UserId,
+  db: D1Database,
+): Promise<Category> {
+  const existing = await db
+    .prepare(
+      `SELECT c.* FROM category c JOIN category_group g ON g.id = c.group_id AND g.user_id = c.user_id
+       WHERE c.user_id = ?1 AND g.kind = 'income' AND c.name = 'Other Income'`,
+    )
+    .bind(userId)
+    .first<CategoryRow>();
+  if (existing) return toCategory(existing);
+  let group = await db
+    .prepare(`SELECT id FROM category_group WHERE user_id = ?1 AND kind = 'income'`)
+    .bind(userId)
+    .first<{ id: string }>();
+  if (!group) {
+    const groupId = newId();
+    await db
+      .prepare(
+        'INSERT INTO category_group (id, user_id, name, kind, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)',
+      )
+      .bind(groupId, userId, 'Income', 'income', 0)
+      .run();
+    group = { id: groupId };
+  }
+  const id = newId();
+  await db
+    .prepare('INSERT INTO category (id, user_id, group_id, name) VALUES (?1, ?2, ?3, ?4)')
+    .bind(id, userId, group.id, 'Other Income')
+    .run();
+  return (await getCategory(userId, db, id)) as Category;
+}
+
+/**
  * The per-user unbudgeted "Transfer" category (pre-deploy-todo A5): moving money between the
  * user's own accounts, or paying off a credit card, by default counts as nothing. The user
  * can always recategorize either leg to a budgeted category later — nothing here is special
@@ -272,10 +338,11 @@ export async function createCategory(
   },
 ): Promise<Category> {
   const id = newId();
+  const sortOrder = await nextCategorySortOrder(db, userId, c.groupId);
   await db
     .prepare(
-      `INSERT INTO category (id, user_id, group_id, name, emoji, rollover_policy, spend_shape, is_bill, budgeted)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+      `INSERT INTO category (id, user_id, group_id, name, emoji, rollover_policy, spend_shape, is_bill, budgeted, sort_order)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
     )
     .bind(
       id,
@@ -287,6 +354,7 @@ export async function createCategory(
       c.spendShape,
       bool(c.isBill),
       bool(c.budgeted),
+      sortOrder,
     )
     .run();
   return (await getCategory(userId, db, id)) as Category;

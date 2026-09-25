@@ -9,6 +9,7 @@ import {
   bumpMemoryStmt,
   getMerchantMeta,
   listCategories,
+  listGroups,
   listNeedsReview,
   listRules,
   memoryFor,
@@ -22,15 +23,28 @@ import {
 export async function suggestFor(
   db: D1Database,
   userId: UserId,
-  txns: { id: string; descriptor: string; merchant: string }[],
+  txns: {
+    id: string;
+    descriptor: string;
+    merchant: string;
+    amountCents: number;
+    accountKind?: 'depository' | 'credit' | 'loan' | 'investment' | 'other' | undefined;
+  }[],
 ): Promise<Map<string, Suggestion>> {
   const merchants = txns.map((t) => t.merchant);
-  const [rules, categories, memory, recurring] = await Promise.all([
+  const [rules, rawCategories, groups, memory, recurring] = await Promise.all([
     listRules(userId, db),
     listCategories(userId, db),
+    listGroups(userId, db),
     memoryFor(userId, db, merchants),
     recurringCategoryFor(userId, db, merchants),
   ]);
+  const kindByGroup = new Map(groups.map((g) => [g.id, g.kind]));
+  const categories = rawCategories.map((c) => ({
+    id: c.id,
+    name: c.name,
+    groupKind: kindByGroup.get(c.groupId) ?? 'expense',
+  }));
   return new Map(
     txns.map((t) => [
       t.id,
@@ -41,6 +55,8 @@ export async function suggestFor(
         memory: memory.get(t.merchant) ?? [],
         recurringCategoryId: recurring.get(t.merchant) ?? null,
         categories,
+        amountCents: t.amountCents,
+        accountKind: t.accountKind,
       }),
     ]),
   );
@@ -60,7 +76,13 @@ export async function refreshSuggestions(
   const s = await suggestFor(
     db,
     userId,
-    rows.map((r) => ({ id: r.id, descriptor: r.descriptor_raw, merchant: r.merchant_normalized })),
+    rows.map((r) => ({
+      id: r.id,
+      descriptor: r.descriptor_raw,
+      merchant: r.merchant_normalized,
+      amountCents: r.amount_cents,
+      accountKind: r.account_kind as 'depository' | 'credit' | 'loan' | 'investment' | 'other',
+    })),
   );
   await db.batch(
     rows.map((r) => {

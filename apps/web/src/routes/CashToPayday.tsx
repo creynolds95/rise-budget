@@ -1,13 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { DetailPage } from '../components/detail/DetailPage';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
-import { EditRow, StaticRow } from '../components/primitives/Rows';
+import { Chevron, EditRow } from '../components/primitives/Rows';
+import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
+import { Toggle } from '../components/primitives/Toggle';
 import { api } from '../lib/api';
 import { shortDate } from '../lib/dates';
 import { formatCents } from '../lib/money';
-import { useCashToPayday } from '../lib/queries';
+import { useAccounts, useCashToPayday, useMe } from '../lib/queries';
 
 const CADENCE_LABEL: Record<string, string> = {
   weekly: 'Every week',
@@ -53,10 +56,70 @@ function Shape({
   );
 }
 
+function CashAccountsSheet({
+  open,
+  onClose,
+  selectedIds,
+}: {
+  open: boolean;
+  onClose: () => void;
+  selectedIds: string[];
+}) {
+  const accounts = useAccounts();
+  const qc = useQueryClient();
+  const [ids, setIds] = useState(selectedIds);
+  const patch = useMutation({
+    mutationFn: (cashAccountIds: string[]) => api('PATCH', '/me/settings', { cashAccountIds }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['cash-to-payday'] }),
+        qc.invalidateQueries({ queryKey: ['me'] }),
+      ]),
+  });
+  const depository = (accounts.data ?? []).filter(
+    (a) => a.kind === 'depository' && a.includeInBudget && !a.archivedAt,
+  );
+  return (
+    <Sheet
+      open={open}
+      title="Cash accounts"
+      onClose={onClose}
+      action={{
+        label: 'Save',
+        onClick: () => {
+          patch.mutate(ids);
+          onClose();
+        },
+      }}
+    >
+      <p className="type-caption text-ink-muted">
+        Which checking accounts count as cash for this projection. None selected uses every checking
+        account.
+      </p>
+      <ul className="mt-3 divide-y divide-hairline rounded-card bg-surface shadow-soft">
+        {depository.map((a) => (
+          <li key={a.id} className="flex min-h-13 items-center justify-between gap-3 px-4 py-3">
+            <span>{a.name}</span>
+            <Toggle
+              label={a.name}
+              on={ids.includes(a.id)}
+              onChange={(on) =>
+                setIds((prev) => (on ? [...prev, a.id] : prev.filter((id) => id !== a.id)))
+              }
+            />
+          </li>
+        ))}
+      </ul>
+    </Sheet>
+  );
+}
+
 /** Cash-to-payday: how much of today's checking balance is free to move (SPEC: no autopay). */
 export function CashToPayday() {
   const { data, isPending } = useCashToPayday();
+  const me = useMe();
   const qc = useQueryClient();
+  const [pickingAccounts, setPickingAccounts] = useState(false);
   const patch = useMutation({
     mutationFn: (cushionCents: number) => api('PATCH', '/me/settings', { cushionCents }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cash-to-payday'] }),
@@ -73,28 +136,47 @@ export function CashToPayday() {
     );
   }
 
+  // C4: with no pay schedule detected yet, the projection has nothing real to anchor on —
+  // showing a number here would look precise while being a guess built on nothing.
+  const noPaySchedule = data.paySchedules.length === 0;
+
   return (
     <DetailPage
       header={{ back, title: 'Cash to payday' }}
       identity={{
         label: 'Free to move right now',
-        hero: <MoneyText cents={data.freeToMoveCents} whole />,
-        context:
-          data.lowestPoint.date !== data.points[0]?.date ? (
-            <>
-              Lowest point is{' '}
-              <strong className="text-ink">{shortDate(data.lowestPoint.date)}</strong>, after{' '}
-              {data.lowestPoint.label}.
-            </>
-          ) : undefined,
+        hero: noPaySchedule ? (
+          <span className="text-2xl font-semibold text-ink-muted">Confirm your pay dates</span>
+        ) : (
+          <MoneyText cents={data.freeToMoveCents} whole />
+        ),
+        context: noPaySchedule ? (
+          "No pay schedule found yet — this needs at least one paycheck in Rise's history."
+        ) : data.lowestPoint.date !== data.points[0]?.date ? (
+          <>
+            Lowest point is <strong className="text-ink">{shortDate(data.lowestPoint.date)}</strong>
+            , after {data.lowestPoint.label}.
+          </>
+        ) : undefined,
       }}
-      shape={<Shape points={data.points} lowestDate={data.lowestPoint.date} />}
+      shape={
+        noPaySchedule ? undefined : (
+          <Shape points={data.points} lowestDate={data.lowestPoint.date} />
+        )
+      }
       facts={
         <>
-          <StaticRow
-            label="Cash accounts"
-            value={data.cashAccounts.map((a) => a.name).join(', ') || 'None'}
-          />
+          <button
+            type="button"
+            onClick={() => setPickingAccounts(true)}
+            className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-hairline py-3 text-left active:bg-sage-100"
+          >
+            <span className="text-ink">Cash accounts</span>
+            <span className="flex items-center gap-2 text-ink-muted">
+              {data.cashAccounts.map((a) => a.name).join(', ') || 'All checking'}
+              <Chevron />
+            </span>
+          </button>
           <EditRow
             label="Cushion held back"
             field={
@@ -104,6 +186,11 @@ export function CashToPayday() {
                 onCommit={(v) => patch.mutate(v)}
               />
             }
+          />
+          <CashAccountsSheet
+            open={pickingAccounts}
+            onClose={() => setPickingAccounts(false)}
+            selectedIds={me.data?.settings.cashAccountIds ?? []}
           />
         </>
       }

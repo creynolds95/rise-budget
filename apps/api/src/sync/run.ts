@@ -13,6 +13,7 @@ import {
   displayNamesFor,
   dropPendingStmts,
   ensureCatchallCategory,
+  ensureIncomeCatchallCategory,
   ensureTransferCategory,
   finishSyncRun,
   flagClosedPeriodStmt,
@@ -110,10 +111,11 @@ export async function runSync(
     return { id: runId, ...r, transfersLinked };
   };
 
-  const [user, known, other, transferCat] = await Promise.all([
+  const [user, known, other, otherIncome, transferCat] = await Promise.all([
     getUser(userId, db),
     listSyncedAccounts(userId, db),
     ensureCatchallCategory(userId, db),
+    ensureIncomeCatchallCategory(userId, db),
     ensureTransferCategory(userId, db),
   ]);
   const tz = user?.timezone ?? 'America/Chicago';
@@ -161,6 +163,8 @@ export async function runSync(
             id: o.id,
             descriptor: o.incoming.descriptor,
             merchant: o.incoming.merchant,
+            amountCents: o.incoming.amountCents,
+            accountKind: acct.kind,
           })),
         ),
         displayNamesFor(
@@ -191,7 +195,15 @@ export async function runSync(
             merchantDisplay: names.get(o.incoming.merchant) ?? null,
             suggestedCategoryId: s?.categoryId ?? null,
             suggestionConfidence: s?.confidence ?? 0,
-            assignedCategoryId: s?.categoryId ?? other.id,
+            // C2: a deposit into a cash account with no match falls to the income catch-all,
+            // never the expense-kind "Other" — that would silently net spending down. Off a
+            // cash account (a card's own ledger runs the other way), direction is
+            // meaningless, so it always falls to the plain catch-all.
+            assignedCategoryId:
+              s?.categoryId ??
+              (acct.kind === 'depository' && o.incoming.amountCents < 0
+                ? otherIncome.id
+                : other.id),
           }),
         );
       }

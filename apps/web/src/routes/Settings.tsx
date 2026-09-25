@@ -340,11 +340,14 @@ function CategoriesSection() {
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{c.name}</span>
-                      {g.kind === 'expense' && (
+                      {g.kind === 'expense' && c.budgeted && (
                         <span className="block type-caption text-ink-faint">
                           {c.rolloverPolicy === 'roll' ? 'Leftover carries' : 'Leftover returns'}
                           {c.spendShape === 'fixed' ? ' · like a bill' : ''}
                         </span>
+                      )}
+                      {!c.budgeted && (
+                        <span className="block type-caption text-ink-faint">Not budgeted</span>
                       )}
                     </span>
                     <Chevron />

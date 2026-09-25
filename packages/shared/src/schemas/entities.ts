@@ -28,7 +28,7 @@ export const UserSettings = z.object({
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
   planChangesApplyToFuture: z.boolean().default(false),
   /** Cash-to-payday: how much of the checking balance is never counted as free to move. */
-  cushionCents: Cents.default(0),
+  cushionCents: Cents.default(50_000),
   /** Cash-to-payday: which accounts count as spendable cash. Empty = every budgeted depository account. */
   cashAccountIds: z.array(Id).default([]),
 });

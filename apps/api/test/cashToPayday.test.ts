@@ -106,7 +106,7 @@ describe('cash to payday', () => {
     const s = await setup();
     const res = await s.api('GET', '/cash-to-payday');
     expect(res.json.cashAccounts).toEqual([{ id: s.checking.id, name: 'USAA Checking' }]);
-    expect(res.json.cushionCents).toBe(0);
+    expect(res.json.cushionCents).toBe(50_000);
   });
 
   it('honours a configured cushion', async () => {

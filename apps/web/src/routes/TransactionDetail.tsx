@@ -222,6 +222,11 @@ export function TransactionDetail() {
         }
         manage={
           <div className="-ml-4 flex flex-col items-start">
+            {t.reviewState === 'needs_review' && !t.isTransfer && (
+              <Button variant="quiet" onClick={() => void save({ id, reviewState: 'reviewed' })}>
+                Mark reviewed
+              </Button>
+            )}
             {t.reviewState === 'reviewed' && (
               <Button
                 variant="quiet"

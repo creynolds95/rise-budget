@@ -88,7 +88,7 @@ export function toIncomingTxn(t: SimpleFinTransaction, timeZone: string): Incomi
   };
 }
 
-export type GuessedKind = 'depository' | 'credit' | 'loan';
+export type GuessedKind = 'depository' | 'credit' | 'loan' | 'investment';
 
 export interface IncomingAccount {
   sourceAccountId: string;
@@ -110,11 +110,13 @@ export interface IncomingAccount {
 export function toIncomingAccount(a: SimpleFinAccount, timeZone: string): IncomingAccount {
   if (a.currency !== 'USD') throw new AdapterError(`Unsupported currency ${a.currency}`);
   const balanceCents = decimalToCents(a.balance);
-  const kind: GuessedKind = /\b(loan|mortgage)\b/i.test(a.name)
+  const kind: GuessedKind = /\b(loan|mortgage|heloc|installment|financing)\b/i.test(a.name)
     ? 'loan'
-    : /\b(credit|card|visa|mastercard|amex)\b/i.test(a.name) || balanceCents < 0
-      ? 'credit'
-      : 'depository';
+    : /\b(401\s?\(?k\)?|403\s?b|ira|roth|retirement|pension|brokerage|investment)\b/i.test(a.name)
+      ? 'investment'
+      : /\b(credit|card|visa|mastercard|amex)\b/i.test(a.name) || balanceCents < 0
+        ? 'credit'
+        : 'depository';
   const institutionName = a.org.name ?? a.org.domain ?? null;
   return {
     sourceAccountId: a.id,
@@ -123,7 +125,8 @@ export function toIncomingAccount(a: SimpleFinAccount, timeZone: string): Incomi
     kind,
     balanceCents,
     balanceDate: localDate(a['balance-date'], timeZone),
-    includeInBudget: !(kind === 'depository' && /\bsavings\b/i.test(a.name)),
+    includeInBudget:
+      kind !== 'investment' && !(kind === 'depository' && /\bsavings\b/i.test(a.name)),
     syncCadenceHours: /\bapple\b/i.test(`${institutionName ?? ''} ${a.name}`) ? 720 : 24,
   };
 }
