@@ -15,6 +15,7 @@ import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api } from '../lib/api';
 import { allowsPercentChange, rangeStart, type Range } from '../lib/chart';
 import { daysBetween, shortDate } from '../lib/dates';
+import { navigateWithTransition } from '../lib/transition';
 import {
   useAccounts,
   useInvalidateMoney,
@@ -99,7 +100,12 @@ export function Accounts() {
               {
                 label: 'Bank connection',
                 icon: 'bank',
-                onSelect: () => navigate('/settings/sync?from=Accounts|/accounts'),
+                onSelect: () =>
+                  navigateWithTransition(
+                    navigate,
+                    '/settings/sync?from=Accounts|/accounts',
+                    'forward',
+                  ),
               },
             ]}
           />

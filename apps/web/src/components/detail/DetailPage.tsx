@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
+import { transitionClick } from '../../lib/transition';
 
 /**
  * The five-zone detail template (DESIGN-SYSTEM.md §5). Zones are props, not children, so
@@ -25,6 +26,7 @@ export const ZONES = ['header', 'identity', 'shape', 'facts', 'related', 'manage
 
 export function DetailPage(p: DetailPageProps) {
   if (!p.header.back.label.trim()) throw new Error('DetailPage: back control must name its origin');
+  const navigate = useNavigate();
   return (
     <article className="mx-auto max-w-2xl pb-24">
       <header
@@ -33,6 +35,7 @@ export function DetailPage(p: DetailPageProps) {
       >
         <Link
           to={p.header.back.to}
+          onClick={transitionClick(navigate, p.header.back.to, 'back')}
           className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700"
         >
           <span aria-hidden>‹</span>

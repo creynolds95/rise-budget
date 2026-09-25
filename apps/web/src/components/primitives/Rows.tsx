@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
+import { isPushRoute, transitionClick } from '../../lib/transition';
 
 /**
  * The three row types (§5.1), and only three. STATIC has no affordance, EDIT has the bordered
@@ -26,8 +27,14 @@ export function EditRow({ label, field }: { label: ReactNode; field: ReactNode }
 }
 
 export function NavRow({ label, value, to }: { label: ReactNode; value?: ReactNode; to: string }) {
+  const navigate = useNavigate();
   return (
-    <Link to={to} className={`${base} active:bg-sage-100`} data-row="nav">
+    <Link
+      to={to}
+      onClick={isPushRoute(to) ? transitionClick(navigate, to) : undefined}
+      className={`${base} active:bg-sage-100`}
+      data-row="nav"
+    >
       <span className="text-ink">{label}</span>
       <span className="flex items-center gap-2 text-ink-muted">
         {value}

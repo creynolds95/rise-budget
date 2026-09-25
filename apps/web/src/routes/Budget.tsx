@@ -2,7 +2,7 @@ import type { ViewCategory } from '@rise/shared/budget';
 import type { Category, CategoryGroup, Reallocation } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { usePlanFlow } from '../components/PlanFlow';
 import { Icon } from '../components/primitives/Icon';
@@ -18,6 +18,7 @@ import { ApiError, api, get } from '../lib/api';
 import { addMonths, monthName, shortDate } from '../lib/dates';
 import { useIsDesktop } from '../lib/media';
 import { formatCents } from '../lib/money';
+import { transitionClick } from '../lib/transition';
 
 import {
   useCategories,
@@ -32,6 +33,7 @@ import type { PeriodResponse } from '../lib/types';
 /** The Budget tab (T37): pool, groups with roll-ups, and a rail per category. */
 export function Budget() {
   const today = useToday();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const month = params.get('m') ?? today.slice(0, 7);
   const period = usePeriod(month);
@@ -87,6 +89,10 @@ export function Budget() {
               </Link>
               <Link
                 to={`/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`}
+                onClick={transitionClick(
+                  navigate,
+                  `/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`,
+                )}
                 aria-label="Budget settings"
                 className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
               >
@@ -459,17 +465,21 @@ function BudgetRow({
   const over = remainingCents < 0;
   // Earning more than planned is good, never an overspend warning (DESIGN-SYSTEM.md §1).
   const overTone = kind === 'income' ? 'in' : 'over';
+  const navigate = useNavigate();
+  const to = `/budget/${row.categoryId}?m=${month}`;
   return (
     <li className="gutter border-b border-hairline py-2 last:border-b-0">
       <div className="flex items-baseline justify-between gap-3">
         <Link
-          to={`/budget/${row.categoryId}?m=${month}`}
+          to={to}
           onClick={(e) => {
             // H5: desktop opens the category beside the list instead of pushing over it.
             if (isDesktop) {
               e.preventDefault();
               onSelect(row.categoryId);
+              return;
             }
+            transitionClick(navigate, to)(e);
           }}
           className="flex min-h-9 min-w-0 items-center gap-1.5 text-sm font-medium"
         >
