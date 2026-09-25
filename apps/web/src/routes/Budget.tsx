@@ -375,8 +375,8 @@ function MonthSwitcher({
 function ColumnHeadings() {
   return (
     <div className="gutter mb-1 flex items-center justify-end gap-3 type-caption text-ink-muted">
-      <span className="w-[72px] text-right">Planned</span>
-      <span className="w-[72px] text-right">Remaining</span>
+      <span className="w-[72px] border border-transparent px-2 text-right">Planned</span>
+      <span className="w-[72px] border border-transparent px-2 text-right">Remaining</span>
     </div>
   );
 }
@@ -423,13 +423,16 @@ function GroupSection({
           {group.name}
         </h3>
         <span className="flex items-center gap-3 text-sm font-semibold">
-          <MoneyText cents={plannedTotal} tone="ink" whole className="w-[72px] text-right" />
-          <MoneyText
-            cents={Math.abs(remainingTotal)}
-            tone={groupOver ? (kind === 'income' ? 'in' : 'over') : 'ink'}
-            whole
-            className="w-[72px] text-right"
-          />
+          <span className="flex w-[72px] items-center justify-end border border-transparent px-2">
+            <MoneyText cents={plannedTotal} tone="ink" whole />
+          </span>
+          <span className="flex w-[72px] items-center justify-end border border-transparent px-2">
+            <MoneyText
+              cents={Math.abs(remainingTotal)}
+              tone={groupOver ? (kind === 'income' ? 'in' : 'over') : 'ink'}
+              whole
+            />
+          </span>
         </span>
       </button>
       {open && (
