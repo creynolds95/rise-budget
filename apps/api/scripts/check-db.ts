@@ -53,3 +53,21 @@ const billLike = query<{
    ORDER BY posted_at DESC LIMIT 40`,
 );
 console.log('bill/payroll-like txns:', JSON.stringify(billLike, null, 1));
+
+const periods = query<{ id: string; status: string }>(`SELECT id, status FROM period ORDER BY id`);
+console.log('periods:', JSON.stringify(periods, null, 1));
+
+const allocations = query<{
+  period_id: string;
+  group_name: string;
+  category_name: string;
+  planned_cents: number;
+}>(
+  `SELECT a.period_id, g.name AS group_name, c.name AS category_name, a.planned_cents
+   FROM allocation a
+   JOIN category c ON c.id = a.category_id
+   JOIN category_group g ON g.id = c.group_id
+   WHERE a.period_id IN ('2026-09', '2026-10')
+   ORDER BY a.period_id, g.name, c.name`,
+);
+console.log('Sept/Oct allocations:', JSON.stringify(allocations, null, 1));
