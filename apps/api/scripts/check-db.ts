@@ -71,7 +71,6 @@ const allocations = query<{
    ORDER BY a.period_id, g.name, c.name`,
 );
 console.log('Sept/Oct allocations:', JSON.stringify(allocations, null, 1));
-
 const catFlags = query<{
   name: string;
   group_id: string;
