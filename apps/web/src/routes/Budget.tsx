@@ -374,7 +374,7 @@ function MonthSwitcher({
 /** Column labels once per section (Income/Expenses), over the fixed-width Planned/Remaining columns every row and group total line up under. */
 function ColumnHeadings() {
   return (
-    <div className="gutter mb-1 flex items-center justify-end gap-3 type-caption text-ink-muted">
+    <div className="gutter mb-1 mr-4 flex items-center justify-end gap-3 type-caption text-ink-muted">
       <span className="w-[72px] border border-transparent px-2 text-right">Planned</span>
       <span className="w-[72px] border border-transparent px-2 text-right">Remaining</span>
     </div>
@@ -422,7 +422,7 @@ function GroupSection({
           </span>
           {group.name}
         </h3>
-        <span className="flex items-center gap-3 text-sm font-semibold">
+        <span className="mr-4 flex items-center gap-3 text-sm font-semibold">
           <span className="flex w-[72px] items-center justify-end border border-transparent px-2">
             <MoneyText cents={plannedTotal} tone="ink" whole />
           </span>
