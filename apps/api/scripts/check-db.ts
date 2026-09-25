@@ -71,3 +71,18 @@ const allocations = query<{
    ORDER BY a.period_id, g.name, c.name`,
 );
 console.log('Sept/Oct allocations:', JSON.stringify(allocations, null, 1));
+
+const catFlags = query<{
+  name: string;
+  group_id: string;
+  budgeted: number;
+  archived_at: string | null;
+  group_name: string;
+  group_kind: string;
+}>(
+  `SELECT c.name, c.group_id, c.budgeted, c.archived_at, g.name AS group_name, g.kind AS group_kind
+   FROM category c JOIN category_group g ON g.id = c.group_id
+   WHERE g.name IN ('Housing', 'Auto & Transport', 'Bills & Utilities', 'Education', 'Financial',
+     'Food & Dining', 'Gifts & Donations', 'Health & Wellness', 'Lifestyle', 'Subscriptions')`,
+);
+console.log('imported category flags:', JSON.stringify(catFlags, null, 1));
