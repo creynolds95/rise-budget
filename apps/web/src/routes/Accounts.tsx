@@ -79,8 +79,8 @@ export function Accounts() {
   return (
     <div className="mx-auto max-w-2xl pb-12">
       <header className="gutter flex items-center justify-between pt-3">
-        <h1 className="type-title">Accounts</h1>
-        <div className="-mr-2 flex items-center">
+        <h1 className="hidden type-title lg:block">Accounts</h1>
+        <div className="-mr-2 ml-auto flex items-center">
           <Menu
             label="Account options"
             items={[

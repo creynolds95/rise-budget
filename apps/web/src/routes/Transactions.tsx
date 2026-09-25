@@ -97,8 +97,8 @@ export function Transactions() {
   return (
     <div className="mx-auto max-w-2xl pb-12">
       <header className="gutter flex items-center justify-between pt-3">
-        <h1 className="type-title">Transactions</h1>
-        <div className="-mr-2">
+        <h1 className="hidden type-title lg:block">Transactions</h1>
+        <div className="-mr-2 ml-auto">
           <IconButton
             icon="filter"
             label={active.length ? `Filters, ${active.length} on` : 'Filters'}
