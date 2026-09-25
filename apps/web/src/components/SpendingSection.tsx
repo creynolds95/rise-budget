@@ -39,21 +39,23 @@ export function SpendingSection(props: {
         <h2 id="spending-h" className="type-title">
           Spending
         </h2>
-        {report ? (
-          <PaceAgainstLastMonth
-            month={month}
-            prevMonth={prevMonth}
-            elapsedDays={elapsedDays}
-            spentCents={props.spentCents}
-            days={report.days}
-          />
-        ) : (
-          <>
-            <Skeleton className="mt-3 h-9 w-40" />
-            <Skeleton className="mt-2 h-4 w-64" />
-            <Skeleton className="mt-5 h-40 w-full" />
-          </>
-        )}
+        <div className="mt-2 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+          {report ? (
+            <PaceAgainstLastMonth
+              month={month}
+              prevMonth={prevMonth}
+              elapsedDays={elapsedDays}
+              spentCents={props.spentCents}
+              days={report.days}
+            />
+          ) : (
+            <>
+              <Skeleton className="h-9 w-40" />
+              <Skeleton className="mt-2 h-4 w-64" />
+              <Skeleton className="mt-5 h-40 w-full" />
+            </>
+          )}
+        </div>
       </section>
 
       <WhereItWent
@@ -70,7 +72,7 @@ export function SpendingSection(props: {
           <h2 id="flow-h" className="type-title">
             In and out
           </h2>
-          <dl className="mt-3 grid grid-cols-3 gap-4">
+          <dl className="mt-2 grid grid-cols-3 gap-4 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
             <Figure label="Came in">
               <MoneyText cents={props.incomeCents} tone="in" whole />
             </Figure>
@@ -120,7 +122,7 @@ function PaceAgainstLastMonth(props: {
 
   return (
     <>
-      <p className="mt-3 money-lg">
+      <p className="money-lg">
         <MoneyText cents={props.spentCents} whole />
       </p>
       <p className="mt-1 text-ink-muted">
@@ -265,25 +267,27 @@ function SixMonths({ months, month }: { months: MonthSpend[]; month: string }) {
       <h2 id="months-h" className="type-title">
         Month by month
       </h2>
-      <p className="mt-1 text-ink-muted">
-        {complete.length === 1
-          ? `${monthName(complete[0]?.periodId ?? '', false)}: `
-          : 'Typical month: '}
-        <MoneyText cents={avg ?? 0} whole />
-        {complete.length > 1 && (
-          <span className="type-caption text-ink-faint"> · average of {complete.length}</span>
-        )}
-      </p>
-      <div className="mt-4">
-        <Chart
-          kind="bar"
-          label={`Spending per month, ${short(shown[0]?.periodId ?? month)} to ${short(month)}`}
-          bars={shown.map((m) => ({
-            label: short(m.periodId),
-            cents: Math.max(0, m.cents),
-            muted: m.periodId === month,
-          }))}
-        />
+      <div className="mt-2 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+        <p className="text-ink-muted">
+          {complete.length === 1
+            ? `${monthName(complete[0]?.periodId ?? '', false)}: `
+            : 'Typical month: '}
+          <MoneyText cents={avg ?? 0} whole />
+          {complete.length > 1 && (
+            <span className="type-caption text-ink-faint"> · average of {complete.length}</span>
+          )}
+        </p>
+        <div className="mt-4">
+          <Chart
+            kind="bar"
+            label={`Spending per month, ${short(shown[0]?.periodId ?? month)} to ${short(month)}`}
+            bars={shown.map((m) => ({
+              label: short(m.periodId),
+              cents: Math.max(0, m.cents),
+              muted: m.periodId === month,
+            }))}
+          />
+        </div>
       </div>
     </section>
   );

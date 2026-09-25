@@ -112,7 +112,9 @@ export function toIncomingAccount(a: SimpleFinAccount, timeZone: string): Incomi
   const balanceCents = decimalToCents(a.balance);
   const kind: GuessedKind = /\b(loan|mortgage|heloc|installment|financing)\b/i.test(a.name)
     ? 'loan'
-    : /\b(401\s?\(?k\)?|403\s?b|ira|roth|retirement|pension|brokerage|investment)\b/i.test(a.name)
+    : /\b(401\s?\(?k\)?|403\s?\(?b\)?|ira|roth|retirement|pension|brokerage|investment)\b/i.test(
+          a.name,
+        )
       ? 'investment'
       : /\b(credit|card|visa|mastercard|amex)\b/i.test(a.name) || balanceCents < 0
         ? 'credit'

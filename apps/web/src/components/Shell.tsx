@@ -7,6 +7,7 @@ const ICON: Record<Tab, string> = {
   accounts: 'M3 9l9-5 9 5M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18',
   transactions: 'M5 7h14M5 12h14M5 17h9',
   budget: 'M6 20V10M12 20V4M18 20v6',
+  reports: 'M4 4v16h16M8 15l3-4 3 3 4-6',
 };
 
 /**
@@ -91,7 +92,7 @@ export function Shell() {
         aria-label="Tabs"
         className="fixed inset-x-0 bottom-0 z-20 border-t border-hairline bg-canvas/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >
-        <ul className="mx-auto grid max-w-2xl grid-cols-4">
+        <ul className="mx-auto grid max-w-2xl grid-cols-5">
           {TABS.map((t) => (
             <li key={t.tab}>
               <NavLink

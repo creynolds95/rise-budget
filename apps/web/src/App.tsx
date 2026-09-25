@@ -11,7 +11,7 @@ import { CashToPayday } from './routes/CashToPayday';
 import { CategoryDetail } from './routes/CategoryDetail';
 import { Dashboard } from './routes/Dashboard';
 import { Login, Register } from './routes/Login';
-import { MoneyFlow } from './routes/MoneyFlow';
+import { Reports } from './routes/Reports';
 import { Review } from './routes/Review';
 import { Settings, SettingsSection } from './routes/Settings';
 import { TransactionDetail } from './routes/TransactionDetail';
@@ -44,12 +44,12 @@ export function App() {
           <Route path="accounts" element={<Accounts />} />
           <Route path="transactions" element={<Transactions />} />
           <Route path="budget" element={<Budget />} />
+          <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="review" element={<Review />} />
         <Route path="accounts/:id" element={<AccountDetail />} />
         <Route path="transactions/:id" element={<TransactionDetail />} />
-        <Route path="budget/flow" element={<MoneyFlow />} />
         <Route path="budget/:categoryId" element={<CategoryDetail />} />
         <Route path="cash-to-payday" element={<CashToPayday />} />
         <Route path="settings/:section" element={<SettingsSection />} />

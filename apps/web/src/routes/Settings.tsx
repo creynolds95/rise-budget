@@ -759,6 +759,8 @@ function SecuritySection() {
   const [msg, setMsg] = useState<string | null>(null);
   const [pinSheet, setPinSheet] = useState(false);
   const [pinOn, setPinOn] = useState(hasPin);
+  const [totpSheet, setTotpSheet] = useState(false);
+  const [recoverySheet, setRecoverySheet] = useState(false);
   const lock = useMutation({
     mutationFn: (appLock: AppLock) => api('PATCH', '/me/settings', { appLock }),
     onMutate: (appLock) => {
@@ -839,6 +841,27 @@ function SecuritySection() {
         </button>
       </Group>
       {msg && <p className="mt-2 px-1 text-ink-muted">{msg}</p>}
+      <Group
+        title="Backup sign-in"
+        footer="Lets someone sign in on a new phone or computer without your passkey — to add their own, or to get you back in if you lose your only device."
+      >
+        <button
+          onClick={() => setTotpSheet(true)}
+          className="flex min-h-13 w-full items-center justify-between px-4 text-left active:bg-sage-100"
+        >
+          Set up an authenticator app
+          <Chevron />
+        </button>
+        <button
+          onClick={() => setRecoverySheet(true)}
+          className="flex min-h-13 w-full items-center justify-between px-4 text-left active:bg-sage-100"
+        >
+          Generate recovery codes
+          <Chevron />
+        </button>
+      </Group>
+      {totpSheet && <TotpSetupSheet onClose={() => setTotpSheet(false)} />}
+      {recoverySheet && <RecoveryCodesSheet onClose={() => setRecoverySheet(false)} />}
       <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
         Sign out
       </Button>
@@ -924,6 +947,162 @@ function PinSheet({
         {error && <p className="text-clay">{error}</p>}
         <button type="submit" hidden />
       </form>
+    </Sheet>
+  );
+}
+
+/**
+ * Authenticator app as a backup sign-in path — the way to get a brand-new phone or computer
+ * into a signed-in session without a passkey already on it, so it can then register its own
+ * passkey (Settings > Passkeys). One step-up covers both calls (5-minute token).
+ */
+function TotpSetupSheet({ onClose }: { onClose: () => void }) {
+  const { stepUp } = useAuth();
+  const [setup, setSetup] = useState<{ otpauthUri: string; secret: string } | null>(null);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const start = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const su = await stepUp();
+      const r = await api<{ otpauthUri: string; secret: string }>(
+        'POST',
+        '/auth/totp/setup',
+        {},
+        { stepUp: su },
+      );
+      setSetup(r);
+    } catch (e) {
+      setError(passkeyMessage(e, 'Could not start setup.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirm = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const su = await stepUp();
+      await api('POST', '/auth/totp/confirm', { code }, { stepUp: su });
+      setDone(true);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Code not accepted.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open title="Authenticator app" onClose={onClose}>
+      {done ? (
+        <>
+          <p className="text-ink-muted">
+            Set up. On the new device, open Rise, choose “Use an authenticator code,” and enter your
+            email and the current code — then add its own passkey from Settings.
+          </p>
+          <Button className="mt-4 w-full" onClick={onClose}>
+            Done
+          </Button>
+        </>
+      ) : !setup ? (
+        <>
+          <p className="text-ink-muted">
+            Scan or enter this into an authenticator app (Google Authenticator, 1Password, Apple
+            Passwords) on any device — including a phone that will use Rise on its own.
+          </p>
+          {error && <p className="mt-2 text-clay">{error}</p>}
+          <Button className="mt-4 w-full" disabled={busy} onClick={() => void start()}>
+            {busy ? 'Starting…' : 'Start setup'}
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="type-caption text-ink-muted">Secret key</p>
+          <p className="mt-1 break-all rounded-input border border-hairline bg-canvas px-3 py-2 font-mono">
+            {setup.secret}
+          </p>
+          <label className="mt-4 flex flex-col gap-1">
+            <span className="type-caption text-ink-muted">Code from the app</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+              className="min-h-11 rounded-input border border-hairline bg-canvas px-3 text-center tracking-widest"
+            />
+          </label>
+          {error && <p className="mt-2 text-clay">{error}</p>}
+          <Button
+            className="mt-4 w-full"
+            disabled={busy || code.length < 6}
+            onClick={() => void confirm()}
+          >
+            {busy ? 'Confirming…' : 'Confirm'}
+          </Button>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+/** Ten single-use codes — shown once, stored hashed. Generating a fresh set retires any old ones. */
+function RecoveryCodesSheet({ onClose }: { onClose: () => void }) {
+  const { stepUp } = useAuth();
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const generate = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const su = await stepUp();
+      const r = await api<{ codes: string[] }>(
+        'POST',
+        '/auth/recovery/generate',
+        {},
+        { stepUp: su },
+      );
+      setCodes(r.codes);
+    } catch (e) {
+      setError(passkeyMessage(e, 'Could not generate codes.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open title="Recovery codes" onClose={onClose}>
+      {!codes ? (
+        <>
+          <p className="text-ink-muted">
+            Ten one-time codes to sign in without a passkey. Generating a new set retires any codes
+            from before.
+          </p>
+          {error && <p className="mt-2 text-clay">{error}</p>}
+          <Button className="mt-4 w-full" disabled={busy} onClick={() => void generate()}>
+            {busy ? 'Generating…' : 'Generate codes'}
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="text-ink-muted">Save these somewhere safe — shown once.</p>
+          <ul className="mt-3 grid grid-cols-2 gap-2 rounded-card border border-hairline bg-canvas p-3 font-mono">
+            {codes.map((c) => (
+              <li key={c}>{c}</li>
+            ))}
+          </ul>
+          <Button className="mt-4 w-full" onClick={onClose}>
+            Done
+          </Button>
+        </>
+      )}
     </Sheet>
   );
 }

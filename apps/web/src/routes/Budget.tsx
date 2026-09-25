@@ -79,8 +79,8 @@ export function Budget() {
             </p>
             <div className="-mr-2 flex items-center">
               <Link
-                to={`/budget/flow?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}${month === today.slice(0, 7) ? '' : `&m=${month}`}`}
-                aria-label="Money flow"
+                to={`/reports${month === today.slice(0, 7) ? '' : `?m=${month}`}`}
+                aria-label="Reports"
                 className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
               >
                 <Icon name="flow" />

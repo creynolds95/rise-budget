@@ -1,14 +1,11 @@
 import type { MoneyFlowReport } from '@rise/shared/schemas';
 import { sankey, sankeyLinkHorizontal, type SankeyNodeMinimal } from 'd3-sankey';
 import { useMemo } from 'react';
-import { useSearchParams } from 'react-router';
-import { DetailPage } from '../components/detail/DetailPage';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
-import { backFrom } from '../lib/nav';
-import { useMoneyFlow, useToday } from '../lib/queries';
+import { useMoneyFlow } from '../lib/queries';
 
 type FlowNode = MoneyFlowReport['nodes'][number];
 type FlowLink = MoneyFlowReport['links'][number];
@@ -30,29 +27,20 @@ function roleOf(id: string): keyof typeof ROLE_FILL {
   return 'category';
 }
 
-/** The Budget tab's Sankey chart: where a month's income came from and where it went. */
-export function MoneyFlow() {
-  const [params] = useSearchParams();
-  const today = useToday();
-  const month = params.get('m') ?? today.slice(0, 7);
-  const back = backFrom(params.get('from'), {
-    label: 'Budget',
-    to: month === today.slice(0, 7) ? '/budget' : `/budget?m=${month}`,
-  });
+/** Money flow report (Reports tab): where a month's income came from and where it went. */
+export function MoneyFlowReportView({ month }: { month: string }) {
   const flow = useMoneyFlow(month);
-
   const leftoverCents =
     flow.data?.links.find((l) => l.target === 'leftover')?.valueCents ?? (0 as const);
 
   return (
-    <DetailPage
-      header={{ back, title: 'Money flow' }}
-      identity={{
-        label: `Left over in ${monthName(month, false)}`,
-        hero: flow.data ? <MoneyText cents={leftoverCents} /> : <Skeleton className="h-11 w-32" />,
-      }}
-      shape={
-        !flow.data ? (
+    <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+      <p className="type-label text-ink-muted">Left over in {monthName(month, false)}</p>
+      <p className="mt-1 type-display">
+        {flow.data ? <MoneyText cents={leftoverCents} /> : <Skeleton className="h-9 w-32" />}
+      </p>
+      <div className="mt-4">
+        {!flow.data ? (
           <Skeleton className="h-64 w-full" />
         ) : flow.data.links.length === 0 ? (
           <p className="py-6 text-ink-muted">
@@ -60,9 +48,9 @@ export function MoneyFlow() {
           </p>
         ) : (
           <SankeyChart nodes={flow.data.nodes} links={flow.data.links} />
-        )
-      }
-    />
+        )}
+      </div>
+    </div>
   );
 }
 
