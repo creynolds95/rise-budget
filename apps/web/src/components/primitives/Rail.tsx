@@ -17,7 +17,7 @@ export function Rail(props: RailInput & { availableCents: number }) {
     <div
       role="img"
       aria-label={label}
-      className="relative h-2 w-full overflow-visible rounded-full bg-canvas"
+      className="relative h-2 w-full overflow-visible rounded-full bg-hairline"
     >
       {g.carried && (
         <span

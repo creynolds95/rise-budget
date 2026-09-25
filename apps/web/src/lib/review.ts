@@ -59,6 +59,12 @@ export interface ChipContext {
   ordered: readonly string[];
   /** Most-used lately, from the queue endpoint. */
   frequent: readonly string[];
+  /**
+   * Never used as filler: transfer-like (unbudgeted) categories, which the Transfer offer
+   * covers, and the catch-all, which is where a row already lands with no choice at all.
+   * A merchant's own history still offers them.
+   */
+  quiet?: ReadonlySet<string>;
 }
 
 /**
@@ -76,7 +82,9 @@ export function chipsFor(
   const pool = [
     ...t.topCategoryIds,
     ...order.flatMap((k) =>
-      [...ctx.frequent, ...ctx.ordered].filter((id) => ctx.kinds.get(id) === k),
+      [...ctx.frequent, ...ctx.ordered].filter(
+        (id) => ctx.kinds.get(id) === k && !ctx.quiet?.has(id),
+      ),
     ),
   ];
   const out: string[] = [];

@@ -12,7 +12,8 @@
     "./sync": "./src/sync/index.ts",
     "./import": "./src/import/index.ts",
     "./recurring": "./src/recurring/index.ts",
-    "./cash-projection": "./src/cash-projection/index.ts"
+    "./cash-projection": "./src/cash-projection/index.ts",
+    "./reports": "./src/reports/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

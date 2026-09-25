@@ -73,6 +73,7 @@ export function Review() {
     kinds: new Map(categories.map((c) => [c.id, kindOf.get(c.groupId) ?? 'expense'])),
     ordered: categories.map((c) => c.id),
     frequent: queue.data?.frequentCategoryIds ?? [],
+    quiet: new Set(categories.filter((c) => !c.budgeted || c.isCatchall).map((c) => c.id)),
   };
 
   const unhide = (ids: string[]) =>

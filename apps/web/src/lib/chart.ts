@@ -24,9 +24,11 @@ export function lineSegments(
   const values = points.map((p) => p.cents);
   const lo = Math.min(...values);
   const hi = Math.max(...values);
-  const span = hi - lo || 1;
+  const span = hi - lo;
   const x = (i: number) => (points.length === 1 ? width / 2 : (i / (points.length - 1)) * width);
-  const y = (c: number) => pad + (1 - (c - lo) / span) * (height - 2 * pad);
+  // A flat series is steady, not zero: draw it through the middle, not along the floor.
+  const y = (c: number) =>
+    span === 0 ? height / 2 : pad + (1 - (c - lo) / span) * (height - 2 * pad);
   const out: Segment[] = [];
   for (let i = 0; i < points.length; i++) {
     const p = points[i] as LinePoint;
@@ -79,3 +81,28 @@ export function rangeStart(range: Range, today: string): string {
 
 /** §7: never a percentage change over a window shorter than three months. */
 export const allowsPercentChange = (range: Range) => range !== '1M';
+
+/**
+ * Several series on one shared scale (the Dashboard's month-against-month line). X is the
+ * index across `slots` positions, so a series shorter than `slots` — a month in progress —
+ * simply ends early instead of stretching. Y runs from 0 (or the lowest value, if a refund
+ * takes a total below zero) to the highest value across every series.
+ */
+export function sharedScalePaths(
+  series: readonly (readonly number[])[],
+  slots: number,
+  width: number,
+  height: number,
+  pad = 4,
+): { points: [number, number][]; last: [number, number] | null }[] {
+  const all = series.flat();
+  const lo = Math.min(0, ...all);
+  const hi = Math.max(0, ...all);
+  const span = hi - lo || 1;
+  const x = (i: number) => (slots <= 1 ? width / 2 : (i / (slots - 1)) * width);
+  const y = (v: number) => pad + (1 - (v - lo) / span) * (height - 2 * pad);
+  return series.map((s) => {
+    const points = s.map((v, i): [number, number] => [x(i), y(v)]);
+    return { points, last: points.at(-1) ?? null };
+  });
+}

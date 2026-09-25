@@ -12,6 +12,7 @@ import { networth } from './routes/networth';
 import { allocations, periods } from './routes/periods';
 import { cashToPayday } from './routes/cashToPayday';
 import { recurring } from './routes/recurring';
+import { reports } from './routes/reports';
 import { review } from './routes/review';
 import { sync } from './routes/sync';
 import { transactions } from './routes/transactions';
@@ -46,6 +47,7 @@ app.route('/sync', sync);
 app.route('/recurring', recurring);
 app.route('/cash-to-payday', cashToPayday);
 app.route('/review', review);
+app.route('/reports', reports);
 app.route('/export', dataExport);
 
 app.notFound((c) =>

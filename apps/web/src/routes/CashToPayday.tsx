@@ -6,6 +6,7 @@ import { EditRow, StaticRow } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { api } from '../lib/api';
 import { shortDate } from '../lib/dates';
+import { formatCents } from '../lib/money';
 import { useCashToPayday } from '../lib/queries';
 
 const CADENCE_LABEL: Record<string, string> = {
@@ -16,6 +17,7 @@ const CADENCE_LABEL: Record<string, string> = {
   semimonthly: 'Twice a month',
 };
 
+/** Balance by day to payday, the lowest point marked. A single day has no shape to show. */
 function Shape({
   points,
   lowestDate,
@@ -23,26 +25,31 @@ function Shape({
   points: { date: string; balanceCents: number }[];
   lowestDate: string;
 }) {
+  if (points.length < 2) return null;
   const max = Math.max(...points.map((p) => p.balanceCents), 1);
   return (
-    <div className="rounded-card border border-hairline bg-surface p-4">
-      <div className="flex h-20 items-end gap-1.5">
+    <figure className="m-0">
+      <div className="flex h-24 items-end gap-1.5 border-b border-hairline">
         {points.map((p, i) => (
           <div
             key={i}
-            className={`flex-1 rounded-t ${p.date === lowestDate ? 'bg-clay/40' : 'bg-sage-600'}`}
-            style={{ height: `${Math.max(8, (p.balanceCents / max) * 100)}%` }}
-          />
-        ))}
-      </div>
-      <div className="mt-2 flex gap-1.5">
-        {points.map((p, i) => (
-          <div key={i} className="flex-1 text-center">
-            <p className="type-caption text-ink-faint">{shortDate(p.date)}</p>
+            className={`flex-1 rounded-t-sm ${p.date === lowestDate ? 'bg-gold' : 'bg-sage-600'}`}
+            style={{ height: `${Math.max(4, (p.balanceCents / max) * 100)}%` }}
+          >
+            <span className="sr-only">
+              {shortDate(p.date)}: {formatCents(p.balanceCents)}
+            </span>
           </div>
         ))}
       </div>
-    </div>
+      <div aria-hidden className="mt-1 flex gap-1.5">
+        {points.map((p, i) => (
+          <span key={i} className="flex-1 text-center type-caption text-ink-faint">
+            {shortDate(p.date)}
+          </span>
+        ))}
+      </div>
+    </figure>
   );
 }
 
@@ -54,7 +61,8 @@ export function CashToPayday() {
     mutationFn: (cushionCents: number) => api('PATCH', '/me/settings', { cushionCents }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cash-to-payday'] }),
   });
-  const back = { label: 'Budget', to: '/budget' };
+  // Only the Dashboard links here (routes/table.ts).
+  const back = { label: 'Dashboard', to: '/' };
 
   if (isPending || !data) {
     return (
@@ -106,15 +114,12 @@ export function CashToPayday() {
               children: (
                 <>
                   {data.paySchedules.map((s) => (
-                    <div
-                      key={s.merchant}
-                      className="rounded-card border border-hairline bg-surface p-3.5 mb-2.5"
-                    >
-                      <div className="flex justify-between">
-                        <span className="font-semibold">{s.displayName}</span>
+                    <div key={s.merchant} className="border-b border-hairline py-3">
+                      <div className="flex justify-between gap-4">
+                        <span className="font-medium">{s.displayName}</span>
                         <MoneyText cents={-s.series.expectedAmountCents} tone="in" />
                       </div>
-                      <p className="mt-1 type-caption text-ink-faint">
+                      <p className="mt-0.5 type-caption text-ink-faint">
                         {CADENCE_LABEL[s.series.cadence] ?? s.series.cadence} · next{' '}
                         {shortDate(s.series.nextExpectedDate)}
                       </p>

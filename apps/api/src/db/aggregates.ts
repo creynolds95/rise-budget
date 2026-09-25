@@ -61,3 +61,53 @@ export async function listAggregates(
     txnCount: r.txn_count,
   }));
 }
+
+/**
+ * Dashboard spending (T41), the budget's rule: splits in budgeted *expense* categories, not
+ * dropped. Income categories are budgeted too but are money in, so the group kind excludes
+ * them. Spending per posted day over an inclusive range of periods.
+ */
+export async function spendingByDay(
+  userId: UserId,
+  db: D1Database,
+  fromPeriod: string,
+  toPeriod: string,
+): Promise<{ date: string; cents: number }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT t.posted_at AS date, SUM(s.amount_cents) AS cents
+       FROM split s
+       JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+       JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
+       JOIN category_group g ON g.id = c.group_id AND g.user_id = s.user_id
+       WHERE s.user_id = ?1 AND s.period_id BETWEEN ?2 AND ?3
+         AND c.budgeted = 1 AND g.kind = 'expense' AND t.review_state != 'dropped'
+       GROUP BY t.posted_at ORDER BY t.posted_at`,
+    )
+    .bind(userId, fromPeriod, toPeriod)
+    .all<{ date: string; cents: number }>();
+  return results;
+}
+
+/** Spending per period over an inclusive range, same rule; quiet months are simply absent. */
+export async function spendingByPeriod(
+  userId: UserId,
+  db: D1Database,
+  fromPeriod: string,
+  toPeriod: string,
+): Promise<{ periodId: string; cents: number }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT s.period_id AS periodId, SUM(s.amount_cents) AS cents
+       FROM split s
+       JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+       JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
+       JOIN category_group g ON g.id = c.group_id AND g.user_id = s.user_id
+       WHERE s.user_id = ?1 AND s.period_id BETWEEN ?2 AND ?3
+         AND c.budgeted = 1 AND g.kind = 'expense' AND t.review_state != 'dropped'
+       GROUP BY s.period_id ORDER BY s.period_id`,
+    )
+    .bind(userId, fromPeriod, toPeriod)
+    .all<{ periodId: string; cents: number }>();
+  return results;
+}
