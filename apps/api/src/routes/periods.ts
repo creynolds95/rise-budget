@@ -219,11 +219,41 @@ allocations.patch('/:id', async (c) => {
   const b = await body(c, PatchAllocationBody);
 
   const { period, view } = await loadPeriodView(c.env, userId, periodId);
-  const target = view.categories.find(
-    (x) => x.categoryId === categoryId && x.groupKind === 'expense',
-  );
+  const target = view.categories.find((x) => x.categoryId === categoryId);
   if (!target) throw new AppError(404, 'NOT_FOUND', 'Allocation not found');
   if (period.status === 'closed') throw new AppError(409, 'PERIOD_CLOSED', `${periodId} is closed`);
+
+  // An income category's planned amount is a per-paycheck target, not spending funded
+  // from the pool — none of the funding/slack machinery below applies to it.
+  if (target.groupKind === 'income') {
+    const db = c.env.DB;
+    const cats = await listCategories(userId, db);
+    const defaults = new Map(cats.map((x) => [x.id, planDefaultOf(x)]));
+    const future: D1PreparedStatement[] = [];
+    if (b.applyToFuture) {
+      const applied = applyPlanDefault({
+        periodId,
+        plannedCents: b.plannedCents,
+        existing: defaults.get(categoryId) ?? null,
+        rowPeriods: await allocationPeriods(userId, db, categoryId),
+      });
+      future.push(
+        ...applied.backfill
+          .filter((f) => f.periodId !== periodId)
+          .map((f) => seedAllocationStmt(userId, db, f.periodId, categoryId, f.plannedCents)),
+        ...applied.overwrite.map((p) => setPlannedStmt(userId, db, p, categoryId, b.plannedCents)),
+        setPlanDefaultStmt(userId, db, categoryId, applied.next),
+      );
+    }
+    await db.batch([
+      ensurePeriodStmt(userId, db, periodId),
+      seedAllocationStmt(userId, db, periodId, categoryId, b.plannedCents),
+      setPlannedStmt(userId, db, periodId, categoryId, b.plannedCents),
+      ...future,
+    ]);
+    const updated = await loadPeriodView(c.env, userId, periodId);
+    return c.json({ period: updated.period, ...updated.view });
+  }
 
   const change = {
     targetCategoryId: categoryId,
