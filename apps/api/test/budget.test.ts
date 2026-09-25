@@ -345,6 +345,16 @@ describe('T19 allocation edit + reallocation', () => {
     expect(row.plannedCents).toBe(260_000);
   });
 
+  it("a paycheck's plan is the period's expected income — the two never drift (Caleb 2026-09-25)", async () => {
+    const s = await setup();
+    const wife = (await s.api('POST', '/categories', { groupId: s.pay.groupId, name: 'Wife pay' }))
+      .json;
+    await s.api('PATCH', `/allocations/${PERIOD}:${s.pay.id}`, { plannedCents: 260_000 });
+    await s.api('PATCH', `/allocations/${PERIOD}:${wife.id}`, { plannedCents: 150_000 });
+    const res = await s.api('GET', `/periods/${PERIOD}`);
+    expect(res.json.expectedIncomeCents).toBe(410_000);
+  });
+
   it("cannot touch another user's categories", async () => {
     const a = await setup();
     const b = await signedInUser();
