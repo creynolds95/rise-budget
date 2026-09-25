@@ -24,6 +24,8 @@ export const ROUTES = [
   { path: '/accounts/:id', depth: 1 },
   { path: '/transactions/:id', depth: 1 },
   { path: '/budget/:categoryId', depth: 1 },
+  /** The Sankey money-flow chart, pushed from Budget rather than a fifth tab. */
+  { path: '/budget/flow', depth: 1 },
   { path: '/settings/:section', depth: 1 },
 ] as const;
 

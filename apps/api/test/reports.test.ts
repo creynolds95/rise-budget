@@ -66,3 +66,57 @@ describe('T41 dashboard spending report', () => {
     ).toBe(400);
   });
 });
+
+describe('money-flow (Sankey) report', () => {
+  it('flows income through group totals into categories, with leftover', async () => {
+    const u = await signedInUser();
+    const api = (method: string, path: string, body?: unknown) =>
+      call(method, path, { access: u.access, body });
+    const expense = (await api('POST', '/category-groups', { name: 'Food', kind: 'expense' })).json;
+    const income = (await api('POST', '/category-groups', { name: 'In', kind: 'income' })).json;
+    const food = (await api('POST', '/categories', { groupId: expense.id, name: 'Groceries' })).json;
+    const pay = (await api('POST', '/categories', { groupId: income.id, name: 'Paycheck' })).json;
+    const card = (await api('POST', '/accounts', { name: 'Card', kind: 'credit' })).json;
+    const txn = async (postedAt: string, amountCents: number, categoryId: string) =>
+      api('POST', '/transactions', {
+        accountId: card.id,
+        postedAt,
+        amountCents,
+        descriptor: 'X',
+        categoryId,
+      });
+
+    await txn('2026-09-02', -1_000, pay.id);
+    await txn('2026-09-03', 300, food.id);
+
+    const r = await api('GET', '/reports/money-flow?month=2026-09');
+    expect(r.status).toBe(200);
+    expect(r.json.month).toBe('2026-09');
+    // Node/link order follows category id order, which is random — compare as sets.
+    expect(new Set(r.json.nodes.map((n: { id: string }) => n.id))).toEqual(
+      new Set(['income', `group:${expense.id}`, `cat:${food.id}`, `cat:${pay.id}`, 'leftover']),
+    );
+    expect(r.json.links).toContainEqual({
+      source: 'income',
+      target: `group:${expense.id}`,
+      valueCents: 300,
+    });
+    expect(r.json.links).toContainEqual({
+      source: `cat:${pay.id}`,
+      target: 'income',
+      valueCents: 1_000,
+    });
+    expect(r.json.links).toContainEqual({
+      source: `group:${expense.id}`,
+      target: `cat:${food.id}`,
+      valueCents: 300,
+    });
+    expect(r.json.links).toContainEqual({ source: 'income', target: 'leftover', valueCents: 700 });
+    expect(r.json.links).toHaveLength(4);
+  });
+
+  it('rejects a missing or malformed month', async () => {
+    const u = await signedInUser();
+    expect((await call('GET', '/reports/money-flow', { access: u.access })).status).toBe(400);
+  });
+});

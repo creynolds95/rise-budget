@@ -1,6 +1,7 @@
 import type {
   Category,
   CategoryGroup,
+  MoneyFlowReport,
   RecurringSeries,
   Rule,
   SpendingReport,
@@ -73,6 +74,14 @@ export const useSpendingReport = (month: string) =>
   useQuery({
     queryKey: ['reports', 'spending', month],
     queryFn: () => get<SpendingReport>(`/reports/spending?month=${month}`),
+    placeholderData: keepPreviousData,
+  });
+
+/** The Budget tab's "money flow" screen: income → expense groups → categories. */
+export const useMoneyFlow = (month: string) =>
+  useQuery({
+    queryKey: ['reports', 'money-flow', month],
+    queryFn: () => get<MoneyFlowReport>(`/reports/money-flow?month=${month}`),
     placeholderData: keepPreviousData,
   });
 

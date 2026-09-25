@@ -77,13 +77,22 @@ export function Budget() {
             <p className="type-label text-ink-muted">
               {closed ? 'Returned to the pool' : 'Ready to assign'}
             </p>
-            <Link
-              to={`/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`}
-              aria-label="Budget settings"
-              className="-mr-2 flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-            >
-              <Icon name="sliders" />
-            </Link>
+            <div className="-mr-2 flex items-center">
+              <Link
+                to={`/budget/flow?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}${month === today.slice(0, 7) ? '' : `&m=${month}`}`}
+                aria-label="Money flow"
+                className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+              >
+                <Icon name="flow" />
+              </Link>
+              <Link
+                to={`/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`}
+                aria-label="Budget settings"
+                className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+              >
+                <Icon name="sliders" />
+              </Link>
+            </div>
           </div>
           <p className="mt-1 type-display">
             <MoneyText
