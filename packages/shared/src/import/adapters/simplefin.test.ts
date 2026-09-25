@@ -113,6 +113,10 @@ describe('SimpleFIN adapter (SPEC §6.1, §6.3)', () => {
       syncCadenceHours: 720,
     });
     expect(g('Auto Loan', 'USAA', '-9000.00')).toMatchObject({ kind: 'loan' });
+    expect(g('Fidelity 401(k)', 'Fidelity', '50000.00')).toMatchObject({
+      kind: 'investment',
+      includeInBudget: false,
+    });
     expect(toIncomingAccount(account({ org: { domain: 'usaa.com' } }), TZ).institutionName).toBe(
       'usaa.com',
     );

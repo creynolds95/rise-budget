@@ -171,6 +171,15 @@ describe('categorize precedence (SPEC §4)', () => {
     });
   });
 
+  it("off a cash account, direction is skipped: a card ledger's own negative amount can still match an expense-only seed", () => {
+    // Same income-signed amount as above, but on a credit account — its own ledger sign
+    // doesn't mean "income" the way a checking account's would, so nothing is filtered out.
+    expect(categorize(input({ amountCents: -5_000, accountKind: 'credit' }))).toMatchObject({
+      categoryId: 'gas',
+      layer: 'seed',
+    });
+  });
+
   it('nothing matches: no suggestion', () => {
     expect(categorize(input({ merchant: 'ACME WIDGETS', descriptor: 'ACME WIDGETS' }))).toEqual({
       categoryId: null,
