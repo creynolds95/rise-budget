@@ -134,6 +134,9 @@ function Editor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Set once the plain delete comes back CATEGORY_IN_USE — offers the reassign-and-delete
+  // retry instead of sending the user off to move things by hand first.
+  const [inUsePeriod, setInUsePeriod] = useState<string | null>(null);
   const ruleCount = rules.filter((r) => r.categoryId === category.id).length;
 
   const patch: Record<string, unknown> = {};
@@ -329,7 +332,9 @@ function Editor({
           <div className="rounded-card bg-surface p-4 shadow-soft">
             <p className="font-medium">Delete {category.name}?</p>
             <p className="mt-1 type-caption text-ink-muted">
-              Past transactions and history keep it.
+              {inUsePeriod
+                ? `It still has money or spending in ${monthName(inUsePeriod, false)}. Moving it will set its plan to $0 (returned to Ready to assign) and move its transactions to Other, marked to review.`
+                : 'Past transactions and history keep it.'}
               {ruleCount > 0 &&
                 ` ${ruleCount} ${ruleCount === 1 ? 'rule that files' : 'rules that file'} into it will be deleted too.`}
             </p>
@@ -338,14 +343,18 @@ function Editor({
               <Button
                 variant="danger"
                 className="flex-1 border border-clay"
-                disabled={busy || deleteError !== null}
+                disabled={busy}
                 onClick={async () => {
                   setBusy(true);
                   try {
-                    await api('DELETE', `/categories/${category.id}`);
+                    await api(
+                      'DELETE',
+                      `/categories/${category.id}${inUsePeriod ? '?reassign=true' : ''}`,
+                    );
                     await Promise.all([
                       invalidate(),
                       qc.invalidateQueries({ queryKey: ['rules'] }),
+                      qc.invalidateQueries({ queryKey: ['transactions'] }),
                     ]);
                     onClose();
                     onDeleted?.();
@@ -354,19 +363,20 @@ function Editor({
                       e instanceof ApiError && e.code === 'CATEGORY_IN_USE'
                         ? (e.detail as { periodId?: string } | undefined)?.periodId
                         : undefined;
-                    setDeleteError(
-                      month
-                        ? `It still has money or spending in ${monthName(month, false)}. Set its plan to $0 and move its transactions to another category, then delete it.`
-                        : e instanceof ApiError
-                          ? e.message
-                          : 'Could not delete. Try again.',
-                    );
+                    if (month) {
+                      setInUsePeriod(month);
+                      setDeleteError(null);
+                    } else {
+                      setDeleteError(
+                        e instanceof ApiError ? e.message : 'Could not delete. Try again.',
+                      );
+                    }
                   } finally {
                     setBusy(false);
                   }
                 }}
               >
-                Delete
+                {inUsePeriod ? 'Move & delete' : 'Delete'}
               </Button>
               <Button
                 variant="quiet"
@@ -374,6 +384,7 @@ function Editor({
                 onClick={() => {
                   setConfirmDelete(false);
                   setDeleteError(null);
+                  setInUsePeriod(null);
                 }}
               >
                 Keep it

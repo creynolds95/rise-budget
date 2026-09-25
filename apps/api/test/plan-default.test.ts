@@ -142,7 +142,7 @@ describe('SPEC §2.10 deleting a category', () => {
     });
     const r = await s.api('DELETE', `/categories/${s.food.id}`);
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ archived: s.food.id, rulesDeleted: 1 });
+    expect(r.json).toEqual({ archived: s.food.id, rulesDeleted: 1, transactionsMoved: 0 });
     expect((await s.api('GET', '/categories')).json).toEqual([]);
     expect((await s.api('GET', '/rules')).json).toEqual([]);
     const audit = await env.DB.prepare(

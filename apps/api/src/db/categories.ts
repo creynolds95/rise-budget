@@ -6,6 +6,7 @@ import {
   type RolloverPolicy,
   type SpendShape,
 } from '@rise/shared/schemas';
+import { reassignSplitStmts, splitsFor } from './transactions';
 import { bool, newId, nowIso, type UserId } from './util';
 
 interface GroupRow {
@@ -444,6 +445,69 @@ export async function categoryMoneyInOpenMonths(
     .bind(userId, id)
     .first<{ period_id: string }>();
   return row ? { periodId: row.period_id } : null;
+}
+
+/**
+ * The `categoryMoneyInOpenMonths` money, cleared: every open-month allocation for this
+ * category (planned and carried-in) goes to 0, freeing it back to Ready to assign. Mirrors
+ * that function's own "open" definition — a period with no row yet still counts as open.
+ */
+export function clearCategoryOpenAllocationsStmt(
+  userId: UserId,
+  db: D1Database,
+  categoryId: string,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE allocation SET planned_cents = 0, carried_in_cents = 0
+       WHERE user_id = ?1 AND category_id = ?2
+         AND NOT EXISTS (SELECT 1 FROM period p
+           WHERE p.user_id = ?1 AND p.id = allocation.period_id AND p.status = 'closed')`,
+    )
+    .bind(userId, categoryId);
+}
+
+/**
+ * The other half of `categoryMoneyInOpenMonths`'s money: every open-month, non-dropped
+ * transaction still filed under this category moves to `toCategoryId` (the catch-all) and
+ * goes back to needs-review, same as any other unconfirmed guess. Closed-month history keeps
+ * its category untouched (SPEC §2.10 "archive, never erase").
+ */
+export async function reassignOpenCategoryStmts(
+  userId: UserId,
+  db: D1Database,
+  categoryId: string,
+  toCategoryId: string,
+): Promise<{ stmts: D1PreparedStatement[]; movedCount: number }> {
+  const { results: rows } = await db
+    .prepare(
+      `SELECT DISTINCT t.id, t.posted_at, t.amount_cents
+       FROM split s
+       JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+       WHERE s.user_id = ?1 AND s.category_id = ?2 AND t.review_state != 'dropped'
+         AND NOT EXISTS (SELECT 1 FROM period p
+           WHERE p.user_id = ?1 AND p.id = s.period_id AND p.status = 'closed')`,
+    )
+    .bind(userId, categoryId)
+    .all<{ id: string; posted_at: string; amount_cents: number }>();
+
+  const oldSplits = await splitsFor(
+    userId,
+    db,
+    rows.map((r) => r.id),
+  );
+  const stmts: D1PreparedStatement[] = [];
+  for (const t of rows) {
+    stmts.push(...(await reassignSplitStmts(userId, db, t, oldSplits.get(t.id) ?? [], toCategoryId)));
+    stmts.push(
+      db
+        .prepare(
+          `UPDATE txn SET review_state = 'needs_review', updated_at = ?3 WHERE user_id = ?1 AND id = ?2`,
+        )
+        .bind(userId, t.id, nowIso()),
+    );
+  }
+  return { stmts, movedCount: rows.length };
 }
 
 export function archiveCategoryStmts(

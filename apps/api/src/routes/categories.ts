@@ -12,9 +12,11 @@ import {
   categoryHistory,
   categoryMoneyInOpenMonths,
   clearCarriedInStmt,
+  clearCategoryOpenAllocationsStmt,
   createCategory,
   createGroup,
   deleteGroup,
+  ensureCatchallCategory,
   getCategory,
   getGroup,
   getPeriod,
@@ -25,6 +27,7 @@ import {
   listGroups,
   listRules,
   planDefaultOf,
+  reassignOpenCategoryStmts,
   updateCategory,
   updateGroup,
   writeAudit,
@@ -103,8 +106,12 @@ categories.patch('/:id', async (c) => {
 });
 
 /**
- * SPEC §2.10: archive, never erase. Refused while the category holds money in an open month;
- * its rules go with it, each audited.
+ * SPEC §2.10: archive, never erase. Refused while the category holds money in an open month,
+ * unless `?reassign=true` — the user's explicit "move it for me" confirm — in which case its
+ * open-month plan/carry-in return to Ready to assign and its transactions move to the
+ * catch-all "Other" category as needs-review (never silently: this is the same one confirm
+ * click as a plain delete, just doing the move the error message used to ask for by hand).
+ * Its rules go with it either way, each audited.
  */
 categories.delete('/:id', async (c) => {
   const userId = c.get('userId');
@@ -112,8 +119,10 @@ categories.delete('/:id', async (c) => {
   const id = c.req.param('id');
   const cat = await getCategory(userId, db, id);
   if (!cat || cat.archivedAt) throw new AppError(404, 'NOT_FOUND', 'Category not found');
+  if (cat.isCatchall) throw new AppError(409, 'CONFLICT', `${cat.name} is the fallback category and can't be deleted.`);
   const inUse = await categoryMoneyInOpenMonths(userId, db, id);
-  if (inUse) {
+  const reassign = c.req.query('reassign') === 'true';
+  if (inUse && !reassign) {
     throw new AppError(
       409,
       'CATEGORY_IN_USE',
@@ -122,7 +131,15 @@ categories.delete('/:id', async (c) => {
     );
   }
   const rules = (await listRules(userId, db)).filter((r) => r.categoryId === id);
-  await db.batch(archiveCategoryStmts(userId, db, id));
+  const stmts = [...archiveCategoryStmts(userId, db, id)];
+  let transactionsMoved = 0;
+  if (inUse && reassign) {
+    const catchall = await ensureCatchallCategory(userId, db);
+    const moved = await reassignOpenCategoryStmts(userId, db, id, catchall.id);
+    stmts.push(clearCategoryOpenAllocationsStmt(userId, db, id), ...moved.stmts);
+    transactionsMoved = moved.movedCount;
+  }
+  await db.batch(stmts);
   for (const r of rules) {
     await writeAudit(userId, db, 'rule.deleted', {
       type: 'rule',
@@ -130,7 +147,14 @@ categories.delete('/:id', async (c) => {
       detail: { reason: 'category_deleted', categoryId: id },
     });
   }
-  return c.json({ archived: id, rulesDeleted: rules.length });
+  if (transactionsMoved > 0) {
+    await writeAudit(userId, db, 'category.deleted_with_reassign', {
+      type: 'category',
+      id,
+      detail: { reassignedTo: 'Other', transactionsMoved },
+    });
+  }
+  return c.json({ archived: id, rulesDeleted: rules.length, transactionsMoved });
 });
 
 const MONTHS_MAX = 36;

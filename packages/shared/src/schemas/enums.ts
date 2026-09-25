@@ -51,6 +51,7 @@ export const AuditAction = z.enum([
   'period.closed',
   'period.recalculated',
   'category.deficit_forgiven',
+  'category.deleted_with_reassign',
   'rule.created',
   'rule.deleted',
   'account.linked',
