@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { averageCents, cumulativeSpend, monthlySeries, sameDayTotal } from './index';
+import {
+  averageCents,
+  buildMoneyFlow,
+  cumulativeSpend,
+  monthlySeries,
+  sameDayTotal,
+  type MoneyFlowCategoryInput,
+} from './index';
 
 describe('cumulativeSpend', () => {
   it('runs a total across every day of the month', () => {
@@ -93,5 +100,60 @@ describe('averageCents', () => {
   });
   it('is null with nothing to average', () => {
     expect(averageCents([])).toBeNull();
+  });
+});
+
+describe('buildMoneyFlow', () => {
+  const cat = (over: Partial<MoneyFlowCategoryInput>): MoneyFlowCategoryInput => ({
+    categoryId: 'c1',
+    categoryName: 'Category',
+    groupId: 'g1',
+    groupName: 'Group',
+    groupKind: 'expense',
+    spentCents: 0,
+    ...over,
+  });
+
+  it('flows income through its group total into each category, with leftover', () => {
+    const flow = buildMoneyFlow([
+      cat({ categoryId: 'pay', categoryName: 'Paycheck', groupKind: 'income', spentCents: -1_000 }),
+      cat({ categoryId: 'gro', categoryName: 'Groceries', groupId: 'food', groupName: 'Food', spentCents: 300 }),
+      cat({ categoryId: 'res', categoryName: 'Restaurants', groupId: 'food', groupName: 'Food', spentCents: 200 }),
+    ]);
+    expect(flow.nodes.map((n) => n.id)).toEqual([
+      'income',
+      'cat:pay',
+      'group:food',
+      'cat:gro',
+      'cat:res',
+      'leftover',
+    ]);
+    expect(flow.links).toEqual([
+      { source: 'income', target: 'group:food', valueCents: 500 },
+      { source: 'cat:pay', target: 'income', valueCents: 1_000 },
+      { source: 'group:food', target: 'cat:gro', valueCents: 300 },
+      { source: 'group:food', target: 'cat:res', valueCents: 200 },
+      { source: 'income', target: 'leftover', valueCents: 500 },
+    ]);
+  });
+
+  it('skips an income category that earned nothing (a refund making it net-negative)', () => {
+    const flow = buildMoneyFlow([cat({ groupKind: 'income', spentCents: 5 })]);
+    expect(flow.nodes).toEqual([{ id: 'income', name: 'Income' }]);
+    expect(flow.links).toEqual([]);
+  });
+
+  it('skips an expense category with nothing spent (a pure refund)', () => {
+    const flow = buildMoneyFlow([cat({ spentCents: -50 })]);
+    expect(flow.nodes).toEqual([{ id: 'income', name: 'Income' }]);
+    expect(flow.links).toEqual([]);
+  });
+
+  it('has no leftover link when spending meets or exceeds income', () => {
+    const flow = buildMoneyFlow([
+      cat({ categoryId: 'pay', groupKind: 'income', spentCents: -100 }),
+      cat({ categoryId: 'gro', spentCents: 150 }),
+    ]);
+    expect(flow.nodes.some((n) => n.id === 'leftover')).toBe(false);
   });
 });

@@ -282,3 +282,13 @@ export const SpendingReport = z.object({
   months: z.array(z.object({ periodId: PeriodId, cents: Cents })),
 });
 export type SpendingReport = z.infer<typeof SpendingReport>;
+
+export const MoneyFlowReportQuery = z.object({ month: PeriodId });
+
+/** Money-flow (Sankey) diagram: income → expense groups → categories, plus what's left over. */
+export const MoneyFlowReport = z.object({
+  month: PeriodId,
+  nodes: z.array(z.object({ id: z.string(), name: z.string() })),
+  links: z.array(z.object({ source: z.string(), target: z.string(), valueCents: Cents })),
+});
+export type MoneyFlowReport = z.infer<typeof MoneyFlowReport>;
