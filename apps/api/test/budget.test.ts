@@ -307,7 +307,7 @@ describe('T19 allocation edit + reallocation', () => {
     expect(res.json.poolCents).toBe(80_000);
   });
 
-  it('closed periods cannot be edited; income categories and unknown ids 404', async () => {
+  it('closed periods cannot be edited; unknown ids 404', async () => {
     const s = await setup();
     await s.api('PATCH', `/periods/2026-08`, { expectedIncomeCents: 1 });
     await env.DB.prepare(
@@ -319,10 +319,30 @@ describe('T19 allocation edit + reallocation', () => {
       (await s.api('PATCH', `/allocations/2026-08:${s.groceries.id}`, { plannedCents: 1 })).json
         .error.code,
     ).toBe('PERIOD_CLOSED');
-    expect(
-      (await s.api('PATCH', `/allocations/${PERIOD}:${s.pay.id}`, { plannedCents: 1 })).status,
-    ).toBe(404);
     expect((await s.api('PATCH', `/allocations/nope`, { plannedCents: 1 })).status).toBe(404);
+  });
+
+  it('an income category (a paycheck target) saves directly, no pool/funding involved', async () => {
+    const s = await setup();
+    const res = await s.api('PATCH', `/allocations/${PERIOD}:${s.pay.id}`, {
+      plannedCents: 260_000,
+    });
+    expect(res.status).toBe(200);
+    const row = res.json.categories.find((c: { categoryId: string }) => c.categoryId === s.pay.id);
+    expect(row.plannedCents).toBe(260_000);
+    // Editing it doesn't touch the expense pool.
+    expect(res.json.poolCents).toBe((await s.api('GET', `/periods/${PERIOD}`)).json.poolCents);
+  });
+
+  it('applyToFuture on an income category carries into later months too', async () => {
+    const s = await setup();
+    await s.api('PATCH', `/allocations/${PERIOD}:${s.pay.id}`, {
+      plannedCents: 260_000,
+      applyToFuture: true,
+    });
+    const next = await s.api('GET', `/periods/2026-10`);
+    const row = next.json.categories.find((c: { categoryId: string }) => c.categoryId === s.pay.id);
+    expect(row.plannedCents).toBe(260_000);
   });
 
   it("cannot touch another user's categories", async () => {

@@ -5,22 +5,27 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
  * by `92dvh` alone briefly renders taller than what's actually visible above the keyboard —
  * the tail of its content sits behind the keyboard instead of being scrollable into view.
  * `visualViewport` reports the real visible height as the keyboard animates, so the sheet's
- * cap tracks it directly.
+ * cap tracks it directly. In an installed (standalone) PWA, iOS is known to skip the
+ * `resize`/`scroll` events on `visualViewport` when the keyboard opens, so a short poll while
+ * the sheet is up is the fallback that actually catches the change.
  */
-function useVisibleViewportHeight() {
+function useVisibleViewportHeight(active: boolean) {
   const [height, setHeight] = useState<number | null>(null);
   useEffect(() => {
+    if (!active) return;
     const vv = window.visualViewport;
     if (!vv) return;
     const update = () => setHeight(vv.height);
     update();
     vv.addEventListener('resize', update);
     vv.addEventListener('scroll', update);
+    const poll = window.setInterval(update, 150);
     return () => {
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);
+      window.clearInterval(poll);
     };
-  }, []);
+  }, [active]);
   return height;
 }
 
@@ -46,7 +51,7 @@ export function Sheet({
   children: ReactNode;
 }) {
   const id = useId();
-  const viewportHeight = useVisibleViewportHeight();
+  const viewportHeight = useVisibleViewportHeight(open);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
