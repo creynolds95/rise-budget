@@ -39,18 +39,24 @@ export async function buildCashToPaydayProjection(
   today: string,
   startBalanceCents: number,
   cushionCents: number,
+  dismissedMerchants: readonly string[] = [],
 ): Promise<CashToPaydayResult> {
   const from = dateFromDayNumber(dayNumber(today) - LOOKBACK_DAYS);
   const [byMerchant, manualRules] = await Promise.all([
     listOccurrences(userId, db, from),
     listManualRules(userId, db),
   ]);
+  const dismissed = new Set(dismissedMerchants);
   const manualMerchants = new Set(manualRules.map((r) => r.merchant_normalized));
   const detected: { merchant: string; series: DetectedSeries }[] = [];
   for (const [merchant, occ] of byMerchant) {
     // A merchant Caleb tagged "Recurring Cash Withdrawal" owns its own rule below — never
     // let live auto-detection compete with it for the same merchant.
     if (manualMerchants.has(merchant)) continue;
+    // Dismissed from the Surplus tool (e.g. an ex-employer's payroll) — never resurface it,
+    // even though the transactions behind it are still real history (SPEC's live-recompute
+    // detection would otherwise keep finding it every request).
+    if (dismissed.has(merchant)) continue;
     // Semimonthly first — see the same note in lib/recurring.ts's refreshRecurring.
     const series = detectSemimonthly(occ, today) ?? detectSeries(occ, today);
     if (series && series.status === 'active') detected.push({ merchant, series });

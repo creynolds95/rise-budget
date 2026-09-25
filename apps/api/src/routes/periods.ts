@@ -251,6 +251,13 @@ allocations.patch('/:id', async (c) => {
       setPlannedStmt(userId, db, periodId, categoryId, b.plannedCents),
       ...future,
     ]);
+    // Paychecks are the period's expected income now (Caleb, 2026-09-25) — resync it from
+    // the sum of every income category's plan so the two can never drift apart.
+    const resynced = await loadPeriodView(c.env, userId, periodId);
+    const totalIncomePlanned = resynced.view.categories
+      .filter((x) => x.groupKind === 'income')
+      .reduce((n, x) => n + x.plannedCents, 0);
+    await setExpectedIncome(userId, db, periodId, totalIncomePlanned);
     const updated = await loadPeriodView(c.env, userId, periodId);
     return c.json({ period: updated.period, ...updated.view });
   }

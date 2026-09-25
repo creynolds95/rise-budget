@@ -55,3 +55,12 @@ createRoot(document.getElementById('root') as HTMLElement).render(
     </PersistQueryClientProvider>
   </StrictMode>,
 );
+
+// The static splash in index.html covers the parse/execute gap; fade it out now that React
+// has mounted and is about to paint.
+requestAnimationFrame(() => {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  splash.style.opacity = '0';
+  setTimeout(() => splash.remove(), 300);
+});

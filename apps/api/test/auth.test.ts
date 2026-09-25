@@ -308,6 +308,7 @@ describe('T16 auth middleware + error contract', () => {
       planChangesApplyToFuture: false,
       cushionCents: 50_000,
       cashAccountIds: [],
+      dismissedPayMerchants: [],
     });
   });
 });

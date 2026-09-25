@@ -228,6 +228,12 @@ export function CashToPayday() {
     mutationFn: (id: string) => api('DELETE', `/cash-to-payday/manual-events/${id}`),
     onSuccess: refresh,
   });
+  const dismissed = data?.dismissedPayMerchants ?? [];
+  const setDismissed = useMutation({
+    mutationFn: (next: { merchant: string; displayName: string }[]) =>
+      api('PATCH', '/me/settings', { dismissedPayMerchants: next }),
+    onSuccess: refresh,
+  });
   // Only the Dashboard links here (routes/table.ts).
   const back = { label: 'Dashboard', to: '/' };
 
@@ -255,178 +261,273 @@ export function CashToPayday() {
   const upcomingExpenses = upcoming.filter((e) => e.deltaCents < 0);
 
   return (
-    <DetailPage
-      header={{ back, title: 'Surplus' }}
-      identity={{
-        label: 'Free to move right now',
-        hero: noPaySchedule ? (
-          <span className="text-2xl font-semibold text-ink-muted">Confirm your pay dates</span>
-        ) : (
-          <MoneyText cents={data.freeToMoveCents} whole />
-        ),
-        context: noPaySchedule ? (
-          'No pay schedule found yet — add your income below, or wait for Rise to see a paycheck post.'
-        ) : data.lowestPoint.date !== data.points[0]?.date ? (
+    <>
+      <DetailPage
+        header={{ back, title: 'Surplus' }}
+        identity={{
+          label: 'Free to move right now',
+          hero: noPaySchedule ? (
+            <span className="text-2xl font-semibold text-ink-muted">Confirm your pay dates</span>
+          ) : (
+            <MoneyText cents={data.freeToMoveCents} whole />
+          ),
+          context: noPaySchedule ? (
+            'No pay schedule found yet — add your income below, or wait for Rise to see a paycheck post.'
+          ) : data.lowestPoint.date !== data.points[0]?.date ? (
+            <>
+              Lowest point is{' '}
+              <strong className="text-ink">{shortDate(data.lowestPoint.date)}</strong>, after{' '}
+              {data.lowestPoint.label}.
+            </>
+          ) : undefined,
+        }}
+        shape={
+          noPaySchedule ? undefined : (
+            <Shape points={data.points} lowestDate={data.lowestPoint.date} />
+          )
+        }
+        facts={
           <>
-            Lowest point is <strong className="text-ink">{shortDate(data.lowestPoint.date)}</strong>
-            , after {data.lowestPoint.label}.
+            <button
+              type="button"
+              onClick={() => setPickingAccounts(true)}
+              className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-hairline py-3 text-left active:bg-sage-100"
+            >
+              <span className="text-ink">Cash accounts</span>
+              <span className="flex items-center gap-2 text-ink-muted">
+                {data.cashAccounts.map((a) => a.name).join(', ') || 'All checking'}
+                <Chevron />
+              </span>
+            </button>
+            <EditRow
+              label="Cushion held back"
+              field={
+                <MoneyField
+                  label="Cushion held back"
+                  cents={data.cushionCents}
+                  onCommit={(v) => patch.mutate(v)}
+                />
+              }
+            />
+            <CashAccountsSheet
+              open={pickingAccounts}
+              onClose={() => setPickingAccounts(false)}
+              selectedIds={me.data?.settings.cashAccountIds ?? []}
+            />
           </>
-        ) : undefined,
-      }}
-      shape={
-        noPaySchedule ? undefined : (
-          <Shape points={data.points} lowestDate={data.lowestPoint.date} />
-        )
-      }
-      facts={
-        <>
-          <button
-            type="button"
-            onClick={() => setPickingAccounts(true)}
-            className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-hairline py-3 text-left active:bg-sage-100"
-          >
-            <span className="text-ink">Cash accounts</span>
-            <span className="flex items-center gap-2 text-ink-muted">
-              {data.cashAccounts.map((a) => a.name).join(', ') || 'All checking'}
-              <Chevron />
-            </span>
-          </button>
-          <EditRow
-            label="Cushion held back"
-            field={
-              <MoneyField
-                label="Cushion held back"
-                cents={data.cushionCents}
-                onCommit={(v) => patch.mutate(v)}
-              />
-            }
-          />
-          <CashAccountsSheet
-            open={pickingAccounts}
-            onClose={() => setPickingAccounts(false)}
-            selectedIds={me.data?.settings.cashAccountIds ?? []}
-          />
-        </>
-      }
-      related={{
-        title: "What's ahead",
-        children: (
-          <>
-            <div className="flex items-center justify-between border-b border-hairline pb-3">
-              <h3 className="type-title">Upcoming income</h3>
-              <button
-                type="button"
-                className="text-sage-700"
-                onClick={() => setAddingKind('income')}
-              >
-                Add
-              </button>
-            </div>
-            {upcomingIncome.length === 0 ? (
-              <p className="py-3 text-ink-muted">Nothing expected yet.</p>
-            ) : (
-              upcomingIncome.map((e, i) => (
-                <div key={i} className="flex justify-between gap-4 border-b border-hairline py-3">
-                  <span>
-                    {e.label}
-                    <span className="ml-2 type-caption text-ink-faint">{shortDate(e.date)}</span>
-                  </span>
-                  <MoneyText cents={e.deltaCents} tone="in" />
-                </div>
-              ))
-            )}
-
-            <div className="mt-6 flex items-center justify-between border-b border-hairline pb-3">
-              <h3 className="type-title">Upcoming expenses</h3>
-              <button
-                type="button"
-                className="text-sage-700"
-                onClick={() => setAddingKind('expense')}
-              >
-                Add
-              </button>
-            </div>
-            {upcomingExpenses.length === 0 ? (
-              <p className="py-3 text-ink-muted">Nothing expected yet.</p>
-            ) : (
-              upcomingExpenses.map((e, i) => (
-                <div key={i} className="flex justify-between gap-4 border-b border-hairline py-3">
-                  <span>
-                    {e.label}
-                    <span className="ml-2 type-caption text-ink-faint">{shortDate(e.date)}</span>
-                  </span>
-                  <MoneyText cents={e.deltaCents} />
-                </div>
-              ))
-            )}
-
-            {manualEvents.data && manualEvents.data.length > 0 && (
+        }
+        related={[
+          {
+            title: 'Upcoming income',
+            children: (
               <>
-                <h3 className="mt-6 type-title border-b border-hairline pb-3">Hand-added</h3>
-                {manualEvents.data.map((m) => (
-                  <div
-                    key={m.id}
-                    className="flex items-center justify-between gap-4 border-b border-hairline py-3"
+                <div className="flex items-center justify-between border-b border-hairline pb-3">
+                  <h3 className="type-title">Income</h3>
+                  <button
+                    type="button"
+                    className="text-sage-700"
+                    onClick={() => setAddingKind('income')}
                   >
-                    <span>
-                      {m.label}
-                      <span className="ml-2 type-caption text-ink-faint">
-                        {CADENCE_LABEL[m.cadence] ?? m.cadence} · next{' '}
-                        {shortDate(m.nextExpectedDate)}
+                    Add
+                  </button>
+                </div>
+                {upcomingIncome.length === 0 ? (
+                  <p className="py-3 text-ink-muted">Nothing expected yet.</p>
+                ) : (
+                  upcomingIncome.map((e, i) => (
+                    <div
+                      key={i}
+                      className="flex justify-between gap-4 border-b border-hairline py-3"
+                    >
+                      <span>
+                        {e.label}
+                        <span className="ml-2 type-caption text-ink-faint">
+                          {shortDate(e.date)}
+                        </span>
                       </span>
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <MoneyText cents={m.kind === 'income' ? m.amountCents : -m.amountCents} />
-                      <button
-                        type="button"
-                        className="type-caption text-ink-faint"
-                        onClick={() => removeEvent.mutate(m.id)}
+                      <MoneyText cents={e.deltaCents} tone="in" />
+                    </div>
+                  ))
+                )}
+
+                {manualEvents.data &&
+                  manualEvents.data.filter((m) => m.kind === 'income').length > 0 && (
+                    <>
+                      <h3 className="mt-6 type-title border-b border-hairline pb-3">Hand-added</h3>
+                      {manualEvents.data
+                        .filter((m) => m.kind === 'income')
+                        .map((m) => (
+                          <div
+                            key={m.id}
+                            className="flex items-center justify-between gap-4 border-b border-hairline py-3"
+                          >
+                            <span>
+                              {m.label}
+                              <span className="ml-2 type-caption text-ink-faint">
+                                {CADENCE_LABEL[m.cadence] ?? m.cadence} · next{' '}
+                                {shortDate(m.nextExpectedDate)}
+                              </span>
+                            </span>
+                            <div className="flex items-center gap-3">
+                              <MoneyText cents={m.amountCents} tone="in" />
+                              <button
+                                type="button"
+                                className="type-caption text-ink-faint"
+                                onClick={() => removeEvent.mutate(m.id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </>
+                  )}
+
+                {data.paySchedules.some((s) => !s.isManual) && (
+                  <>
+                    <h3 className="mt-6 type-title border-b border-hairline pb-3">
+                      Pay schedules detected ({data.paySchedules.filter((s) => !s.isManual).length})
+                    </h3>
+                    {data.paySchedules
+                      .filter((s) => !s.isManual)
+                      .map((s) => (
+                        <div key={s.merchant} className="border-b border-hairline py-3">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="font-medium">{s.displayName}</span>
+                            <div className="flex items-center gap-3">
+                              <MoneyText cents={-s.series.expectedAmountCents} tone="in" />
+                              <button
+                                type="button"
+                                className="type-caption text-ink-faint"
+                                onClick={() =>
+                                  setDismissed.mutate([
+                                    ...dismissed,
+                                    { merchant: s.merchant, displayName: s.displayName },
+                                  ])
+                                }
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                          <p className="mt-0.5 type-caption text-ink-faint">
+                            {CADENCE_LABEL[s.series.cadence] ?? s.series.cadence} · next{' '}
+                            {shortDate(s.series.nextExpectedDate)}
+                          </p>
+                        </div>
+                      ))}
+                  </>
+                )}
+
+                {dismissed.length > 0 && (
+                  <>
+                    <h3 className="mt-6 type-title border-b border-hairline pb-3">
+                      No longer counted
+                    </h3>
+                    {dismissed.map((d) => (
+                      <div
+                        key={d.merchant}
+                        className="flex items-center justify-between gap-4 border-b border-hairline py-3"
                       >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-
-            {data.paySchedules.some((s) => !s.isManual) && (
-              <>
-                <h3 className="mt-6 type-title border-b border-hairline pb-3">
-                  Pay schedules detected ({data.paySchedules.filter((s) => !s.isManual).length})
-                </h3>
-                {data.paySchedules
-                  .filter((s) => !s.isManual)
-                  .map((s) => (
-                    <div key={s.merchant} className="border-b border-hairline py-3">
-                      <div className="flex justify-between gap-4">
-                        <span className="font-medium">{s.displayName}</span>
-                        <MoneyText cents={-s.series.expectedAmountCents} tone="in" />
+                        <span className="text-ink-muted">{d.displayName}</span>
+                        <button
+                          type="button"
+                          className="type-caption text-sage-700"
+                          onClick={() =>
+                            setDismissed.mutate(dismissed.filter((x) => x.merchant !== d.merchant))
+                          }
+                        >
+                          Restore
+                        </button>
                       </div>
-                      <p className="mt-0.5 type-caption text-ink-faint">
-                        {CADENCE_LABEL[s.series.cadence] ?? s.series.cadence} · next{' '}
-                        {shortDate(s.series.nextExpectedDate)}
-                      </p>
-                    </div>
-                  ))}
+                    ))}
+                  </>
+                )}
               </>
-            )}
+            ),
+          },
+          {
+            title: 'Upcoming expenses',
+            children: (
+              <>
+                <div className="flex items-center justify-between border-b border-hairline pb-3">
+                  <h3 className="type-title">Expenses</h3>
+                  <button
+                    type="button"
+                    className="text-sage-700"
+                    onClick={() => setAddingKind('expense')}
+                  >
+                    Add
+                  </button>
+                </div>
+                {upcomingExpenses.length === 0 ? (
+                  <p className="py-3 text-ink-muted">Nothing expected yet.</p>
+                ) : (
+                  upcomingExpenses.map((e, i) => (
+                    <div
+                      key={i}
+                      className="flex justify-between gap-4 border-b border-hairline py-3"
+                    >
+                      <span>
+                        {e.label}
+                        <span className="ml-2 type-caption text-ink-faint">
+                          {shortDate(e.date)}
+                        </span>
+                      </span>
+                      <MoneyText cents={e.deltaCents} />
+                    </div>
+                  ))
+                )}
 
-            {addingKind && (
-              <AddManualEventSheet
-                kind={addingKind}
-                onClose={() => setAddingKind(null)}
-                onSaved={async () => {
-                  await Promise.all([
-                    refresh(),
-                    qc.invalidateQueries({ queryKey: ['cash-to-payday', 'manual-events'] }),
-                  ]);
-                }}
-              />
-            )}
-          </>
-        ),
-      }}
-    />
+                {manualEvents.data &&
+                  manualEvents.data.filter((m) => m.kind === 'expense').length > 0 && (
+                    <>
+                      <h3 className="mt-6 type-title border-b border-hairline pb-3">Hand-added</h3>
+                      {manualEvents.data
+                        .filter((m) => m.kind === 'expense')
+                        .map((m) => (
+                          <div
+                            key={m.id}
+                            className="flex items-center justify-between gap-4 border-b border-hairline py-3"
+                          >
+                            <span>
+                              {m.label}
+                              <span className="ml-2 type-caption text-ink-faint">
+                                {CADENCE_LABEL[m.cadence] ?? m.cadence} · next{' '}
+                                {shortDate(m.nextExpectedDate)}
+                              </span>
+                            </span>
+                            <div className="flex items-center gap-3">
+                              <MoneyText cents={-m.amountCents} />
+                              <button
+                                type="button"
+                                className="type-caption text-ink-faint"
+                                onClick={() => removeEvent.mutate(m.id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </>
+                  )}
+              </>
+            ),
+          },
+        ]}
+      />
+      {addingKind && (
+        <AddManualEventSheet
+          kind={addingKind}
+          onClose={() => setAddingKind(null)}
+          onSaved={async () => {
+            await Promise.all([
+              refresh(),
+              qc.invalidateQueries({ queryKey: ['cash-to-payday', 'manual-events'] }),
+            ]);
+          }}
+        />
+      )}
+    </>
   );
 }

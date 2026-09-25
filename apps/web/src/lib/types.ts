@@ -72,6 +72,7 @@ export interface CashToPaydayResponse {
   }[];
   cashAccounts: { id: string; name: string }[];
   cushionCents: number;
+  dismissedPayMerchants: { merchant: string; displayName: string }[];
 }
 
 export interface ManualCashEvent {

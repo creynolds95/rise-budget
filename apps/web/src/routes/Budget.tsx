@@ -7,7 +7,6 @@ import { AddCategorySheet } from '../components/AddCategorySheet';
 import { usePlanFlow } from '../components/PlanFlow';
 import { Icon } from '../components/primitives/Icon';
 import { Button } from '../components/primitives/Button';
-import { MoneyField } from '../components/primitives/MoneyField';
 import { FillBar } from '../components/primitives/FillBar';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Rail } from '../components/primitives/Rail';
@@ -119,19 +118,9 @@ export function Budget() {
         {(error ?? plan.error) && <p className="gutter mt-4 text-clay">{error ?? plan.error}</p>}
 
         <section className="mt-8">
-          <div className="gutter flex items-baseline justify-between">
-            <h2 className="type-title">Income</h2>
-            {!closed && (
-              <MoneyField
-                label="Expected income"
-                cents={p.expectedIncomeCents}
-                onCommit={async (v) => {
-                  await api('PATCH', `/periods/${month}`, { expectedIncomeCents: v });
-                  await invalidate();
-                }}
-              />
-            )}
-          </div>
+          {/* Expected income is the sum of the income categories below (Paychecks is the
+              source of truth, per Caleb 2026-09-25) — no separate editable total. */}
+          <h2 className="gutter type-title">Income</h2>
           {incomeGroups.length > 0 && <ColumnHeadings />}
           {incomeGroups.length === 0 ? (
             <p className="gutter py-3 type-caption text-ink-muted">
