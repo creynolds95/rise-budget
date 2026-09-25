@@ -24,8 +24,11 @@ export function Shell() {
     .slice(0, 2)
     .toUpperCase();
   return (
-    <div className="min-h-dvh pb-[calc(64px+env(safe-area-inset-bottom))] lg:flex lg:pb-0">
-      <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-60 lg:flex-shrink-0 lg:flex-col lg:justify-between lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
+    <div className="min-h-dvh pb-[calc(64px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-72">
+      {/* `fixed` rather than `sticky`: pinned to the viewport regardless of how tall the
+          content column grows, so it can never be scrolled past. The content column gets
+          matching `lg:pl-72` padding instead of being a flex sibling. */}
+      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72 lg:flex-col lg:justify-between lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
         <div className="flex flex-col gap-7">
           <span className="px-3 font-serif text-xl tracking-tight text-sage-700">Rise</span>
           <nav aria-label="Tabs" className="flex flex-col gap-0.5">
@@ -68,7 +71,7 @@ export function Shell() {
         </Link>
       </aside>
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0">
         <div className="gutter mx-auto flex max-w-2xl items-center justify-between pt-[max(12px,env(safe-area-inset-top))] lg:hidden">
           <span className="font-serif text-xl tracking-tight text-sage-700">Rise</span>
           <Link
