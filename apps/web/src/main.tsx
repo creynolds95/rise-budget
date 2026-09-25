@@ -57,10 +57,19 @@ createRoot(document.getElementById('root') as HTMLElement).render(
 );
 
 // The static splash in index.html covers the parse/execute gap; fade it out now that React
-// has mounted and is about to paint.
+// has mounted. On a warm cache that gap can be a handful of milliseconds — too fast to
+// register as a splash at all — so it's held for a minimum stretch regardless of how fast
+// the app actually mounted.
+const MIN_SPLASH_MS = 500;
 requestAnimationFrame(() => {
   const splash = document.getElementById('splash');
   if (!splash) return;
-  splash.style.opacity = '0';
-  setTimeout(() => splash.remove(), 300);
+  const elapsed = Date.now() - (window.__splashStart ?? Date.now());
+  setTimeout(
+    () => {
+      splash.style.opacity = '0';
+      setTimeout(() => splash.remove(), 300);
+    },
+    Math.max(0, MIN_SPLASH_MS - elapsed),
+  );
 });
