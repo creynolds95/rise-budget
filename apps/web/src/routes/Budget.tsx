@@ -374,9 +374,9 @@ function MonthSwitcher({
 /** Column labels once per section (Income/Expenses), over the fixed-width Planned/Remaining columns every row and group total line up under. */
 function ColumnHeadings() {
   return (
-    <div className="gutter mb-1 flex items-center justify-end gap-1.5 type-caption text-ink-muted">
-      <span className="w-[72px] text-center">Planned</span>
-      <span className="w-[72px] text-center">Remaining</span>
+    <div className="gutter mb-1 flex items-center justify-end gap-3 type-caption text-ink-muted">
+      <span className="w-[72px] text-right">Planned</span>
+      <span className="w-[72px] text-right">Remaining</span>
     </div>
   );
 }
@@ -422,13 +422,13 @@ function GroupSection({
           </span>
           {group.name}
         </h3>
-        <span className="flex items-center gap-1.5 text-sm font-semibold">
-          <MoneyText cents={plannedTotal} tone="ink" whole className="w-[72px] text-center" />
+        <span className="flex items-center gap-3 text-sm font-semibold">
+          <MoneyText cents={plannedTotal} tone="ink" whole className="w-[72px] text-right" />
           <MoneyText
             cents={Math.abs(remainingTotal)}
             tone={groupOver ? (kind === 'income' ? 'in' : 'over') : 'ink'}
             whole
-            className="w-[72px] text-center"
+            className="w-[72px] text-right"
           />
         </span>
       </button>
@@ -525,23 +525,23 @@ function BudgetRow({
           )}
         </div>
       </Link>
-      <div className="flex items-center justify-end gap-1.5 pt-1.5 pb-2">
+      <div className="flex items-center justify-end gap-3 pt-1.5 pb-2">
         {editable ? (
           <button
             onClick={onEdit}
             aria-label={`Planned for ${category?.name ?? 'category'}: ${formatCents(row.plannedCents)}. Change`}
-            className="flex min-h-9 w-[72px] items-center justify-center rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
+            className="flex min-h-9 w-[72px] items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
           >
             <MoneyText cents={row.plannedCents} whole={row.plannedCents % 100 === 0} />
           </button>
         ) : (
-          <span className="flex min-h-9 w-[72px] items-center justify-center rounded-input border border-hairline px-2 text-sm text-ink-muted">
+          <span className="flex min-h-9 w-[72px] items-center justify-end rounded-input border border-hairline px-2 text-sm text-ink-muted">
             <MoneyText cents={row.plannedCents} tone="muted" whole={row.plannedCents % 100 === 0} />
           </span>
         )}
         <span
           aria-label={`${over ? 'Over' : 'Remaining'}: ${formatCents(Math.abs(remainingCents))}`}
-          className={`flex min-h-9 w-[72px] items-center justify-center gap-1 rounded-full px-2 text-sm font-semibold ${
+          className={`flex min-h-9 w-[72px] items-center justify-end gap-1 rounded-full px-2 text-sm font-semibold ${
             remainingCents === 0
               ? 'bg-sage-100 text-ink-muted'
               : over
