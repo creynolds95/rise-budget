@@ -102,12 +102,7 @@ function Editor({
         disabled: !valid || busy,
       }}
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
-      >
+      <div>
         <label className="flex flex-col items-center pt-2">
           <span className="sr-only">Planned for {monthShort}</span>
           <span
@@ -126,6 +121,15 @@ function Editor({
               value={text}
               style={{ width: `${Math.max(text.length, 1) + 0.2}ch` }}
               onChange={(e) => setText(e.target.value)}
+              // Not inside a <form>: on iOS Safari, a form's lone input still gets the
+              // previous/next/done navigation bar above the keyboard. A plain input with its
+              // own Enter handling doesn't.
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void save();
+                }
+              }}
               className="bg-transparent outline-none"
             />
           </span>
@@ -175,8 +179,7 @@ function Editor({
             <Toggle label="Apply to all future months" on={future} onChange={setFuture} />
           </GroupRow>
         </Group>
-        <button type="submit" hidden />
-      </form>
+      </div>
     </Sheet>
   );
 }
