@@ -59,6 +59,11 @@
     </style>
   </head>
   <body>
+    <!-- On a warm cache the app can mount in a handful of milliseconds — too fast to read
+         anything as a splash. main.tsx uses this to hold it visible for a minimum stretch. -->
+    <script>
+      window.__splashStart = Date.now();
+    </script>
     <div id="splash" aria-hidden="true"><img src="/icon-192.png" alt="" /></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

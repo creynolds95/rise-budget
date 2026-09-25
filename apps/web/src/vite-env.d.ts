@@ -3,3 +3,8 @@
 
 /** Build identity; a new build discards the persisted query cache (main.tsx). */
 declare const __APP_VERSION__: string;
+
+interface Window {
+  /** Set by an inline script in index.html, ahead of main.tsx, for the splash's min-visible time. */
+  __splashStart?: number;
+}
