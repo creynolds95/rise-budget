@@ -240,9 +240,7 @@ export function SummaryCard({
         onClick={() => setOpen(!open)}
         className="flex min-h-11 w-full items-center gap-1 px-4 pt-3 text-left"
       >
-        <span aria-hidden className="inline-block w-3">
-          {open ? '▾' : '▸'}
-        </span>
+        <Disclosure open={open} />
       </button>
       {open && (
         <div className="px-4 pb-1">
@@ -404,10 +402,10 @@ function GroupSection({
         className="gutter flex min-h-11 w-full items-center justify-between text-left"
       >
         <h3 className="type-label text-ink-muted">
-          <span aria-hidden className="mr-1 inline-block w-3">
-            {open ? '▾' : '▸'}
+          <span className="inline-flex items-center gap-1">
+            <Disclosure open={open} />
+            {group.name}
           </span>
-          {group.name}
         </h3>
         <span className="mr-4 flex items-center gap-3 text-sm font-semibold">
           <span className="flex w-[72px] items-center justify-end border border-transparent px-2">
@@ -773,5 +771,14 @@ function BudgetSkeleton() {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Open/closed marker for a collapsible section: one chevron, turned (C10). */
+function Disclosure({ open }: { open: boolean }) {
+  return (
+    <span className={`inline-flex transition-transform ${open ? '' : '-rotate-90'}`}>
+      <Icon name="chevronDown" size={16} />
+    </span>
   );
 }

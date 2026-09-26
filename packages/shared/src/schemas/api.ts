@@ -269,6 +269,28 @@ export const RegisterVerifyBody = z.object({
   deviceLabel: z.string().max(80).optional(),
 });
 
+/** C17: what Settings lists under Passkeys and Signed-in devices. */
+export const DevicesResponse = z.object({
+  passkeys: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string().nullable(),
+      createdAt: z.string(),
+      lastUsedAt: z.string().nullable(),
+    }),
+  ),
+  sessions: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string().nullable(),
+      createdAt: z.string(),
+      lastSeenAt: z.string().nullable(),
+      current: z.boolean(),
+    }),
+  ),
+});
+export type DevicesResponse = z.infer<typeof DevicesResponse>;
+
 export const LoginVerifyBody = z.object({
   challengeToken: z.string(),
   response: WebAuthnJson,

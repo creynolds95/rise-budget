@@ -191,8 +191,10 @@ export function NetWorthSection() {
               tone={last.netWorthCents < 0 ? 'over' : 'ink'}
               whole
             />
-          ) : (
+          ) : nw.isPending ? (
             <Skeleton className="h-11 w-48" />
+          ) : (
+            <span className="text-ink-muted">No balances yet</span>
           )}
         </p>
         {first && last && first.date === last.date && (

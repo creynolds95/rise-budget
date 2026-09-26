@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { secureHeaders } from 'hono/secure-headers';
 import type { AppEnv } from './env';
 import { errorBody, renderError } from './lib/errors';
 import { idempotency } from './lib/idempotency';
@@ -17,6 +18,7 @@ import { review } from './routes/review';
 import { sync } from './routes/sync';
 import { transactions } from './routes/transactions';
 import { dataExport } from './routes/export';
+import { devices } from './routes/devices';
 import { findUserIdByEmail } from './db';
 import type { Env } from './env';
 import { BACKUP_CRON, runBackup } from './backup/run';
@@ -26,6 +28,15 @@ import { sourceFromEnv } from './sync/source';
 /** Everything is under /api; the rest of the origin is the web app (Workers Static Assets). */
 export const app = new Hono<AppEnv>().basePath('/api');
 
+// JSON only: nothing here should ever render, frame or load anything (C17 / L2).
+app.use(
+  '*',
+  secureHeaders({
+    contentSecurityPolicy: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
+    crossOriginResourcePolicy: 'same-origin',
+  }),
+);
+
 // Public: health and the auth handshake. There is no signup route (SPEC §9).
 app.get('/health', (c) => c.json({ ok: true as const }));
 app.route('/auth', auth);
@@ -34,6 +45,7 @@ app.route('/auth', auth);
 app.use('*', requireAuth);
 app.use('*', idempotency);
 app.route('/me', me);
+app.route('/devices', devices);
 app.route('/accounts', accounts);
 app.route('/networth', networth);
 app.route('/category-groups', categoryGroups);

@@ -32,6 +32,7 @@ import {
   useAccounts,
   useBackupStatus,
   useCategories,
+  useDevices,
   useGroups,
   useInvalidateMoney,
   useMe,
@@ -803,7 +804,7 @@ const LOCK_CHOICES: { id: AppLock; label: string; hint?: string }[] = [
 ];
 
 function SecuritySection() {
-  const { registerPasskey, signOut } = useAuth();
+  const { registerPasskey, signOut, stepUp } = useAuth();
   const me = useMe().data;
   const qc = useQueryClient();
   const [msg, setMsg] = useState<string | null>(null);
@@ -821,6 +822,33 @@ function SecuritySection() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
   });
   const mode = lock.isPending ? (lock.variables ?? 'off') : (me?.settings.appLock ?? 'off');
+  const devices = useDevices();
+  const tz = me?.timezone;
+  const seen = (iso: string) => shortDate(localToday(tz, new Date(iso)));
+  const removePasskey = async (id: string, label: string | null) => {
+    if (
+      !window.confirm(`Remove the passkey on ${label ?? 'that device'}? It won't sign in anymore.`)
+    )
+      return;
+    setMsg(null);
+    try {
+      await api('DELETE', `/devices/passkeys/${encodeURIComponent(id)}`, undefined, {
+        stepUp: await stepUp(),
+      });
+      await qc.invalidateQueries({ queryKey: ['devices'] });
+    } catch (e) {
+      setMsg(passkeyMessage(e, 'The passkey wasn’t removed.'));
+    }
+  };
+  const signOutDevice = async (id: string) => {
+    setMsg(null);
+    try {
+      await api('DELETE', `/devices/sessions/${id}`);
+      await qc.invalidateQueries({ queryKey: ['devices'] });
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : 'That device wasn’t signed out.');
+    }
+  };
   return (
     <>
       <Group
@@ -873,13 +901,30 @@ function SecuritySection() {
           )}
         </Group>
       )}
-      <Group title="Passkeys" footer="Add one on each phone or computer you use Rise on.">
+      <Group title="Passkeys">
+        {devices.data?.passkeys.map((k) => (
+          <GroupRow
+            key={k.id}
+            label={k.label ?? 'Passkey'}
+            hint={`Added ${seen(k.createdAt)}${k.lastUsedAt ? ` · used ${seen(k.lastUsedAt)}` : ''}`}
+          >
+            {(devices.data?.passkeys.length ?? 0) > 1 && (
+              <button
+                className="min-h-11 shrink-0 font-semibold text-clay"
+                onClick={() => void removePasskey(k.id, k.label)}
+              >
+                Remove
+              </button>
+            )}
+          </GroupRow>
+        ))}
         <button
           onClick={async () => {
             setMsg(null);
             try {
               await registerPasskey();
               setMsg('Passkey added.');
+              await qc.invalidateQueries({ queryKey: ['devices'] });
             } catch (e) {
               setMsg(passkeyMessage(e, 'The passkey wasn’t added.'));
             }
@@ -889,6 +934,27 @@ function SecuritySection() {
           Add a passkey on this device
           <Chevron />
         </button>
+      </Group>
+      <Group title="Signed-in devices">
+        {devices.data?.sessions.map((d) => (
+          <GroupRow
+            key={d.id}
+            label={d.label ?? 'Unknown device'}
+            hint={`Active ${seen(d.lastSeenAt ?? d.createdAt)}`}
+          >
+            {d.current ? (
+              <span className="shrink-0 type-caption text-ink-muted">This device</span>
+            ) : (
+              <button
+                className="min-h-11 shrink-0 font-semibold text-clay"
+                onClick={() => void signOutDevice(d.id)}
+              >
+                Sign out
+              </button>
+            )}
+          </GroupRow>
+        ))}
+        {!devices.data && <Skeleton className="m-4 h-5 w-40" />}
       </Group>
       {msg && <p className="mt-2 px-1 text-ink-muted">{msg}</p>}
       <Group
