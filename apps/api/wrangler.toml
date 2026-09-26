@@ -23,6 +23,10 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api/*"]
 
+# Workers Logs: cron results and errors are kept and searchable (free-plan allowance).
+[observability]
+enabled = true
+
 [vars]
 RP_ID = "rise.upforbatterycalendar.workers.dev"
 RP_ORIGIN = "https://rise.upforbatterycalendar.workers.dev"

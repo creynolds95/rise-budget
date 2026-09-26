@@ -60,14 +60,36 @@ app.onError(renderError);
  * (early morning Central), well after the evening sync. Single-user, so sync runs for the configured owner.
  */
 export async function scheduled(event: ScheduledController, env: Env): Promise<void> {
-  if (event.cron === BACKUP_CRON) {
-    await runBackup(env.DB, env.BACKUPS, new Date(event.scheduledTime));
-    return;
+  const job = event.cron === BACKUP_CRON ? 'backup' : 'sync';
+  const started = Date.now();
+  try {
+    if (job === 'backup') {
+      const r = await runBackup(env.DB, env.BACKUPS, new Date(event.scheduledTime));
+      log({ job, ok: true, ms: Date.now() - started, key: r.key, bytes: r.bytes });
+      return;
+    }
+    const source = sourceFromEnv(env);
+    if (!source || !env.SIMPLEFIN_OWNER_EMAIL) return;
+    const userId = await findUserIdByEmail(env.DB, env.SIMPLEFIN_OWNER_EMAIL);
+    if (!userId) return;
+    const r = await runSync(env.DB, userId, source);
+    log({ job, ok: r.status !== 'failed', ms: Date.now() - started, status: r.status });
+  } catch (e) {
+    // Rethrown so the Cron Trigger is marked failed in Cloudflare too; the Dashboard flags a
+    // failed sync or a late backup from what's stored (C6).
+    log({
+      job,
+      ok: false,
+      ms: Date.now() - started,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
   }
-  const source = sourceFromEnv(env);
-  if (!source || !env.SIMPLEFIN_OWNER_EMAIL) return;
-  const userId = await findUserIdByEmail(env.DB, env.SIMPLEFIN_OWNER_EMAIL);
-  if (userId) await runSync(env.DB, userId, source);
+}
+
+/** One JSON line per cron run, for Workers Logs ([observability] in wrangler.toml). */
+function log(entry: Record<string, unknown>) {
+  (entry['ok'] ? console.log : console.error)(JSON.stringify({ cron: true, ...entry }));
 }
 
 export default { fetch: app.fetch, scheduled } satisfies ExportedHandler<Env>;
