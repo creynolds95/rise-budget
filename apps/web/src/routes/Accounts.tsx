@@ -177,7 +177,7 @@ export function NetWorthSection() {
 
   return (
     <>
-      <p className="type-label text-ink-muted">Net worth</p>
+      <h2 className="type-title">Net worth</h2>
       <div className="mt-1 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
         <p className="type-display">
           {last ? (

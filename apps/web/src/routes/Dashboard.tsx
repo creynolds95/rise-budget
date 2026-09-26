@@ -79,7 +79,7 @@ export function Dashboard() {
 
       {/* 1. Surplus */}
       <section className={accounts.data ? 'mt-8' : ''}>
-        <p className="type-label text-ink-muted">Surplus</p>
+        <h2 className="type-title">Surplus</h2>
         <Link
           to="/cash-to-payday"
           onClick={transitionClick(navigate, '/cash-to-payday')}
