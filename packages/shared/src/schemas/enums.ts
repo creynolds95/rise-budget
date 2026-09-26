@@ -3,6 +3,11 @@ import { z } from 'zod';
 export const AccountKind = z.enum(['depository', 'credit', 'loan', 'investment', 'other']);
 export type AccountKind = z.infer<typeof AccountKind>;
 
+/** Credit and loan balances are stored negative (SPEC §1.1) — what you owe, not what you have. */
+export function isLiabilityKind(kind: AccountKind): boolean {
+  return kind === 'credit' || kind === 'loan';
+}
+
 export const AccountSource = z.enum(['simplefin', 'manual']);
 export type AccountSource = z.infer<typeof AccountSource>;
 

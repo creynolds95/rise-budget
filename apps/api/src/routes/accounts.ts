@@ -2,12 +2,14 @@ import { staleness } from '@rise/shared/budget';
 import {
   CreateAccountBody,
   CreateSnapshotBody,
+  isLiabilityKind,
   PatchAccountBody,
   type Account,
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
   createAccount,
+  flipAccountSign,
   getAccount,
   listAccounts,
   listSnapshots,
@@ -58,8 +60,12 @@ accounts.post('/', async (c) => {
 accounts.patch('/:id', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
-  if (!(await getAccount(userId, c.env.DB, id))) throw notFound();
+  const before = await getAccount(userId, c.env.DB, id);
+  if (!before) throw notFound();
   const b = await body(c, PatchAccountBody);
+  if (b.kind && isLiabilityKind(b.kind) !== isLiabilityKind(before.kind)) {
+    await flipAccountSign(userId, c.env.DB, id);
+  }
   const a = await updateAccount(userId, c.env.DB, id, b);
   return c.json(withStaleness(a as Account, Date.now()));
 });

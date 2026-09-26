@@ -84,6 +84,43 @@ describe('T17 accounts & snapshots', () => {
     );
   });
 
+  it('flips the stored sign when kind crosses the liability boundary', async () => {
+    const u = await signedInUser();
+    const acct = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'Mis-typed', kind: 'loan' },
+    });
+    const id = acct.json.id;
+    await call('POST', `/accounts/${id}/snapshots`, {
+      access: u.access,
+      body: { asOf: '2026-09-01', balanceCents: -300_000 },
+    });
+
+    // Correcting "loan" to "other" (an asset) must flip the negative liability balance
+    // positive, or the account's true value silently reverses sign.
+    const patched = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { kind: 'other' },
+    });
+    expect(patched.json.balanceCents).toBe(300_000);
+    const snaps = await call('GET', `/accounts/${id}/snapshots`, { access: u.access });
+    expect(snaps.json).toEqual([{ asOf: '2026-09-01', balanceCents: 300_000 }]);
+
+    // Flipping back to a liability kind restores the negative sign.
+    const back = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { kind: 'credit' },
+    });
+    expect(back.json.balanceCents).toBe(-300_000);
+
+    // A patch that doesn't touch kind, or one that stays within the same side, is untouched.
+    const same = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { kind: 'credit' },
+    });
+    expect(same.json.balanceCents).toBe(-300_000);
+  });
+
   it('rejects float money', async () => {
     const u = await signedInUser();
     const acct = await call('POST', '/accounts', {
