@@ -8,6 +8,7 @@ import { Button } from '../components/primitives/Button';
 import { Icon, IconButton } from '../components/primitives/Icon';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { api } from '../lib/api';
+import { useHeaderActions } from '../lib/headerActions';
 import {
   useAccounts,
   useCategories,
@@ -94,18 +95,21 @@ export function Transactions() {
     );
   };
 
+  const filterButton = (
+    <IconButton
+      icon="filter"
+      label={active.length ? `Filters, ${active.length} on` : 'Filters'}
+      badge={active.length}
+      onClick={() => setSheet(true)}
+    />
+  );
+  useHeaderActions(filterButton);
+
   return (
     <div className="mx-auto max-w-2xl pb-12">
-      <header className="gutter flex items-center justify-between pt-3">
-        <h1 className="hidden type-page lg:block">Transactions</h1>
-        <div className="-mr-2 ml-auto">
-          <IconButton
-            icon="filter"
-            label={active.length ? `Filters, ${active.length} on` : 'Filters'}
-            badge={active.length}
-            onClick={() => setSheet(true)}
-          />
-        </div>
+      <header className="gutter hidden items-center justify-between pt-3 lg:flex">
+        <h1 className="type-page">Transactions</h1>
+        <div className="-mr-2">{filterButton}</div>
       </header>
 
       <div className="gutter mt-2">

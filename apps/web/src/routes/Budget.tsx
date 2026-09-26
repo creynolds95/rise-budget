@@ -15,6 +15,7 @@ import { Skeleton } from '../components/primitives/Skeleton';
 import { CategoryDetailPanel } from './CategoryDetail';
 import { ApiError, api, get } from '../lib/api';
 import { addMonths, monthName, shortDate } from '../lib/dates';
+import { useHeaderActions } from '../lib/headerActions';
 import { useIsDesktop } from '../lib/media';
 import { formatCents } from '../lib/money';
 import { transitionClick } from '../lib/transition';
@@ -62,6 +63,18 @@ export function Budget() {
     setParams(next);
   };
 
+  const settingsHref = `/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`;
+  useHeaderActions(
+    <Link
+      to={settingsHref}
+      onClick={transitionClick(navigate, settingsHref)}
+      aria-label="Budget settings"
+      className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+    >
+      <Icon name="more" />
+    </Link>,
+  );
+
   return (
     <div className={selected ? 'lg:flex lg:items-start lg:gap-10 lg:px-8' : ''}>
       <div
@@ -82,15 +95,12 @@ export function Budget() {
             <Icon name="flow" />
           </Link>
           <Link
-            to={`/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`}
-            onClick={transitionClick(
-              navigate,
-              `/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`,
-            )}
+            to={settingsHref}
+            onClick={transitionClick(navigate, settingsHref)}
             aria-label="Budget settings"
-            className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+            className="hidden size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100 lg:flex"
           >
-            <Icon name="sliders" />
+            <Icon name="more" />
           </Link>
         </div>
 
