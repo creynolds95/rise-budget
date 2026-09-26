@@ -1,5 +1,6 @@
 import type { RecurringSeries } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
+import { Link, useNavigate } from 'react-router';
 import { NetWorthSection } from './Accounts';
 import { SummaryCard } from './Budget';
 import { SpendingSection } from '../components/SpendingSection';
@@ -10,6 +11,7 @@ import { NavRow } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { get } from '../lib/api';
 import { addMonths, shortDate } from '../lib/dates';
+import { transitionClick } from '../lib/transition';
 import {
   useAccounts,
   useCashToPayday,
@@ -25,6 +27,7 @@ const RECENT_TXNS = 4;
 
 /** "This month, answered" (T41). The on-pace answer first, then what needs attention. */
 export function Dashboard() {
+  const navigate = useNavigate();
   const today = useToday();
   const month = today.slice(0, 7);
   const me = useMe().data;
@@ -76,43 +79,60 @@ export function Dashboard() {
 
       {/* 1. Surplus */}
       <section className={accounts.data ? 'mt-8' : ''}>
-        <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-          <NavRow
-            to="/cash-to-payday"
-            label={<span className="font-semibold">Surplus</span>}
-            value={
-              surplus.data && surplus.data.paySchedules.length > 0 ? (
-                <MoneyText
-                  cents={surplus.data.freeToMoveCents}
-                  className="font-semibold text-ink"
-                  whole
-                />
-              ) : undefined
-            }
-          />
-          {(queue.data?.count ?? 0) > 0 && (
-            <NavRow
-              to="/review"
-              label="To review"
-              value={
-                <span className="rounded-full bg-sage-600 px-2 py-0.5 type-caption font-semibold text-surface money">
-                  {queue.data?.count}
-                </span>
-              }
-            />
+        <p className="type-label text-ink-muted">Surplus</p>
+        <Link
+          to="/cash-to-payday"
+          onClick={transitionClick(navigate, '/cash-to-payday')}
+          className="mt-1 block overflow-hidden rounded-card bg-surface p-4 shadow-soft active:bg-sage-100"
+        >
+          {!surplus.data ? (
+            <Skeleton className="h-11 w-40" />
+          ) : surplus.data.paySchedules.length === 0 ? (
+            <p className="type-display text-ink-muted">Confirm your pay dates</p>
+          ) : (
+            <MoneyText cents={surplus.data.freeToMoveCents} className="type-display" whole />
           )}
-          {p.period.needsRecalc && (
-            <NavRow
-              to="/budget"
-              label="A closed month changed"
-              value={
-                p.period.recalcDeltaCents !== 0 ? (
-                  <MoneyText cents={p.period.recalcDeltaCents} />
-                ) : undefined
-              }
-            />
-          )}
-        </div>
+          <p className="mt-1 text-ink-muted">
+            {!surplus.data ? (
+              <>&nbsp;</>
+            ) : surplus.data.paySchedules.length === 0 ? (
+              "We'll show what's free to move once we see your pay pattern."
+            ) : surplus.data.lowestPoint.date !== surplus.data.points[0]?.date ? (
+              <>
+                Lowest point is {shortDate(surplus.data.lowestPoint.date)}, after{' '}
+                {surplus.data.lowestPoint.label}.
+              </>
+            ) : (
+              <>&nbsp;</>
+            )}
+          </p>
+        </Link>
+        {((queue.data?.count ?? 0) > 0 || p.period.needsRecalc) && (
+          <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+            {(queue.data?.count ?? 0) > 0 && (
+              <NavRow
+                to="/review"
+                label="To review"
+                value={
+                  <span className="rounded-full bg-sage-600 px-2 py-0.5 type-caption font-semibold text-surface money">
+                    {queue.data?.count}
+                  </span>
+                }
+              />
+            )}
+            {p.period.needsRecalc && (
+              <NavRow
+                to="/budget"
+                label="A closed month changed"
+                value={
+                  p.period.recalcDeltaCents !== 0 ? (
+                    <MoneyText cents={p.period.recalcDeltaCents} />
+                  ) : undefined
+                }
+              />
+            )}
+          </div>
+        )}
       </section>
 
       {/* 2. Summary */}

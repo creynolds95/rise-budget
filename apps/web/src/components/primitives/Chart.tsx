@@ -2,6 +2,7 @@ import {
   RANGES,
   lineSegments,
   sharedScalePaths,
+  zeroY,
   type LinePoint,
   type Range,
 } from '../../lib/chart';
@@ -44,6 +45,7 @@ export function Chart(
           />
         ))}
         {props.kind === 'lines' && lines(props.lines, props.slots)}
+        {props.kind === 'line' && zeroLine(props.points)}
         {props.kind === 'line' &&
           lineSegments(props.points, W, H).map((s, i) => (
             <polyline
@@ -82,6 +84,25 @@ export interface Line {
   color: string;
   /** Ends in a dot: the series that is still being written, e.g. this month. */
   live?: boolean;
+}
+
+/** Marks $0 whenever it falls within the series' span — the only way a negative-only or
+ *  zero-crossing series reads as such, since the line itself is scaled to fill the chart. */
+function zeroLine(points: LinePoint[]) {
+  const y = zeroY(points, H);
+  if (y === null) return null;
+  return (
+    <line
+      x1={0}
+      x2={W}
+      y1={y}
+      y2={y}
+      className="stroke-ink-faint"
+      strokeWidth={1}
+      strokeDasharray="2 3"
+      vectorEffect="non-scaling-stroke"
+    />
+  );
 }
 
 function Axis({ labels, spread = false }: { labels: string[]; spread?: boolean }) {

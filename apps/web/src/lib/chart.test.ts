@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allowsPercentChange, lineSegments, rangeStart, sharedScalePaths } from './chart';
+import { allowsPercentChange, lineSegments, rangeStart, sharedScalePaths, zeroY } from './chart';
 
 describe('line segments', () => {
   it('splits measured and inferred runs; a step touching an inferred point is dashed', () => {
@@ -21,16 +21,17 @@ describe('line segments', () => {
     expect(segs[2]?.points.at(-1)).toEqual([500, 0]);
   });
 
-  it('handles empty, single and flat series', () => {
+  it('handles empty, single and zero-flat series', () => {
     expect(lineSegments([], 10, 10)).toEqual([]);
+    // Anchored at 0: a lone positive point sits at the top of the zero-to-value span.
     expect(lineSegments([{ cents: 5, inferred: true }], 10, 10, 0)).toEqual([
-      { dashed: true, points: [[5, 5]] },
+      { dashed: true, points: [[5, 0]] },
     ]);
     expect(
       lineSegments(
         [
-          { cents: 5, inferred: false },
-          { cents: 5, inferred: false },
+          { cents: 0, inferred: false },
+          { cents: 0, inferred: false },
         ],
         10,
         10,
@@ -40,6 +41,19 @@ describe('line segments', () => {
       [0, 5],
       [10, 5],
     ]);
+  });
+
+  it('anchors an all-negative series below the zero line, not spread across the whole chart', () => {
+    const pts = [
+      { cents: -3_000_00, inferred: false },
+      { cents: -2_000_00, inferred: false },
+    ];
+    const segs = lineSegments(pts, 10, 10, 0);
+    // Both points are well below 0, so both sit in the lower half of the chart.
+    expect(segs[0]?.points[0]?.[1]).toBeGreaterThan(5);
+    expect(segs[0]?.points.at(-1)?.[1]).toBeGreaterThan(5);
+    // $0 is the top of an all-negative series' span — the line sits below it, visibly underwater.
+    expect(zeroY(pts, 10, 0)).toBe(0);
   });
 });
 
