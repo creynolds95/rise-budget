@@ -13,6 +13,7 @@ const { values } = parseArgs({
     remote: { type: 'boolean', default: false },
     sync: { type: 'boolean', default: false },
     errors: { type: 'boolean', default: false },
+    period: { type: 'boolean', default: false },
   },
 });
 const scope = values.remote ? '--remote' : '--local';
@@ -114,6 +115,70 @@ if (values.errors) {
   console.log(JSON.stringify(bad.slice(0, 80), null, 1));
   if (rows.length && !bad.length)
     console.log('sample event keys:', Object.keys(events[0] as object));
+  process.exit(0);
+}
+
+if (values.period) {
+  // Shapes only, never amounts or names: does anything about this user's categories,
+  // groups or allocations not match what the pure engine (packages/shared/src/budget)
+  // expects, for the months Dashboard/Budget actually read (period.status governs which
+  // reads use which columns; loadPeriodView reads category+group+allocation together).
+  const cats = query<{
+    id: string;
+    group_id: string;
+    rollover_policy: string;
+    spend_shape: string;
+    typical_post_day: number | null;
+    archived_at: string | null;
+    budgeted: number;
+  }>(
+    `SELECT id, group_id, rollover_policy, spend_shape, typical_post_day, archived_at, budgeted FROM category`,
+  );
+  const groups = query<{ id: string; kind: string; archived_at: string | null }>(
+    `SELECT id, kind, archived_at FROM category_group`,
+  );
+  const groupIds = new Set(groups.map((g) => g.id));
+  const badRollover = cats.filter((c) => !['roll', 'return_to_pool'].includes(c.rollover_policy));
+  const badShape = cats.filter((c) => !['linear', 'fixed'].includes(c.spend_shape));
+  const badDay = cats.filter(
+    (c) => c.typical_post_day !== null && (c.typical_post_day < 1 || c.typical_post_day > 31),
+  );
+  const orphaned = cats.filter((c) => !groupIds.has(c.group_id));
+  const badGroupKind = groups.filter((g) => !['income', 'expense'].includes(g.kind));
+  console.log(
+    'category anomalies:',
+    JSON.stringify(
+      {
+        total: cats.length,
+        badRollover: badRollover.length,
+        badShape: badShape.length,
+        badDay: badDay.map((c) => ({ id: c.id, day: c.typical_post_day })),
+        orphaned: orphaned.length,
+        badGroupKind: badGroupKind.length,
+      },
+      null,
+      1,
+    ),
+  );
+  const periods = query<{ id: string; status: string; needs_recalc: number }>(
+    `SELECT id, status, needs_recalc FROM period WHERE id IN ('2026-07','2026-08','2026-09','2026-10')`,
+  );
+  console.log('periods:', JSON.stringify(periods, null, 1));
+  const allocs = query<{
+    period_id: string;
+    category_id: string;
+    planned_cents: number;
+    carried_in_cents: number;
+  }>(
+    `SELECT period_id, category_id, planned_cents, carried_in_cents FROM allocation
+     WHERE period_id IN ('2026-08','2026-09')`,
+  );
+  const catIds = new Set(cats.map((c) => c.id));
+  const orphanedAlloc = allocs.filter((a) => !catIds.has(a.category_id));
+  console.log(
+    'allocation anomalies:',
+    JSON.stringify({ total: allocs.length, orphaned: orphanedAlloc.length }, null, 1),
+  );
   process.exit(0);
 }
 
