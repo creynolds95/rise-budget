@@ -1,4 +1,5 @@
 import type { Transaction } from '@rise/shared/schemas';
+import { merchantName } from '../lib/merchant';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
@@ -95,7 +96,7 @@ export function TransactionDetail() {
     return c.emoji ? `${c.emoji} ${c.name}` : c.name;
   };
   const account = accounts.find((a) => a.id === t.accountId);
-  const name = t.merchantDisplay ?? t.merchantNormalized;
+  const name = merchantName(t);
   const income = t.amountCents < 0;
   const withdrawalRule = recurring.data?.find(
     (s) => s.source === 'manual' && s.merchantNormalized === t.merchantNormalized,
@@ -364,62 +365,63 @@ function SplitSheet({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
-  const groups = useCategories().data ?? [];
+  const categories = useCategories().data ?? [];
+  // A new split starts as one amount to type plus the rest (C12), not a full row and an empty one.
   const initial =
     t.splits.length > 1
       ? t.splits
       : [
-          { categoryId: t.splits[0]?.categoryId ?? '', amountCents: t.amountCents },
-          { categoryId: '', amountCents: 0 },
+          { categoryId: t.splits[0]?.categoryId ?? '', amountCents: 0 },
+          { categoryId: '', amountCents: t.amountCents },
         ];
   const [typed, setTyped] = useState<DraftSplit[]>(
     initial.slice(0, -1).map((s) => ({ categoryId: s.categoryId, amountCents: s.amountCents })),
   );
   const [last, setLast] = useState(initial.at(-1)?.categoryId ?? '');
+  const [picking, setPicking] = useState<number | 'last' | null>(null);
+  const [touched, setTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const rows = withRemainder(t.amountCents, typed, last);
   const problem = splitProblem(t.amountCents, rows);
-  const select = 'min-h-11 min-w-0 flex-1 rounded-input border border-hairline bg-surface px-2';
-  const options = (
-    <>
-      <option value="">Category…</option>
-      {groups.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.name}
-        </option>
-      ))}
-    </>
+  const label = (id: string) => {
+    const c = categories.find((x) => x.id === id);
+    return c ? `${c.emoji ? `${c.emoji} ` : ''}${c.name}` : 'Category…';
+  };
+  const pickButton = (id: string, which: number | 'last', aria: string) => (
+    <button
+      type="button"
+      aria-label={aria}
+      onClick={() => setPicking(which)}
+      className={`min-h-11 min-w-0 flex-1 truncate rounded-input border border-hairline bg-surface px-3 text-left ${id ? '' : 'text-ink-muted'}`}
+    >
+      {label(id)}
+    </button>
   );
   const message = {
     missing_category: 'Choose a category for every row.',
     zero_row: 'Remove rows with no amount.',
     remainder_flips_sign: `The rows add up to more than ${formatCents(Math.abs(t.amountCents))}.`,
   } as const;
+  // Say what's wrong once there's something to be wrong about — overshooting always shows.
+  const shown =
+    error ?? (problem && (touched || problem === 'remainder_flips_sign') ? message[problem] : null);
   return (
     <Sheet open title={`Split ${formatCents(Math.abs(t.amountCents))}`} onClose={onClose}>
       <ul className="flex flex-col gap-2">
         {typed.map((s, i) => (
           <li key={i} className="flex items-center gap-2">
-            <select
-              aria-label={`Category ${i + 1}`}
-              className={select}
-              value={s.categoryId}
-              onChange={(e) =>
-                setTyped(typed.map((x, j) => (j === i ? { ...x, categoryId: e.target.value } : x)))
-              }
-            >
-              {options}
-            </select>
+            {pickButton(s.categoryId, i, `Category ${i + 1}`)}
             <MoneyField
               label={`Amount ${i + 1}`}
               cents={Math.abs(s.amountCents)}
-              onCommit={(v) =>
+              onCommit={(v) => {
+                setTouched(true);
                 setTyped(
                   typed.map((x, j) =>
                     j === i ? { ...x, amountCents: t.amountCents < 0 ? -v : v } : x,
                   ),
-                )
-              }
+                );
+              }}
             />
             <button
               aria-label={`Remove row ${i + 1}`}
@@ -431,14 +433,7 @@ function SplitSheet({
           </li>
         ))}
         <li className="flex items-center gap-2">
-          <select
-            aria-label="Category for the rest"
-            className={select}
-            value={last}
-            onChange={(e) => setLast(e.target.value)}
-          >
-            {options}
-          </select>
+          {pickButton(last, 'last', 'Category for the rest')}
           <span
             className="flex min-h-11 w-32 items-center justify-end px-3"
             title="The rest, worked out for you"
@@ -458,9 +453,7 @@ function SplitSheet({
       >
         Add a row
       </Button>
-      {(problem ?? error) && (
-        <p className="mt-2 text-clay">{error ?? (problem ? message[problem] : '')}</p>
-      )}
+      {shown && <p className="mt-2 text-clay">{shown}</p>}
       <Button
         className="mt-4 w-full"
         disabled={problem !== null}
@@ -477,6 +470,17 @@ function SplitSheet({
       >
         Save split
       </Button>
+      <CategoryPicker
+        open={picking !== null}
+        onClose={() => setPicking(null)}
+        onPick={(id) => {
+          setTouched(true);
+          if (picking === 'last') setLast(id);
+          else if (picking !== null)
+            setTyped(typed.map((x, j) => (j === picking ? { ...x, categoryId: id } : x)));
+          setPicking(null);
+        }}
+      />
     </Sheet>
   );
 }
@@ -708,7 +712,7 @@ function LinkTransferSheet({
               <span>
                 {accounts.find((a) => a.id === o.accountId)?.name}
                 <span className="block type-caption text-ink-faint">
-                  {shortDate(o.postedAt)} · {o.merchantDisplay ?? o.merchantNormalized}
+                  {shortDate(o.postedAt)} · {merchantName(o)}
                 </span>
               </span>
               <MoneyText cents={-o.amountCents} sign="always" />

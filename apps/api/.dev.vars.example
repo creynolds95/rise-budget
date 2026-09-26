@@ -4,3 +4,7 @@ JWT_SECRET=change-me-to-a-long-random-string
 TOTP_KEY=
 # Sync from the built-in mock bridge (Caleb's seven accounts) until SimpleFIN is connected.
 SIMPLEFIN_MOCK=1
+# Passkeys only work on the domain they were made for. wrangler.toml points these at prod;
+# override them for `wrangler dev` or local registration fails (C18).
+RP_ID=localhost
+RP_ORIGIN=http://localhost:5173

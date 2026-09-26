@@ -1,3 +1,4 @@
+import type { DevicesResponse } from '@rise/shared/schemas';
 import type {
   CashFlowReport,
   Category,
@@ -40,6 +41,10 @@ export const useBackupStatus = () =>
       get<{ latest: { date: string; bytes: number } | null; count: number }>('/export/backups'),
     staleTime: 60_000,
   });
+
+/** C17: passkeys and signed-in devices, for Settings > Security. */
+export const useDevices = () =>
+  useQuery({ queryKey: ['devices'], queryFn: () => get<DevicesResponse>('/devices') });
 
 /** Today in the user's own timezone. */
 export function useToday(): string {

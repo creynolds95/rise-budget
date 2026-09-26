@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { chipsFor, confidentCount, groupQueue, transferOffer, type QueueItem } from './review';
+import {
+  chipsFor,
+  currentCategoryId,
+  confidentCount,
+  groupQueue,
+  transferOffer,
+  type QueueItem,
+} from './review';
 
 let n = 0;
 const txn = (p: Partial<QueueItem>): QueueItem => ({
@@ -116,8 +123,15 @@ describe('one-tap chips before Rise has learned anything', () => {
       chipsFor(row({ topCategoryIds: ['gone', 'gas'], suggestedCategoryId: 'home' }), ctx),
     ).toEqual(['gas', 'food', 'fun', 'kids']);
   });
-  it('money in leads with income categories', () => {
-    expect(chipsFor(row({ amountCents: -245_000 }), ctx)[0]).toBe('pay');
+  it('money in offers income categories only, plus its merchant’s own', () => {
+    expect(chipsFor(row({ amountCents: -245_000 }), ctx)).toEqual(['pay']);
+    expect(chipsFor(row({ amountCents: -1_200, topCategoryIds: ['food'] }), ctx)).toEqual([
+      'food',
+      'pay',
+    ]);
+  });
+  it('never offers the category the row already has', () => {
+    expect(chipsFor({ ...row({}), categoryId: 'home' }, ctx, 2)).toEqual(['gas', 'food']);
   });
   it('fills with neither transfer-like categories nor the catch-all, unless the merchant uses them', () => {
     const quiet = new Set(['home', 'gas']);
@@ -157,5 +171,14 @@ describe('transfer offer for a lone leg', () => {
     expect(
       transferOffer(txn({ descriptorRaw: 'PAYMENT', isTransfer: true }), 'depository'),
     ).toBeNull();
+  });
+});
+
+describe('currentCategoryId', () => {
+  it('is the single split’s category, else null', () => {
+    const s = (categoryId: string) => ({ id: 'x', txnId: 't', categoryId, amountCents: 1 });
+    expect(currentCategoryId({ splits: [s('a')] } as never)).toBe('a');
+    expect(currentCategoryId({ splits: [s('a'), s('b')] } as never)).toBeNull();
+    expect(currentCategoryId({ splits: [] } as never)).toBeNull();
   });
 });

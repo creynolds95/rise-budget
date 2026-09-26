@@ -368,6 +368,21 @@ describe('T27 SimpleFIN sync', () => {
     expect(String(a.lastSyncedAt).slice(0, 10)).toBe('2026-09-01');
   });
 
+  it('C7 a balance reported past the user’s local today counts toward today’s net worth', async () => {
+    const s = await setup();
+    // 22:00 in Chicago on the 25th is already the 26th in UTC, where the bank dates it.
+    await runSync(
+      env.DB,
+      s.userId,
+      fake([{ id: 'a', name: 'Checking', balance: 250_000, reported: '2026-09-26', txns: [] }]),
+      { now: at('2026-09-26T03:00:00Z') },
+    );
+    const nw = (await s.api('GET', '/networth?from=2026-09-25&to=2026-09-25')).json;
+    expect(nw.points).toEqual([
+      expect.objectContaining({ date: '2026-09-25', netWorthCents: 250_000 }),
+    ]);
+  });
+
   it('skips an account the user archived', async () => {
     const s = await setup();
     const src = fake([

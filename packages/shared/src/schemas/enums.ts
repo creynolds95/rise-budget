@@ -49,6 +49,8 @@ export const AuditAction = z.enum([
   'auth.login_failed',
   'auth.logout',
   'auth.passkey_added',
+  'auth.passkey_removed',
+  'auth.session_revoked',
   'auth.totp_enabled',
   'auth.recovery_generated',
   'auth.recovery_used',

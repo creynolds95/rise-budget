@@ -312,3 +312,86 @@ describe('T16 auth middleware + error contract', () => {
     });
   });
 });
+
+describe('C17 device management', () => {
+  const iphone =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+
+  it('lists passkeys and signed-in devices, marking this one', async () => {
+    const u = await signedInUser();
+    const r = await call('GET', '/devices', { access: u.access });
+    expect(r.status).toBe(200);
+    expect(r.json.passkeys).toHaveLength(1);
+    expect(r.json.sessions).toEqual([expect.objectContaining({ current: true })]);
+  });
+
+  it('names a device from its browser', async () => {
+    const u = await signedInUser();
+    const opts = await call('POST', '/auth/passkey/login/options');
+    await call('POST', '/auth/passkey/login/verify', {
+      headers: { 'user-agent': iphone },
+      body: {
+        challengeToken: opts.json.challengeToken,
+        response: await u.device.login(opts.json.options),
+      },
+    });
+    const r = await call('GET', '/devices', { access: u.access });
+    expect(r.json.sessions.map((s: { label: string | null }) => s.label)).toContain(
+      'iPhone · Safari',
+    );
+  });
+
+  it('signing a device out ends its refresh', async () => {
+    const u = await signedInUser();
+    const [s] = (await call('GET', '/devices', { access: u.access })).json.sessions;
+    expect((await call('DELETE', `/devices/sessions/${s.id}`, { access: u.access })).status).toBe(
+      204,
+    );
+    expect((await call('POST', '/auth/refresh', { cookie: u.cookie })).status).toBe(401);
+    expect((await call('GET', '/devices', { access: u.access })).json.sessions).toEqual([]);
+  });
+
+  it('removing a passkey needs a step-up and never removes the last one', async () => {
+    const u = await signedInUser();
+    const [only] = (await call('GET', '/devices', { access: u.access })).json.passkeys;
+    const path = `/devices/passkeys/${only.id}`;
+    expect((await call('DELETE', path, { access: u.access })).status).toBe(401);
+    const last = await call('DELETE', path, {
+      access: u.access,
+      headers: { 'x-step-up': u.stepUp },
+    });
+    expect(last.status).toBe(409);
+    const missing = await call('DELETE', '/devices/passkeys/nope', {
+      access: u.access,
+      headers: { 'x-step-up': u.stepUp },
+    });
+    expect(missing.status).toBe(404);
+
+    // With a second passkey, the first can go — and then can't sign in.
+    const opts = await call('POST', '/auth/passkey/register/options', {
+      access: u.access,
+      headers: { 'x-step-up': u.stepUp },
+      body: {},
+    });
+    const second = new SoftAuthenticator(env.RP_ID, env.RP_ORIGIN);
+    await call('POST', '/auth/passkey/register/verify', {
+      body: {
+        challengeToken: opts.json.challengeToken,
+        response: await second.register(opts.json.options),
+      },
+    });
+    const ok = await call('DELETE', path, { access: u.access, headers: { 'x-step-up': u.stepUp } });
+    expect(ok.status).toBe(204);
+    expect((await passkeyLogin(u.device)).status).toBe(401);
+    expect((await passkeyLogin(second)).status).toBe(200);
+  });
+});
+
+describe('C17 security headers', () => {
+  it('API responses forbid rendering, framing and sniffing', async () => {
+    const r = await call('GET', '/health');
+    expect(r.headers.get('content-security-policy')).toContain("default-src 'none'");
+    expect(r.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(r.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+  });
+});

@@ -80,11 +80,6 @@ export function Accounts() {
             onSelect: () => refresh.mutate(),
           },
           {
-            label: 'Add a manual account',
-            icon: 'wallet',
-            onSelect: () => setAdding(true),
-          },
-          {
             label: 'Bank connection',
             icon: 'bank',
             onSelect: () =>
@@ -191,8 +186,10 @@ export function NetWorthSection() {
               tone={last.netWorthCents < 0 ? 'over' : 'ink'}
               whole
             />
-          ) : (
+          ) : nw.isPending ? (
             <Skeleton className="h-11 w-48" />
+          ) : (
+            <span className="text-ink-muted">No balances yet</span>
           )}
         </p>
         {first && last && first.date === last.date && (

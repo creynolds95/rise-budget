@@ -240,7 +240,9 @@ export async function runSync(
           userId,
           db,
           accountId,
-          acct,
+          // A balance can't be as of a day the user hasn't reached yet; a later as_of would
+          // fall outside a "through today" net worth read and drop the account from it (C7).
+          { ...acct, balanceDate: acct.balanceDate > today ? today : acct.balanceDate },
           new Date(sf['balance-date'] * 1000).toISOString(),
         ),
       );

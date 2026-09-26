@@ -1,4 +1,5 @@
 import type { RuleOffer, Transaction } from '@rise/shared/schemas';
+import { merchantName } from '../lib/merchant';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -16,6 +17,7 @@ import { transitionClick } from '../lib/transition';
 import {
   chipsFor,
   confidentCount,
+  currentCategoryId,
   groupQueue,
   transferOffer,
   type ChipContext,
@@ -77,6 +79,13 @@ export function Review() {
     quiet: new Set(categories.filter((c) => !c.budgeted || c.isCatchall).map((c) => c.id)),
   };
 
+  // With "Transfer"/"Card payment" already offered, a transfer-like chip would say it twice.
+  const unbudgeted = new Set(categories.filter((c) => !c.budgeted).map((c) => c.id));
+  const offerCtx = (t: QueueItem): ChipContext =>
+    transferOffer(t, account(t.accountId)?.kind)
+      ? { ...ctx, kinds: new Map([...ctx.kinds].filter(([id]) => !unbudgeted.has(id))) }
+      : ctx;
+
   const unhide = (ids: string[]) =>
     setHidden((h) => new Set([...h].filter((x) => !ids.includes(x))));
 
@@ -133,7 +142,7 @@ export function Review() {
     };
   }, []);
 
-  const name = (t: QueueItem) => t.merchantDisplay ?? t.merchantNormalized;
+  const name = (t: QueueItem) => merchantName(t);
   const accept = (t: QueueItem) =>
     act([t.id], `${name(t)} → ${catName(t.suggestedCategoryId)}`, async () => {
       await api(
@@ -204,10 +213,12 @@ export function Review() {
         return;
       }
       const t = first.t;
-      const chips = chipsFor(t, ctx, 2);
+      const cur = currentCategoryId(t);
+      const chips = chipsFor({ ...t, categoryId: cur }, offerCtx(t), 2);
       const n = Number(e.key);
       if (n >= 1 && n <= chips.length) file(t, chips[n - 1] as string);
       else if (e.key === 'Enter' && t.suggestedCategoryId && first.band !== 'none') accept(t);
+      else if (e.key === 'Enter' && cur) file(t, cur);
       else if (e.key === 'o' || e.key === '/') setPicking(t);
       else if (e.key === 's')
         void nav(`/transactions/${t.id}?split=1&from=${encodeURIComponent(FROM)}`);
@@ -291,9 +302,21 @@ export function Review() {
                   focused={row === first}
                   account={account(row.t.accountId)?.name ?? ''}
                   suggestion={catName(row.t.suggestedCategoryId)}
-                  chips={chipsFor(row.t, ctx, 2).map((id) => ({ id, name: catName(id) }))}
+                  current={catName(currentCategoryId(row.t))}
+                  chips={chipsFor(
+                    { ...row.t, categoryId: currentCategoryId(row.t) },
+                    offerCtx(row.t),
+                    2,
+                  ).map((id) => ({
+                    id,
+                    name: catName(id),
+                  }))}
                   offer={transferOffer(row.t, account(row.t.accountId)?.kind)}
                   onAccept={() => accept(row.t)}
+                  onKeep={() => {
+                    const id = currentCategoryId(row.t);
+                    if (id) file(row.t, id);
+                  }}
                   onFile={(id) => file(row.t, id)}
                   onTransfer={() => markTransfer(row.t)}
                   onPick={() => setPicking(row.t)}
@@ -318,7 +341,7 @@ export function Review() {
                 className="flex min-h-12 items-center justify-between border-b border-hairline py-2 text-ink-muted"
               >
                 <span>
-                  {t.merchantDisplay ?? t.merchantNormalized}
+                  {merchantName(t)}
                   <span className="block type-caption text-ink-faint">
                     {shortDate(t.postedAt)} · {account(t.accountId)?.name}
                   </span>
@@ -363,9 +386,11 @@ function ReviewRow({
   focused,
   account,
   suggestion,
+  current,
   chips,
   offer,
   onAccept,
+  onKeep,
   onFile,
   onTransfer,
   onPick,
@@ -375,9 +400,12 @@ function ReviewRow({
   focused: boolean;
   account: string;
   suggestion: string;
+  /** The category the row is filed under now (every row gets one on sync). */
+  current: string;
   chips: { id: string; name: string }[];
   offer: 'card_payment' | 'transfer' | null;
   onAccept: () => void;
+  onKeep: () => void;
   onFile: (categoryId: string) => void;
   onTransfer: () => void;
   onPick: () => void;
@@ -422,9 +450,7 @@ function ReviewRow({
         className={`gutter flex items-baseline justify-between gap-3 ${t.isPending ? 'italic' : ''}`}
       >
         <span className="flex min-w-0 items-baseline gap-2">
-          <span className="max-w-[75%] shrink-0 truncate">
-            {t.merchantDisplay ?? t.merchantNormalized}
-          </span>
+          <span className="max-w-[75%] shrink-0 truncate">{merchantName(t)}</span>
           {t.isPending && (
             <span
               title="Pending"
@@ -451,14 +477,24 @@ function ReviewRow({
             {band === 'confident' ? `✓ ${suggestion}` : `${suggestion}?`}
           </button>
         )}
-        {offer && suggestion !== 'Transfer' && suggestion !== 'Credit Card Payment' && (
+        {!prefilled && current && (
           <button
-            onClick={onTransfer}
-            className={`${chip} border border-hairline bg-surface text-ink-muted`}
+            onClick={onKeep}
+            aria-label={`Keep ${current}`}
+            className={`${chip} border border-sage-600 bg-surface font-medium text-sage-700`}
           >
-            {offer === 'card_payment' ? 'Card payment' : 'Transfer'}
+            ✓ {current}
           </button>
         )}
+        {offer &&
+          !['Transfer', 'Credit Card Payment'].includes(prefilled ? suggestion : current) && (
+            <button
+              onClick={onTransfer}
+              className={`${chip} border border-hairline bg-surface text-ink-muted`}
+            >
+              {offer === 'card_payment' ? 'Card payment' : 'Transfer'}
+            </button>
+          )}
         {chips.map((c) => (
           <button
             key={c.id}

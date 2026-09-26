@@ -98,13 +98,14 @@ export interface SessionRow {
 export async function createSession(
   userId: UserId,
   db: D1Database,
-  s: { id: string; refreshHash: string; expiresAt: string },
+  s: { id: string; refreshHash: string; expiresAt: string; deviceLabel?: string | null },
 ): Promise<void> {
+  const now = nowIso();
   await db
     .prepare(
-      'INSERT INTO session (id, user_id, refresh_hash, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5)',
+      'INSERT INTO session (id, user_id, refresh_hash, expires_at, created_at, device_label, last_seen_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?5)',
     )
-    .bind(s.id, userId, s.refreshHash, s.expiresAt, nowIso())
+    .bind(s.id, userId, s.refreshHash, s.expiresAt, now, s.deviceLabel ?? null)
     .run();
 }
 
@@ -132,9 +133,9 @@ export async function rotateSession(
 ): Promise<boolean> {
   const r = await db
     .prepare(
-      'UPDATE session SET refresh_hash = ?4, expires_at = ?5 WHERE user_id = ?1 AND id = ?2 AND refresh_hash = ?3 AND revoked_at IS NULL',
+      'UPDATE session SET refresh_hash = ?4, expires_at = ?5, last_seen_at = ?6 WHERE user_id = ?1 AND id = ?2 AND refresh_hash = ?3 AND revoked_at IS NULL',
     )
-    .bind(userId, id, fromHash, toHash, expiresAt)
+    .bind(userId, id, fromHash, toHash, expiresAt, nowIso())
     .run();
   return r.meta.changes === 1;
 }
@@ -146,6 +147,64 @@ export async function revokeSession(userId: UserId, db: D1Database, id: string):
     )
     .bind(userId, id, nowIso())
     .run();
+}
+
+// ── device management (C17) ──────────────────────────────────────────────────
+
+export interface PasskeySummaryRow {
+  id: string;
+  device_label: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export async function listPasskeys(userId: UserId, db: D1Database): Promise<PasskeySummaryRow[]> {
+  const { results } = await db
+    .prepare(
+      'SELECT id, device_label, created_at, last_used_at FROM credential WHERE user_id = ?1 ORDER BY created_at',
+    )
+    .bind(userId)
+    .all<PasskeySummaryRow>();
+  return results;
+}
+
+/** Removes a passkey unless it is the user's last one — that would lock them out. */
+export async function deletePasskey(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): Promise<'deleted' | 'last' | 'missing'> {
+  const r = await db
+    .prepare(
+      `DELETE FROM credential WHERE user_id = ?1 AND id = ?2
+         AND (SELECT COUNT(*) FROM credential WHERE user_id = ?1) > 1`,
+    )
+    .bind(userId, id)
+    .run();
+  if (r.meta.changes === 1) return 'deleted';
+  return (await getCredential(userId, db, id)) ? 'last' : 'missing';
+}
+
+export interface ActiveSessionRow {
+  id: string;
+  device_label: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+}
+
+export async function listActiveSessions(
+  userId: UserId,
+  db: D1Database,
+): Promise<ActiveSessionRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, device_label, created_at, last_seen_at FROM session
+       WHERE user_id = ?1 AND revoked_at IS NULL AND expires_at > ?2
+       ORDER BY COALESCE(last_seen_at, created_at) DESC`,
+    )
+    .bind(userId, nowIso())
+    .all<ActiveSessionRow>();
+  return results;
 }
 
 // ── TOTP ──────────────────────────────────────────────────────────────────────

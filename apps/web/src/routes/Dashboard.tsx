@@ -1,9 +1,11 @@
 import type { RecurringSeries } from '@rise/shared/schemas';
+import { merchantName } from '../lib/merchant';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { NetWorthSection } from './Accounts';
 import { SummaryCard } from './Budget';
 import { SpendingSection } from '../components/SpendingSection';
+import { HealthNotes } from '../components/HealthNotes';
 import { StaleNotes } from '../components/StaleNotes';
 import { TxnRow } from '../components/TxnRow';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -14,11 +16,13 @@ import { addMonths, shortDate } from '../lib/dates';
 import { transitionClick } from '../lib/transition';
 import {
   useAccounts,
+  useBackupStatus,
   useCashToPayday,
   useCategories,
   useMe,
   usePeriod,
   useRecurring,
+  useSyncStatus,
   useToday,
   useTransactions,
 } from '../lib/queries';
@@ -38,6 +42,8 @@ export function Dashboard() {
   const surplus = useCashToPayday();
   const categories = useCategories();
   const txns = useTransactions({ sort: 'date_desc' });
+  const syncStatus = useSyncStatus();
+  const backups = useBackupStatus();
   const queue = useQuery({
     queryKey: ['queue-count'],
     queryFn: () => get<{ count: number }>('/review/queue'),
@@ -75,10 +81,11 @@ export function Dashboard() {
 
   return (
     <div className="gutter mx-auto max-w-2xl pt-6 pb-12">
+      <HealthNotes sync={syncStatus.data} backups={backups.data} today={today} />
       {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}
 
       {/* 1. Surplus */}
-      <section className={accounts.data ? 'mt-8' : ''}>
+      <section className="mt-8 first:mt-0">
         <h2 className="type-title">Surplus</h2>
         <Link
           to="/cash-to-payday"
@@ -185,7 +192,7 @@ export function Dashboard() {
                 className="flex min-h-12 items-center justify-between border-b border-hairline py-3"
               >
                 <span>
-                  {s.merchantNormalized}
+                  {merchantName(s)}
                   <span className="ml-2 type-caption text-ink-faint">
                     {shortDate(s.nextExpectedDate ?? '')}
                     {catName(s.categoryId) ? ` · ${catName(s.categoryId)}` : ''}
@@ -196,7 +203,7 @@ export function Dashboard() {
             ))}
             {broken.map((s) => (
               <li key={s.id} className="min-h-12 border-b border-hairline py-3 text-clay">
-                {s.merchantNormalized} hasn't charged since it was due{' '}
+                {merchantName(s)} hasn't charged since it was due{' '}
                 {shortDate(s.nextExpectedDate ?? '')}.
               </li>
             ))}

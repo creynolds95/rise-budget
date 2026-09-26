@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { createSession } from '../db';
 import type { AppEnv } from '../env';
+import { deviceLabel } from './device';
 import { AppError } from './errors';
 import {
   formatRefresh,
@@ -45,6 +46,7 @@ export async function issueSession(c: Context<AppEnv>, userId: string) {
     id: sessionId,
     refreshHash: await hashSecret(secret),
     expiresAt: refreshExpiry(),
+    deviceLabel: deviceLabel(c.req.header('User-Agent')),
   });
   setRefreshCookie(c, formatRefresh(userId, sessionId, secret));
   return c.json({

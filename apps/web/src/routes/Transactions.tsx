@@ -1,14 +1,19 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { FilterSheet } from '../components/FilterSheet';
+import { TxnAmount } from '../components/TxnAmount';
 import { TxnRow } from '../components/TxnRow';
 import { Button } from '../components/primitives/Button';
 import { Icon, IconButton } from '../components/primitives/Icon';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { api } from '../lib/api';
+import { shortDate } from '../lib/dates';
 import { useHeaderActions } from '../lib/headerActions';
+import { useIsDesktop } from '../lib/media';
+import { merchantName } from '../lib/merchant';
+import { transitionClick } from '../lib/transition';
 import {
   useAccounts,
   useCategories,
@@ -95,6 +100,76 @@ export function Transactions() {
     );
   };
 
+  // Desktop: one scannable table, category editable in place (C14).
+  const desktop = useIsDesktop();
+  const navigate = useNavigate();
+  const table = (
+    <table className="w-full overflow-hidden rounded-card bg-surface shadow-soft">
+      <thead>
+        <tr className="border-b border-hairline text-left type-label text-ink-muted">
+          <th className="px-4 py-2 font-normal">Date</th>
+          <th className="px-4 py-2 font-normal">Merchant</th>
+          <th className="px-4 py-2 font-normal">Category</th>
+          <th className="px-4 py-2 font-normal">Account</th>
+          <th className="px-4 py-2 text-right font-normal">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((t) => {
+          const c = t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
+          const to = `/transactions/${t.id}?from=${encodeURIComponent(back)}`;
+          return (
+            <tr
+              key={t.id}
+              onClick={transitionClick(navigate, to)}
+              className={`cursor-pointer border-b border-hairline last:border-0 hover:bg-sage-100/50 ${t.isPending ? 'italic' : ''}`}
+            >
+              <td className="px-4 py-2.5 whitespace-nowrap text-ink-muted money">
+                {shortDate(t.postedAt)}
+              </td>
+              <td className="max-w-72 truncate px-4 py-2.5">
+                {merchantName(t)}
+                {t.isPending && (
+                  <span
+                    className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
+                    title="Pending"
+                  >
+                    P
+                  </span>
+                )}
+                {t.reviewState === 'needs_review' && (
+                  <span className="ml-2 type-caption text-ink-faint not-italic">To review</span>
+                )}
+              </td>
+              <td className="px-4 py-1.5">
+                {t.isTransfer || t.splits.length > 1 ? (
+                  <span className="text-ink-muted">{t.isTransfer ? 'Transfer' : 'Split'}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRecategorizing(t.id);
+                    }}
+                    className="min-h-9 max-w-56 truncate rounded-full px-3 text-left hover:bg-sage-100"
+                  >
+                    {c ? `${c.emoji ? `${c.emoji} ` : ''}${c.name}` : 'Uncategorized'}
+                  </button>
+                )}
+              </td>
+              <td className="max-w-48 truncate px-4 py-2.5 text-ink-muted">
+                {accounts.find((a) => a.id === t.accountId)?.name}
+              </td>
+              <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                <TxnAmount t={t} />
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+
   const filterButton = (
     <IconButton
       icon="filter"
@@ -106,7 +181,7 @@ export function Transactions() {
   useHeaderActions(filterButton);
 
   return (
-    <div className="mx-auto max-w-2xl pb-12">
+    <div className={`mx-auto pb-12 ${desktop ? 'max-w-5xl' : 'max-w-2xl'}`}>
       <header className="gutter hidden items-center justify-between pt-3 lg:flex">
         <h1 className="type-page">Transactions</h1>
         <div className="-mr-2">{filterButton}</div>
@@ -209,7 +284,9 @@ export function Transactions() {
             )}
           </div>
         )}
-        {byDate ? (
+        {desktop && items.length > 0 ? (
+          table
+        ) : byDate ? (
           groupByDay(items).map(([day, rows]) => (
             <section key={day}>
               <h2 className="sticky top-[var(--banner-h,0px)] z-[1] -mx-4 bg-canvas/95 px-4 pt-4 pb-1 type-label text-ink-muted backdrop-blur md:-mx-6 md:px-6">

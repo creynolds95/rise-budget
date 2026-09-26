@@ -46,6 +46,10 @@ export function groupQueue(items: readonly QueueItem[]): QueueDay[] {
   return [...days.values()];
 }
 
+/** The one category a row is filed under now, or null when split (or not yet filed). */
+export const currentCategoryId = (t: Pick<QueueItem, 'splits'>): string | null =>
+  t.splits.length === 1 ? (t.splits[0]?.categoryId ?? null) : null;
+
 /** How many rows "Accept all confident" would file. */
 export const confidentCount = (items: readonly QueueItem[]) =>
   items.filter(
@@ -74,11 +78,14 @@ export interface ChipContext {
  * These are choices, never a pre-fill.
  */
 export function chipsFor(
-  t: Pick<QueueItem, 'amountCents' | 'topCategoryIds' | 'suggestedCategoryId'>,
+  t: Pick<QueueItem, 'amountCents' | 'topCategoryIds' | 'suggestedCategoryId'> & {
+    categoryId?: string | null;
+  },
   ctx: ChipContext,
   max = 4,
 ): string[] {
-  const order: ('income' | 'expense')[] = t.amountCents < 0 ? ['income', 'expense'] : ['expense'];
+  // Money in fills from income only (C9); a refund still finds its merchant's own categories.
+  const order: ('income' | 'expense')[] = t.amountCents < 0 ? ['income'] : ['expense'];
   const pool = [
     ...t.topCategoryIds,
     ...order.flatMap((k) =>
@@ -90,7 +97,13 @@ export function chipsFor(
   const out: string[] = [];
   for (const id of pool) {
     if (out.length === max) break;
-    if (!ctx.kinds.has(id) || id === t.suggestedCategoryId || out.includes(id)) continue;
+    if (
+      !ctx.kinds.has(id) ||
+      id === t.suggestedCategoryId ||
+      id === t.categoryId ||
+      out.includes(id)
+    )
+      continue;
     out.push(id);
   }
   return out;

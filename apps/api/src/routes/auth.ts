@@ -41,6 +41,7 @@ import {
   randomBytes,
   safeEqual,
 } from '../lib/crypto';
+import { deviceLabel } from '../lib/device';
 import { AppError } from '../lib/errors';
 import {
   clearRefreshCookie,
@@ -133,7 +134,7 @@ auth.post('/passkey/register/verify', async (c) => {
     publicKey: cred.publicKey,
     counter: cred.counter,
     transports: cred.transports ?? [],
-    deviceLabel: b.deviceLabel ?? null,
+    deviceLabel: b.deviceLabel ?? deviceLabel(c.req.header('User-Agent')),
   });
   await writeAudit(ch.userId, c.env.DB, 'auth.passkey_added', { type: 'credential', id: cred.id });
   return c.json({ credentialId: cred.id }, 201);

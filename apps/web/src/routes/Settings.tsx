@@ -32,6 +32,7 @@ import {
   useAccounts,
   useBackupStatus,
   useCategories,
+  useDevices,
   useGroups,
   useInvalidateMoney,
   useMe,
@@ -83,9 +84,7 @@ export function Settings() {
       <p className="text-ink-muted">{me?.email}</p>
 
       <ul className="mt-6 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-        <Card to="/settings/appearance" title="Appearance" state={THEME_LABEL[appearance]}>
-          Light, dark, or match your system
-        </Card>
+        <Card to="/settings/appearance" title="Appearance" state={THEME_LABEL[appearance]} />
         <Card to="/settings/sync" title="Bank sync" state={sync ? MODE[sync.mode] : undefined}>
           {lastRun
             ? `Last run ${shortDate(localToday(me?.timezone, new Date(lastRun.startedAt)))} · ${lastRun.status}`
@@ -101,30 +100,22 @@ export function Settings() {
                 : 'Plans change one month at a time'
               : undefined
           }
-        >
-          How plan changes and month end work
-        </Card>
+        />
         <Card
           to="/settings/categories"
           title="Categories"
           state={categories ? `${categories.length} in use` : undefined}
-        >
-          Groups, names, bills and income
-        </Card>
+        />
         <Card
           to="/settings/rules"
           title="Rules"
           state={rules ? `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}` : undefined}
-        >
-          What files itself automatically
-        </Card>
+        />
         <Card
           to="/accounts"
           title="Accounts"
           state={accounts ? `${accounts.filter((a) => !a.archivedAt).length} accounts` : undefined}
-        >
-          Balances, cadence, loans
-        </Card>
+        />
         <Card
           to="/settings/security"
           title="Security"
@@ -135,9 +126,7 @@ export function Settings() {
                 : `Locks ${{ immediate: 'immediately', '5m': 'after 5 min', '1h': 'after 1 hour' }[me.settings.appLock]}`
               : undefined
           }
-        >
-          App lock, PIN, passkeys
-        </Card>
+        />
         <Card
           to="/settings/data"
           title="Your data"
@@ -148,14 +137,16 @@ export function Settings() {
                 : 'No backup yet'
               : undefined
           }
-        >
-          Export, and nightly backups
-        </Card>
+        />
       </ul>
 
       <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
         Sign out
       </Button>
+      {/* Which build is running, so a deploy that never went out is visible (C20). */}
+      <p className="mt-6 type-caption text-ink-faint money">
+        Built {shortDate(localToday(me?.timezone, new Date(__APP_VERSION__)))} · {__APP_COMMIT__}
+      </p>
     </div>
   );
 }
@@ -169,7 +160,7 @@ function Card({
   to: string;
   title: string;
   state?: string | undefined;
-  children: string;
+  children?: string;
 }) {
   const navigate = useNavigate();
   return (
@@ -182,7 +173,7 @@ function Card({
         <span className="type-label text-ink-muted">{title}</span>
         <span className="min-w-0">
           <span className="block font-medium">{state ?? <Skeleton className="h-5 w-24" />}</span>
-          <span className="block type-caption text-ink-faint">{children}</span>
+          {children && <span className="block type-caption text-ink-faint">{children}</span>}
         </span>
         <Chevron />
       </Link>
@@ -264,10 +255,7 @@ function BudgetSection() {
   const navigate = useNavigate();
   return (
     <>
-      <Group
-        title="When you change a plan"
-        footer="You can still pick either one each time, in the plan editor. Months that are already over never change."
-      >
+      <Group title="When you change a plan">
         <RadioRow
           name="plan-scope"
           label="This month only"
@@ -322,6 +310,8 @@ function CategoriesSection() {
   const [newGroup, setNewGroup] = useState<{ name: string; kind: CategoryGroupKind } | null>(null);
   const [renaming, setRenaming] = useState<CategoryGroup | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Arrows only while reordering, so a row is one target the rest of the time (C15).
+  const [ordering, setOrdering] = useState(false);
   const save = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
@@ -345,34 +335,53 @@ function CategoriesSection() {
   };
   return (
     <>
+      <div className="flex justify-end">
+        <Button variant="quiet" className="-mr-4" onClick={() => setOrdering(!ordering)}>
+          {ordering ? 'Done' : 'Reorder'}
+        </Button>
+      </div>
       {error && <p className="mt-2 text-clay">{error}</p>}
       {groups.map((g, i) => (
         <section key={g.id} className="mt-6">
           <div className="flex items-center justify-between gap-2">
             <h2 className="type-label text-ink-muted">
-              {g.name} · {g.kind === 'income' ? 'Income' : 'Expense'}
+              {g.name}
+              {g.name.toLowerCase() !== g.kind &&
+                ` · ${g.kind === 'income' ? 'Income' : 'Expense'}`}
             </h2>
             <div className="flex items-center">
-              <IconButton
-                icon="chevronDown"
-                iconClassName="rotate-180"
-                label="Move up"
-                disabled={i === 0}
-                onClick={() => move(g, -1)}
-              />
-              <IconButton
-                icon="chevronDown"
-                label="Move down"
-                disabled={i === groups.length - 1}
-                onClick={() => move(g, 1)}
-              />
-              <IconButton icon="pencil" label={`Rename ${g.name}`} onClick={() => setRenaming(g)} />
-              {categories.filter((c) => c.groupId === g.id).length === 0 && (
-                <IconButton
-                  icon="trash"
-                  label={`Delete ${g.name}`}
-                  onClick={() => void save(() => api('DELETE', `/category-groups/${g.id}`))}
-                />
+              {ordering && (
+                <>
+                  <IconButton
+                    icon="chevronDown"
+                    iconClassName="rotate-180"
+                    label="Move up"
+                    disabled={i === 0}
+                    onClick={() => move(g, -1)}
+                  />
+                  <IconButton
+                    icon="chevronDown"
+                    label="Move down"
+                    disabled={i === groups.length - 1}
+                    onClick={() => move(g, 1)}
+                  />
+                </>
+              )}
+              {!ordering && (
+                <>
+                  <IconButton
+                    icon="pencil"
+                    label={`Rename ${g.name}`}
+                    onClick={() => setRenaming(g)}
+                  />
+                  {categories.filter((c) => c.groupId === g.id).length === 0 && (
+                    <IconButton
+                      icon="trash"
+                      label={`Delete ${g.name}`}
+                      onClick={() => void save(() => api('DELETE', `/category-groups/${g.id}`))}
+                    />
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -383,11 +392,14 @@ function CategoriesSection() {
                 <li key={c.id} className="flex items-center">
                   <button
                     onClick={() => setEditing(c)}
+                    disabled={ordering}
                     className="flex min-h-13 min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left active:bg-sage-100"
                   >
-                    <span aria-hidden className="w-7 text-center text-xl leading-none">
-                      {c.emoji ?? '·'}
-                    </span>
+                    {c.emoji && (
+                      <span aria-hidden className="w-7 text-center text-xl leading-none">
+                        {c.emoji}
+                      </span>
+                    )}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{c.name}</span>
                       {g.kind === 'expense' && c.budgeted && (
@@ -400,39 +412,43 @@ function CategoriesSection() {
                         <span className="block type-caption text-ink-faint">Not budgeted</span>
                       )}
                     </span>
-                    <Chevron />
+                    {!ordering && <Chevron />}
                   </button>
-                  <IconButton
-                    icon="chevronDown"
-                    iconClassName="rotate-180"
-                    label={`Move ${c.name} up`}
-                    disabled={ci === 0}
-                    onClick={() => {
-                      const other = own[ci - 1];
-                      if (!other) return;
-                      void save(() =>
-                        Promise.all([
-                          api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
-                          api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
-                        ]),
-                      );
-                    }}
-                  />
-                  <IconButton
-                    icon="chevronDown"
-                    label={`Move ${c.name} down`}
-                    disabled={ci === own.length - 1}
-                    onClick={() => {
-                      const other = own[ci + 1];
-                      if (!other) return;
-                      void save(() =>
-                        Promise.all([
-                          api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
-                          api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
-                        ]),
-                      );
-                    }}
-                  />
+                  {ordering && (
+                    <>
+                      <IconButton
+                        icon="chevronDown"
+                        iconClassName="rotate-180"
+                        label={`Move ${c.name} up`}
+                        disabled={ci === 0}
+                        onClick={() => {
+                          const other = own[ci - 1];
+                          if (!other) return;
+                          void save(() =>
+                            Promise.all([
+                              api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
+                              api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
+                            ]),
+                          );
+                        }}
+                      />
+                      <IconButton
+                        icon="chevronDown"
+                        label={`Move ${c.name} down`}
+                        disabled={ci === own.length - 1}
+                        onClick={() => {
+                          const other = own[ci + 1];
+                          if (!other) return;
+                          void save(() =>
+                            Promise.all([
+                              api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
+                              api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
+                            ]),
+                          );
+                        }}
+                      />
+                    </>
+                  )}
                 </li>
               ))}
           </ul>
@@ -797,13 +813,13 @@ function SyncSection() {
 
 const LOCK_CHOICES: { id: AppLock; label: string; hint?: string }[] = [
   { id: 'off', label: 'Off' },
-  { id: 'immediate', label: 'Immediately', hint: 'Every time you come back to Rise.' },
+  { id: 'immediate', label: 'Immediately' },
   { id: '5m', label: 'After 5 minutes away' },
   { id: '1h', label: 'After 1 hour away' },
 ];
 
 function SecuritySection() {
-  const { registerPasskey, signOut } = useAuth();
+  const { registerPasskey, signOut, stepUp } = useAuth();
   const me = useMe().data;
   const qc = useQueryClient();
   const [msg, setMsg] = useState<string | null>(null);
@@ -821,12 +837,36 @@ function SecuritySection() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
   });
   const mode = lock.isPending ? (lock.variables ?? 'off') : (me?.settings.appLock ?? 'off');
+  const devices = useDevices();
+  const tz = me?.timezone;
+  const seen = (iso: string) => shortDate(localToday(tz, new Date(iso)));
+  const removePasskey = async (id: string, label: string | null) => {
+    if (
+      !window.confirm(`Remove the passkey on ${label ?? 'that device'}? It won't sign in anymore.`)
+    )
+      return;
+    setMsg(null);
+    try {
+      await api('DELETE', `/devices/passkeys/${encodeURIComponent(id)}`, undefined, {
+        stepUp: await stepUp(),
+      });
+      await qc.invalidateQueries({ queryKey: ['devices'] });
+    } catch (e) {
+      setMsg(passkeyMessage(e, 'The passkey wasn’t removed.'));
+    }
+  };
+  const signOutDevice = async (id: string) => {
+    setMsg(null);
+    try {
+      await api('DELETE', `/devices/sessions/${id}`);
+      await qc.invalidateQueries({ queryKey: ['devices'] });
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : 'That device wasn’t signed out.');
+    }
+  };
   return (
     <>
-      <Group
-        title="App lock"
-        footer="When Rise is locked, you unlock it with your passkey (Face ID or Touch ID)."
-      >
+      <Group title="App lock">
         {LOCK_CHOICES.map((c) => (
           <RadioRow
             key={c.id}
@@ -839,10 +879,7 @@ function SecuritySection() {
         ))}
       </Group>
       {mode !== 'off' && (
-        <Group
-          title="Offline PIN"
-          footer="For when you're offline and a passkey can't be checked. The PIN only opens the lock on this device. It can't sign in or change your account. Five wrong tries turn it off."
-        >
+        <Group title="Offline PIN">
           {pinOn ? (
             <>
               <button
@@ -873,13 +910,30 @@ function SecuritySection() {
           )}
         </Group>
       )}
-      <Group title="Passkeys" footer="Add one on each phone or computer you use Rise on.">
+      <Group title="Passkeys">
+        {devices.data?.passkeys.map((k) => (
+          <GroupRow
+            key={k.id}
+            label={k.label ?? 'Passkey'}
+            hint={`Added ${seen(k.createdAt)}${k.lastUsedAt ? ` · used ${seen(k.lastUsedAt)}` : ''}`}
+          >
+            {(devices.data?.passkeys.length ?? 0) > 1 && (
+              <button
+                className="min-h-11 shrink-0 font-semibold text-clay"
+                onClick={() => void removePasskey(k.id, k.label)}
+              >
+                Remove
+              </button>
+            )}
+          </GroupRow>
+        ))}
         <button
           onClick={async () => {
             setMsg(null);
             try {
               await registerPasskey();
               setMsg('Passkey added.');
+              await qc.invalidateQueries({ queryKey: ['devices'] });
             } catch (e) {
               setMsg(passkeyMessage(e, 'The passkey wasn’t added.'));
             }
@@ -890,11 +944,29 @@ function SecuritySection() {
           <Chevron />
         </button>
       </Group>
+      <Group title="Signed-in devices">
+        {devices.data?.sessions.map((d) => (
+          <GroupRow
+            key={d.id}
+            label={d.label ?? 'Unknown device'}
+            hint={`Active ${seen(d.lastSeenAt ?? d.createdAt)}`}
+          >
+            {d.current ? (
+              <span className="shrink-0 type-caption text-ink-muted">This device</span>
+            ) : (
+              <button
+                className="min-h-11 shrink-0 font-semibold text-clay"
+                onClick={() => void signOutDevice(d.id)}
+              >
+                Sign out
+              </button>
+            )}
+          </GroupRow>
+        ))}
+        {!devices.data && <Skeleton className="m-4 h-5 w-40" />}
+      </Group>
       {msg && <p className="mt-2 px-1 text-ink-muted">{msg}</p>}
-      <Group
-        title="Backup sign-in"
-        footer="Lets someone sign in on a new phone or computer without your passkey — to add their own, or to get you back in if you lose your only device."
-      >
+      <Group title="Backup sign-in">
         <button
           onClick={() => setTotpSheet(true)}
           className="flex min-h-13 w-full items-center justify-between px-4 text-left active:bg-sage-100"
@@ -1183,10 +1255,7 @@ function DataSection() {
 
   return (
     <>
-      <Group
-        title="Export"
-        footer="Amounts are exact, in dollars and cents. No passkeys or PINs are ever included."
-      >
+      <Group title="Export">
         <button
           onClick={() => void download('csv')}
           disabled={busy !== null}
@@ -1213,10 +1282,7 @@ function DataSection() {
         </button>
       </Group>
       {error && <p className="mt-2 px-1 text-clay">{error}</p>}
-      <Group
-        title="Backups"
-        footer="A copy of everything is kept safe automatically, off this device, in case anything ever goes wrong. 90 days are kept."
-      >
+      <Group title="Backups">
         <GroupRow label="Last backup">
           <span className="text-ink-muted">{backupState ?? <Skeleton className="h-5 w-24" />}</span>
         </GroupRow>
