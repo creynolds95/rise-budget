@@ -2,6 +2,7 @@ import type { RecurringSeries } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
 import { SpendingSection } from '../components/SpendingSection';
 import { StaleNotes } from '../components/StaleNotes';
+import { MoneyFlowReportView } from './MoneyFlow';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
@@ -156,6 +157,13 @@ export function Dashboard() {
             ))}
           </ul>
         )}
+      </section>
+
+      <section className="mt-8">
+        <h2 className="type-title">Money flow</h2>
+        <div className="mt-2">
+          <MoneyFlowReportView month={month} />
+        </div>
       </section>
 
       <SpendingSection
