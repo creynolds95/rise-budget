@@ -92,20 +92,6 @@ export function Dashboard() {
           ) : (
             <MoneyText cents={surplus.data.freeToMoveCents} className="type-display" whole />
           )}
-          <p className="mt-1 text-ink-muted">
-            {!surplus.data ? (
-              <>&nbsp;</>
-            ) : surplus.data.paySchedules.length === 0 ? (
-              "We'll show what's free to move once we see your pay pattern."
-            ) : surplus.data.lowestPoint.date !== surplus.data.points[0]?.date ? (
-              <>
-                Lowest point is {shortDate(surplus.data.lowestPoint.date)}, after{' '}
-                {surplus.data.lowestPoint.label}.
-              </>
-            ) : (
-              <>&nbsp;</>
-            )}
-          </p>
         </Link>
         {((queue.data?.count ?? 0) > 0 || p.period.needsRecalc) && (
           <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
