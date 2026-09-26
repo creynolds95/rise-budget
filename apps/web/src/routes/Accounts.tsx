@@ -174,10 +174,13 @@ export function NetWorthSection() {
     first && last && daysBetween(first.date, last.date) >= 90
       ? percentChange(first.netWorthCents, last.netWorthCents, range)
       : null;
+  // When the newest point is held/interpolated, name the date it's actually based on —
+  // "includes estimated balances" alone doesn't say how stale.
+  const lastReported = [...points].reverse().find((p) => !p.inferred);
 
   return (
     <>
-      <p className="type-label text-ink-muted">Net worth</p>
+      <h2 className="type-title">Net worth</h2>
       <div className="mt-1 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
         <p className="type-display">
           {last ? (
@@ -207,7 +210,7 @@ export function NetWorthSection() {
             {first.date > start
               ? `since ${shortDate(first.date)}`
               : `over ${range === 'ALL' ? 'three years' : range === 'YTD' ? 'this year' : range}`}
-            {last.inferred && ' · includes estimated balances'}
+            {last.inferred && lastReported && ` · as of ${shortDate(lastReported.date)}`}
           </p>
         )}
         <div className="mt-4">

@@ -79,7 +79,7 @@ export function Dashboard() {
 
       {/* 1. Surplus */}
       <section className={accounts.data ? 'mt-8' : ''}>
-        <p className="type-label text-ink-muted">Surplus</p>
+        <h2 className="type-title">Surplus</h2>
         <Link
           to="/cash-to-payday"
           onClick={transitionClick(navigate, '/cash-to-payday')}
@@ -123,7 +123,10 @@ export function Dashboard() {
 
       {/* 2. Summary */}
       <section className="mt-8">
-        <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
+        <h2 className="type-title">Budget</h2>
+        <div className="mt-2">
+          <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
+        </div>
       </section>
 
       {/* 3. Spending */}
