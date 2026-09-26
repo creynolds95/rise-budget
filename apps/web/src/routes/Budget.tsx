@@ -113,7 +113,9 @@ export function Budget() {
 
         <CloseControl month={month} data={p} />
 
-        <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
+        <section className="gutter mt-6">
+          <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
+        </section>
 
         {(error ?? plan.error) && <p className="gutter mt-4 text-clay">{error ?? plan.error}</p>}
 
@@ -224,7 +226,7 @@ export function Budget() {
 }
 
 /** The collapsible "Summary" tile: Income and Expenses at a glance, before the group cards. */
-function SummaryCard({
+export function SummaryCard({
   p,
   expenseCarriedCents,
 }: {
@@ -233,40 +235,38 @@ function SummaryCard({
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <section className="gutter mt-6">
-      <div className="rounded-card bg-surface shadow-soft">
-        <button
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-          className="flex min-h-11 w-full items-center gap-1 px-4 pt-3 text-left"
-        >
-          <span aria-hidden className="inline-block w-3">
-            {open ? '▾' : '▸'}
-          </span>
-          <h2 className="type-label text-ink-muted">Summary</h2>
-        </button>
-        {open && (
-          <div className="px-4 pb-1">
-            <SummaryRow
-              label="Income"
-              plannedCents={p.expectedIncomeCents}
-              filledCents={p.actualIncomeCents}
-              doneLabel="earned"
-              tick={p.pace}
-              good
-            />
-            <SummaryRow
-              label="Expenses"
-              plannedCents={p.totals.plannedCents}
-              filledCents={p.totals.spentCents}
-              doneLabel="spent"
-              tick={p.pace}
-              carriedCents={expenseCarriedCents}
-            />
-          </div>
-        )}
-      </div>
-    </section>
+    <div className="rounded-card bg-surface shadow-soft">
+      <button
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex min-h-11 w-full items-center gap-1 px-4 pt-3 text-left"
+      >
+        <span aria-hidden className="inline-block w-3">
+          {open ? '▾' : '▸'}
+        </span>
+        <h2 className="type-label text-ink-muted">Summary</h2>
+      </button>
+      {open && (
+        <div className="px-4 pb-1">
+          <SummaryRow
+            label="Income"
+            plannedCents={p.expectedIncomeCents}
+            filledCents={p.actualIncomeCents}
+            doneLabel="earned"
+            tick={p.pace}
+            good
+          />
+          <SummaryRow
+            label="Expenses"
+            plannedCents={p.totals.plannedCents}
+            filledCents={p.totals.spentCents}
+            doneLabel="spent"
+            tick={p.pace}
+            carriedCents={expenseCarriedCents}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

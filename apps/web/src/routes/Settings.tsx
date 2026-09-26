@@ -18,6 +18,7 @@ import { backFrom } from '../lib/nav';
 import { transitionClick } from '../lib/transition';
 import { passkeyMessage } from '../lib/passkey';
 import { clearPin, hasPin, lockKeys, setPin, store as lockStore, validPin } from '../lib/lock';
+import { getThemeSetting, setThemeSetting, type ThemeSetting } from '../lib/theme';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
@@ -39,6 +40,7 @@ import {
 } from '../lib/queries';
 
 const SECTIONS = {
+  appearance: 'Appearance',
   budget: 'Budget settings',
   categories: 'Categories',
   rules: 'Rules',
@@ -58,6 +60,12 @@ const MODE = {
  * T43. Not a stock grouped list, and not a card per area either (DESIGN-SYSTEM §3): an index
  * where each area leads with its current state, grouped by hairlines and type alone.
  */
+const THEME_LABEL: Record<ThemeSetting, string> = {
+  system: 'Match system',
+  light: 'Light',
+  dark: 'Dark',
+};
+
 export function Settings() {
   const me = useMe().data;
   const { signOut } = useAuth();
@@ -67,6 +75,7 @@ export function Settings() {
   const sync = useSyncStatus().data;
   const lastRun = sync?.runs[0];
   const backups = useBackupStatus().data;
+  const appearance = getThemeSetting();
 
   return (
     <div className="gutter mx-auto max-w-2xl pt-4 pb-12">
@@ -74,6 +83,9 @@ export function Settings() {
       <p className="text-ink-muted">{me?.email}</p>
 
       <ul className="mt-6 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        <Card to="/settings/appearance" title="Appearance" state={THEME_LABEL[appearance]}>
+          Light, dark, or match your system
+        </Card>
         <Card to="/settings/sync" title="Bank sync" state={sync ? MODE[sync.mode] : undefined}>
           {lastRun
             ? `Last run ${shortDate(localToday(me?.timezone, new Date(lastRun.startedAt)))} · ${lastRun.status}`
@@ -200,6 +212,7 @@ export function SettingsSection() {
         <span />
       </header>
       <div className="gutter pt-4">
+        {s === 'appearance' && <AppearanceSection />}
         {s === 'budget' && <BudgetSection />}
         {s === 'categories' && <CategoriesSection />}
         {s === 'rules' && <RulesSection />}
@@ -208,6 +221,33 @@ export function SettingsSection() {
         {s === 'data' && <DataSection />}
       </div>
     </div>
+  );
+}
+
+const THEME_CHOICES: { id: ThemeSetting; label: string; hint?: string }[] = [
+  { id: 'system', label: 'Match system', hint: 'Follows your phone or computer’s setting.' },
+  { id: 'light', label: 'Light', hint: 'Always light, regardless of the system.' },
+  { id: 'dark', label: 'Dark', hint: 'Always dark, regardless of the system.' },
+];
+
+function AppearanceSection() {
+  const [setting, setSetting] = useState<ThemeSetting>(getThemeSetting());
+  return (
+    <Group title="Theme">
+      {THEME_CHOICES.map((c) => (
+        <RadioRow
+          key={c.id}
+          name="theme"
+          label={c.label}
+          hint={c.hint}
+          checked={setting === c.id}
+          onSelect={() => {
+            setThemeSetting(c.id);
+            setSetting(c.id);
+          }}
+        />
+      ))}
+    </Group>
   );
 }
 

@@ -19,9 +19,9 @@ describe('navigation depth (DESIGN-SYSTEM.md §4)', () => {
     expect(TABS.map((t) => t.label)).toEqual([
       'Dashboard',
       'Accounts',
+      'Reports',
       'Transactions',
       'Budget',
-      'Reports',
     ]);
   });
 });

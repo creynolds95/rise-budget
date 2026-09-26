@@ -8,7 +8,8 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#FAFAF7" />
+    <meta name="theme-color" content="#FAFAF7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#14160F" media="(prefers-color-scheme: dark)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Rise" />
@@ -56,6 +57,14 @@
           animation: none;
         }
       }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme='light']) #splash {
+          background: #14160f;
+        }
+      }
+      html[data-theme='dark'] #splash {
+        background: #14160f;
+      }
     </style>
   </head>
   <body>
@@ -63,6 +72,14 @@
          anything as a splash. main.tsx uses this to hold it visible for a minimum stretch. -->
     <script>
       window.__splashStart = Date.now();
+      // Apply a pinned theme before first paint, so there's no flash of the wrong one.
+      // No setting stored (the default) means "match system", which needs no attribute.
+      try {
+        var riseTheme = localStorage.getItem('rise-theme');
+        if (riseTheme === 'light' || riseTheme === 'dark') {
+          document.documentElement.setAttribute('data-theme', riseTheme);
+        }
+      } catch (e) {}
     </script>
     <div id="splash" aria-hidden="true"><img src="/icon-192.png" alt="" /></div>
     <div id="root"></div>

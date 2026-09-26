@@ -46,23 +46,12 @@ export function percentChange(startCents: number, endCents: number, range: Range
 export function Accounts() {
   const today = useToday();
   const tz = useMe().data?.timezone;
-  const [range, setRange] = useState<Range>('6M');
   const accounts = useAccounts();
-  const start = rangeStart(range, today);
-  const nw = useNetWorth(start, today);
   const [adding, setAdding] = useState(false);
   const qc = useQueryClient();
   const invalidate = useInvalidateMoney();
   const navigate = useNavigate();
 
-  const points = nw.data?.points ?? [];
-  const first = points[0];
-  const last = points.at(-1);
-  // SPEC §5.3: no percentage over less than three months — of actual history, not just the chip.
-  const pct =
-    first && last && daysBetween(first.date, last.date) >= 90
-      ? percentChange(first.netWorthCents, last.netWorthCents, range)
-      : null;
   const live = (accounts.data ?? []).filter((a) => !a.archivedAt);
 
   const syncMode = useSyncStatus().data?.mode;
@@ -128,49 +117,7 @@ export function Accounts() {
         </p>
       )}
       <section className="gutter pt-4">
-        <p className="type-label text-ink-muted">Net worth</p>
-        <div className="mt-1 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-          <p className="type-display">
-            {last ? (
-              <MoneyText
-                cents={last.netWorthCents}
-                tone={last.netWorthCents < 0 ? 'over' : 'ink'}
-                whole
-              />
-            ) : (
-              <Skeleton className="h-11 w-48" />
-            )}
-          </p>
-          {first && last && first.date === last.date && (
-            <p className="mt-1 text-ink-muted">
-              History starts {shortDate(first.date)}, the first balance Rise saw.
-            </p>
-          )}
-          {first && last && first.date !== last.date && (
-            <p className="mt-1 text-ink-muted">
-              <MoneyText
-                cents={last.netWorthCents - first.netWorthCents}
-                sign="always"
-                tone="muted"
-                whole
-              />
-              {pct && ` (${pct})`}{' '}
-              {first.date > start
-                ? `since ${shortDate(first.date)}`
-                : `over ${range === 'ALL' ? 'three years' : range === 'YTD' ? 'this year' : range}`}
-              {last.inferred && ' · includes estimated balances'}
-            </p>
-          )}
-          <div className="mt-4">
-            <Chart
-              kind="line"
-              label="Net worth over time. Dashed where balances are estimated between reports."
-              points={points.map((p) => ({ cents: p.netWorthCents, inferred: p.inferred }))}
-              range={range}
-              onRange={setRange}
-            />
-          </div>
-        </div>
+        <NetWorthSection />
       </section>
 
       <section className="gutter mt-6">
@@ -210,6 +157,70 @@ export function Accounts() {
       )}
       <AddAccountSheet open={adding} onClose={() => setAdding(false)} />
     </div>
+  );
+}
+
+/** Net worth over time (T40), reused on the Dashboard as well as here. */
+export function NetWorthSection() {
+  const today = useToday();
+  const [range, setRange] = useState<Range>('6M');
+  const start = rangeStart(range, today);
+  const nw = useNetWorth(start, today);
+  const points = nw.data?.points ?? [];
+  const first = points[0];
+  const last = points.at(-1);
+  // SPEC §5.3: no percentage over less than three months — of actual history, not just the chip.
+  const pct =
+    first && last && daysBetween(first.date, last.date) >= 90
+      ? percentChange(first.netWorthCents, last.netWorthCents, range)
+      : null;
+
+  return (
+    <>
+      <p className="type-label text-ink-muted">Net worth</p>
+      <div className="mt-1 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+        <p className="type-display">
+          {last ? (
+            <MoneyText
+              cents={last.netWorthCents}
+              tone={last.netWorthCents < 0 ? 'over' : 'ink'}
+              whole
+            />
+          ) : (
+            <Skeleton className="h-11 w-48" />
+          )}
+        </p>
+        {first && last && first.date === last.date && (
+          <p className="mt-1 text-ink-muted">
+            History starts {shortDate(first.date)}, the first balance Rise saw.
+          </p>
+        )}
+        {first && last && first.date !== last.date && (
+          <p className="mt-1 text-ink-muted">
+            <MoneyText
+              cents={last.netWorthCents - first.netWorthCents}
+              sign="always"
+              tone="muted"
+              whole
+            />
+            {pct && ` (${pct})`}{' '}
+            {first.date > start
+              ? `since ${shortDate(first.date)}`
+              : `over ${range === 'ALL' ? 'three years' : range === 'YTD' ? 'this year' : range}`}
+            {last.inferred && ' · includes estimated balances'}
+          </p>
+        )}
+        <div className="mt-4">
+          <Chart
+            kind="line"
+            label="Net worth over time. Dashed where balances are estimated between reports."
+            points={points.map((p) => ({ cents: p.netWorthCents, inferred: p.inferred }))}
+            range={range}
+            onRange={setRange}
+          />
+        </div>
+      </div>
+    </>
   );
 }
 
