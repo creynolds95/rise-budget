@@ -3,6 +3,7 @@ import { sankey, sankeyLinkHorizontal, type SankeyNodeMinimal } from 'd3-sankey'
 import { useMemo } from 'react';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
+import { series } from '../design/tokens';
 import { monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { useMoneyFlow } from '../lib/queries';
@@ -13,18 +14,35 @@ type Node = FlowNode & SankeyNodeMinimal<object, object>;
 
 const WIDTH = 640;
 const NODE_WIDTH = 14;
-const ROLE_FILL: Record<'income' | 'group' | 'category' | 'leftover', string> = {
-  income: 'var(--color-sage-700)',
-  group: 'var(--color-sage-600)',
-  category: 'var(--color-sage-300)',
-  leftover: 'var(--color-gold)',
-};
+const INCOME_FILL = 'var(--color-sage-700)';
+const LEFTOVER_FILL = 'var(--color-gold)';
 
-function roleOf(id: string): keyof typeof ROLE_FILL {
+/** Distinct hues cycle per group and per category, so neighboring flows read apart —
+ *  a single flat color per role (the old behavior) made every category node identical. */
+const CATEGORY_FILL = [series[0], series[2], series[1], series[3]] as const;
+
+function roleOf(id: string): 'income' | 'group' | 'category' | 'leftover' {
   if (id === 'income') return 'income';
   if (id === 'leftover') return 'leftover';
   if (id.startsWith('group:')) return 'group';
   return 'category';
+}
+
+/** Assigns each node a color: fixed for income/leftover, cycling the palette for groups and
+ *  categories separately (each an independent counter) so siblings differ. */
+function buildPalette(nodes: readonly FlowNode[]): Map<string, string> {
+  const map = new Map<string, string>();
+  let groupIdx = 0;
+  let catIdx = 0;
+  for (const n of nodes) {
+    const role = roleOf(n.id);
+    if (role === 'income') map.set(n.id, INCOME_FILL);
+    else if (role === 'leftover') map.set(n.id, LEFTOVER_FILL);
+    else if (role === 'group')
+      map.set(n.id, CATEGORY_FILL[groupIdx++ % CATEGORY_FILL.length] as string);
+    else map.set(n.id, CATEGORY_FILL[catIdx++ % CATEGORY_FILL.length] as string);
+  }
+  return map;
 }
 
 /** Money flow report (Reports tab): where a month's income came from and where it went. */
@@ -70,12 +88,17 @@ function SankeyChart({ nodes, links }: { nodes: readonly FlowNode[]; links: read
     });
     return { ...graph, height };
   }, [nodes, links]);
+  const palette = useMemo(() => buildPalette(nodes), [nodes]);
 
   return (
     <svg
       viewBox={`0 0 ${WIDTH} ${layout.height}`}
       width="100%"
-      height={layout.height}
+      // A bare pixel `height` attribute doesn't scale with the percentage `width` — the box
+      // ends up literally that many pixels tall while the content shrinks to fit the (much
+      // narrower) actual width, leaving a band of empty space below it. `aspectRatio` keeps
+      // the box's own proportions matched to the viewBox instead.
+      style={{ aspectRatio: `${WIDTH} / ${layout.height}` }}
       role="img"
       aria-label="Money flow from income into expense categories this month"
     >
@@ -88,8 +111,8 @@ function SankeyChart({ nodes, links }: { nodes: readonly FlowNode[]; links: read
               key={i}
               d={sankeyLinkHorizontal()(l) ?? undefined}
               fill="none"
-              stroke={ROLE_FILL[roleOf(target.id)]}
-              strokeOpacity={0.3}
+              stroke={palette.get(target.id)}
+              strokeOpacity={0.35}
               strokeWidth={Math.max(1, l.width ?? 0)}
             >
               <title>
@@ -107,7 +130,7 @@ function SankeyChart({ nodes, links }: { nodes: readonly FlowNode[]; links: read
               y={n.y0}
               width={(n.x1 ?? 0) - (n.x0 ?? 0)}
               height={Math.max(1, (n.y1 ?? 0) - (n.y0 ?? 0))}
-              fill={ROLE_FILL[roleOf(n.id)]}
+              fill={palette.get(n.id)}
               rx={2}
             >
               <title>

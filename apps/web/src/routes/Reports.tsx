@@ -125,7 +125,7 @@ function ChartPicker<K extends string>({
       aria-label="Chart type"
       value={value}
       onChange={(e) => onChange(e.target.value as K)}
-      className="min-h-9 rounded-input border border-hairline bg-surface px-3 type-caption font-semibold text-ink"
+      className="min-h-11 rounded-input border border-hairline bg-surface px-3 font-semibold text-ink"
     >
       {options.map((o) => (
         <option key={o.key} value={o.key}>

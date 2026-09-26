@@ -97,7 +97,7 @@ export function Transactions() {
   return (
     <div className="mx-auto max-w-2xl pb-12">
       <header className="gutter flex items-center justify-between pt-3">
-        <h1 className="hidden type-title lg:block">Transactions</h1>
+        <h1 className="hidden type-page lg:block">Transactions</h1>
         <div className="-mr-2 ml-auto">
           <IconButton
             icon="filter"

@@ -114,6 +114,14 @@
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
+/* The tab title at the top of every screen (Shell's mobile header bar) — one size up from
+   type-title, which stays the shared size for in-page section headers. */
+@utility type-page {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  line-height: 36px;
+  letter-spacing: -0.01em;
+}
 @utility type-title {
   font-family: var(--font-serif);
   font-size: 24px;
