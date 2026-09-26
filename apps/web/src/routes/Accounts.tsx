@@ -1,4 +1,4 @@
-import type { AccountKind } from '@rise/shared/schemas';
+import { isLiabilityKind, type AccountKind } from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -261,11 +261,11 @@ function AddAccountSheet({ open, onClose }: { open: boolean; onClose: () => void
   const qc = useQueryClient();
   const today = useToday();
   const [name, setName] = useState('');
-  const [kind, setKind] = useState<AccountKind>('loan');
+  const [kind, setKind] = useState<AccountKind>('other');
   const [balance, setBalance] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const field = 'min-h-11 w-full rounded-input border border-hairline bg-surface px-3';
-  const owes = kind === 'loan' || kind === 'credit';
+  const owes = isLiabilityKind(kind);
   return (
     <Sheet open={open} title="New manual account" onClose={onClose}>
       <form

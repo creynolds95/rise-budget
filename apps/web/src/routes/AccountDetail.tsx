@@ -1,4 +1,5 @@
 import { netWorthSeries } from '@rise/shared/networth';
+import { isLiabilityKind } from '@rise/shared/schemas';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useParams } from 'react-router';
@@ -49,7 +50,7 @@ export function AccountDetail() {
     );
   }
   const manual = a.source === 'manual';
-  const owes = a.kind === 'credit' || a.kind === 'loan';
+  const owes = isLiabilityKind(a.kind);
   const stale = staleText(a, today, tz);
   const series = netWorthSeries(
     [{ accountId: a.id, includeInNetWorth: true, snapshots: snaps.data ?? [] }],

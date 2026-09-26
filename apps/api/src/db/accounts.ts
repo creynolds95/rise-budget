@@ -116,6 +116,24 @@ export async function createAccount(
   return (await getAccount(userId, db, id)) as Account;
 }
 
+/**
+ * Credit/loan balances are stored negative, everything else positive (SPEC §1.1). When an
+ * account's kind crosses that boundary (e.g. a mis-typed "loan" corrected to "other"), the
+ * stored sign has to flip too, or the dollar amount silently reverses meaning.
+ */
+export async function flipAccountSign(userId: UserId, db: D1Database, accountId: string) {
+  await db.batch([
+    db
+      .prepare('UPDATE account SET balance_cents = -balance_cents WHERE user_id = ?1 AND id = ?2')
+      .bind(userId, accountId),
+    db
+      .prepare(
+        'UPDATE balance_snapshot SET balance_cents = -balance_cents WHERE user_id = ?1 AND account_id = ?2',
+      )
+      .bind(userId, accountId),
+  ]);
+}
+
 export type AccountPatch = PatchAccountBody;
 
 const PATCH_COLUMNS: Record<keyof AccountPatch, string> = {
