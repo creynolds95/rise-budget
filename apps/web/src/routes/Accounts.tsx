@@ -16,6 +16,7 @@ import { ApiError, api } from '../lib/api';
 import { allowsPercentChange, rangeStart, type Range } from '../lib/chart';
 import { daysBetween, shortDate } from '../lib/dates';
 import { useHeaderActions } from '../lib/headerActions';
+import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncOutcome';
 import { navigateWithTransition } from '../lib/transition';
 import {
   useAccounts,
@@ -57,7 +58,7 @@ export function Accounts() {
 
   const syncMode = useSyncStatus().data?.mode;
   const refresh = useMutation({
-    mutationFn: () => api('POST', '/sync/run', {}),
+    mutationFn: () => api<SyncRunResult>('POST', '/sync/run', {}),
     onSuccess: () =>
       Promise.all([
         invalidate(),
@@ -103,6 +104,22 @@ export function Accounts() {
           Asking your banks for anything new…
         </p>
       )}
+      {refresh.isSuccess &&
+        (() => {
+          const o = syncOutcome(
+            refresh.data,
+            banksLastReported(live.filter((a) => a.source === 'simplefin')),
+            tz,
+          );
+          return (
+            <p
+              role="status"
+              className={`gutter type-caption ${o.tone === 'warn' ? 'text-clay' : 'text-ink-muted'}`}
+            >
+              {o.text}
+            </p>
+          );
+        })()}
       {refresh.isError && (
         <p role="alert" className="gutter type-caption text-clay">
           {refresh.error instanceof ApiError ? refresh.error.message : 'Refresh failed.'}

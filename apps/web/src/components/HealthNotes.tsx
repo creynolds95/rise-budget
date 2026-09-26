@@ -8,8 +8,8 @@ export const BACKUP_LATE_DAYS = 2;
 type Backups = { latest: { date: string; bytes: number } | null; count: number };
 
 /**
- * The background jobs failing out of sight (C6): the last bank sync failed outright, or the
- * nightly backup hasn't landed. Each links to where it can be looked into.
+ * The background jobs failing out of sight (C6): the last bank sync failed outright or a bank
+ * connection needs attention, or the nightly backup hasn't landed. Each links to where it can be looked into.
  */
 export function healthNotes(
   sync: SyncStatus | undefined,
@@ -21,6 +21,12 @@ export function healthNotes(
   if (sync && sync.mode !== 'off' && last?.status === 'failed') {
     const why = last.errors[0]?.message;
     out.push({ text: `Bank sync failed${why ? `: ${why}` : '.'}`, to: '/settings/sync' });
+  } else if (sync && sync.mode !== 'off' && last?.status === 'partial') {
+    // A bank connection SimpleFIN reports as needing attention names no Rise account, so no
+    // per-account stale note would ever mention it.
+    for (const e of last.errors.filter((e) => !e.account)) {
+      out.push({ text: e.message, to: '/settings/sync' });
+    }
   }
   if (backups) {
     const latest = backups.latest?.date;
