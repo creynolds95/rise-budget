@@ -2,7 +2,7 @@ import { dayNumber, netWorthSeries } from '@rise/shared/networth';
 import { IsoDate } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { listAccounts, listSnapshots } from '../db';
+import { listAccountsForNetWorth, listSnapshots } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
 
@@ -22,7 +22,7 @@ networth.get('/', async (c) => {
 
   const userId = c.get('userId');
   const [accts, snaps] = await Promise.all([
-    listAccounts(userId, c.env.DB),
+    listAccountsForNetWorth(userId, c.env.DB),
     listSnapshots(userId, c.env.DB, { to }),
   ]);
   const byAccount = new Map<string, { asOf: string; balanceCents: number }[]>();

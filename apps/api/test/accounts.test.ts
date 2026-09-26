@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { call, signedInUser } from './helpers/http';
 
@@ -119,6 +120,77 @@ describe('T17 accounts & snapshots', () => {
       body: { kind: 'credit' },
     });
     expect(same.json.balanceCents).toBe(-300_000);
+  });
+
+  it('closes a manual account: leaves the active list, keeps its balances in net worth', async () => {
+    const u = await signedInUser();
+    const acct = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'Old 401k', kind: 'investment' },
+    });
+    const id = acct.json.id;
+    await call('POST', `/accounts/${id}/snapshots`, {
+      access: u.access,
+      body: { asOf: '2026-09-01', balanceCents: 500_000 },
+    });
+
+    const closed = await call('POST', `/accounts/${id}/archive`, { access: u.access, body: {} });
+    expect(closed.status).toBe(200);
+    expect(closed.json.archivedAt).not.toBeNull();
+
+    const list = await call('GET', '/accounts', { access: u.access });
+    expect(list.json.find((a: { id: string }) => a.id === id)).toBeUndefined();
+
+    const nw = await call('GET', '/networth?from=2026-09-01&to=2026-09-01', { access: u.access });
+    expect(nw.json.points).toEqual([
+      { date: '2026-09-01', netWorthCents: 500_000, inferred: false },
+    ]);
+  });
+
+  it('refuses to close or delete a synced account', async () => {
+    const u = await signedInUser();
+    // A synced account can only come from sync in real use; insert one directly for the check.
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO account (id, user_id, name, kind, source, balance_cents, include_in_net_worth,
+         include_in_budget, created_at) VALUES (?1, ?2, 'Chase', 'credit', 'simplefin', 0, 1, 1, ?3)`,
+    )
+      .bind(id, u.userId, new Date().toISOString())
+      .run();
+
+    expect(
+      (await call('POST', `/accounts/${id}/archive`, { access: u.access, body: {} })).status,
+    ).toBe(409);
+    expect((await call('DELETE', `/accounts/${id}`, { access: u.access })).status).toBe(409);
+  });
+
+  it('deletes a manual account and its snapshot history, but not one with transactions', async () => {
+    const u = await signedInUser();
+    const acct = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'Mis-added', kind: 'other' },
+    });
+    const id = acct.json.id;
+    await call('POST', `/accounts/${id}/snapshots`, {
+      access: u.access,
+      body: { asOf: '2026-09-01', balanceCents: 100_000 },
+    });
+
+    await env.DB.prepare(
+      `INSERT INTO txn (id, user_id, account_id, posted_at, amount_cents, descriptor_raw,
+         merchant_normalized, source, created_at, updated_at)
+       VALUES (?1, ?2, ?3, '2026-09-01', 500, 'x', 'x', 'manual', ?4, ?4)`,
+    )
+      .bind(crypto.randomUUID(), u.userId, id, new Date().toISOString())
+      .run();
+    const blocked = await call('DELETE', `/accounts/${id}`, { access: u.access });
+    expect(blocked.status).toBe(409);
+
+    await env.DB.prepare('DELETE FROM txn WHERE account_id = ?1').bind(id).run();
+    const deleted = await call('DELETE', `/accounts/${id}`, { access: u.access });
+    expect(deleted.status).toBe(200);
+    expect((await call('GET', `/accounts/${id}`, { access: u.access })).status).toBe(404);
+    expect((await call('GET', `/accounts/${id}/snapshots`, { access: u.access })).status).toBe(404);
   });
 
   it('rejects float money', async () => {

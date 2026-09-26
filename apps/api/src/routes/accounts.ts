@@ -8,7 +8,10 @@ import {
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
+  archiveAccount,
+  countAccountTransactions,
   createAccount,
+  deleteAccount,
   flipAccountSign,
   getAccount,
   listAccounts,
@@ -88,4 +91,31 @@ accounts.post('/:id/snapshots', async (c) => {
   const b = await body(c, CreateSnapshotBody);
   await putSnapshot(userId, c.env.DB, id, { ...b, source: 'manual' });
   return c.json({ asOf: b.asOf, balanceCents: b.balanceCents }, 201);
+});
+
+/** Closes a manual account: it leaves the active list, but keeps its history in net worth. */
+accounts.post('/:id/archive', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  const a = await getAccount(userId, c.env.DB, id);
+  if (!a) throw notFound();
+  if (a.source !== 'manual')
+    throw new AppError(409, 'CONFLICT', 'Disconnect a synced account instead of closing it');
+  await archiveAccount(userId, c.env.DB, id);
+  return c.json(withStaleness((await getAccount(userId, c.env.DB, id)) as Account, Date.now()));
+});
+
+/** Erases a manual account and every balance it ever reported. Never for a synced account,
+ *  and never for one with transactions — close it instead so their history stays intact. */
+accounts.delete('/:id', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  const a = await getAccount(userId, c.env.DB, id);
+  if (!a) throw notFound();
+  if (a.source !== 'manual')
+    throw new AppError(409, 'CONFLICT', 'Disconnect a synced account instead of deleting it');
+  if ((await countAccountTransactions(userId, c.env.DB, id)) > 0)
+    throw new AppError(409, 'CONFLICT', 'This account has transactions — close it instead');
+  await deleteAccount(userId, c.env.DB, id);
+  return c.json({ deleted: true });
 });

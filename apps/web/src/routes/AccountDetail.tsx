@@ -1,8 +1,8 @@
 import { netWorthSeries } from '@rise/shared/networth';
 import { isLiabilityKind } from '@rise/shared/schemas';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
-import { useParams } from 'react-router';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router';
 import { staleText } from '../components/StaleNotes';
 import { TxnRow } from '../components/TxnRow';
 import { DetailPage } from '../components/detail/DetailPage';
@@ -26,6 +26,7 @@ interface Snap {
 /** T40. Balance, its history (dashed between reports), the facts, and manual snapshot entry. */
 export function AccountDetail() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const today = useToday();
   const tz = useMe().data?.timezone;
   const accounts = useAccounts();
@@ -99,6 +100,12 @@ export function AccountDetail() {
       }
       facts={
         <>
+          {manual && (
+            <EditRow
+              label="Name"
+              field={<NameField value={a.name} onCommit={(name) => void patch({ name })} />}
+            />
+          )}
           <EditRow
             label="Type"
             field={
@@ -237,18 +244,130 @@ export function AccountDetail() {
       }
       manage={
         manual ? (
-          <Button
-            variant="danger"
-            className="-ml-4"
-            onClick={async () => {
-              if (!window.confirm(`Stop counting ${a.name}? Its history stays.`)) return;
-              await patch({ includeInNetWorth: false, includeInBudget: false });
+          <AccountManage
+            id={id}
+            name={a.name}
+            onDone={async () => {
+              await invalidate();
+              navigate('/accounts');
             }}
-          >
-            Stop counting this account
-          </Button>
+          />
         ) : undefined
       }
+    />
+  );
+}
+
+/** Close keeps the account's snapshots in net worth; delete erases them. Each needs its own
+ *  explicit confirmation naming what happens (§5.2) — closing and deleting are not the same risk. */
+function AccountManage({
+  id,
+  name,
+  onDone,
+}: {
+  id: string;
+  name: string;
+  onDone: () => Promise<void>;
+}) {
+  const [pending, setPending] = useState<'close' | 'delete' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async (action: () => Promise<unknown>, fallback: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      await onDone();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : fallback);
+      setBusy(false);
+    }
+  };
+
+  const cancel = () => {
+    setPending(null);
+    setError(null);
+  };
+
+  if (pending === 'close') {
+    return (
+      <div className="w-full rounded-card bg-surface p-4 shadow-soft">
+        <p className="font-medium">Close {name}?</p>
+        <p className="mt-1 type-caption text-ink-muted">
+          It leaves your account list, but its past balances still count toward net worth.
+        </p>
+        {error && <p className="mt-2 type-caption text-clay">{error}</p>}
+        <div className="mt-3 flex gap-2">
+          <Button
+            variant="danger"
+            className="flex-1"
+            disabled={busy}
+            onClick={() =>
+              run(() => api('POST', `/accounts/${id}/archive`, {}), 'Could not close.')
+            }
+          >
+            Close account
+          </Button>
+          <Button variant="quiet" className="flex-1" onClick={cancel}>
+            Keep it
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  if (pending === 'delete') {
+    return (
+      <div className="w-full rounded-card bg-surface p-4 shadow-soft">
+        <p className="font-medium">Delete {name} and its history?</p>
+        <p className="mt-1 type-caption text-ink-muted">
+          Every balance ever recorded for it is gone, including from net worth. This can&rsquo;t be
+          undone.
+        </p>
+        {error && <p className="mt-2 type-caption text-clay">{error}</p>}
+        <div className="mt-3 flex gap-2">
+          <Button
+            variant="danger"
+            className="flex-1 border border-clay"
+            disabled={busy}
+            onClick={() => run(() => api('DELETE', `/accounts/${id}`), 'Could not delete.')}
+          >
+            Delete for good
+          </Button>
+          <Button variant="quiet" className="flex-1" onClick={cancel}>
+            Keep it
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="-ml-4 flex flex-col items-start gap-1">
+      <Button variant="quiet" onClick={() => setPending('close')}>
+        Close account
+      </Button>
+      <Button variant="danger" onClick={() => setPending('delete')}>
+        Delete account and history
+      </Button>
+    </div>
+  );
+}
+
+function NameField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  return (
+    <input
+      aria-label="Account name"
+      className="min-h-11 w-48 rounded-input border border-hairline bg-surface px-3 text-right focus:border-sage-600 focus:outline-none"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        const next = text.trim();
+        if (next && next !== value) onCommit(next);
+        else setText(value);
+      }}
+      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
     />
   );
 }
