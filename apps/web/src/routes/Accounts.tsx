@@ -15,6 +15,7 @@ import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api } from '../lib/api';
 import { allowsPercentChange, rangeStart, type Range } from '../lib/chart';
 import { daysBetween, shortDate } from '../lib/dates';
+import { useHeaderActions } from '../lib/headerActions';
 import { navigateWithTransition } from '../lib/transition';
 import {
   useAccounts,
@@ -66,40 +67,41 @@ export function Accounts() {
       ]),
   });
 
+  const headerButtons = (
+    <>
+      <Menu
+        label="Account options"
+        items={[
+          {
+            label: refresh.isPending ? 'Refreshing…' : 'Refresh all',
+            icon: 'refresh',
+            disabled: refresh.isPending || !syncMode || syncMode === 'off',
+            hint: syncMode === 'off' ? 'Connect SimpleFIN first' : undefined,
+            onSelect: () => refresh.mutate(),
+          },
+          {
+            label: 'Add a manual account',
+            icon: 'wallet',
+            onSelect: () => setAdding(true),
+          },
+          {
+            label: 'Bank connection',
+            icon: 'bank',
+            onSelect: () =>
+              navigateWithTransition(navigate, '/settings/sync?from=Accounts|/accounts', 'forward'),
+          },
+        ]}
+      />
+      <IconButton icon="plus" label="Add a manual account" onClick={() => setAdding(true)} />
+    </>
+  );
+  useHeaderActions(headerButtons);
+
   return (
     <div className="mx-auto max-w-2xl pb-12">
-      <header className="gutter flex items-center justify-between pt-3">
-        <h1 className="hidden type-page lg:block">Accounts</h1>
-        <div className="-mr-2 ml-auto flex items-center">
-          <Menu
-            label="Account options"
-            items={[
-              {
-                label: refresh.isPending ? 'Refreshing…' : 'Refresh all',
-                icon: 'refresh',
-                disabled: refresh.isPending || !syncMode || syncMode === 'off',
-                hint: syncMode === 'off' ? 'Connect SimpleFIN first' : undefined,
-                onSelect: () => refresh.mutate(),
-              },
-              {
-                label: 'Add a manual account',
-                icon: 'wallet',
-                onSelect: () => setAdding(true),
-              },
-              {
-                label: 'Bank connection',
-                icon: 'bank',
-                onSelect: () =>
-                  navigateWithTransition(
-                    navigate,
-                    '/settings/sync?from=Accounts|/accounts',
-                    'forward',
-                  ),
-              },
-            ]}
-          />
-          <IconButton icon="plus" label="Add a manual account" onClick={() => setAdding(true)} />
-        </div>
+      <header className="gutter hidden items-center justify-between pt-3 lg:flex">
+        <h1 className="type-page">Accounts</h1>
+        <div className="-mr-2 flex items-center">{headerButtons}</div>
       </header>
       {refresh.isPending && (
         <p role="status" className="gutter type-caption text-ink-muted">

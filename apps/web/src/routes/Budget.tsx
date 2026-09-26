@@ -15,6 +15,7 @@ import { Skeleton } from '../components/primitives/Skeleton';
 import { CategoryDetailPanel } from './CategoryDetail';
 import { ApiError, api, get } from '../lib/api';
 import { addMonths, monthName, shortDate } from '../lib/dates';
+import { useHeaderActions } from '../lib/headerActions';
 import { useIsDesktop } from '../lib/media';
 import { formatCents } from '../lib/money';
 import { transitionClick } from '../lib/transition';
@@ -62,6 +63,18 @@ export function Budget() {
     setParams(next);
   };
 
+  const settingsHref = `/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`;
+  useHeaderActions(
+    <Link
+      to={settingsHref}
+      onClick={transitionClick(navigate, settingsHref)}
+      aria-label="Budget settings"
+      className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+    >
+      <Icon name="more" />
+    </Link>,
+  );
+
   return (
     <div className={selected ? 'lg:flex lg:items-start lg:gap-10 lg:px-8' : ''}>
       <div
@@ -73,49 +86,34 @@ export function Budget() {
           onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
         />
 
-        <header className="gutter pt-2 pb-6">
-          <div className="flex items-center justify-between">
-            <p className="type-label text-ink-muted">
-              {closed ? 'Returned to the pool' : 'Ready to assign'}
-            </p>
-            <div className="-mr-2 flex items-center">
-              <Link
-                to={`/reports${month === today.slice(0, 7) ? '' : `?m=${month}`}`}
-                aria-label="Reports"
-                className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-              >
-                <Icon name="flow" />
-              </Link>
-              <Link
-                to={`/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`}
-                onClick={transitionClick(
-                  navigate,
-                  `/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`,
-                )}
-                aria-label="Budget settings"
-                className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-              >
-                <Icon name="sliders" />
-              </Link>
-            </div>
+        <div className="gutter -mr-2 mt-2 flex items-center justify-end">
+          <Link
+            to={`/reports${month === today.slice(0, 7) ? '' : `?m=${month}`}`}
+            aria-label="Reports"
+            className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+          >
+            <Icon name="flow" />
+          </Link>
+          <Link
+            to={settingsHref}
+            onClick={transitionClick(navigate, settingsHref)}
+            aria-label="Budget settings"
+            className="hidden size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100 lg:flex"
+          >
+            <Icon name="more" />
+          </Link>
+        </div>
+
+        <section className="gutter mt-2">
+          <h2 className="type-title">Summary</h2>
+          <div className="mt-2">
+            <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
           </div>
-          <p className="mt-1 type-display">
-            <MoneyText
-              cents={closed ? p.period.returnedSurplusCents : p.poolCents}
-              tone={!closed && p.poolCents < 0 ? 'over' : 'ink'}
-            />
-          </p>
-          <p className="mt-1 text-ink-muted">
-            <MoneyText cents={p.totals.plannedCents} tone="muted" /> planned ·{' '}
-            <MoneyText cents={p.totals.spentCents} tone="muted" /> spent
-          </p>
-        </header>
-
-        <CloseControl month={month} data={p} />
-
-        <section className="gutter mt-6">
-          <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
         </section>
+
+        <div className="gutter mt-6">
+          <CloseControl month={month} data={p} />
+        </div>
 
         {(error ?? plan.error) && <p className="gutter mt-4 text-clay">{error ?? plan.error}</p>}
 
@@ -238,13 +236,13 @@ export function SummaryCard({
     <div className="rounded-card bg-surface shadow-soft">
       <button
         aria-expanded={open}
+        aria-label="Summary"
         onClick={() => setOpen(!open)}
         className="flex min-h-11 w-full items-center gap-1 px-4 pt-3 text-left"
       >
         <span aria-hidden className="inline-block w-3">
           {open ? '▾' : '▸'}
         </span>
-        <h2 className="type-label text-ink-muted">Summary</h2>
       </button>
       {open && (
         <div className="px-4 pb-1">

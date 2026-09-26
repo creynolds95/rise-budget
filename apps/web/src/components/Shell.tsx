@@ -1,5 +1,7 @@
+import { useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { Icon } from './primitives/Icon';
+import { HeaderActionsContext } from '../lib/headerActions';
 import { useMe } from '../lib/queries';
 import { TABS, type Tab } from '../routes/table';
 
@@ -19,6 +21,7 @@ const ICON: Record<Tab, string> = {
  */
 export function Shell() {
   const me = useMe().data;
+  const [actions, setActions] = useState<ReactNode>(null);
   const location = useLocation();
   const onDashboard = location.pathname === '/';
   const currentTab = TABS.find((t) =>
@@ -81,18 +84,23 @@ export function Shell() {
       <div className="min-w-0">
         <div className="gutter mx-auto flex max-w-2xl items-center justify-between pt-[max(12px,env(safe-area-inset-top))] lg:hidden">
           <span className="type-page">{currentTab?.label ?? 'Rise'}</span>
-          {onDashboard && (
-            <Link
-              to="/settings"
-              aria-label="Settings"
-              className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-            >
-              <Icon name="gear" />
-            </Link>
-          )}
+          <div className="-mr-2 flex items-center">
+            {actions ??
+              (onDashboard && (
+                <Link
+                  to="/settings"
+                  aria-label="Settings"
+                  className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+                >
+                  <Icon name="gear" />
+                </Link>
+              ))}
+          </div>
         </div>
         <main>
-          <Outlet />
+          <HeaderActionsContext.Provider value={setActions}>
+            <Outlet />
+          </HeaderActionsContext.Provider>
         </main>
       </div>
 
