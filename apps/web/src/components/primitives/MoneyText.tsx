@@ -19,7 +19,7 @@ export function MoneyText({
   ...format
 }: { cents: number; tone?: MoneyTone; className?: string } & FormatOptions) {
   return (
-    <span className={`money ${TONE[tone]} ${className}`} data-cents={cents}>
+    <span className={`money whitespace-nowrap ${TONE[tone]} ${className}`} data-cents={cents}>
       {formatCents(cents, format)}
     </span>
   );
