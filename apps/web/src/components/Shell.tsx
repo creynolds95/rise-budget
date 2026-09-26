@@ -80,7 +80,7 @@ export function Shell() {
 
       <div className="min-w-0">
         <div className="gutter mx-auto flex max-w-2xl items-center justify-between pt-[max(12px,env(safe-area-inset-top))] lg:hidden">
-          <span className="type-title">{currentTab?.label ?? 'Rise'}</span>
+          <span className="type-page">{currentTab?.label ?? 'Rise'}</span>
           {onDashboard && (
             <Link
               to="/settings"
