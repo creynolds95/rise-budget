@@ -11,6 +11,7 @@ const { values } = parseArgs({
   options: {
     name: { type: 'string' },
     remote: { type: 'boolean', default: false },
+    sync: { type: 'boolean', default: false },
   },
 });
 const scope = values.remote ? '--remote' : '--local';
@@ -24,6 +25,25 @@ function query<T>(command: string): T[] {
   );
   const parsed = JSON.parse(out) as { results: T[] }[];
   return parsed[0]?.results ?? [];
+}
+
+if (values.sync) {
+  // Sync health only: no names, descriptors or amounts, so it's safe in a public run log.
+  const runs = query(
+    `SELECT started_at, finished_at, status, accounts_touched, rows_inserted, rows_updated, error_json
+     FROM sync_run ORDER BY started_at DESC LIMIT 30`,
+  );
+  console.log('sync runs:', JSON.stringify(runs, null, 1));
+  const accts = query(
+    `SELECT a.kind, a.created_at, a.last_synced_at, a.archived_at,
+       (SELECT COUNT(*) FROM txn t WHERE t.account_id = a.id) AS txns,
+       (SELECT MAX(posted_at) FROM txn t WHERE t.account_id = a.id) AS last_posted,
+       (SELECT MAX(created_at) FROM txn t WHERE t.account_id = a.id) AS last_inserted,
+       (SELECT MAX(as_of) FROM balance_snapshot b WHERE b.account_id = a.id) AS last_balance
+     FROM account a WHERE a.source = 'simplefin' ORDER BY a.kind, a.created_at`,
+  );
+  console.log('simplefin accounts:', JSON.stringify(accts, null, 1));
+  process.exit(0);
 }
 
 if (values.name) {
