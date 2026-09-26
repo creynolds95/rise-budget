@@ -60,7 +60,7 @@ createRoot(document.getElementById('root') as HTMLElement).render(
 // has mounted. On a warm cache that gap can be a handful of milliseconds — too fast to
 // register as a splash at all — so it's held for a minimum stretch regardless of how fast
 // the app actually mounted.
-const MIN_SPLASH_MS = 500;
+const MIN_SPLASH_MS = 1000;
 requestAnimationFrame(() => {
   const splash = document.getElementById('splash');
   if (!splash) return;
