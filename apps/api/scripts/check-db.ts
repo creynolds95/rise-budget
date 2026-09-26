@@ -34,6 +34,16 @@ if (values.sync) {
      FROM sync_run ORDER BY started_at DESC LIMIT 30`,
   );
   console.log('sync runs:', JSON.stringify(runs, null, 1));
+  const sources = query<{ started_at: string; source_json: string | null }>(
+    `SELECT started_at, source_json FROM sync_run WHERE source_json IS NOT NULL
+     ORDER BY started_at DESC LIMIT 3`,
+  );
+  for (const s of sources) {
+    console.log(
+      `what SimpleFIN sent at ${s.started_at}:`,
+      JSON.stringify(JSON.parse(s.source_json ?? 'null'), null, 1),
+    );
+  }
   const accts = query(
     `SELECT a.kind, a.created_at, a.last_synced_at, a.archived_at,
        (SELECT COUNT(*) FROM txn t WHERE t.account_id = a.id) AS txns,

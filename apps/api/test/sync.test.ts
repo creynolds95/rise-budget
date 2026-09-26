@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { scheduled } from '../src/index';
 import { centsToDecimal, mockSimpleFin } from '../src/sync/mock';
-import { runSync, windowStart } from '../src/sync/run';
+import { describeSource, runSync, windowStart } from '../src/sync/run';
 import { httpSimpleFin, sourceFromEnv, type SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
 
@@ -594,6 +594,54 @@ describe('T29 transfers', () => {
 });
 
 describe('sync plumbing', () => {
+  it('records what SimpleFIN sent on each run, without names or amounts', async () => {
+    const s = await setup();
+    const r = await runSync(
+      env.DB,
+      s.userId,
+      fake([
+        {
+          id: 'acct-1234',
+          name: 'Secret Name',
+          balance: 99_999,
+          reported: '2026-09-24',
+          txns: [
+            { id: 'a', date: '2026-09-22', cents: 500, desc: 'X' },
+            { id: 'b', date: '2026-09-23', cents: 700, desc: 'Y', pending: true },
+          ],
+        },
+      ]),
+      { now: at('2026-09-26T18:00:00Z') },
+    );
+    const row = await env.DB.prepare('SELECT source_json FROM sync_run WHERE id = ?1')
+      .bind(r.id)
+      .first<{ source_json: string }>();
+    expect(row?.source_json).not.toMatch(/Secret|999/);
+    expect(JSON.parse(row?.source_json ?? 'null')).toEqual({
+      fetch: null,
+      startDate: '2026-09-01',
+      keys: ['accounts', 'errors'],
+      accounts: [
+        {
+          id: '1234',
+          org: 'Test Bank',
+          balanceDate: '2026-09-24T18:00:00.000Z',
+          txns: 2,
+          pending: 1,
+          newestPosted: '2026-09-22T18:00:00.000Z',
+        },
+      ],
+    });
+  });
+
+  it('describes any shape SimpleFIN sends without throwing', () => {
+    expect(describeSource(null)).toEqual({ fetch: null, startDate: null, keys: [], accounts: [] });
+    expect(describeSource({ accounts: [null, { id: 5, org: { name: 1 } }] }).accounts).toEqual([
+      { id: null, org: null, balanceDate: null, txns: 0, pending: 0, newestPosted: null },
+      { id: null, org: null, balanceDate: null, txns: 0, pending: 0, newestPosted: null },
+    ]);
+  });
+
   it('the live source sends credentials as a header and never leaks them in errors', async () => {
     const seen: { url: string; auth: string | null }[] = [];
     const fetcher = ((url: string, init?: RequestInit) => {
@@ -608,6 +656,7 @@ describe('sync plumbing', () => {
       url: 'https://bridge.simplefin.org/simplefin/accounts?start-date=1700000000&pending=1',
       auth: `Basic ${btoa('user:s3cret')}`,
     });
+    expect(src.lastFetch).toEqual({ status: 200, date: null, age: null, cacheStatus: null });
     const err = await src.fetchAccounts(0).catch((e: Error) => e.message);
     expect(err).toBe('SimpleFIN refused the access URL (403)');
     expect(err).not.toContain('s3cret');

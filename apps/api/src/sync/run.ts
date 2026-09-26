@@ -37,7 +37,7 @@ import {
 import { suggestFor } from '../lib/categorize';
 import { localToday } from '../lib/dates';
 import { refreshRecurring } from '../lib/recurring';
-import type { SimpleFinSource } from './source';
+import type { FetchInfo, SimpleFinSource } from './source';
 
 /** Overlap re-fetched on every sync to absorb late posts (ARCHITECTURE §6). */
 export const OVERLAP_DAYS = 5;
@@ -58,6 +58,42 @@ export interface SyncResult {
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : 'Unknown error');
+
+const iso = (unixSeconds: unknown) =>
+  typeof unixSeconds === 'number' && unixSeconds > 0
+    ? new Date(unixSeconds * 1000).toISOString()
+    : null;
+
+/**
+ * What SimpleFIN sent, minus names and amounts: enough to tell "SimpleFIN hasn't refreshed
+ * this bank" (an old balance-date) from "Rise dropped something" (transactions sent, none
+ * stored). Tolerates any shape — it runs before validation.
+ */
+export function describeSource(raw: unknown, fetch?: FetchInfo, startDate?: string) {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const accounts = Array.isArray(r['accounts']) ? (r['accounts'] as unknown[]) : [];
+  return {
+    fetch: fetch ?? null,
+    startDate: startDate ?? null,
+    keys: Object.keys(r).sort(),
+    accounts: accounts.map((a) => {
+      const acct = (a && typeof a === 'object' ? a : {}) as Record<string, unknown>;
+      const org = (acct['org'] ?? {}) as Record<string, unknown>;
+      const txns = Array.isArray(acct['transactions'])
+        ? (acct['transactions'] as Record<string, unknown>[])
+        : [];
+      const posted = txns.map((t) => (typeof t['posted'] === 'number' ? t['posted'] : 0));
+      return {
+        id: typeof acct['id'] === 'string' ? acct['id'].slice(-4) : null,
+        org: typeof org['name'] === 'string' ? org['name'] : null,
+        balanceDate: iso(acct['balance-date']),
+        txns: txns.length,
+        pending: txns.filter((t) => t['pending'] === true || t['posted'] === 0).length,
+        newestPosted: iso(Math.max(0, ...posted)),
+      };
+    }),
+  };
+}
 
 /**
  * Where this sync starts: an explicit date, else each account's last report minus the
@@ -102,12 +138,13 @@ export async function runSync(
   let rowsInserted = 0;
   let rowsUpdated = 0;
   let transfersLinked = 0;
+  let source_: ReturnType<typeof describeSource> | undefined;
 
   const finish = async (): Promise<SyncResult> => {
     const status: SyncResult['status'] =
       errors.length === 0 ? 'ok' : accountsTouched > 0 ? 'partial' : 'failed';
     const r = { status, accountsTouched, rowsInserted, rowsUpdated, errors };
-    await finishSyncRun(userId, db, runId, r);
+    await finishSyncRun(userId, db, runId, { ...r, source: source_ });
     return { id: runId, ...r, transfersLinked };
   };
 
@@ -126,7 +163,9 @@ export async function runSync(
 
   let envelope: z.infer<typeof Envelope>;
   try {
-    envelope = Envelope.parse(await source.fetchAccounts(startSec));
+    const raw = await source.fetchAccounts(startSec);
+    source_ = describeSource(raw, source.lastFetch, from);
+    envelope = Envelope.parse(raw);
   } catch (e) {
     errors.push({
       message: e instanceof z.ZodError ? 'SimpleFIN returned an unexpected shape' : message(e),
