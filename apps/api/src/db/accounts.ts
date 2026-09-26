@@ -55,6 +55,15 @@ export async function listAccounts(userId: UserId, db: D1Database): Promise<Acco
   return results.map(toAccount);
 }
 
+/** Includes closed accounts too — net worth history keeps them even once they leave the active list. */
+export async function listAccountsForNetWorth(userId: UserId, db: D1Database): Promise<Account[]> {
+  const { results } = await db
+    .prepare('SELECT * FROM account WHERE user_id = ?1 ORDER BY kind, name')
+    .bind(userId)
+    .all<AccountRow>();
+  return results.map(toAccount);
+}
+
 export async function getAccount(
   userId: UserId,
   db: D1Database,
@@ -131,6 +140,36 @@ export async function flipAccountSign(userId: UserId, db: D1Database, accountId:
         'UPDATE balance_snapshot SET balance_cents = -balance_cents WHERE user_id = ?1 AND account_id = ?2',
       )
       .bind(userId, accountId),
+  ]);
+}
+
+/** Closes a manual account: it leaves the active list, but its snapshots keep contributing to net worth. */
+export async function archiveAccount(userId: UserId, db: D1Database, accountId: string) {
+  await db
+    .prepare('UPDATE account SET archived_at = ?3 WHERE user_id = ?1 AND id = ?2')
+    .bind(userId, accountId, nowIso())
+    .run();
+}
+
+export async function countAccountTransactions(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+): Promise<number> {
+  const row = await db
+    .prepare('SELECT COUNT(*) AS n FROM txn WHERE user_id = ?1 AND account_id = ?2')
+    .bind(userId, accountId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** Erases a manual account and every balance it ever reported. Irreversible (SPEC §5.1). */
+export async function deleteAccount(userId: UserId, db: D1Database, accountId: string) {
+  await db.batch([
+    db
+      .prepare('DELETE FROM balance_snapshot WHERE user_id = ?1 AND account_id = ?2')
+      .bind(userId, accountId),
+    db.prepare('DELETE FROM account WHERE user_id = ?1 AND id = ?2').bind(userId, accountId),
   ]);
 }
 
