@@ -35,6 +35,11 @@ const INDEXES = [
   'ix_txn_review',
   'ix_txn_merchant',
   'ix_split_period_cat',
+  // 0009 (C19)
+  'ix_split_txn',
+  'ix_audit_action',
+  'ix_idempotency_created',
+  'ix_sync_run_started',
 ];
 
 describe('migration 0001', () => {
