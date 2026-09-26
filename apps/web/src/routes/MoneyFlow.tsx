@@ -14,10 +14,10 @@ type Node = FlowNode & SankeyNodeMinimal<object, object>;
 const WIDTH = 640;
 const NODE_WIDTH = 14;
 const ROLE_FILL: Record<'income' | 'group' | 'category' | 'leftover', string> = {
-  income: 'var(--sage-700)',
-  group: 'var(--sage-600)',
-  category: 'var(--sage-300)',
-  leftover: 'var(--gold)',
+  income: 'var(--color-sage-700)',
+  group: 'var(--color-sage-600)',
+  category: 'var(--color-sage-300)',
+  leftover: 'var(--color-gold)',
 };
 
 function roleOf(id: string): keyof typeof ROLE_FILL {
