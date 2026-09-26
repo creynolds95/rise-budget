@@ -23,44 +23,70 @@ export function Chart(
     | { kind: 'lines'; lines: Line[]; slots: number; xLabels: string[] }
   ) & { label: string; range?: Range; onRange?: (r: Range) => void },
 ) {
+  const zeroAt = props.kind === 'line' ? zeroY(props.points, H) : null;
   return (
     <figure className="m-0">
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        role="img"
-        aria-label={props.label}
-        className="h-40 w-full"
-        preserveAspectRatio="none"
-      >
-        {[0.25, 0.5, 0.75].map((f) => (
-          <line
-            key={f}
-            x1={0}
-            x2={W}
-            y1={H * f}
-            y2={H * f}
-            className="stroke-hairline"
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {props.kind === 'lines' && lines(props.lines, props.slots)}
-        {props.kind === 'line' && zeroLine(props.points)}
-        {props.kind === 'line' &&
-          lineSegments(props.points, W, H).map((s, i) => (
-            <polyline
-              key={i}
-              data-dashed={s.dashed}
-              points={s.points.map((p) => p.join(',')).join(' ')}
-              fill="none"
-              stroke={series[0]}
-              strokeWidth={2}
-              strokeDasharray={s.dashed ? '4 4' : undefined}
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          role="img"
+          aria-label={props.label}
+          className="h-40 w-full"
+          preserveAspectRatio="none"
+        >
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line
+              key={f}
+              x1={0}
+              x2={W}
+              y1={H * f}
+              y2={H * f}
+              className="stroke-hairline"
+              strokeWidth={1}
               vectorEffect="non-scaling-stroke"
             />
           ))}
-        {props.kind === 'bar' && bars(props.bars)}
-      </svg>
+          {props.kind === 'lines' && lines(props.lines, props.slots)}
+          {props.kind === 'line' && zeroAt !== null && (
+            <line
+              x1={0}
+              x2={W}
+              y1={zeroAt}
+              y2={zeroAt}
+              className="stroke-ink-faint"
+              strokeWidth={1}
+              strokeDasharray="2 3"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+          {props.kind === 'line' &&
+            lineSegments(props.points, W, H).map((s, i) => (
+              <polyline
+                key={i}
+                data-dashed={s.dashed}
+                points={s.points.map((p) => p.join(',')).join(' ')}
+                fill="none"
+                stroke={series[0]}
+                strokeWidth={2}
+                strokeDasharray={s.dashed ? '4 4' : undefined}
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+          {props.kind === 'bar' && bars(props.bars)}
+        </svg>
+        {/* Plain HTML, not SVG text: the svg above stretches non-uniformly
+            (preserveAspectRatio="none"), which would distort glyphs. Height scale is 1:1
+            (the box is always h-40 = H), so a top percentage lines up with the svg's y. */}
+        {zeroAt !== null && (
+          <span
+            aria-hidden
+            className="type-caption absolute left-0 -translate-y-1/2 bg-surface pr-1 text-ink-faint"
+            style={{ top: `${(zeroAt / H) * 100}%` }}
+          >
+            $0
+          </span>
+        )}
+      </div>
       {props.kind === 'lines' && <Axis labels={props.xLabels} spread />}
       {props.kind === 'bar' && props.bars.length > 0 && (
         <Axis labels={props.bars.map((b) => b.label)} />
@@ -84,25 +110,6 @@ export interface Line {
   color: string;
   /** Ends in a dot: the series that is still being written, e.g. this month. */
   live?: boolean;
-}
-
-/** Marks $0 whenever it falls within the series' span — the only way a negative-only or
- *  zero-crossing series reads as such, since the line itself is scaled to fill the chart. */
-function zeroLine(points: LinePoint[]) {
-  const y = zeroY(points, H);
-  if (y === null) return null;
-  return (
-    <line
-      x1={0}
-      x2={W}
-      y1={y}
-      y2={y}
-      className="stroke-ink-faint"
-      strokeWidth={1}
-      strokeDasharray="2 3"
-      vectorEffect="non-scaling-stroke"
-    />
-  );
 }
 
 function Axis({ labels, spread = false }: { labels: string[]; spread?: boolean }) {

@@ -123,7 +123,10 @@ export function Dashboard() {
 
       {/* 2. Summary */}
       <section className="mt-8">
-        <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
+        <h2 className="type-title">Budget</h2>
+        <div className="mt-2">
+          <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
+        </div>
       </section>
 
       {/* 3. Spending */}
