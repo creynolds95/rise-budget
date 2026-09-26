@@ -419,6 +419,7 @@ export interface SyncRunRow {
   rows_inserted: number;
   rows_updated: number;
   error_json: string | null;
+  source_json: string | null;
 }
 
 export async function startSyncRun(userId: UserId, db: D1Database): Promise<string> {
@@ -442,12 +443,13 @@ export async function finishSyncRun(
     rowsInserted: number;
     rowsUpdated: number;
     errors: unknown[];
+    source?: unknown;
   },
 ): Promise<void> {
   await db
     .prepare(
       `UPDATE sync_run SET finished_at = ?3, status = ?4, accounts_touched = ?5, rows_inserted = ?6,
-         rows_updated = ?7, error_json = ?8
+         rows_updated = ?7, error_json = ?8, source_json = ?9
        WHERE user_id = ?1 AND id = ?2`,
     )
     .bind(
@@ -459,6 +461,7 @@ export async function finishSyncRun(
       r.rowsInserted,
       r.rowsUpdated,
       r.errors.length > 0 ? JSON.stringify(r.errors) : null,
+      r.source === undefined ? null : JSON.stringify(r.source),
     )
     .run();
 }

@@ -9,6 +9,15 @@ export interface SimpleFinSource {
   readonly mode: 'live' | 'mock';
   /** Raw `/accounts` JSON for transactions posted on or after `startDate` (unix seconds). */
   fetchAccounts(startDate: number): Promise<unknown>;
+  /** Response headers of the last fetch that mattered for freshness, when there was one. */
+  lastFetch?: FetchInfo;
+}
+
+export interface FetchInfo {
+  status: number;
+  date: string | null;
+  age: string | null;
+  cacheStatus: string | null;
 }
 
 export class SourceError extends Error {
@@ -25,17 +34,25 @@ export function httpSimpleFin(accessUrl: string, fetcher: typeof fetch = fetch):
   url.username = '';
   url.password = '';
   const base = url.toString().replace(/\/$/, '');
-  return {
+  const source: SimpleFinSource = {
     mode: 'live',
     async fetchAccounts(startDate) {
       let res: Response;
       try {
+        // Never a cached answer: a stale copy would look exactly like a bank that hasn't posted.
         res = await fetcher(`${base}/accounts?start-date=${startDate}&pending=1`, {
-          headers: { authorization: auth },
+          headers: { authorization: auth, 'cache-control': 'no-cache' },
+          cache: 'no-store',
         });
       } catch {
         throw new SourceError('Could not reach SimpleFIN');
       }
+      source.lastFetch = {
+        status: res.status,
+        date: res.headers.get('date'),
+        age: res.headers.get('age'),
+        cacheStatus: res.headers.get('cf-cache-status'),
+      };
       if (res.status === 403) throw new SourceError('SimpleFIN refused the access URL (403)');
       if (!res.ok) throw new SourceError(`SimpleFIN returned ${res.status}`);
       try {
@@ -45,6 +62,7 @@ export function httpSimpleFin(accessUrl: string, fetcher: typeof fetch = fetch):
       }
     },
   };
+  return source;
 }
 
 /**
