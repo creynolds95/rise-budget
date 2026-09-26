@@ -90,12 +90,13 @@ if (values.errors) {
     const ev = (w['event'] ?? {}) as Record<string, unknown>;
     const req = (ev['request'] ?? {}) as Record<string, unknown>;
     const resp = (ev['response'] ?? {}) as Record<string, unknown>;
-    let path = '';
-    try {
-      path = new URL(String(req['url'] ?? '')).pathname;
-    } catch {
-      path = String(m['url'] ?? '');
-    }
+    const path = (() => {
+      try {
+        return new URL(String(req['url'] ?? '')).pathname;
+      } catch {
+        return String(m['url'] ?? '');
+      }
+    })();
     return {
       t: new Date(Number(e['timestamp'] ?? 0)).toISOString(),
       method: req['method'] ?? null,

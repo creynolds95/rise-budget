@@ -82,7 +82,7 @@ export function Shell() {
       </aside>
 
       <div className="min-w-0">
-        <div className="gutter mx-auto flex max-w-2xl items-center justify-between pt-[max(12px,env(safe-area-inset-top))] lg:hidden">
+        <div className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between bg-canvas/95 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur lg:hidden">
           <span className="type-page">{currentTab?.label ?? 'Rise'}</span>
           <div className="-mr-2 flex items-center">
             {actions ??

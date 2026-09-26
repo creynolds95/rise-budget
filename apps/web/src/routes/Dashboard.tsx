@@ -6,7 +6,7 @@ import { NetWorthSection } from './Accounts';
 import { SummaryCard } from './Budget';
 import { SpendingSection } from '../components/SpendingSection';
 import { HealthNotes } from '../components/HealthNotes';
-import { StaleNotes } from '../components/StaleNotes';
+import { quietInstitutions, StaleNotes } from '../components/StaleNotes';
 import { TxnRow } from '../components/TxnRow';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow } from '../components/primitives/Rows';
@@ -81,7 +81,12 @@ export function Dashboard() {
 
   return (
     <div className="gutter mx-auto max-w-2xl pt-6 pb-12">
-      <HealthNotes sync={syncStatus.data} backups={backups.data} today={today} />
+      <HealthNotes
+        sync={syncStatus.data}
+        backups={backups.data}
+        today={today}
+        quiet={quietInstitutions(accounts.data ?? [])}
+      />
       {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}
 
       {/* 1. Surplus */}

@@ -13,6 +13,28 @@ export function staleText(a: AccountWithStaleness, today: string, tz?: string): 
   return `${a.name} last synced ${shortDate(last)} — ${gap} ${gap === 1 ? 'day' : 'days'} not yet counted.`;
 }
 
+/**
+ * Loans are a known slow feed (servicers rarely sync), so their staleness is shown on the
+ * account itself as a reminder to update it, never in a summary list.
+ */
+export const quietWhenStale = (a: { kind: string }) => a.kind === 'loan';
+
+/** Institutions whose every synced account is quiet when stale — their connection noise too. */
+export function quietInstitutions(
+  accounts: {
+    kind: string;
+    source: string;
+    institutionName: string | null;
+    archivedAt: string | null;
+  }[],
+): string[] {
+  const synced = accounts.filter((a) => a.source === 'simplefin' && !a.archivedAt);
+  const names = new Set(synced.flatMap((a) => (a.institutionName ? [a.institutionName] : [])));
+  return [...names].filter((n) =>
+    synced.filter((a) => a.institutionName === n).every(quietWhenStale),
+  );
+}
+
 export function StaleNotes({
   accounts,
   today,
@@ -23,7 +45,7 @@ export function StaleNotes({
   tz?: string | undefined;
 }) {
   const notes = accounts
-    .filter((a) => !a.archivedAt)
+    .filter((a) => !a.archivedAt && !quietWhenStale(a))
     .map((a) => staleText(a, today, tz))
     .filter((t): t is string => t !== null);
   if (notes.length === 0) return null;
