@@ -1,5 +1,5 @@
 import type { ViewCategory } from '@rise/shared/budget';
-import { averageCents, cumulativeSpend, sameDayTotal, type MonthSpend } from '@rise/shared/reports';
+import { cumulativeSpend, sameDayTotal } from '@rise/shared/reports';
 import type { Category } from '@rise/shared/schemas';
 import { Link, useNavigate } from 'react-router';
 import { series } from '../design/tokens';
@@ -17,15 +17,14 @@ const ordinal = (n: number) =>
   `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th')}`;
 
 /**
- * T41 "spend vs last month, reports scrolling in". Three answers, in reading order: am I
- * spending faster than last month (the line), on what (the categories), and is this normal
- * for me (six months). Every comparison is in dollars — no percentages over one month (§7).
+ * T41 "spend vs last month, reports scrolling in". Two answers, in reading order: am I
+ * spending faster than last month (the line), on what (the categories). Every comparison is
+ * in dollars — no percentages over one month (§7).
  */
 export function SpendingSection(props: {
   month: string;
   spentCents: number;
   elapsedDays: number;
-  incomeCents: number;
   categories: ViewCategory[];
   lastCategories: ViewCategory[] | undefined;
   names: Category[] | undefined;
@@ -65,42 +64,7 @@ export function SpendingSection(props: {
         names={props.names}
         prevMonth={prevMonth}
       />
-
-      {report && <SixMonths months={report.months} month={month} />}
-
-      {props.incomeCents !== 0 && (
-        <section className="mt-10" aria-labelledby="flow-h">
-          <h2 id="flow-h" className="type-title">
-            In and out
-          </h2>
-          <dl className="mt-2 grid grid-cols-3 gap-4 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-            <Figure label="Came in">
-              <MoneyText cents={props.incomeCents} tone="in" whole />
-            </Figure>
-            <Figure label="Went out">
-              <MoneyText cents={props.spentCents} whole />
-            </Figure>
-            <Figure label="Difference">
-              <MoneyText
-                cents={props.incomeCents - props.spentCents}
-                tone={props.incomeCents - props.spentCents < 0 ? 'over' : 'ink'}
-                sign="always"
-                whole
-              />
-            </Figure>
-          </dl>
-        </section>
-      )}
     </>
-  );
-}
-
-function Figure({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="type-label text-ink-muted">{label}</dt>
-      <dd className="mt-1 text-lg font-semibold">{children}</dd>
-    </div>
   );
 }
 
@@ -255,44 +219,6 @@ function WhereItWent(props: {
           rest > 0 ? `${rest} more ${rest === 1 ? 'category' : 'categories'}` : 'Open the budget'
         }
       />
-    </section>
-  );
-}
-
-/** Is this month normal for me? Leading empty months (before any data) are left off. */
-function SixMonths({ months, month }: { months: MonthSpend[]; month: string }) {
-  const firstWithData = months.findIndex((m) => m.cents !== 0);
-  const shown = firstWithData === -1 ? [] : months.slice(firstWithData);
-  const complete = shown.filter((m) => m.periodId !== month);
-  if (complete.length === 0) return null;
-  const avg = averageCents(complete.map((m) => m.cents));
-  return (
-    <section className="mt-10" aria-labelledby="months-h">
-      <h2 id="months-h" className="type-title">
-        Month by month
-      </h2>
-      <div className="mt-2 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-        <p className="text-ink-muted">
-          {complete.length === 1
-            ? `${monthName(complete[0]?.periodId ?? '', false)}: `
-            : 'Typical month: '}
-          <MoneyText cents={avg ?? 0} whole />
-          {complete.length > 1 && (
-            <span className="type-caption text-ink-faint"> · average of {complete.length}</span>
-          )}
-        </p>
-        <div className="mt-4">
-          <Chart
-            kind="bar"
-            label={`Spending per month, ${short(shown[0]?.periodId ?? month)} to ${short(month)}`}
-            bars={shown.map((m) => ({
-              label: short(m.periodId),
-              cents: Math.max(0, m.cents),
-              muted: m.periodId === month,
-            }))}
-          />
-        </div>
-      </div>
     </section>
   );
 }
