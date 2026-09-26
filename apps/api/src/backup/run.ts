@@ -1,4 +1,4 @@
-import { dumpDatabase } from '../db/backup';
+import { dumpDatabase, pruneOperational } from '../db/backup';
 import { backupDate, backupKey, expiredBackups, gzip } from './sql';
 
 /**
@@ -8,14 +8,15 @@ import { backupDate, backupKey, expiredBackups, gzip } from './sql';
  */
 export const BACKUP_CRON = '30 9 * * *';
 
-export type BackupResult = { key: string; bytes: number; pruned: string[] };
+export type BackupResult = { key: string; bytes: number; pruned: string[]; rowsPruned: number };
 
-/** The nightly job (ARCHITECTURE §8): dump → gzip → R2, then drop what's past 90 days. */
+/** The nightly job (ARCHITECTURE §8): prune ops rows → dump → gzip → R2, then drop old backups. */
 export async function runBackup(
   db: D1Database,
   bucket: R2Bucket,
   now: Date,
 ): Promise<BackupResult> {
+  const rowsPruned = await pruneOperational(db, now);
   const body = await gzip(await dumpDatabase(db, now));
   const key = backupKey(now);
   await bucket.put(key, body, {
@@ -28,7 +29,7 @@ export async function runBackup(
     now,
   );
   if (pruned.length) await bucket.delete(pruned);
-  return { key, bytes: body.byteLength, pruned };
+  return { key, bytes: body.byteLength, pruned, rowsPruned };
 }
 
 export async function listBackups(

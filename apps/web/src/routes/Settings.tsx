@@ -84,9 +84,7 @@ export function Settings() {
       <p className="text-ink-muted">{me?.email}</p>
 
       <ul className="mt-6 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-        <Card to="/settings/appearance" title="Appearance" state={THEME_LABEL[appearance]}>
-          Light, dark, or match your system
-        </Card>
+        <Card to="/settings/appearance" title="Appearance" state={THEME_LABEL[appearance]} />
         <Card to="/settings/sync" title="Bank sync" state={sync ? MODE[sync.mode] : undefined}>
           {lastRun
             ? `Last run ${shortDate(localToday(me?.timezone, new Date(lastRun.startedAt)))} · ${lastRun.status}`
@@ -102,30 +100,22 @@ export function Settings() {
                 : 'Plans change one month at a time'
               : undefined
           }
-        >
-          How plan changes and month end work
-        </Card>
+        />
         <Card
           to="/settings/categories"
           title="Categories"
           state={categories ? `${categories.length} in use` : undefined}
-        >
-          Groups, names, bills and income
-        </Card>
+        />
         <Card
           to="/settings/rules"
           title="Rules"
           state={rules ? `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}` : undefined}
-        >
-          What files itself automatically
-        </Card>
+        />
         <Card
           to="/accounts"
           title="Accounts"
           state={accounts ? `${accounts.filter((a) => !a.archivedAt).length} accounts` : undefined}
-        >
-          Balances, cadence, loans
-        </Card>
+        />
         <Card
           to="/settings/security"
           title="Security"
@@ -136,9 +126,7 @@ export function Settings() {
                 : `Locks ${{ immediate: 'immediately', '5m': 'after 5 min', '1h': 'after 1 hour' }[me.settings.appLock]}`
               : undefined
           }
-        >
-          App lock, PIN, passkeys
-        </Card>
+        />
         <Card
           to="/settings/data"
           title="Your data"
@@ -149,14 +137,16 @@ export function Settings() {
                 : 'No backup yet'
               : undefined
           }
-        >
-          Export, and nightly backups
-        </Card>
+        />
       </ul>
 
       <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
         Sign out
       </Button>
+      {/* Which build is running, so a deploy that never went out is visible (C20). */}
+      <p className="mt-6 type-caption text-ink-faint money">
+        Built {shortDate(localToday(me?.timezone, new Date(__APP_VERSION__)))} · {__APP_COMMIT__}
+      </p>
     </div>
   );
 }
@@ -170,7 +160,7 @@ function Card({
   to: string;
   title: string;
   state?: string | undefined;
-  children: string;
+  children?: string;
 }) {
   const navigate = useNavigate();
   return (
@@ -183,7 +173,7 @@ function Card({
         <span className="type-label text-ink-muted">{title}</span>
         <span className="min-w-0">
           <span className="block font-medium">{state ?? <Skeleton className="h-5 w-24" />}</span>
-          <span className="block type-caption text-ink-faint">{children}</span>
+          {children && <span className="block type-caption text-ink-faint">{children}</span>}
         </span>
         <Chevron />
       </Link>

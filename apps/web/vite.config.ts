@@ -3,10 +3,15 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
 
+// Node's env without pulling in @types/node for one variable.
+const env =
+  (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
+
 export default defineConfig({
   define: {
     // Each build busts the persisted cache, so old data shapes never meet new code.
     __APP_VERSION__: JSON.stringify(new Date().toISOString()),
+    __APP_COMMIT__: JSON.stringify(env['GITHUB_SHA']?.slice(0, 7) ?? 'local'),
   },
   plugins: [
     react(),

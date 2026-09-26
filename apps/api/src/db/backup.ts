@@ -214,3 +214,31 @@ export async function transactionsCsv(userId: UserId, db: D1Database): Promise<s
     .all<{ chunk: string }>();
   return [CSV_HEADER, ...results.map((r) => r.chunk), ''].join('\r\n');
 }
+
+/** How long operational rows are kept (C19). Money history — txns, splits, money audit — is never pruned. */
+export const RETENTION = { idempotencyDays: 30, syncRunDays: 90, authAuditDays: 90 } as const;
+
+/**
+ * Nightly housekeeping before the backup, across all users like the dump itself: replay
+ * keys past any offline queue's life, old sync-run logs, and old sign-in audit rows.
+ * Audit rows for money changes stay forever.
+ */
+export async function pruneOperational(db: D1Database, now: Date): Promise<number> {
+  const before = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
+  const results = await db.batch([
+    db
+      .prepare('DELETE FROM idempotency WHERE created_at < ?1 /* system:backup */')
+      .bind(before(RETENTION.idempotencyDays)),
+    db
+      .prepare(
+        "DELETE FROM sync_run WHERE started_at < ?1 AND status != 'running' /* system:backup */",
+      )
+      .bind(before(RETENTION.syncRunDays)),
+    db
+      .prepare(
+        "DELETE FROM audit_log WHERE created_at < ?1 AND action LIKE 'auth.%' /* system:backup */",
+      )
+      .bind(before(RETENTION.authAuditDays)),
+  ]);
+  return results.reduce((n, r) => n + (r.meta.changes ?? 0), 0);
+}

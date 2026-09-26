@@ -137,6 +137,32 @@ describe('T46 backup and restore', () => {
     ]);
   });
 
+  it('C19 prunes old replay keys, sync runs and sign-in audit rows, never money audit', async () => {
+    const u = await signedInUser();
+    const old = '2026-01-01T00:00:00.000Z';
+    const fresh = '2026-09-20T00:00:00.000Z';
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO idempotency (key, user_id, response_json, created_at) VALUES ('k-old', ?1, '{}', ?2), ('k-new', ?1, '{}', ?3)",
+      ).bind(u.userId, old, fresh),
+      env.DB.prepare(
+        "INSERT INTO sync_run (id, user_id, started_at, status) VALUES ('s-old', ?1, ?2, 'ok'), ('s-new', ?1, ?3, 'ok')",
+      ).bind(u.userId, old, fresh),
+      env.DB.prepare(
+        "INSERT INTO audit_log (id, user_id, action, created_at) VALUES ('a-auth', ?1, 'auth.login_failed', ?2), ('a-money', ?1, 'txn.recategorized', ?2)",
+      ).bind(u.userId, old),
+    ]);
+    const r = await runBackup(env.DB, env.BACKUPS, new Date('2026-09-24T09:30:00Z'));
+    expect(r.rowsPruned).toBeGreaterThanOrEqual(3);
+    const ids = async (sql: string) =>
+      (await env.DB.prepare(sql).bind(u.userId).all<{ id: string }>()).results.map((x) => x.id);
+    expect(await ids('SELECT key AS id FROM idempotency WHERE user_id = ?1')).toEqual(['k-new']);
+    expect(await ids('SELECT id FROM sync_run WHERE user_id = ?1')).toEqual(['s-new']);
+    expect(await ids("SELECT id FROM audit_log WHERE user_id = ?1 AND id LIKE 'a-%'")).toEqual([
+      'a-money',
+    ]);
+  });
+
   it('runs from the nightly cron and not from the sync crons', async () => {
     await handler(
       {

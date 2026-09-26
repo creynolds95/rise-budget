@@ -77,7 +77,14 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
   try {
     if (job === 'backup') {
       const r = await runBackup(env.DB, env.BACKUPS, new Date(event.scheduledTime));
-      log({ job, ok: true, ms: Date.now() - started, key: r.key, bytes: r.bytes });
+      log({
+        job,
+        ok: true,
+        ms: Date.now() - started,
+        key: r.key,
+        bytes: r.bytes,
+        rowsPruned: r.rowsPruned,
+      });
       return;
     }
     const source = sourceFromEnv(env);
