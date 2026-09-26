@@ -32,6 +32,48 @@
   --shadow-soft: 0 1px 2px rgba(25, 28, 22, 0.06), 0 4px 12px rgba(25, 28, 22, 0.04);
 }
 
+/*
+ * Dark mode (DESIGN-SYSTEM.md §1). Matches the system by default; `data-theme` (set by
+ * lib/theme.ts) pins one permanently regardless of the system setting. Brand colors keep
+ * their character but shift brighter, since they now carry text and sit on dark backgrounds.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-ink: #ecefe6;
+    --color-ink-muted: #a3aa98;
+    --color-ink-faint: #767c6e;
+    --color-canvas: #14160f;
+    --color-surface: #1e2118;
+    --color-hairline: #2d3226;
+    --color-sage-700: #8fb27e;
+    --color-sage-600: #7a9a6d;
+    --color-sage-300: #435239;
+    --color-sage-100: #232b1d;
+    --color-gold: #d4b05b;
+    --color-gold-text: #e0be72;
+    --color-gold-100: #2e2712;
+    --color-clay: #d98467;
+    --color-clay-100: #3a211a;
+  }
+}
+:root[data-theme='dark'] {
+  --color-ink: #ecefe6;
+  --color-ink-muted: #a3aa98;
+  --color-ink-faint: #767c6e;
+  --color-canvas: #14160f;
+  --color-surface: #1e2118;
+  --color-hairline: #2d3226;
+  --color-sage-700: #8fb27e;
+  --color-sage-600: #7a9a6d;
+  --color-sage-300: #435239;
+  --color-sage-100: #232b1d;
+  --color-gold: #d4b05b;
+  --color-gold-text: #e0be72;
+  --color-gold-100: #2e2712;
+  --color-clay: #d98467;
+  --color-clay-100: #3a211a;
+}
+
 @layer base {
   html {
     background: var(--color-canvas);
@@ -39,6 +81,13 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
+    color-scheme: light dark;
+  }
+  html[data-theme='light'] {
+    color-scheme: light;
+  }
+  html[data-theme='dark'] {
+    color-scheme: dark;
   }
   body {
     margin: 0;

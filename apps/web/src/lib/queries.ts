@@ -1,4 +1,5 @@
 import type {
+  CashFlowReport,
   Category,
   CategoryGroup,
   MoneyFlowReport,
@@ -88,6 +89,14 @@ export const useMoneyFlow = (month: string) =>
   useQuery({
     queryKey: ['reports', 'money-flow', month],
     queryFn: () => get<MoneyFlowReport>(`/reports/money-flow?month=${month}`),
+    placeholderData: keepPreviousData,
+  });
+
+/** Reports tab's Cash Flow "Bar" option: income vs. expense for the last six months. */
+export const useCashFlowReport = (month: string) =>
+  useQuery({
+    queryKey: ['reports', 'cash-flow', month],
+    queryFn: () => get<CashFlowReport>(`/reports/cash-flow?month=${month}`),
     placeholderData: keepPreviousData,
   });
 

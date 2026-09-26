@@ -1,13 +1,22 @@
 import { addPeriods } from '@rise/shared/budget';
 import { buildMoneyFlow, monthlySeries } from '@rise/shared/reports';
 import {
+  CashFlowReportQuery,
   MoneyFlowReportQuery,
   SpendingReportQuery,
+  type CashFlowReport,
   type MoneyFlowReport,
   type SpendingReport,
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
-import { listAggregates, listCategories, listGroups, spendingByDay, spendingByPeriod } from '../db';
+import {
+  incomeByPeriod,
+  listAggregates,
+  listCategories,
+  listGroups,
+  spendingByDay,
+  spendingByPeriod,
+} from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
 
@@ -62,5 +71,29 @@ reports.get('/money-flow', async (c) => {
     }),
   );
   const body: MoneyFlowReport = { month, ...flow };
+  return c.json(body);
+});
+
+/** Cash-flow bar chart: income vs. expense for the last six months. */
+reports.get('/cash-flow', async (c) => {
+  const q = CashFlowReportQuery.safeParse(c.req.query());
+  if (!q.success) throw new AppError(400, 'BAD_REQUEST', 'month is required (YYYY-MM)');
+  const { month } = q.data;
+  const userId = c.get('userId');
+  const first = addPeriods(month, 1 - HISTORY_MONTHS);
+  const [expense, income] = await Promise.all([
+    spendingByPeriod(userId, c.env.DB, first, month),
+    incomeByPeriod(userId, c.env.DB, first, month),
+  ]);
+  const expenseSeries = monthlySeries(first, month, expense);
+  const incomeSeries = monthlySeries(first, month, income);
+  const body: CashFlowReport = {
+    month,
+    months: expenseSeries.map((e, i) => ({
+      periodId: e.periodId,
+      expenseCents: e.cents,
+      incomeCents: incomeSeries[i]?.cents ?? 0,
+    })),
+  };
   return c.json(body);
 });

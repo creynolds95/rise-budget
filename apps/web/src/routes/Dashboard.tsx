@@ -1,8 +1,10 @@
 import type { RecurringSeries } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
+import { NetWorthSection } from './Accounts';
+import { SummaryCard } from './Budget';
 import { SpendingSection } from '../components/SpendingSection';
 import { StaleNotes } from '../components/StaleNotes';
-import { MoneyFlowReportView } from './MoneyFlow';
+import { TxnRow } from '../components/TxnRow';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
@@ -16,7 +18,10 @@ import {
   usePeriod,
   useRecurring,
   useToday,
+  useTransactions,
 } from '../lib/queries';
+
+const RECENT_TXNS = 4;
 
 /** "This month, answered" (T41). The on-pace answer first, then what needs attention. */
 export function Dashboard() {
@@ -29,6 +34,7 @@ export function Dashboard() {
   const recurring = useRecurring();
   const surplus = useCashToPayday();
   const categories = useCategories();
+  const txns = useTransactions({ sort: 'date_desc' });
   const queue = useQuery({
     queryKey: ['queue-count'],
     queryFn: () => get<{ count: number }>('/review/queue'),
@@ -49,6 +55,11 @@ export function Dashboard() {
   const t = p.totals;
   const expectedByNow = p.categories.reduce((n, c) => n + (c.pace?.expectedSpentCents ?? 0), 0);
   const ahead = t.spentCents - expectedByNow;
+  const byId = new Map((categories.data ?? []).map((c) => [c.id, c]));
+  const expenseCarriedCents = p.categories.reduce((n, c) => {
+    const cat = byId.get(c.categoryId);
+    return c.groupKind === 'expense' && cat?.budgeted ? n + c.carriedInCents : n;
+  }, 0);
   const upcoming = (recurring.data ?? []).filter(
     (s: RecurringSeries) =>
       s.status !== 'ended' &&
@@ -59,6 +70,7 @@ export function Dashboard() {
   );
   const broken = (recurring.data ?? []).filter((s) => s.status === 'broken');
   const catName = (id: string | null) => categories.data?.find((c) => c.id === id)?.name;
+  const recentTxns = (txns.data?.pages[0]?.items ?? []).slice(0, RECENT_TXNS);
 
   return (
     <div className="gutter mx-auto max-w-2xl pt-6 pb-12">
@@ -90,6 +102,7 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* 1. Surplus */}
       <section className="mt-8">
         <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <NavRow
@@ -126,13 +139,61 @@ export function Dashboard() {
         </div>
       </section>
 
+      {/* 2. Summary */}
       <section className="mt-8">
-        <h2 className="type-title">Coming up</h2>
-        {upcoming.length === 0 && broken.length === 0 ? (
-          <p className="mt-2 text-ink-muted">
-            No bills expected for the rest of {monthName(month, false)}.
-          </p>
-        ) : (
+        <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
+      </section>
+
+      {/* 3. Spending */}
+      <SpendingSection
+        month={month}
+        spentCents={t.spentCents}
+        elapsedDays={p.pace.elapsedDays}
+        incomeCents={p.actualIncomeCents}
+        categories={p.categories}
+        lastCategories={last.data?.categories}
+        names={categories.data}
+      />
+
+      {/* 4. Transactions */}
+      <section className="mt-10" aria-labelledby="txns-h">
+        <h2 id="txns-h" className="type-title">
+          Transactions
+        </h2>
+        <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+          {!txns.data ? (
+            <>
+              <Skeleton className="mt-3 h-12 w-full" />
+              <Skeleton className="mt-2 h-12 w-full" />
+            </>
+          ) : recentTxns.length === 0 ? (
+            <p className="py-4 text-ink-muted">No transactions yet.</p>
+          ) : (
+            recentTxns.map((tx) => {
+              const c =
+                tx.splits.length === 1 ? byId.get(tx.splits[0]?.categoryId ?? '') : undefined;
+              return (
+                <TxnRow
+                  key={tx.id}
+                  t={tx}
+                  categoryName={c ? `${c.emoji ? `${c.emoji} ` : ''}${c.name}` : undefined}
+                  from="Dashboard|/"
+                />
+              );
+            })
+          )}
+        </div>
+        <NavRow to="/transactions" label="Most recent" />
+      </section>
+
+      {/* 5. Net worth trend */}
+      <section className="mt-10">
+        <NetWorthSection />
+      </section>
+
+      {(upcoming.length > 0 || broken.length > 0) && (
+        <section className="mt-10">
+          <h2 className="type-title">Coming up</h2>
           <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
             {upcoming.map((s) => (
               <li
@@ -156,25 +217,8 @@ export function Dashboard() {
               </li>
             ))}
           </ul>
-        )}
-      </section>
-
-      <section className="mt-8">
-        <h2 className="type-title">Money flow</h2>
-        <div className="mt-2">
-          <MoneyFlowReportView month={month} />
-        </div>
-      </section>
-
-      <SpendingSection
-        month={month}
-        spentCents={t.spentCents}
-        elapsedDays={p.pace.elapsedDays}
-        incomeCents={p.actualIncomeCents}
-        categories={p.categories}
-        lastCategories={last.data?.categories}
-        names={categories.data}
-      />
+        </section>
+      )}
     </div>
   );
 }

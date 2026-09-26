@@ -22,6 +22,29 @@ export const color = {
 
 export type ColorToken = keyof typeof color;
 
+/**
+ * Dark-mode values for the same tokens (styles.css, `[data-theme='dark']` and the matching
+ * `prefers-color-scheme` block). Brand colors shift brighter since they now sit on dark
+ * backgrounds and, in places, carry text themselves.
+ */
+export const colorDark: Record<ColorToken, string> = {
+  ink: '#ECEFE6',
+  inkMuted: '#A3AA98',
+  inkFaint: '#767C6E',
+  canvas: '#14160F',
+  surface: '#1E2118',
+  hairline: '#2D3226',
+  sage700: '#8FB27E',
+  sage600: '#7A9A6D',
+  sage300: '#435239',
+  sage100: '#232B1D',
+  gold: '#D4B05B',
+  goldText: '#E0BE72',
+  gold100: '#2E2712',
+  clay: '#D98467',
+  clay100: '#3A211A',
+};
+
 /** Categorical series order for charts (§7). */
 export const series = [color.sage600, color.gold, color.clay, color.sage300] as const;
 

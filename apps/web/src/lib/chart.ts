@@ -88,6 +88,124 @@ export const allowsPercentChange = (range: Range) => range !== '1M';
  * simply ends early instead of stretching. Y runs from 0 (or the lowest value, if a refund
  * takes a total below zero) to the highest value across every series.
  */
+export interface Slice {
+  label: string;
+  cents: number;
+  color: string;
+}
+
+export interface PieArc {
+  slice: Slice;
+  path: string;
+  percent: number;
+}
+
+/** Donut arcs for a set of slices, clockwise from 12 o'clock. Zero/negative slices are dropped. */
+export function pieArcs(
+  slices: readonly Slice[],
+  cx: number,
+  cy: number,
+  outerR: number,
+  innerR: number,
+): PieArc[] {
+  const total = slices.reduce((sum, s) => sum + Math.max(0, s.cents), 0);
+  if (total <= 0) return [];
+  const point = (r: number, a: number): [number, number] => [
+    cx + r * Math.cos(a),
+    cy + r * Math.sin(a),
+  ];
+  let angle = -Math.PI / 2;
+  return slices
+    .filter((s) => s.cents > 0)
+    .map((s) => {
+      const frac = s.cents / total;
+      const start = angle;
+      const end = frac >= 0.9999 ? start + Math.PI * 2 - 0.0001 : start + frac * Math.PI * 2;
+      angle = start + frac * Math.PI * 2;
+      const large = end - start > Math.PI ? 1 : 0;
+      const [x0, y0] = point(outerR, start);
+      const [x1, y1] = point(outerR, end);
+      const [x2, y2] = point(innerR, end);
+      const [x3, y3] = point(innerR, start);
+      const path = `M ${x0} ${y0} A ${outerR} ${outerR} 0 ${large} 1 ${x1} ${y1} L ${x2} ${y2} A ${innerR} ${innerR} 0 ${large} 0 ${x3} ${y3} Z`;
+      return { slice: s, path, percent: frac };
+    });
+}
+
+export interface TreemapTile extends Slice {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Squarified treemap (Bruls/Huizing/van Wijk), a row at a time. Good enough for the handful
+ * of categories a spending breakdown ever shows.
+ */
+export function squarifyTreemap(
+  slices: readonly Slice[],
+  width: number,
+  height: number,
+): TreemapTile[] {
+  const total = slices.reduce((sum, s) => sum + Math.max(0, s.cents), 0);
+  const items = slices.filter((s) => s.cents > 0).sort((a, b) => b.cents - a.cents);
+  if (total <= 0 || items.length === 0) return [];
+  const area = (cents: number) => (cents / total) * width * height;
+
+  const tiles: TreemapTile[] = [];
+  let x = 0;
+  let y = 0;
+  let remainingW = width;
+  let remainingH = height;
+  let i = 0;
+  while (i < items.length) {
+    const horizontal = remainingW >= remainingH;
+    const rowLength = horizontal ? remainingH : remainingW;
+    let rowArea = 0;
+    let row: Slice[] = [];
+    let bestWorst = Infinity;
+    let j = i;
+    while (j < items.length) {
+      const item = items[j] as Slice;
+      const candidateArea = rowArea + area(item.cents);
+      const candidateRow = [...row, item];
+      const thickness = candidateArea / rowLength;
+      const worst = Math.max(
+        ...candidateRow.map((it) => {
+          const side = area(it.cents) / thickness;
+          return Math.max(side / thickness, thickness / side);
+        }),
+      );
+      if (worst > bestWorst && row.length > 0) break;
+      bestWorst = worst;
+      row = candidateRow;
+      rowArea = candidateArea;
+      j++;
+    }
+    const rowThickness = rowArea / rowLength;
+    let offset = 0;
+    for (const it of row) {
+      const len = area(it.cents) / rowThickness;
+      if (horizontal) {
+        tiles.push({ ...it, x, y: y + offset, width: rowThickness, height: len });
+      } else {
+        tiles.push({ ...it, x: x + offset, y, width: len, height: rowThickness });
+      }
+      offset += len;
+    }
+    if (horizontal) {
+      x += rowThickness;
+      remainingW -= rowThickness;
+    } else {
+      y += rowThickness;
+      remainingH -= rowThickness;
+    }
+    i = j;
+  }
+  return tiles;
+}
+
 export function sharedScalePaths(
   series: readonly (readonly number[])[],
   slots: number,

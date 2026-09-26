@@ -320,3 +320,12 @@ export const MoneyFlowReport = z.object({
   links: z.array(z.object({ source: z.string(), target: z.string(), valueCents: Cents })),
 });
 export type MoneyFlowReport = z.infer<typeof MoneyFlowReport>;
+
+export const CashFlowReportQuery = z.object({ month: PeriodId });
+
+/** Cash-flow bar chart: income vs. expense per month, for the last six months. */
+export const CashFlowReport = z.object({
+  month: PeriodId,
+  months: z.array(z.object({ periodId: PeriodId, incomeCents: Cents, expenseCents: Cents })),
+});
+export type CashFlowReport = z.infer<typeof CashFlowReport>;
