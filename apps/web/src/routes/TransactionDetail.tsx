@@ -89,7 +89,11 @@ export function TransactionDetail() {
     );
   }
 
-  const catName = (cid: string) => categories.find((c) => c.id === cid)?.name ?? 'Unknown';
+  const catName = (cid: string) => {
+    const c = categories.find((x) => x.id === cid);
+    if (!c) return 'Unknown';
+    return c.emoji ? `${c.emoji} ${c.name}` : c.name;
+  };
   const account = accounts.find((a) => a.id === t.accountId);
   const name = t.merchantDisplay ?? t.merchantNormalized;
   const income = t.amountCents < 0;
@@ -165,38 +169,23 @@ export function TransactionDetail() {
             {t.isTransfer ? (
               <StaticRow label="Category" value="Transfer, not spending" />
             ) : t.splits.length > 1 ? (
-              <>
-                {t.splits.map((s) => (
-                  <StaticRow
-                    key={s.id}
-                    label={catName(s.categoryId)}
-                    value={<MoneyText cents={s.amountCents} />}
-                  />
-                ))}
-                <EditRow
-                  label="Split"
-                  field={
-                    <Button variant="quiet" onClick={() => setSplitting(true)}>
-                      Edit split
-                    </Button>
-                  }
+              t.splits.map((s) => (
+                <StaticRow
+                  key={s.id}
+                  label={catName(s.categoryId)}
+                  value={<MoneyText cents={s.amountCents} />}
                 />
-              </>
+              ))
             ) : (
               <EditRow
                 label="Category"
                 field={
-                  <span className="flex items-center gap-1">
-                    <button
-                      className="min-h-11 rounded-input border border-hairline bg-surface px-3"
-                      onClick={() => setPicking(true)}
-                    >
-                      {t.splits[0] ? catName(t.splits[0].categoryId) : 'Choose…'}
-                    </button>
-                    <Button variant="quiet" className="px-2" onClick={() => setSplitting(true)}>
-                      Split
-                    </Button>
-                  </span>
+                  <button
+                    className="min-h-11 rounded-input border border-hairline bg-surface px-3"
+                    onClick={() => setPicking(true)}
+                  >
+                    {t.splits[0] ? catName(t.splits[0].categoryId) : 'Choose…'}
+                  </button>
                 }
               />
             )}
@@ -215,7 +204,12 @@ export function TransactionDetail() {
               label="Notes"
               field={<NotesField value={t.notes} onCommit={(notes) => void save({ id, notes })} />}
             />
-            <StaticRow label="Account" value={account?.name ?? '—'} />
+            <StaticRow
+              label="Account"
+              value={
+                <span className="max-w-56 break-words text-right">{account?.name ?? '—'}</span>
+              }
+            />
             <StaticRow label="Date" value={shortDate(t.postedAt)} />
             <StaticRow
               label="Bank description"
@@ -236,6 +230,11 @@ export function TransactionDetail() {
         }
         manage={
           <div className="-ml-4 flex flex-col items-start">
+            {!t.isTransfer && (
+              <Button variant="quiet" onClick={() => setSplitting(true)}>
+                {t.splits.length > 1 ? 'Edit split' : 'Split transaction'}
+              </Button>
+            )}
             {t.reviewState === 'needs_review' && !t.isTransfer && (
               <Button variant="quiet" onClick={() => void save({ id, reviewState: 'reviewed' })}>
                 Mark reviewed
