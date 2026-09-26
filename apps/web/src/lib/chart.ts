@@ -22,11 +22,13 @@ export function lineSegments(
 ): Segment[] {
   if (points.length === 0) return [];
   const values = points.map((p) => p.cents);
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
+  // Anchored at 0 (like sharedScalePaths below), or an all-negative series plots identically
+  // to an all-positive one — there's nothing on the chart to show it's underwater.
+  const lo = Math.min(0, ...values);
+  const hi = Math.max(0, ...values);
   const span = hi - lo;
   const x = (i: number) => (points.length === 1 ? width / 2 : (i / (points.length - 1)) * width);
-  // A flat series is steady, not zero: draw it through the middle, not along the floor.
+  // Only a series flat at exactly $0 has no scale to speak of; draw that through the middle.
   const y = (c: number) =>
     span === 0 ? height / 2 : pad + (1 - (c - lo) / span) * (height - 2 * pad);
   const out: Segment[] = [];
@@ -48,6 +50,17 @@ export function lineSegments(
     }
   }
   return out;
+}
+
+/** Where $0 falls on a `lineSegments` chart, so it can be drawn as a reference line. */
+export function zeroY(points: readonly LinePoint[], height: number, pad = 4): number | null {
+  if (points.length === 0) return null;
+  const values = points.map((p) => p.cents);
+  const lo = Math.min(0, ...values);
+  const hi = Math.max(0, ...values);
+  const span = hi - lo;
+  if (span === 0) return null;
+  return pad + (1 - (0 - lo) / span) * (height - 2 * pad);
 }
 
 export type Range = '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
