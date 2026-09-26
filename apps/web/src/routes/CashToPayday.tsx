@@ -9,7 +9,7 @@ import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { Toggle } from '../components/primitives/Toggle';
 import { ApiError, api } from '../lib/api';
-import { shortDate } from '../lib/dates';
+import { localToday, shortDate } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { useAccounts, useCashToPayday, useManualCashEvents, useMe } from '../lib/queries';
 
@@ -132,10 +132,11 @@ function AddManualEventSheet({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const tz = useMe().data?.timezone;
   const [label, setLabel] = useState('');
   const [amountCents, setAmountCents] = useState(0);
   const [cadence, setCadence] = useState<(typeof CADENCES)[number]['value']>('monthly');
-  const [anchorDate, setAnchorDate] = useState(new Date().toISOString().slice(0, 10));
+  const [anchorDate, setAnchorDate] = useState(() => localToday(tz));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   return (
