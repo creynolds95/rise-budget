@@ -11,8 +11,8 @@ const base = 'flex min-h-12 items-center justify-between gap-4 border-b border-h
 export function StaticRow({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
     <div className={base} data-row="static">
-      <span className="text-ink-muted">{label}</span>
-      <span className="text-right text-ink">{value}</span>
+      <span className="min-w-0 text-ink-muted">{label}</span>
+      <span className="shrink-0 text-right text-ink">{value}</span>
     </div>
   );
 }
@@ -35,8 +35,8 @@ export function NavRow({ label, value, to }: { label: ReactNode; value?: ReactNo
       className={`${base} active:bg-sage-100`}
       data-row="nav"
     >
-      <span className="text-ink">{label}</span>
-      <span className="flex items-center gap-2 text-ink-muted">
+      <span className="min-w-0 text-ink">{label}</span>
+      <span className="flex shrink-0 items-center gap-2 text-ink-muted">
         {value}
         <Chevron />
       </span>
