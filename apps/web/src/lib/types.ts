@@ -44,7 +44,7 @@ export interface SyncStatus {
     accountsTouched: number;
     rowsInserted: number;
     rowsUpdated: number;
-    errors: { accountId: string | null; message: string }[];
+    errors: { account?: string; message: string }[];
   }[];
 }
 

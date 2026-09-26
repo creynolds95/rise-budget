@@ -27,6 +27,7 @@ import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncOutcome';
 import { localToday, shortDate } from '../lib/dates';
 import {
   useAccounts,
@@ -752,9 +753,10 @@ function SyncSection() {
   const tz = useMe().data?.timezone;
   const invalidate = useInvalidateMoney();
   const qc = useQueryClient();
+  const accounts = useAccounts();
   const [error, setError] = useState<string | null>(null);
   const run = useMutation({
-    mutationFn: () => api('POST', '/sync/run', {}),
+    mutationFn: () => api<SyncRunResult>('POST', '/sync/run', {}),
     onSuccess: () =>
       Promise.all([
         invalidate(),
@@ -780,6 +782,24 @@ function SyncSection() {
         </Button>
       )}
       {error && <p className="mt-2 text-clay">{error}</p>}
+      {run.isSuccess &&
+        (() => {
+          const o = syncOutcome(
+            run.data,
+            banksLastReported(
+              (accounts.data ?? []).filter((a) => a.source === 'simplefin' && !a.archivedAt),
+            ),
+            tz,
+          );
+          return (
+            <p
+              role="status"
+              className={`mt-2 ${o.tone === 'warn' ? 'text-clay' : 'text-ink-muted'}`}
+            >
+              {o.text}
+            </p>
+          );
+        })()}
       <h2 className="mt-8 type-label text-ink-muted">Recent runs</h2>
       {status.data?.runs.length === 0 && <p className="mt-2 text-ink-muted">None yet.</p>}
       <ul className="mt-1 overflow-hidden rounded-card bg-surface px-4 shadow-soft">

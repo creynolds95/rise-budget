@@ -6,6 +6,11 @@ on:
         description: 'category_group name to check for (optional)'
         required: false
         type: string
+      sync:
+        description: 'Only print sync health (no names or amounts)'
+        required: false
+        type: boolean
+        default: false
 jobs:
   check-db:
     runs-on: ubuntu-latest
@@ -22,6 +27,7 @@ jobs:
         run: |
           node --experimental-strip-types scripts/check-db.ts \
             ${{ inputs.name && format('--name "{0}"', inputs.name) || '' }} \
+            ${{ inputs.sync && '--sync' || '' }} \
             --remote
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

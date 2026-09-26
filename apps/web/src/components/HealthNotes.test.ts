@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SyncStatus } from '../lib/types';
 import { healthNotes } from './HealthNotes';
 
-const run = (status: string, message?: string): SyncStatus['runs'][number] => ({
+const run = (status: string, message?: string, account?: string): SyncStatus['runs'][number] => ({
   id: 'r',
   startedAt: '2026-09-26T14:00:00Z',
   finishedAt: '2026-09-26T14:00:05Z',
@@ -10,7 +10,7 @@ const run = (status: string, message?: string): SyncStatus['runs'][number] => ({
   accountsTouched: 0,
   rowsInserted: 0,
   rowsUpdated: 0,
-  errors: message ? [{ accountId: null, message }] : [],
+  errors: message ? [{ message, ...(account ? { account } : {}) }] : [],
 });
 const fresh = { latest: { date: '2026-09-26', bytes: 1 }, count: 3 };
 
@@ -35,10 +35,17 @@ describe('C6 health notes', () => {
     );
   });
 
-  it('ignores sync when it is not connected, and a partial run (per-account notes cover it)', () => {
+  it('ignores sync when it is not connected, and a partial run’s per-account errors', () => {
     expect(healthNotes({ mode: 'off', runs: [run('failed')] }, fresh, '2026-09-26')).toEqual([]);
-    expect(healthNotes({ mode: 'live', runs: [run('partial', 'x')] }, fresh, '2026-09-26')).toEqual(
-      [],
+    expect(
+      healthNotes({ mode: 'live', runs: [run('partial', 'x', 'Visa')] }, fresh, '2026-09-26'),
+    ).toEqual([]);
+  });
+
+  it('names a bank connection that needs attention on a partial run', () => {
+    const msg = 'Connection to Texas Higher Education Coordinating Board may need attention.';
+    expect(healthNotes({ mode: 'live', runs: [run('partial', msg)] }, fresh, '2026-09-26')).toEqual(
+      [{ text: msg, to: '/settings/sync' }],
     );
   });
 
