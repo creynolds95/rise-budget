@@ -9,7 +9,7 @@ import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { get } from '../lib/api';
-import { addMonths, monthName, shortDate } from '../lib/dates';
+import { addMonths, shortDate } from '../lib/dates';
 import {
   useAccounts,
   useCashToPayday,
@@ -53,8 +53,6 @@ export function Dashboard() {
   }
   const p = period.data;
   const t = p.totals;
-  const expectedByNow = p.categories.reduce((n, c) => n + (c.pace?.expectedSpentCents ?? 0), 0);
-  const ahead = t.spentCents - expectedByNow;
   const byId = new Map((categories.data ?? []).map((c) => [c.id, c]));
   const expenseCarriedCents = p.categories.reduce((n, c) => {
     const cat = byId.get(c.categoryId);
@@ -74,43 +72,21 @@ export function Dashboard() {
 
   return (
     <div className="gutter mx-auto max-w-2xl pt-6 pb-12">
-      <p className="type-label text-ink-muted">{monthName(month, false)} · left to spend</p>
-      <div className="mt-1 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-        <p className="type-display">
-          <MoneyText cents={t.remainingCents} tone={t.remainingCents < 0 ? 'over' : 'ink'} whole />
-        </p>
-        <p className="mt-1 text-ink-muted">
-          {t.availableCents === 0 ? (
-            'Nothing planned yet this month.'
-          ) : ahead > 0 ? (
-            <>
-              <MoneyText cents={ahead} tone="over" whole /> ahead of pace · day {p.pace.elapsedDays}{' '}
-              of {p.pace.totalDays}
-            </>
-          ) : (
-            <>
-              On pace, <MoneyText cents={-ahead} whole /> to spare · day {p.pace.elapsedDays} of{' '}
-              {p.pace.totalDays}
-            </>
-          )}
-        </p>
-      </div>
-
-      {accounts.data && (
-        <div className="mt-6">
-          <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />
-        </div>
-      )}
+      {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}
 
       {/* 1. Surplus */}
-      <section className="mt-8">
+      <section className={accounts.data ? 'mt-8' : ''}>
         <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <NavRow
             to="/cash-to-payday"
-            label="Surplus"
+            label={<span className="font-semibold">Surplus</span>}
             value={
               surplus.data && surplus.data.paySchedules.length > 0 ? (
-                <MoneyText cents={surplus.data.freeToMoveCents} whole />
+                <MoneyText
+                  cents={surplus.data.freeToMoveCents}
+                  className="font-semibold text-ink"
+                  whole
+                />
               ) : undefined
             }
           />
@@ -149,7 +125,6 @@ export function Dashboard() {
         month={month}
         spentCents={t.spentCents}
         elapsedDays={p.pace.elapsedDays}
-        incomeCents={p.actualIncomeCents}
         categories={p.categories}
         lastCategories={last.data?.categories}
         names={categories.data}
