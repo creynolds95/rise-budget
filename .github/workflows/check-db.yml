@@ -11,6 +11,11 @@ on:
         required: false
         type: boolean
         default: false
+      errors:
+        description: 'Only print failed API requests from Workers Logs (method, path, status)'
+        required: false
+        type: boolean
+        default: false
 jobs:
   check-db:
     runs-on: ubuntu-latest
@@ -28,6 +33,7 @@ jobs:
           node --experimental-strip-types scripts/check-db.ts \
             ${{ inputs.name && format('--name "{0}"', inputs.name) || '' }} \
             ${{ inputs.sync && '--sync' || '' }} \
+            ${{ inputs.errors && '--errors' || '' }} \
             --remote
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

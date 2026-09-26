@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
-import { StaleNotes, staleText } from '../components/StaleNotes';
+import { quietWhenStale, StaleNotes, staleText } from '../components/StaleNotes';
 import { Button } from '../components/primitives/Button';
 import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
@@ -14,7 +14,7 @@ import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api } from '../lib/api';
 import { allowsPercentChange, rangeStart, type Range } from '../lib/chart';
-import { daysBetween, shortDate } from '../lib/dates';
+import { daysBetween, localToday, shortDate } from '../lib/dates';
 import { useHeaderActions } from '../lib/headerActions';
 import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncOutcome';
 import { navigateWithTransition } from '../lib/transition';
@@ -262,7 +262,9 @@ function AccountRow({
           {a.mask && <span className="text-ink-faint"> ··{a.mask}</span>}
           <span className={`block type-caption ${stale ? 'text-gold-text' : 'text-ink-faint'}`}>
             {stale
-              ? 'Not up to date'
+              ? quietWhenStale(a) && a.lastSyncedAt
+                ? `Last synced ${shortDate(localToday(tz, new Date(a.lastSyncedAt)))}`
+                : 'Not up to date'
               : a.source === 'manual'
                 ? 'Manual'
                 : (a.institutionName ?? 'Synced')}

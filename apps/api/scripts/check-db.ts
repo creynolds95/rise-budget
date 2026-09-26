@@ -12,6 +12,7 @@ const { values } = parseArgs({
     name: { type: 'string' },
     remote: { type: 'boolean', default: false },
     sync: { type: 'boolean', default: false },
+    errors: { type: 'boolean', default: false },
   },
 });
 const scope = values.remote ? '--remote' : '--local';
@@ -25,6 +26,95 @@ function query<T>(command: string): T[] {
   );
   const parsed = JSON.parse(out) as { results: T[] }[];
   return parsed[0]?.results ?? [];
+}
+
+if (values.errors) {
+  // Invocation outcomes (ok / exceededCpu / exception…) from Workers analytics, last 6 hours.
+  const gql = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${process.env['CLOUDFLARE_API_TOKEN']}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: `query($a: String!, $since: Time!, $until: Time!) { viewer { accounts(filter: {accountTag: $a}) {
+        workersInvocationsAdaptive(limit: 100, filter: {scriptName: "rise", datetime_geq: $since, datetime_leq: $until}) {
+          sum { requests errors subrequests } quantiles { cpuTimeP50 cpuTimeP99 }
+          dimensions { status datetimeHour }
+        } } } }`,
+      variables: {
+        a: process.env['CLOUDFLARE_ACCOUNT_ID'],
+        since: new Date(Date.now() - 6 * 3600_000).toISOString(),
+        until: new Date().toISOString(),
+      },
+    }),
+  });
+  console.log('analytics status:', gql.status);
+  console.log(JSON.stringify(await gql.json(), null, 1).slice(0, 6000));
+
+  // Failed API requests from Workers Logs over the last few hours: method, path, status only.
+  const account = process.env['CLOUDFLARE_ACCOUNT_ID'];
+  const now = Date.now();
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${account}/workers/observability/telemetry/query`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${process.env['CLOUDFLARE_API_TOKEN']}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        queryId: 'rise-errors',
+        timeframe: { from: now - 6 * 3600_000, to: now },
+        view: 'events',
+        limit: 200,
+        parameters: {
+          filters: [{ key: '$metadata.service', operation: 'eq', type: 'string', value: 'rise' }],
+        },
+      }),
+    },
+  );
+  const body = (await res.json()) as Record<string, unknown>;
+  console.log('observability status:', res.status, 'top keys:', Object.keys(body));
+  if (!res.ok || body['success'] === false) {
+    console.log(JSON.stringify(body['errors'] ?? body).slice(0, 2000));
+    process.exit(0);
+  }
+  const events =
+    ((body['result'] as Record<string, unknown>)?.['events'] as Record<string, unknown>)?.[
+      'events'
+    ] ?? [];
+  const rows = (events as Record<string, unknown>[]).map((e) => {
+    const m = (e['$metadata'] ?? {}) as Record<string, unknown>;
+    const w = (e['$workers'] ?? {}) as Record<string, unknown>;
+    const ev = (w['event'] ?? {}) as Record<string, unknown>;
+    const req = (ev['request'] ?? {}) as Record<string, unknown>;
+    const resp = (ev['response'] ?? {}) as Record<string, unknown>;
+    const path = (() => {
+      try {
+        return new URL(String(req['url'] ?? '')).pathname;
+      } catch {
+        return String(m['url'] ?? '');
+      }
+    })();
+    return {
+      t: new Date(Number(e['timestamp'] ?? 0)).toISOString(),
+      method: req['method'] ?? null,
+      path,
+      status: resp['status'] ?? m['statusCode'] ?? null,
+      outcome: w['outcome'] ?? null,
+      level: m['level'] ?? null,
+      error: m['error'] ?? null,
+    };
+  });
+  const bad = rows.filter(
+    (r) => Number(r.status) >= 400 || (r.outcome && r.outcome !== 'ok') || r.level === 'error',
+  );
+  console.log(`events: ${rows.length}, failing: ${bad.length}`);
+  console.log(JSON.stringify(bad.slice(0, 80), null, 1));
+  if (rows.length && !bad.length)
+    console.log('sample event keys:', Object.keys(events[0] as object));
+  process.exit(0);
 }
 
 if (values.sync) {

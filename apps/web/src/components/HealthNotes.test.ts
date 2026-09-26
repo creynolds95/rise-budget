@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SyncStatus } from '../lib/types';
 import { healthNotes } from './HealthNotes';
+import { quietInstitutions, quietWhenStale } from './StaleNotes';
 
 const run = (status: string, message?: string, account?: string): SyncStatus['runs'][number] => ({
   id: 'r',
@@ -58,5 +59,39 @@ describe('C6 health notes', () => {
       'No backup has run yet.',
     );
     expect(healthNotes(undefined, undefined, '2026-09-26')).toEqual([]);
+  });
+});
+
+describe('known-flaky loan feeds stay off the summary', () => {
+  const msg = 'Connection to Texas Higher Education Coordinating Board may need attention.';
+  it('drops a connection note for an institution the person has marked as loans only', () => {
+    expect(
+      healthNotes({ mode: 'live', runs: [run('partial', msg)] }, fresh, '2026-09-26', [
+        'Texas Higher Education Coordinating Board',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('keeps loans on their own account rows only, and only quiets all-loan institutions', () => {
+    const a = (kind: string, institutionName: string | null, extra = {}) => ({
+      kind,
+      source: 'simplefin',
+      institutionName,
+      archivedAt: null,
+      ...extra,
+    });
+    expect(quietWhenStale({ kind: 'loan' })).toBe(true);
+    expect(quietWhenStale({ kind: 'credit' })).toBe(false);
+    expect(
+      quietInstitutions([
+        a('loan', 'THECB'),
+        a('loan', 'THECB'),
+        a('loan', 'Bank'),
+        a('depository', 'Bank'),
+        a('loan', null),
+        a('depository', 'Old', { archivedAt: '2026-01-01' }),
+        a('loan', 'Manual', { source: 'manual' }),
+      ]),
+    ).toEqual(['THECB']);
   });
 });

@@ -15,6 +15,7 @@ export function healthNotes(
   sync: SyncStatus | undefined,
   backups: Backups | undefined,
   today: string,
+  quiet: string[] = [],
 ): { text: string; to: string }[] {
   const out: { text: string; to: string }[] = [];
   const last = sync?.runs[0];
@@ -24,7 +25,9 @@ export function healthNotes(
   } else if (sync && sync.mode !== 'off' && last?.status === 'partial') {
     // A bank connection SimpleFIN reports as needing attention names no Rise account, so no
     // per-account stale note would ever mention it.
-    for (const e of last.errors.filter((e) => !e.account)) {
+    // …except one the person already knows is flaky (see quietInstitutions).
+    const known = (m: string) => quiet.some((name) => m.includes(name));
+    for (const e of last.errors.filter((e) => !e.account && !known(e.message))) {
       out.push({ text: e.message, to: '/settings/sync' });
     }
   }
@@ -41,8 +44,9 @@ export function HealthNotes(props: {
   sync: SyncStatus | undefined;
   backups: Backups | undefined;
   today: string;
+  quiet?: string[];
 }) {
-  const notes = healthNotes(props.sync, props.backups, props.today);
+  const notes = healthNotes(props.sync, props.backups, props.today, props.quiet);
   if (notes.length === 0) return null;
   return (
     <ul className="flex flex-col gap-1" aria-label="Background jobs needing attention">
