@@ -1,4 +1,5 @@
 import type { Transaction } from '@rise/shared/schemas';
+import { merchantName } from '../lib/merchant';
 import { Link, useNavigate } from 'react-router';
 import { shortDate } from '../lib/dates';
 import { transitionClick } from '../lib/transition';
@@ -33,7 +34,7 @@ export function TxnRow({
         className="min-w-0 flex-1 active:opacity-70"
       >
         <span className="block truncate">
-          {t.merchantDisplay ?? t.merchantNormalized}
+          {merchantName(t)}
           {t.isPending && (
             <span
               className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
@@ -58,7 +59,7 @@ export function TxnRow({
         {onRecategorize ? (
           <button
             type="button"
-            aria-label={`Change category for ${t.merchantDisplay ?? t.merchantNormalized}`}
+            aria-label={`Change category for ${merchantName(t)}`}
             onClick={onRecategorize}
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700"
           >

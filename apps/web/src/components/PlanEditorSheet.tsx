@@ -152,20 +152,30 @@ function Editor({
           </p>
         )}
 
-        <SpendBars bars={stats.bars} planCents={cents} loading={history.isPending} onPick={set} />
+        {/* No history yet: nothing to compare against, so no block saying so (C16). */}
+        {(history.isPending || stats.bars.some((b) => b.spentCents !== 0)) && (
+          <>
+            <SpendBars
+              bars={stats.bars}
+              planCents={cents}
+              loading={history.isPending}
+              onPick={set}
+            />
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <QuickFill
-            label="Spent last month"
-            cents={stats.lastMonthCents}
-            onPick={() => set(upToDollar(stats.lastMonthCents))}
-          />
-          <QuickFill
-            label="Monthly average"
-            cents={stats.averageCents}
-            onPick={() => stats.averageCents !== null && set(upToDollar(stats.averageCents))}
-          />
-        </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <QuickFill
+                label="Spent last month"
+                cents={stats.lastMonthCents}
+                onPick={() => set(upToDollar(stats.lastMonthCents))}
+              />
+              <QuickFill
+                label="Monthly average"
+                cents={stats.averageCents}
+                onPick={() => stats.averageCents !== null && set(upToDollar(stats.averageCents))}
+              />
+            </div>
+          </>
+        )}
 
         <Group>
           <GroupRow
@@ -197,17 +207,6 @@ function SpendBars({
 }) {
   const max = Math.max(1, planCents, ...bars.map((b) => b.spentCents));
   const H = 112;
-  if (!loading && bars.every((b) => b.spentCents === 0)) {
-    return (
-      <div className="mt-6 rounded-card bg-surface p-4 text-center shadow-soft">
-        <p className="type-label text-ink-muted">Spent, last 6 months</p>
-        <p className="mt-2 text-ink-muted">
-          Nothing yet. Once a few months of spending land here, you'll see them side by side and can
-          tap one to use it.
-        </p>
-      </div>
-    );
-  }
   const line = Math.round((planCents / max) * H);
   return (
     <figure className="mt-6 rounded-card bg-surface p-4 shadow-soft">

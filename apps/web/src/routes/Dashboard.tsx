@@ -1,4 +1,5 @@
 import type { RecurringSeries } from '@rise/shared/schemas';
+import { merchantName } from '../lib/merchant';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { NetWorthSection } from './Accounts';
@@ -191,7 +192,7 @@ export function Dashboard() {
                 className="flex min-h-12 items-center justify-between border-b border-hairline py-3"
               >
                 <span>
-                  {s.merchantNormalized}
+                  {merchantName(s)}
                   <span className="ml-2 type-caption text-ink-faint">
                     {shortDate(s.nextExpectedDate ?? '')}
                     {catName(s.categoryId) ? ` · ${catName(s.categoryId)}` : ''}
@@ -202,7 +203,7 @@ export function Dashboard() {
             ))}
             {broken.map((s) => (
               <li key={s.id} className="min-h-12 border-b border-hairline py-3 text-clay">
-                {s.merchantNormalized} hasn't charged since it was due{' '}
+                {merchantName(s)} hasn't charged since it was due{' '}
                 {shortDate(s.nextExpectedDate ?? '')}.
               </li>
             ))}

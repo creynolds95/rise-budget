@@ -80,11 +80,6 @@ export function Accounts() {
             onSelect: () => refresh.mutate(),
           },
           {
-            label: 'Add a manual account',
-            icon: 'wallet',
-            onSelect: () => setAdding(true),
-          },
-          {
             label: 'Bank connection',
             icon: 'bank',
             onSelect: () =>

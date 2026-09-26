@@ -79,8 +79,9 @@ export function AccountDetail() {
     <DetailPage
       header={{ back, title: a.name }}
       identity={{
-        label: owes ? 'Owed' : 'Balance',
-        hero: <MoneyText cents={owes ? -a.balanceCents : a.balanceCents} />,
+        // A card paid past zero holds a credit, not a negative debt (C13).
+        label: owes ? (a.balanceCents > 0 ? 'Credit' : 'Owed') : 'Balance',
+        hero: <MoneyText cents={owes && a.balanceCents <= 0 ? -a.balanceCents : a.balanceCents} />,
         context: stale ? (
           <span className="text-gold-text">{stale}</span>
         ) : a.lastSyncedAt ? (
@@ -184,7 +185,7 @@ export function AccountDetail() {
           )}
           {!manual && (
             <EditRow
-              label="Bank reports every"
+              label="Updates every"
               field={
                 <select
                   aria-label="Sync cadence"

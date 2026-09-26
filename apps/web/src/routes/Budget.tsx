@@ -1,4 +1,5 @@
 import type { ViewCategory } from '@rise/shared/budget';
+import { merchantName } from '../lib/merchant';
 import type { Category, CategoryGroup, Reallocation } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -681,7 +682,7 @@ function Upcoming({
             className="flex min-h-12 items-center justify-between border-b border-hairline py-3"
           >
             <span>
-              {s.merchantNormalized}
+              {merchantName(s)}
               <span className="block type-caption text-ink-faint">
                 {s.nextExpectedDate && s.nextExpectedDate < today ? 'Due' : 'Expected'}{' '}
                 {shortDate(s.nextExpectedDate ?? '')}
@@ -695,8 +696,7 @@ function Upcoming({
         ))}
         {broken.map((s) => (
           <li key={s.id} className="min-h-12 border-b border-hairline py-3 text-clay">
-            {s.merchantNormalized} hasn't charged since it was due{' '}
-            {shortDate(s.nextExpectedDate ?? '')}.
+            {merchantName(s)} hasn't charged since it was due {shortDate(s.nextExpectedDate ?? '')}.
           </li>
         ))}
       </ul>
