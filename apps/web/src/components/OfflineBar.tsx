@@ -86,6 +86,23 @@ export function OfflineBar() {
     };
   }, [online]);
 
+  // iOS suspends network activity while the PWA is backgrounded (C6 follow-up): a fetch in
+  // flight when that happens fails with retries already spent, and the `online` event never
+  // fires because the OS never considered the device offline. Coming back to the foreground
+  // is the only signal, so a stuck read retries itself there instead of waiting on the next
+  // unrelated action (or the person noticing the Retry link) to shake it loose.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void qc.refetchQueries({ predicate: isStuck });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onVisible);
+    };
+  }, [qc]);
+
   useEffect(() => {
     if (!online || pending.length === 0) return;
     let cancelled = false;
