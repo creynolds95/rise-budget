@@ -289,7 +289,7 @@ export function Transactions() {
         ) : byDate ? (
           groupByDay(items).map(([day, rows]) => (
             <section key={day}>
-              <h2 className="sticky top-[var(--banner-h,0px)] z-[1] -mx-4 bg-canvas/95 px-4 pt-4 pb-1 type-label text-ink-muted backdrop-blur md:-mx-6 md:px-6">
+              <h2 className="sticky top-[var(--banner-h,0px)] z-[1] -mx-4 bg-canvas px-4 pt-4 pb-1 type-label text-ink-muted md:-mx-6 md:px-6">
                 {dayLabel(day, today)}
               </h2>
               <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">

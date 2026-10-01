@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
 import { Icon } from './primitives/Icon';
 import { HeaderActionsContext } from '../lib/headerActions';
 import { useMe } from '../lib/queries';
@@ -10,8 +10,23 @@ const ICON: Record<Tab, string> = {
   accounts: 'M3 9l9-5 9 5M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18',
   transactions: 'M5 7h14M5 12h14M5 17h9',
   budget: 'M6 20V10M12 20V4M18 20v6',
-  reports: 'M4 4v16h16M8 15l3-4 3 3 4-6',
 };
+
+/**
+ * Tab switches replace the history entry instead of stacking one: a swipe back on a tab
+ * root has nowhere to go (it used to drag the page around or land on the previous tab), and
+ * the swipe back from a pushed screen still returns to the tab it came from. Tapping the tab
+ * you're already on scrolls it to the top.
+ */
+const tabLink = (path: string, active: boolean): Partial<NavLinkProps> => ({
+  replace: true,
+  onClick: (e) => {
+    if (!active) return;
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  },
+  to: path,
+});
 
 /**
  * Four tabs and an avatar. No drawer (§4). Below `lg` these are a bottom tab bar, as on
@@ -27,6 +42,8 @@ export function Shell() {
   const currentTab = TABS.find((t) =>
     t.path === '/' ? onDashboard : location.pathname.startsWith(t.path),
   );
+  const isActiveTab = (path: string) =>
+    path === '/' ? onDashboard : location.pathname.startsWith(path);
   const initials = (me?.displayName ?? '')
     .split(/\s+/)
     .map((w) => w[0])
@@ -34,10 +51,11 @@ export function Shell() {
     .slice(0, 2)
     .toUpperCase();
   return (
-    <div className="min-h-dvh pb-[calc(64px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-72">
-      {/* `fixed` rather than `sticky`: pinned to the viewport regardless of how tall the
-          content column grows, so it can never be scrolled past. The content column gets
-          matching `lg:pl-72` padding instead of being a flex sibling. */}
+    <div className="flex min-h-dvh flex-col lg:block lg:pl-72">
+      {/* Desktop sidebar is `fixed` so it can never be scrolled past; the content column gets
+          matching `lg:pl-72` padding. The phone tab bar is deliberately NOT fixed: it is the
+          last item of a full-height column and `sticky`, because iOS can leave a
+          fixed-position bar stranded mid-screen after a long session. */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72 lg:flex-col lg:justify-between lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
         <div className="flex flex-col gap-7">
           <span className="px-3 font-serif text-xl tracking-tight text-sage-700">Rise</span>
@@ -45,6 +63,7 @@ export function Shell() {
             {TABS.map((t) => (
               <NavLink
                 key={t.tab}
+                {...tabLink(t.path, isActiveTab(t.path))}
                 to={t.path}
                 end={t.path === '/'}
                 className={({ isActive }) =>
@@ -81,8 +100,8 @@ export function Shell() {
         </Link>
       </aside>
 
-      <div className="min-w-0">
-        <div className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between bg-canvas/95 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur lg:hidden">
+      <div className="min-w-0 flex-1">
+        <div className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between bg-canvas pt-[max(12px,env(safe-area-inset-top))] lg:hidden">
           <span className="type-page">{currentTab?.label ?? 'Rise'}</span>
           <div className="-mr-2 flex items-center">
             {actions ??
@@ -106,12 +125,13 @@ export function Shell() {
 
       <nav
         aria-label="Tabs"
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-hairline bg-canvas/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        className="sticky bottom-0 z-20 border-t border-hairline bg-canvas pb-[env(safe-area-inset-bottom)] lg:hidden"
       >
-        <ul className="mx-auto grid max-w-2xl grid-cols-5">
+        <ul className="mx-auto grid max-w-2xl grid-cols-4">
           {TABS.map((t) => (
             <li key={t.tab}>
               <NavLink
+                {...tabLink(t.path, isActiveTab(t.path))}
                 to={t.path}
                 end={t.path === '/'}
                 className={({ isActive }) =>

@@ -1,6 +1,7 @@
 import type { RuleOffer, Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSwipeBack } from '../lib/gestures';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { CategoryPicker } from '../components/CategoryPicker';
@@ -54,6 +55,7 @@ const isAmazon = (m: string) => /AMAZON|AMZN/.test(m.toUpperCase());
 export function Review() {
   const qc = useQueryClient();
   const nav = useNavigate();
+  useSwipeBack('/');
   const invalidate = useInvalidateMoney();
   const queue = useQuery({
     queryKey: ['review-queue'],
@@ -232,7 +234,7 @@ export function Review() {
 
   return (
     <div className="mx-auto max-w-2xl pb-28">
-      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur">
+      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas">
         <Link to="/" className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700">
           <span aria-hidden>‹</span>
           Dashboard
