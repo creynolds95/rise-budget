@@ -1,5 +1,7 @@
 import { useTabRootTrap } from '../lib/gestures';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { isTabRoot } from '../lib/transition';
+import { NavDrawer } from './NavDrawer';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
 import { Icon } from './primitives/Icon';
 import { HeaderActionsContext } from '../lib/headerActions';
@@ -40,6 +42,39 @@ export function Shell() {
   const [actions, setActions] = useState<ReactNode>(null);
   const location = useLocation();
   useTabRootTrap(location.pathname);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = () => setMenuOpen(false);
+  const onTabRoot = isTabRoot(location.pathname);
+  // Sliding right from the left side of a tab opens the menu, where back would otherwise go.
+  useEffect(() => {
+    if (!onTabRoot) return;
+    let start: { x: number; y: number } | null = null;
+    const onStart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      const el = e.target as Element | null;
+      start =
+        e.touches.length === 1 &&
+        t &&
+        t.clientX < window.innerWidth * 0.4 &&
+        !el?.closest('[data-zoomable], [data-no-swipe], input, textarea, [role=dialog]')
+          ? { x: t.clientX, y: t.clientY }
+          : null;
+    };
+    const onEnd = (e: TouchEvent) => {
+      const t = e.changedTouches[0];
+      if (!start || !t) return;
+      const dx = t.clientX - start.x;
+      const dy = Math.abs(t.clientY - start.y);
+      start = null;
+      if (dx > 80 && dx > dy * 2) setMenuOpen(true);
+    };
+    document.addEventListener('touchstart', onStart, { passive: true });
+    document.addEventListener('touchend', onEnd, { passive: true });
+    return () => {
+      document.removeEventListener('touchstart', onStart);
+      document.removeEventListener('touchend', onEnd);
+    };
+  }, [onTabRoot]);
   const onDashboard = location.pathname === '/';
   const currentTab = TABS.find((t) =>
     t.path === '/' ? onDashboard : location.pathname.startsWith(t.path),
@@ -119,20 +154,20 @@ export function Shell() {
           ref={head}
           className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between bg-canvas pt-[max(12px,env(safe-area-inset-top))] lg:hidden"
         >
-          <span className="type-page">{currentTab?.label ?? 'Rise'}</span>
-          <div className="-mr-2 flex items-center">
-            {actions ??
-              (onDashboard && (
-                <Link
-                  to="/settings"
-                  aria-label="Settings"
-                  className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-                >
-                  <Icon name="gear" />
-                </Link>
-              ))}
+          <div className="-ml-2 flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Menu"
+              onClick={() => setMenuOpen(true)}
+              className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+            >
+              <Icon name="menu" />
+            </button>
+            <span className="type-page">{currentTab?.label ?? 'Rise'}</span>
           </div>
+          <div className="-mr-2 flex items-center">{actions}</div>
         </div>
+        <NavDrawer open={menuOpen} onClose={closeMenu} />
         <main>
           <HeaderActionsContext.Provider value={setActions}>
             <Outlet />
