@@ -257,3 +257,83 @@ describe('Monarch import: batches and undo', () => {
     expect((await b.api('GET', '/import/monarch/batches')).json).toEqual([]);
   });
 });
+
+describe('Monarch import: merging history into a live account', () => {
+  async function pair() {
+    const s = await setup();
+    const setupRes = await s.api('POST', '/import/monarch/setup', {
+      accounts: [{ monarchName: 'USAA CLASSIC CHECKING (...1335)', kind: 'depository' }],
+      categories: [],
+    });
+    const historyId = setupRes.json.accounts['USAA CLASSIC CHECKING (...1335)'] as string;
+    const live = (
+      await s.api('POST', '/accounts', { name: 'USAA CLASSIC CHECKING (1335)', kind: 'depository' })
+    ).json;
+    // A manual account is not a bank feed: make the twin one.
+    await env.DB.prepare("UPDATE account SET source = 'simplefin' WHERE id = ?1")
+      .bind(live.id)
+      .run();
+    await s.rows([
+      s.row({ sourceId: 'monarch:1', accountId: historyId }),
+      s.row({ sourceId: 'monarch:2', accountId: historyId, amountCents: 900 }),
+    ]);
+    return { ...s, historyId, live };
+  }
+
+  it('lists the pair, then moves the rows and removes the empty copy', async () => {
+    const s = await pair();
+    const list = await s.api('GET', '/import/monarch/merges');
+    expect(list.json).toEqual([
+      {
+        historyId: s.historyId,
+        historyName: 'USAA CLASSIC CHECKING (...1335)',
+        liveId: s.live.id,
+        liveName: 'USAA CLASSIC CHECKING (1335)',
+        rows: 2,
+      },
+    ]);
+    const done = await s.api('POST', '/import/monarch/merges', {
+      historyId: s.historyId,
+      liveId: s.live.id,
+    });
+    expect(done.json).toEqual({ moved: 2 });
+    const moved = await env.DB.prepare('SELECT COUNT(*) AS n FROM txn WHERE account_id = ?1')
+      .bind(s.live.id)
+      .first<{ n: number }>();
+    expect(moved?.n).toBe(2);
+    const gone = await env.DB.prepare('SELECT COUNT(*) AS n FROM account WHERE id = ?1')
+      .bind(s.historyId)
+      .first<{ n: number }>();
+    expect(gone?.n).toBe(0);
+    expect((await s.api('GET', '/import/monarch/merges')).json).toEqual([]);
+  });
+
+  it('refuses a pair that was not offered', async () => {
+    const s = await pair();
+    const other = (await s.api('POST', '/accounts', { name: 'Elsewhere', kind: 'depository' }))
+      .json;
+    const r = await s.api('POST', '/import/monarch/merges', {
+      historyId: s.historyId,
+      liveId: other.id,
+    });
+    expect(r.status).toBe(404);
+  });
+
+  it('does not offer a pair when two live accounts share the mask', async () => {
+    const s = await pair();
+    const twin = (await s.api('POST', '/accounts', { name: 'Other (1335)', kind: 'depository' }))
+      .json;
+    await env.DB.prepare("UPDATE account SET source = 'simplefin' WHERE id = ?1")
+      .bind(twin.id)
+      .run();
+    expect((await s.api('GET', '/import/monarch/merges')).json).toEqual([]);
+  });
+
+  it('ignores other people’s accounts', async () => {
+    const mine = await pair();
+    const other = await signedInUser();
+    const res = await call('GET', '/import/monarch/merges', { access: other.access });
+    expect(res.json).toEqual([]);
+    expect((await mine.api('GET', '/import/monarch/merges')).json).toHaveLength(1);
+  });
+});

@@ -1,8 +1,15 @@
-import { MONARCH_WINDOW, MonarchRowsBody, MonarchSetupBody } from '@rise/shared/schemas';
+import {
+  MONARCH_WINDOW,
+  MonarchMergeBody,
+  MonarchRowsBody,
+  MonarchSetupBody,
+} from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
   importMonarchRows,
+  listMergeCandidates,
   listMonarchBatches,
+  mergeHistoryAccount,
   monarchSetup,
   undoMonarchBatch,
   writeAudit,
@@ -52,4 +59,20 @@ monarchImport.delete('/batches/:id', async (c) => {
     detail: { removed },
   });
   return c.body(null, 204);
+});
+
+monarchImport.get('/merges', async (c) =>
+  c.json(await listMergeCandidates(c.get('userId'), c.env.DB)),
+);
+
+monarchImport.post('/merges', async (c) => {
+  const userId = c.get('userId');
+  const b = await body(c, MonarchMergeBody);
+  const moved = await mergeHistoryAccount(userId, c.env.DB, b.historyId, b.liveId);
+  await writeAudit(userId, c.env.DB, 'import.monarch.merged', {
+    type: 'account',
+    id: b.liveId,
+    detail: { from: b.historyId, moved },
+  });
+  return c.json({ moved });
 });

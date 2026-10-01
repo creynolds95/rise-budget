@@ -52,8 +52,9 @@ export interface MonarchPlan {
 }
 
 const key = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
-/** "(...1335)" or "(...3107-CL0001)": the part that survives renames between providers. */
-const maskOf = (s: string) => /\(\.\.\.([\w-]+)\)/.exec(s)?.[1]?.toLowerCase() ?? null;
+/** "(...1335)", "(1335)" or "(...3107-CL0001)": the part that survives renames between providers. */
+export const maskOf = (s: string) =>
+  /\((?:\.\.\.)?([\w-]{3,})\)\s*$/.exec(s.trim())?.[1]?.toLowerCase() ?? null;
 
 export function guessAccountKind(name: string): GuessedAccountKind {
   if (/loan|mortgage/i.test(name)) return 'loan';

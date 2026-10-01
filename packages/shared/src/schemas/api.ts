@@ -455,3 +455,16 @@ export const MonarchBatch = z.object({
   importedAt: z.string(),
 });
 export type MonarchBatch = z.infer<typeof MonarchBatch>;
+
+/** A history account the import made and the live (bank-feed) account for the same card or bank account. */
+export const MonarchMergeCandidate = z.object({
+  historyId: Id,
+  historyName: z.string(),
+  liveId: Id,
+  liveName: z.string(),
+  rows: z.number().int(),
+});
+export type MonarchMergeCandidate = z.infer<typeof MonarchMergeCandidate>;
+
+export const MonarchMergeBody = z.object({ historyId: Id, liveId: Id });
+export type MonarchMergeBody = z.infer<typeof MonarchMergeBody>;
