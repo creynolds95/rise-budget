@@ -139,14 +139,46 @@ export const RecurringCashWithdrawalBody = z
  * start, or income Rise hasn't seen post yet). Same shape as the transaction-tagged manual
  * rule, just without a real merchant behind it.
  */
-export const ManualCashEventBody = z.object({
-  label: z.string().trim().min(1).max(60),
-  kind: z.enum(['income', 'expense']),
-  amountCents: Cents.positive(),
-  cadence: ManualCadence,
-  /** The first (or most recent) date it happens; projected forward from today. */
-  anchorDate: IsoDate,
-});
+export const ManualCashEventBody = z
+  .object({
+    label: z.string().trim().min(1).max(60),
+    kind: z.enum(['income', 'expense']),
+    amountCents: Cents.positive(),
+    cadence: ManualCadence,
+    /** The first (or most recent) date it happens; projected forward from today. */
+    anchorDate: IsoDate,
+    /**
+     * Days of the month, where 31 means the last day: [first, second] for 'semimonthly', or
+     * [day, day] to pin a 'monthly' schedule to one day.
+     */
+    anchorDays: AnchorDays.optional(),
+  })
+  .refine((b) => b.cadence !== 'semimonthly' || b.anchorDays, {
+    message: 'anchorDays is required for a semimonthly cadence',
+    path: ['anchorDays'],
+  });
+
+/**
+ * Edit one paycheck/bill schedule: `id` for a manual rule (tagged or hand-added), or `merchant`
+ * to take a detected one over (it then stops being re-detected).
+ */
+export const ScheduleBody = z
+  .object({
+    id: z.string().min(1).optional(),
+    merchant: z.string().min(1).optional(),
+    kind: z.enum(['income', 'expense']),
+    amountCents: Cents.positive(),
+    cadence: ManualCadence,
+    anchorDate: IsoDate,
+    anchorDays: AnchorDays.optional(),
+    /** Only a hand-added schedule has a name of its own to change. */
+    label: z.string().trim().min(1).max(60).optional(),
+  })
+  .refine((b) => b.cadence !== 'semimonthly' || b.anchorDays, {
+    message: 'anchorDays is required for a semimonthly cadence',
+    path: ['anchorDays'],
+  })
+  .refine((b) => b.id || b.merchant, { message: 'id or merchant is required', path: ['id'] });
 
 export const RunSyncBody = z.object({
   /** Backfill from this date instead of the usual window. */

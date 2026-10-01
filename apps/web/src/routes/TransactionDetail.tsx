@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { RuleOfferSheet } from '../components/RuleOfferSheet';
+import { ScheduleFields } from '../components/ScheduleFields';
 import { TxnAmount } from '../components/TxnAmount';
 import { TxnRow } from '../components/TxnRow';
 import { DetailPage } from '../components/detail/DetailPage';
@@ -29,16 +30,9 @@ import {
   useTransaction,
   useTransactions,
 } from '../lib/queries';
+import { draftFrom, schedulePayload, type ScheduleDraft } from '../lib/schedule';
 import { splitProblem, withRemainder, type DraftSplit } from '../lib/splits';
 import type { MerchantView, TransactionPage } from '../lib/types';
-
-const CADENCES = [
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'biweekly', label: 'Every 2 weeks' },
-  { value: 'semimonthly', label: 'Twice a month' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'annual', label: 'Annually' },
-] as const;
 
 const isAmazon = (m: string) => /AMAZON|AMZN/.test(m.toUpperCase());
 
@@ -609,12 +603,9 @@ function RecurringWithdrawalSheet({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
-  const [cadence, setCadence] = useState<(typeof CADENCES)[number]['value']>(
-    income ? 'semimonthly' : 'monthly',
-  );
-  const [dueDate, setDueDate] = useState(t.postedAt);
-  const [anchorDay1, setAnchorDay1] = useState(5);
-  const [anchorDay2, setAnchorDay2] = useState(20);
+  const [draft, setDraft] = useState<ScheduleDraft>(() => ({
+    ...draftFrom(income ? 'semimonthly' : 'monthly', null, t.postedAt, { day1: 1, day2: 15 }),
+  }));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   return (
@@ -627,60 +618,7 @@ function RecurringWithdrawalSheet({
         Plan for this {income ? 'paycheck to arrive' : 'cash to leave your account'} again, on a
         schedule — for the cash-to-payday tool only. It won't change this transaction's category.
       </p>
-      <label className="mt-4 flex flex-col gap-1">
-        <span className="type-caption text-ink-muted">Repeats</span>
-        <select
-          aria-label="Repeats"
-          className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
-          value={cadence}
-          onChange={(e) => setCadence(e.target.value as (typeof CADENCES)[number]['value'])}
-        >
-          {CADENCES.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {cadence === 'semimonthly' ? (
-        <div className="mt-3 flex gap-3">
-          <label className="flex flex-1 flex-col gap-1">
-            <span className="type-caption text-ink-muted">First day of month</span>
-            <input
-              type="number"
-              aria-label="First day of month"
-              min={1}
-              max={31}
-              value={anchorDay1}
-              onChange={(e) => setAnchorDay1(Number(e.target.value))}
-              className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
-            />
-          </label>
-          <label className="flex flex-1 flex-col gap-1">
-            <span className="type-caption text-ink-muted">Second day of month</span>
-            <input
-              type="number"
-              aria-label="Second day of month"
-              min={1}
-              max={31}
-              value={anchorDay2}
-              onChange={(e) => setAnchorDay2(Number(e.target.value))}
-              className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
-            />
-          </label>
-        </div>
-      ) : (
-        <label className="mt-3 flex flex-col gap-1">
-          <span className="type-caption text-ink-muted">Due date</span>
-          <input
-            type="date"
-            aria-label="Due date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
-          />
-        </label>
-      )}
+      <ScheduleFields draft={draft} onChange={setDraft} dateLabel="Due date" />
       {error && <p className="mt-2 text-clay">{error}</p>}
       <Button
         className="mt-4 w-full"
@@ -689,10 +627,10 @@ function RecurringWithdrawalSheet({
           setSaving(true);
           setError(null);
           try {
+            const { anchorDate, ...rest } = schedulePayload(draft);
             await api('POST', `/transactions/${t.id}/recurring-cash-withdrawal`, {
-              cadence,
-              dueDate,
-              anchorDays: cadence === 'semimonthly' ? [anchorDay1, anchorDay2] : undefined,
+              ...rest,
+              dueDate: anchorDate,
             });
             await onSaved();
             onClose();

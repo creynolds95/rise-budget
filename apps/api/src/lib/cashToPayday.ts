@@ -22,8 +22,25 @@ export interface PaySchedule {
   isManual: boolean;
 }
 
+/** One paycheck or bill schedule, as the Surplus page lists and edits it. */
+export interface ScheduleRow {
+  /** The manual rule's id; null for a detected one, which is edited by taking it over. */
+  id: string | null;
+  merchant: string;
+  displayName: string;
+  kind: 'income' | 'expense';
+  amountCents: number;
+  cadence: DetectedSeries['cadence'];
+  anchorDays: [number, number] | null;
+  nextExpectedDate: string;
+  isManual: boolean;
+  /** Added by hand from Surplus, so its name is its own. */
+  isHandAdded: boolean;
+}
+
 export interface CashToPaydayResult extends CashProjection {
   paySchedules: PaySchedule[];
+  schedules: ScheduleRow[];
 }
 
 /**
@@ -116,8 +133,25 @@ export async function buildCashToPaydayProjection(
     ...payEvents,
     ...billEvents,
   ]);
+  const manualByMerchant = new Map(manualRules.map((r) => [r.merchant_normalized, r]));
+  const schedules: ScheduleRow[] = detected.map(({ merchant, series }) => {
+    const manual = manualByMerchant.get(merchant);
+    return {
+      id: manual?.id ?? null,
+      merchant,
+      displayName: displayNames.get(merchant) ?? merchant,
+      kind: series.expectedAmountCents < 0 ? 'income' : 'expense',
+      amountCents: Math.abs(series.expectedAmountCents),
+      cadence: series.cadence,
+      anchorDays: series.anchorDays,
+      nextExpectedDate: series.nextExpectedDate,
+      isManual: manual !== undefined,
+      isHandAdded: manual?.label != null,
+    };
+  });
   return {
     ...projection,
+    schedules,
     paySchedules: paySchedules.map(({ merchant, series }) => ({
       merchant,
       displayName: displayNames.get(merchant) ?? merchant,

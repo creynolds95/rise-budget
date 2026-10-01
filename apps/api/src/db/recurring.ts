@@ -92,15 +92,57 @@ export function upsertManualEventStmt(
   cadence: string,
   amountCents: number,
   nextExpectedDate: string,
+  anchorDays: [number, number] | null = null,
 ): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO recurring_series (id, user_id, merchant_normalized, category_id, cadence,
          expected_amount_cents, next_expected_date, status, updated_at, source, anchor_days,
          label)
-       VALUES (?2, ?1, ?2, NULL, ?3, ?4, ?5, 'active', ?6, 'manual', NULL, ?7)`,
+       VALUES (?2, ?1, ?2, NULL, ?3, ?4, ?5, 'active', ?6, 'manual', ?8, ?7)`,
     )
-    .bind(userId, seriesId(userId, id), cadence, amountCents, nextExpectedDate, nowIso(), label);
+    .bind(
+      userId,
+      seriesId(userId, id),
+      cadence,
+      amountCents,
+      nextExpectedDate,
+      nowIso(),
+      label,
+      anchorDays ? JSON.stringify(anchorDays) : null,
+    );
+}
+
+/** Edit an existing manual rule (tagged or hand-added) in place; `label` only renames a hand-added one. */
+export function updateManualRuleStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  v: {
+    cadence: string;
+    amountCents: number;
+    nextExpectedDate: string;
+    anchorDays: [number, number] | null;
+    label?: string | undefined;
+  },
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE recurring_series SET cadence = ?3, expected_amount_cents = ?4,
+         next_expected_date = ?5, anchor_days = ?6, status = 'active', updated_at = ?7,
+         label = CASE WHEN label IS NULL THEN NULL ELSE COALESCE(?8, label) END
+       WHERE user_id = ?1 AND id = ?2 AND source = 'manual'`,
+    )
+    .bind(
+      userId,
+      id,
+      v.cadence,
+      v.amountCents,
+      v.nextExpectedDate,
+      v.anchorDays ? JSON.stringify(v.anchorDays) : null,
+      nowIso(),
+      v.label ?? null,
+    );
 }
 
 /** A hand-declared manual event, never one tagged from a real transaction. */

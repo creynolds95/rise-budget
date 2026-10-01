@@ -35,6 +35,10 @@ export function Investments() {
     ? growthSeries(q.data.points, q.data.sp500, invRangeStart(range, today))
     : [];
   const last = series.at(-1);
+  const firstDate = q.data?.points[0]?.date;
+  // Rise only has balances from the day it first saw the account, so short history makes
+  // every chip show the same line; say so instead of looking broken.
+  const shortHistory = firstDate !== undefined && firstDate > invRangeStart(range, today);
   const total = (q.data?.accounts ?? []).reduce((n, a) => n + a.balanceCents, 0);
 
   if (q.isPending) return <Skeleton className="h-64 w-full" />;
@@ -83,6 +87,11 @@ export function Investments() {
             </button>
           ))}
         </div>
+        {shortHistory && firstDate && (
+          <p className="mt-2 type-caption text-ink-faint">
+            Showing since {shortDate(firstDate)}, the first balance Rise saw.
+          </p>
+        )}
         {q.data.sp500 === null && (
           <p className="mt-2 type-caption text-ink-faint">
             S&amp;P 500 data is unavailable right now.

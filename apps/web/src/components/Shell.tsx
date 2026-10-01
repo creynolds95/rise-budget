@@ -1,3 +1,4 @@
+import { useTabRootTrap } from '../lib/gestures';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
 import { Icon } from './primitives/Icon';
@@ -38,6 +39,7 @@ export function Shell() {
   const me = useMe().data;
   const [actions, setActions] = useState<ReactNode>(null);
   const location = useLocation();
+  useTabRootTrap(location.pathname);
   const onDashboard = location.pathname === '/';
   const currentTab = TABS.find((t) =>
     t.path === '/' ? onDashboard : location.pathname.startsWith(t.path),

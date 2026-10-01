@@ -12,22 +12,10 @@ import { Toggle } from '../components/primitives/Toggle';
 import { ApiError, api } from '../lib/api';
 import { localToday, shortDate } from '../lib/dates';
 import { formatCents } from '../lib/money';
-import { useAccounts, useCashToPayday, useManualCashEvents, useMe } from '../lib/queries';
-
-const CADENCE_LABEL: Record<string, string> = {
-  weekly: 'Every week',
-  biweekly: 'Every two weeks',
-  monthly: 'Every month',
-  annual: 'Every year',
-  semimonthly: 'Twice a month',
-};
-
-const CADENCES = [
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'biweekly', label: 'Every 2 weeks' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'annual', label: 'Annually' },
-] as const;
+import { useAccounts, useCashToPayday, useMe } from '../lib/queries';
+import { describeSchedule, draftFrom, schedulePayload, type ScheduleDraft } from '../lib/schedule';
+import type { ScheduleRow } from '../lib/types';
+import { ScheduleFields } from '../components/ScheduleFields';
 
 /**
  * Balance by day to payday, the lowest point marked. Bars rise above a zero line when the
@@ -165,8 +153,9 @@ function AddManualEventSheet({
   const tz = useMe().data?.timezone;
   const [label, setLabel] = useState('');
   const [amountCents, setAmountCents] = useState(0);
-  const [cadence, setCadence] = useState<(typeof CADENCES)[number]['value']>('monthly');
-  const [anchorDate, setAnchorDate] = useState(() => localToday(tz));
+  const [draft, setDraft] = useState<ScheduleDraft>(() =>
+    draftFrom(kind === 'income' ? 'semimonthly' : 'monthly', null, localToday(tz)),
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   return (
@@ -185,33 +174,11 @@ function AddManualEventSheet({
         <span className="type-caption text-ink-muted">Amount</span>
         <MoneyField label="Amount" cents={amountCents} onCommit={setAmountCents} />
       </label>
-      <label className="mt-3 flex flex-col gap-1">
-        <span className="type-caption text-ink-muted">Repeats</span>
-        <select
-          aria-label="Repeats"
-          className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
-          value={cadence}
-          onChange={(e) => setCadence(e.target.value as (typeof CADENCES)[number]['value'])}
-        >
-          {CADENCES.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="mt-3 flex flex-col gap-1">
-        <span className="type-caption text-ink-muted">
-          {kind === 'income' ? 'Next pay date' : 'Next due date'}
-        </span>
-        <input
-          type="date"
-          aria-label={kind === 'income' ? 'Next pay date' : 'Next due date'}
-          value={anchorDate}
-          onChange={(e) => setAnchorDate(e.target.value)}
-          className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
-        />
-      </label>
+      <ScheduleFields
+        draft={draft}
+        onChange={setDraft}
+        dateLabel={kind === 'income' ? 'Next pay date' : 'Next due date'}
+      />
       {error && <p className="mt-2 text-clay">{error}</p>}
       <Button
         className="mt-4 w-full"
@@ -224,8 +191,7 @@ function AddManualEventSheet({
               label: label.trim(),
               kind,
               amountCents,
-              cadence,
-              anchorDate,
+              ...schedulePayload(draft),
             });
             await onSaved();
             onClose();
@@ -242,10 +208,142 @@ function AddManualEventSheet({
   );
 }
 
+/** The paycheck/bill schedules of one kind; tap one to change its amount, days, or name. */
+function ScheduleList({
+  kind,
+  rows,
+  onEdit,
+}: {
+  kind: 'income' | 'expense';
+  rows: ScheduleRow[];
+  onEdit: (r: ScheduleRow) => void;
+}) {
+  const mine = rows
+    .filter((r) => r.kind === kind)
+    .sort((a, b) => a.nextExpectedDate.localeCompare(b.nextExpectedDate));
+  if (mine.length === 0) return null;
+  return (
+    <>
+      <h3 className="mt-6 type-title border-b border-hairline pb-3">Schedules</h3>
+      {mine.map((r) => (
+        <button
+          key={r.id ?? r.merchant}
+          type="button"
+          onClick={() => onEdit(r)}
+          className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-hairline py-3 text-left active:bg-sage-100"
+        >
+          <span className="min-w-0">
+            <span className="block truncate font-medium">{r.displayName}</span>
+            <span className="block type-caption text-ink-faint">
+              {describeSchedule(r.cadence, r.anchorDays)} · next {shortDate(r.nextExpectedDate)}
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-2">
+            <MoneyText cents={r.amountCents} tone={kind === 'income' ? 'in' : 'ink'} />
+            <Chevron />
+          </span>
+        </button>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Edit one schedule. A detected one is taken over by saving (so Rise stops re-detecting it);
+ * "Remove" deletes a manual schedule or dismisses a detected one.
+ */
+function EditScheduleSheet({
+  row,
+  onClose,
+  onSaved,
+  onDismiss,
+}: {
+  row: ScheduleRow;
+  onClose: () => void;
+  onSaved: () => Promise<unknown>;
+  onDismiss: () => void;
+}) {
+  const [label, setLabel] = useState(row.displayName);
+  const [amountCents, setAmountCents] = useState(row.amountCents);
+  const [draft, setDraft] = useState<ScheduleDraft>(() =>
+    draftFrom(row.cadence, row.anchorDays, row.nextExpectedDate),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const run = async (fn: () => Promise<unknown>) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await fn();
+      await onSaved();
+      onClose();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not save.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Sheet open title={row.displayName} onClose={onClose}>
+      {row.isHandAdded && (
+        <label className="flex flex-col gap-1">
+          <span className="type-caption text-ink-muted">Name</span>
+          <input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
+          />
+        </label>
+      )}
+      <label className="mt-3 flex flex-col gap-1">
+        <span className="type-caption text-ink-muted">Amount</span>
+        <MoneyField label="Amount" cents={amountCents} onCommit={setAmountCents} />
+      </label>
+      <ScheduleFields
+        draft={draft}
+        onChange={setDraft}
+        dateLabel={row.kind === 'income' ? 'Next pay date' : 'Next due date'}
+      />
+      {error && <p className="mt-2 text-clay">{error}</p>}
+      <Button
+        className="mt-4 w-full"
+        disabled={saving || amountCents <= 0 || (row.isHandAdded && !label.trim())}
+        onClick={() =>
+          void run(() =>
+            api('PUT', '/cash-to-payday/schedules', {
+              ...(row.id ? { id: row.id } : { merchant: row.merchant }),
+              kind: row.kind,
+              amountCents,
+              ...schedulePayload(draft),
+              ...(row.isHandAdded ? { label: label.trim() } : {}),
+            }),
+          )
+        }
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </Button>
+      <Button
+        variant="quiet"
+        className="mt-2 w-full"
+        disabled={saving}
+        onClick={() =>
+          row.isManual && row.id
+            ? void run(() =>
+                api('DELETE', `/cash-to-payday/schedules/${encodeURIComponent(row.id as string)}`),
+              )
+            : onDismiss()
+        }
+      >
+        Remove
+      </Button>
+    </Sheet>
+  );
+}
+
 /** Surplus: how much of today's checking balance is free to move (SPEC: no autopay). */
 export function CashToPayday() {
   const { data, isPending } = useCashToPayday();
-  const manualEvents = useManualCashEvents();
   const me = useMe();
   const qc = useQueryClient();
   const [pickingAccounts, setPickingAccounts] = useState(false);
@@ -255,16 +353,14 @@ export function CashToPayday() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cash-to-payday'] }),
   });
   const refresh = () => qc.invalidateQueries({ queryKey: ['cash-to-payday'] });
-  const removeEvent = useMutation({
-    mutationFn: (id: string) => api('DELETE', `/cash-to-payday/manual-events/${id}`),
-    onSuccess: refresh,
-  });
   const dismissed = data?.dismissedPayMerchants ?? [];
   const setDismissed = useMutation({
     mutationFn: (next: { merchant: string; displayName: string }[]) =>
       api('PATCH', '/me/settings', { dismissedPayMerchants: next }),
     onSuccess: refresh,
   });
+  const [editing, setEditing] = useState<ScheduleRow | null>(null);
+  const schedules = data?.schedules ?? [];
   // Only the Dashboard links here (routes/table.ts).
   const back = { label: 'Dashboard', to: '/' };
 
@@ -385,74 +481,7 @@ export function CashToPayday() {
                   ))
                 )}
 
-                {manualEvents.data &&
-                  manualEvents.data.filter((m) => m.kind === 'income').length > 0 && (
-                    <>
-                      <h3 className="mt-6 type-title border-b border-hairline pb-3">Hand-added</h3>
-                      {manualEvents.data
-                        .filter((m) => m.kind === 'income')
-                        .map((m) => (
-                          <div
-                            key={m.id}
-                            className="flex items-center justify-between gap-4 border-b border-hairline py-3"
-                          >
-                            <span>
-                              {m.label}
-                              <span className="ml-2 type-caption text-ink-faint">
-                                {CADENCE_LABEL[m.cadence] ?? m.cadence} · next{' '}
-                                {shortDate(m.nextExpectedDate)}
-                              </span>
-                            </span>
-                            <div className="flex items-center gap-3">
-                              <MoneyText cents={m.amountCents} tone="in" />
-                              <button
-                                type="button"
-                                className="type-caption text-ink-faint"
-                                onClick={() => removeEvent.mutate(m.id)}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                    </>
-                  )}
-
-                {data.paySchedules.some((s) => !s.isManual) && (
-                  <>
-                    <h3 className="mt-6 type-title border-b border-hairline pb-3">
-                      Pay schedules detected ({data.paySchedules.filter((s) => !s.isManual).length})
-                    </h3>
-                    {data.paySchedules
-                      .filter((s) => !s.isManual)
-                      .map((s) => (
-                        <div key={s.merchant} className="border-b border-hairline py-3">
-                          <div className="flex items-center justify-between gap-4">
-                            <span className="font-medium">{s.displayName}</span>
-                            <div className="flex items-center gap-3">
-                              <MoneyText cents={-s.series.expectedAmountCents} tone="in" />
-                              <button
-                                type="button"
-                                className="type-caption text-ink-faint"
-                                onClick={() =>
-                                  setDismissed.mutate([
-                                    ...dismissed,
-                                    { merchant: s.merchant, displayName: s.displayName },
-                                  ])
-                                }
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                          <p className="mt-0.5 type-caption text-ink-faint">
-                            {CADENCE_LABEL[s.series.cadence] ?? s.series.cadence} · next{' '}
-                            {shortDate(s.series.nextExpectedDate)}
-                          </p>
-                        </div>
-                      ))}
-                  </>
-                )}
+                <ScheduleList kind="income" rows={schedules} onEdit={setEditing} />
               </>
             ),
           },
@@ -489,52 +518,32 @@ export function CashToPayday() {
                   ))
                 )}
 
-                {manualEvents.data &&
-                  manualEvents.data.filter((m) => m.kind === 'expense').length > 0 && (
-                    <>
-                      <h3 className="mt-6 type-title border-b border-hairline pb-3">Hand-added</h3>
-                      {manualEvents.data
-                        .filter((m) => m.kind === 'expense')
-                        .map((m) => (
-                          <div
-                            key={m.id}
-                            className="flex items-center justify-between gap-4 border-b border-hairline py-3"
-                          >
-                            <span>
-                              {m.label}
-                              <span className="ml-2 type-caption text-ink-faint">
-                                {CADENCE_LABEL[m.cadence] ?? m.cadence} · next{' '}
-                                {shortDate(m.nextExpectedDate)}
-                              </span>
-                            </span>
-                            <div className="flex items-center gap-3">
-                              <MoneyText cents={-m.amountCents} />
-                              <button
-                                type="button"
-                                className="type-caption text-ink-faint"
-                                onClick={() => removeEvent.mutate(m.id)}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                    </>
-                  )}
+                <ScheduleList kind="expense" rows={schedules} onEdit={setEditing} />
               </>
             ),
           },
         ]}
       />
+      {editing && (
+        <EditScheduleSheet
+          row={editing}
+          onClose={() => setEditing(null)}
+          onSaved={refresh}
+          onDismiss={() => {
+            setDismissed.mutate([
+              ...dismissed,
+              { merchant: editing.merchant, displayName: editing.displayName },
+            ]);
+            setEditing(null);
+          }}
+        />
+      )}
       {addingKind && (
         <AddManualEventSheet
           kind={addingKind}
           onClose={() => setAddingKind(null)}
           onSaved={async () => {
-            await Promise.all([
-              refresh(),
-              qc.invalidateQueries({ queryKey: ['cash-to-payday', 'manual-events'] }),
-            ]);
+            await refresh();
           }}
         />
       )}

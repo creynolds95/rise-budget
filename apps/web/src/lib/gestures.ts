@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { isPushRoute, navigateWithTransition } from './transition';
+import { isPushRoute, isTabRoot, navigateWithTransition } from './transition';
 
 /**
  * The app is a fixed-scale page: nothing zooms by pinch or double-tap. Charts that want to
@@ -92,4 +92,23 @@ export function useSwipeBack(to: string) {
       document.removeEventListener('touchend', onEnd);
     };
   }, [navigate, to]);
+}
+
+/**
+ * On a tab's landing screen a back gesture (or browser back) does nothing. Whatever history
+ * sits behind it, a copy of the screen is put there so back lands on itself, and every
+ * landing back on a tab screen puts the copy back.
+ */
+export function useTabRootTrap(pathname: string) {
+  useEffect(() => {
+    if (!isTabRoot(pathname)) return;
+    const trap = () => {
+      if (isTabRoot(window.location.pathname)) {
+        window.history.pushState(window.history.state, '', window.location.href);
+      }
+    };
+    trap();
+    window.addEventListener('popstate', trap);
+    return () => window.removeEventListener('popstate', trap);
+  }, [pathname]);
 }
