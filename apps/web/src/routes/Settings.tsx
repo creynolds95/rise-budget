@@ -203,7 +203,7 @@ export function SettingsSection() {
   const back = backFrom(params.get('from'), { label: 'Settings', to: '/settings' });
   return (
     <div className="mx-auto max-w-2xl pb-16">
-      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas">
+      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center banner bg-banner pt-[env(safe-area-inset-top)] text-banner-ink">
         <Link
           to={back.to}
           onClick={transitionClick(navigate, back.to, 'back')}

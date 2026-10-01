@@ -234,7 +234,7 @@ export function Review() {
 
   return (
     <div className="mx-auto max-w-2xl pb-28">
-      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas">
+      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center banner bg-banner pt-[env(safe-area-inset-top)] text-banner-ink">
         <Link to="/" className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700">
           <span aria-hidden>‹</span>
           Dashboard
