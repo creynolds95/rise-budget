@@ -151,7 +151,7 @@ export function Accounts() {
         return (
           <section key={kind} className="gutter mt-6">
             <div className="overflow-hidden rounded-card bg-surface shadow-soft">
-              <h2 className="flex items-baseline justify-between border-b border-hairline px-4 py-3 type-label text-ink-muted">
+              <h2 className="flex items-baseline justify-between border-b border-hairline px-4 py-3 type-label font-bold text-ink">
                 <span>{label}</span>
                 <MoneyText cents={total} tone="muted" />
               </h2>
@@ -245,7 +245,11 @@ export function NetWorthSection({ to }: { to?: string } = {}) {
           <Chart
             kind="line"
             label="Net worth over time. Dashed where balances are estimated between reports."
-            points={points.map((p) => ({ cents: p.netWorthCents, inferred: p.inferred }))}
+            points={points.map((p) => ({
+              cents: p.netWorthCents,
+              inferred: p.inferred,
+              label: shortDate(p.date),
+            }))}
             range={range}
             onRange={setRange}
           />
@@ -269,10 +273,14 @@ function AccountRow({
     <NavRow
       to={`/accounts/${a.id}`}
       label={
-        <span>
-          {a.name}
-          {a.mask && <span className="text-ink-faint"> ··{a.mask}</span>}
-          <span className={`block type-caption ${stale ? 'text-gold-text' : 'text-ink-faint'}`}>
+        <span className="block min-w-0">
+          <span className="block truncate">
+            {a.name}
+            {a.mask && <span className="text-ink-faint"> ··{a.mask}</span>}
+          </span>
+          <span
+            className={`block truncate type-caption ${stale ? 'text-gold-text' : 'text-ink-faint'}`}
+          >
             {stale
               ? quietWhenStale(a) && a.lastSyncedAt
                 ? `Last synced ${shortDate(localToday(tz, new Date(a.lastSyncedAt)))}`
@@ -300,7 +308,7 @@ function AddAccountSheet({ open, onClose }: { open: boolean; onClose: () => void
   const field = 'min-h-11 w-full rounded-input border border-hairline bg-surface px-3';
   const owes = isLiabilityKind(kind);
   return (
-    <Sheet open={open} title="New manual account" onClose={onClose}>
+    <Sheet open={open} title="New manual account" onClose={onClose} fullScreen>
       <form
         className="flex flex-col gap-4"
         onSubmit={async (e) => {
