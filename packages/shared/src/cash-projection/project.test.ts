@@ -14,7 +14,7 @@ describe('cash-to-payday projection', () => {
       { date: '2026-10-05', balanceCents: 330_000, label: 'Payday' },
     ]);
     expect(p.lowestPoint).toEqual({ date: '2026-09-27', balanceCents: 20_000, label: 'Mortgage' });
-    expect(p.freeToMoveCents).toBe(0); // below the $500 cushion already
+    expect(p.freeToMoveCents).toBe(-30_000); // $300 short of the $500 cushion
   });
 
   it("free to move is the lowest balance above the cushion, not today's balance", () => {

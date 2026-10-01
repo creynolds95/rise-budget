@@ -22,7 +22,10 @@ export interface CashProjection {
   /** Today, then each event in date order, running balance. */
   points: CashPoint[];
   lowestPoint: CashPoint;
-  /** How much of today's balance is free to move without dipping below the cushion. */
+  /**
+   * How much of today's balance is free to move without dipping below the cushion. Negative
+   * when the projection already goes under it: that shortfall is the number to know.
+   */
   freeToMoveCents: number;
 }
 
@@ -42,6 +45,6 @@ export function projectCashFlow(
     points.push({ date: e.date, balanceCents: running, label: e.label });
   }
   const lowestPoint = points.reduce((min, p) => (p.balanceCents < min.balanceCents ? p : min));
-  const freeToMoveCents = Math.max(0, lowestPoint.balanceCents - cushionCents);
+  const freeToMoveCents = lowestPoint.balanceCents - cushionCents;
   return { points, lowestPoint, freeToMoveCents };
 }

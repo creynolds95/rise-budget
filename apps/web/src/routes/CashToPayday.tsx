@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { axisPicks, surplusTone } from '../lib/surplus';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
@@ -28,7 +29,10 @@ const CADENCES = [
   { value: 'annual', label: 'Annually' },
 ] as const;
 
-/** Balance by day to payday, the lowest point marked. A single day has no shape to show. */
+/**
+ * Balance by day to payday, the lowest point marked. Bars rise above a zero line when the
+ * balance is positive and hang below it when it isn't. A single day has no shape to show.
+ */
 function Shape({
   points,
   lowestDate,
@@ -37,26 +41,52 @@ function Shape({
   lowestDate: string;
 }) {
   if (points.length < 2) return null;
-  const max = Math.max(...points.map((p) => p.balanceCents), 1);
+  const hi = Math.max(...points.map((p) => p.balanceCents), 0);
+  const lo = Math.min(...points.map((p) => p.balanceCents), 0);
+  const span = Math.max(hi - lo, 1);
+  const zeroPct = (hi / span) * 100;
+  const picks = new Set(axisPicks(points.length));
   return (
-    <figure className="m-0">
-      <div className="flex h-24 items-end gap-1.5 border-b border-hairline">
-        {points.map((p, i) => (
-          <div
-            key={i}
-            className={`flex-1 rounded-t-sm ${p.date === lowestDate ? 'bg-gold' : 'bg-sage-600'}`}
-            style={{ height: `${Math.max(4, (p.balanceCents / max) * 100)}%` }}
-          >
-            <span className="sr-only">
-              {shortDate(p.date)}: {formatCents(p.balanceCents)}
-            </span>
-          </div>
-        ))}
+    <figure className="m-0 overflow-hidden">
+      <div className="relative h-28">
+        <div
+          aria-hidden
+          className="absolute inset-x-0 border-t border-hairline"
+          style={{ top: `${zeroPct}%` }}
+        />
+        <div className="absolute inset-0 flex gap-1.5">
+          {points.map((p, i) => {
+            const h = Math.max(2, (Math.abs(p.balanceCents) / span) * 100);
+            const up = p.balanceCents >= 0;
+            return (
+              <div key={i} className="relative min-w-0 flex-1">
+                <div
+                  className={`absolute inset-x-0 ${up ? 'rounded-t-sm' : 'rounded-b-sm'} ${
+                    p.balanceCents < 0
+                      ? 'bg-clay'
+                      : p.date === lowestDate
+                        ? 'bg-gold'
+                        : 'bg-sage-600'
+                  }`}
+                  style={
+                    up
+                      ? { bottom: `${100 - zeroPct}%`, height: `${h}%` }
+                      : { top: `${zeroPct}%`, height: `${h}%` }
+                  }
+                >
+                  <span className="sr-only">
+                    {shortDate(p.date)}: {formatCents(p.balanceCents)}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
       <div aria-hidden className="mt-1 flex gap-1.5">
         {points.map((p, i) => (
-          <span key={i} className="flex-1 text-center type-caption text-ink-faint">
-            {shortDate(p.date)}
+          <span key={i} className="min-w-0 flex-1 text-center type-caption text-ink-faint">
+            {picks.has(i) && <span className="block truncate">{shortDate(p.date)}</span>}
           </span>
         ))}
       </div>
@@ -270,7 +300,11 @@ export function CashToPayday() {
           hero: noPaySchedule ? (
             <span className="text-2xl font-semibold text-ink-muted">Confirm your pay dates</span>
           ) : (
-            <MoneyText cents={data.freeToMoveCents} whole />
+            <MoneyText
+              cents={data.freeToMoveCents}
+              tone={surplusTone(data.freeToMoveCents)}
+              whole
+            />
           ),
           context: noPaySchedule ? (
             'No pay schedule found yet — add your income below, or wait for Rise to see a paycheck post.'
