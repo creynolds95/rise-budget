@@ -16,8 +16,8 @@ element identical visual weight and no hierarchy. Rise does not.
   --ink-muted:    #5C6157;  /* secondary text */
   --ink-faint:    #8A8F84;  /* tertiary, timestamps */
 
-  --canvas:       #FAFAF7;  /* app background — WARM off-white, never #F2F2F7 */
-  --surface:      #FFFFFF;  /* raised content */
+  --canvas:       #FFFFFF;  /* app background — pure white */
+  --surface:      #FAFAF7;  /* raised content — WARM off-white tile, never #F2F2F7 */
   --hairline:     #E6E7E1;  /* dividers */
 
   --sage-700:     #4A6142;  /* pressed, emphasis text */
