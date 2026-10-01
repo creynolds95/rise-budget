@@ -55,16 +55,18 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
           if (startX.current !== null && t && startX.current - t.clientX > 60) onClose();
           startX.current = null;
         }}
-        className="absolute inset-y-0 left-0 flex w-[78%] max-w-xs flex-col bg-canvas pt-[max(12px,env(safe-area-inset-top))] pb-[env(safe-area-inset-bottom)] shadow-xl transition-transform ease-out"
+        className="absolute inset-y-0 left-0 flex w-[78%] max-w-xs flex-col border-r border-hairline bg-surface pt-[max(12px,env(safe-area-inset-top))] pb-[env(safe-area-inset-bottom)] shadow-2xl transition-transform ease-out"
         style={{
           transform: shown ? 'translateX(0)' : 'translateX(-100%)',
           transitionDuration: `${SLIDE_MS}ms`,
         }}
       >
-        <span className="gutter py-3 font-serif text-xl tracking-tight text-sage-700">Rise</span>
-        <ul className="flex flex-col">
+        <span className="gutter pt-4 pb-5 font-serif text-4xl tracking-tight text-sage-700">
+          Rise
+        </span>
+        <ul className="flex flex-col border-t border-hairline">
           {ITEMS.map((i) => (
-            <li key={i.to}>
+            <li key={i.to} className="border-b border-hairline">
               <Link
                 to={i.to}
                 onClick={onClose}
