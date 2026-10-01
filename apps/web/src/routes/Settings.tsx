@@ -28,6 +28,7 @@ import { Icon, IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
 import { Sheet } from '../components/primitives/Sheet';
 import { Sortable } from '../components/primitives/Sortable';
+import { Investments } from './Investments';
 import { Reports } from './Reports';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
@@ -50,6 +51,7 @@ const SECTIONS = {
   appearance: 'Appearance',
   budget: 'Budget settings',
   categories: 'Categories',
+  investments: 'Investments',
   reports: 'Reports',
   rules: 'Rules',
   sync: 'Bank sync',
@@ -113,6 +115,7 @@ export function Settings() {
           title="Categories"
           state={categories ? `${categories.length} in use` : undefined}
         />
+        <Card to="/settings/investments" title="Investments" state="Portfolio vs S&P 500" />
         <Card to="/settings/reports" title="Reports" state="Cash flow and spending" />
         <Card
           to="/settings/rules"
@@ -213,6 +216,11 @@ export function SettingsSection() {
         <span id="settings-action" className="justify-self-end" />
       </header>
       {s === 'reports' && <Reports />}
+      {s === 'investments' && (
+        <div className="gutter pt-4">
+          <Investments />
+        </div>
+      )}
       <div className="gutter pt-4">
         {s === 'appearance' && <AppearanceSection />}
         {s === 'budget' && <BudgetSection />}

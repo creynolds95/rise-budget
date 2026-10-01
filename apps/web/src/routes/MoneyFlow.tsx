@@ -1,6 +1,6 @@
 import type { MoneyFlowReport } from '@rise/shared/schemas';
 import { sankey, sankeyLinkHorizontal, type SankeyNodeMinimal } from 'd3-sankey';
-import { useMemo } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { series } from '../design/tokens';
@@ -65,7 +65,9 @@ export function MoneyFlowReportView({ month }: { month: string }) {
             Nothing to show yet — categorize some income and spending this month.
           </p>
         ) : (
-          <SankeyChart nodes={flow.data.nodes} links={flow.data.links} />
+          <Zoomable>
+            <SankeyChart nodes={flow.data.nodes} links={flow.data.links} />
+          </Zoomable>
         )}
       </div>
     </div>
@@ -150,5 +152,111 @@ function SankeyChart({ nodes, links }: { nodes: readonly FlowNode[]; links: read
         ))}
       </g>
     </svg>
+  );
+}
+
+const MAX_ZOOM = 4;
+
+/**
+ * Pinch (or wheel) to zoom, drag to pan once zoomed, double-tap to reset. The one place in the
+ * app where zoom is allowed, so it carries `data-zoomable` and does its own gesture handling.
+ */
+function Zoomable({ children }: { children: ReactNode }) {
+  const [view, setView] = useState({ k: 1, x: 0, y: 0 });
+  const box = useRef<HTMLDivElement>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const last = useRef<{ dist: number; cx: number; cy: number } | null>(null);
+  const tap = useRef(0);
+
+  const clamp = (k: number, x: number, y: number) => {
+    const r = box.current?.getBoundingClientRect();
+    const kk = Math.min(MAX_ZOOM, Math.max(1, k));
+    if (!r || kk === 1) return { k: kk, x: 0, y: 0 };
+    return {
+      k: kk,
+      x: Math.min(0, Math.max(r.width * (1 - kk), x)),
+      y: Math.min(0, Math.max(r.height * (1 - kk), y)),
+    };
+  };
+  // Zoom about a point in the box so it stays under the fingers.
+  const zoomAt = (k: number, cx: number, cy: number) =>
+    setView((v) => {
+      const kk = Math.min(MAX_ZOOM, Math.max(1, k));
+      const f = kk / v.k;
+      return clamp(kk, cx - (cx - v.x) * f, cy - (cy - v.y) * f);
+    });
+  const local = (e: { clientX: number; clientY: number }) => {
+    const r = box.current?.getBoundingClientRect();
+    return { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) };
+  };
+  const measure = () => {
+    const [a, b] = [...pointers.current.values()];
+    return a && b
+      ? { dist: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }
+      : null;
+  };
+
+  return (
+    <div
+      ref={box}
+      data-zoomable
+      className="relative touch-none overflow-hidden rounded-lg"
+      onWheel={(e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        const p = local(e);
+        zoomAt(view.k * (e.deltaY < 0 ? 1.15 : 1 / 1.15), p.x, p.y);
+      }}
+      onPointerDown={(e) => {
+        pointers.current.set(e.pointerId, local(e));
+        last.current = measure();
+        const now = Date.now();
+        if (pointers.current.size === 1 && now - tap.current < 300) setView({ k: 1, x: 0, y: 0 });
+        tap.current = now;
+      }}
+      onPointerMove={(e) => {
+        const prev = pointers.current.get(e.pointerId);
+        if (!prev) return;
+        const cur = local(e);
+        pointers.current.set(e.pointerId, cur);
+        const m = measure();
+        if (m && last.current) {
+          const f = m.dist / last.current.dist;
+          const prior = last.current;
+          setView((v) => {
+            const kk = Math.min(MAX_ZOOM, Math.max(1, v.k * f));
+            const g = kk / v.k;
+            return clamp(kk, m.cx - (prior.cx - v.x) * g, m.cy - (prior.cy - v.y) * g);
+          });
+          last.current = m;
+        } else if (pointers.current.size === 1 && view.k > 1) {
+          setView((v) => clamp(v.k, v.x + cur.x - prev.x, v.y + cur.y - prev.y));
+        }
+      }}
+      onPointerUp={(e) => {
+        pointers.current.delete(e.pointerId);
+        last.current = null;
+      }}
+      onPointerCancel={(e) => {
+        pointers.current.delete(e.pointerId);
+        last.current = null;
+      }}
+    >
+      <div
+        style={{
+          transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`,
+          transformOrigin: '0 0',
+        }}
+      >
+        {children}
+      </div>
+      {view.k > 1 && (
+        <button
+          onClick={() => setView({ k: 1, x: 0, y: 0 })}
+          className="absolute top-2 right-2 min-h-9 rounded-full bg-surface px-3 type-caption shadow-soft"
+        >
+          Reset
+        </button>
+      )}
+    </div>
   );
 }
