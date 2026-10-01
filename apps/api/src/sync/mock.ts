@@ -1,7 +1,7 @@
 import type { SimpleFinSource } from './source';
 
 /**
- * A stand-in SimpleFIN bridge for Caleb's seven accounts, for building and testing before
+ * A stand-in SimpleFIN bridge for seven sample accounts, for building and testing before
  * the real connection is paid for. Deterministic: the same `now` always returns the same
  * data, so repeated syncs behave like the real thing. Speaks the wire format (decimal
  * strings, money out negative), so everything downstream runs unchanged.
@@ -91,7 +91,7 @@ function eventsOn(day: number): Event[] {
     payment(
       'chase',
       'chase-pay',
-      'CHASE CREDIT CRD AUTOPAY PPD ID: 4760039224',
+      'CHASE CREDIT CRD AUTOPAY PPD ID: 0000000000',
       'AUTOMATIC PAYMENT - THANK YOU',
     );
   if (dom === 8)

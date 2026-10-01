@@ -1,7 +1,7 @@
 /**
  * T15 provisioning — the ONLY way a user is created. There is no signup route (SPEC §9).
  *
- *   JWT_SECRET=… pnpm seed:user --email you@example.com --name "Caleb" [--remote] [--origin https://rise.example]
+ *   JWT_SECRET=… pnpm seed:user --email you@example.com --name "Your Name" [--remote] [--origin https://rise.example]
  *
  * Inserts the user row via wrangler and prints a one-time passkey-registration link valid
  * for 10 minutes. JWT_SECRET must match the Worker's secret.

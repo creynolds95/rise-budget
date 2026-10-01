@@ -77,7 +77,7 @@ async function setup() {
 }
 
 describe('T27 SimpleFIN sync', () => {
-  it('discovers Caleb’s seven accounts from the mock bridge with sensible defaults', async () => {
+  it('discovers seven sample accounts from the mock bridge with sensible defaults', async () => {
     const s = await setup();
     const r = await runSync(
       env.DB,

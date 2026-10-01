@@ -67,7 +67,7 @@ export async function buildCashToPaydayProjection(
   const manualMerchants = new Set(manualRules.map((r) => r.merchant_normalized));
   const detected: { merchant: string; series: DetectedSeries }[] = [];
   for (const [merchant, occ] of byMerchant) {
-    // A merchant Caleb tagged "Recurring Cash Withdrawal" owns its own rule below — never
+    // A merchant the owner tagged "Recurring Cash Withdrawal" owns its own rule below — never
     // let live auto-detection compete with it for the same merchant.
     if (manualMerchants.has(merchant)) continue;
     // Dismissed from the Surplus tool (e.g. an ex-employer's payroll) — never resurface it,
@@ -78,7 +78,7 @@ export async function buildCashToPaydayProjection(
     const series = detectSemimonthly(occ, today) ?? detectSeries(occ, today);
     if (series && series.status === 'active') detected.push({ merchant, series });
   }
-  // A manual rule projects even while flagged `broken` (unconfirmed) — Caleb still wants it
+  // A manual rule projects even while flagged `broken` (unconfirmed) — the owner still wants it
   // planned for; `broken` only ever surfaces as the Dashboard's "hasn't charged since" note.
   for (const r of manualRules) {
     detected.push({

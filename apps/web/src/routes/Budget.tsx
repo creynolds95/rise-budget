@@ -130,7 +130,7 @@ export function Budget() {
 
         <section className="mt-8">
           {/* Expected income is the sum of the income categories below (Paychecks is the
-              source of truth, per Caleb 2026-09-25) — no separate editable total. */}
+              source of truth, per the owner 2026-09-25) — no separate editable total. */}
           <h2 className="gutter type-title">Income</h2>
           {incomeGroups.length > 0 && <ColumnHeadings />}
           {incomeGroups.length === 0 ? (

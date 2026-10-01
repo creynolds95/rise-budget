@@ -117,7 +117,7 @@ export const BulkAcceptBody = z.union([
 
 export const TransferLinkBody = z.object({ otherTxnId: Id });
 
-/** Caleb's "Recurring Cash Withdrawal" tag (cash-to-payday, not a category setting). */
+/** The owner's "Recurring Cash Withdrawal" tag (cash-to-payday, not a category setting). */
 export const RecurringCashWithdrawalBody = z
   .object({
     cadence: ManualCadence,

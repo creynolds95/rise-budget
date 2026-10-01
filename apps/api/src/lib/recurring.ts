@@ -34,7 +34,7 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
   ]);
   const found: [string, DetectedSeries][] = [];
   for (const [merchant, occ] of byMerchant) {
-    // A merchant Caleb has tagged "Recurring Cash Withdrawal" owns its own rule — never
+    // A merchant the owner has tagged "Recurring Cash Withdrawal" owns its own rule — never
     // let auto-detection reassign or overwrite it, even once it naturally clears the
     // 3-occurrence bar.
     if (manualMerchants.has(merchant)) continue;

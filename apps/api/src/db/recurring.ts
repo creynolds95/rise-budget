@@ -66,7 +66,7 @@ interface ManualRuleRow {
   label: string | null;
 }
 
-/** Every manual rule (Caleb's "Recurring Cash Withdrawal" tag), for `refreshRecurring`. */
+/** Every manual rule (the owner's "Recurring Cash Withdrawal" tag), for `refreshRecurring`. */
 export async function listManualRules(userId: UserId, db: D1Database): Promise<ManualRuleRow[]> {
   const { results } = await db
     .prepare(

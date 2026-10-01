@@ -48,7 +48,7 @@ Work is tracked on the board. Move a card to `in_progress` before editing code, 
 `review` when written but not yet verified.
 
 ```
-KB="/Users/Caleb/Claude Code/Visual Kanban/kanban.py"
+KB="$HOME/Claude Code/Visual Kanban/kanban.py"
 python3 "$KB"                       # what to work on next
 python3 "$KB" move VK-N in_progress
 python3 "$KB" note VK-N "a decision or surprise"

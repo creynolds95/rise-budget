@@ -27,6 +27,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # wrangler.toml holds placeholders so this public repo carries no deployment details.
+      - name: Configure wrangler.toml
+        working-directory: apps/api
+        run: |
+          : "${D1_DATABASE_ID:?set the D1_DATABASE_ID repo secret}" "${RISE_HOST:?set the RISE_HOST repo secret}"
+          sed -i -e "s/00000000-0000-0000-0000-000000000000/$D1_DATABASE_ID/" \
+            -e "s/rise\.example\.workers\.dev/$RISE_HOST/g" wrangler.toml
+        env:
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          RISE_HOST: ${{ secrets.RISE_HOST }}
       - name: Run check
         working-directory: apps/api
         run: |
