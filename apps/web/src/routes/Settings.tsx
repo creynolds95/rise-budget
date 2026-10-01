@@ -29,6 +29,7 @@ import { Menu } from '../components/primitives/Menu';
 import { Sheet } from '../components/primitives/Sheet';
 import { Sortable } from '../components/primitives/Sortable';
 import { Investments } from './Investments';
+import { MonarchImport } from './MonarchImport';
 import { Reports } from './Reports';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
@@ -1363,6 +1364,7 @@ function DataSection() {
           <span className="text-ink-muted">{backupState ?? <Skeleton className="h-5 w-24" />}</span>
         </GroupRow>
       </Group>
+      <MonarchImport />
     </>
   );
 }

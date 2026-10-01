@@ -64,5 +64,7 @@ export const AuditAction = z.enum([
   'account.linked',
   'account.unlinked',
   'data.exported',
+  'import.monarch',
+  'import.monarch.undone',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

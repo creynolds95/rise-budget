@@ -10,6 +10,7 @@ import { categories, categoryGroups } from './routes/categories';
 import { merchants, rules } from './routes/rules';
 import { me } from './routes/me';
 import { investments } from './routes/investments';
+import { monarchImport } from './routes/monarchImport';
 import { networth } from './routes/networth';
 import { allocations, periods } from './routes/periods';
 import { cashToPayday } from './routes/cashToPayday';
@@ -63,6 +64,7 @@ app.route('/cash-to-payday', cashToPayday);
 app.route('/review', review);
 app.route('/reports', reports);
 app.route('/export', dataExport);
+app.route('/import/monarch', monarchImport);
 
 app.notFound((c) =>
   c.json(errorBody('NOT_FOUND', `No route for ${c.req.method} ${c.req.path}`), 404),

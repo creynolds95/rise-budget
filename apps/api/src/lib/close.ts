@@ -5,7 +5,7 @@ import {
   type CloseReadiness,
   type PeriodCloseInput,
 } from '@rise/shared/budget';
-import { getUser, listAccounts } from '../db';
+import { getUser, listAccounts, periodIsHistory } from '../db';
 import type { Env } from '../env';
 import { localToday } from './dates';
 import { loadPeriodView } from './period-view';
@@ -49,13 +49,15 @@ export async function loadCloseStatus(
   userId: string,
   periodId: string,
 ): Promise<CloseStatus> {
-  const [user, accounts] = await Promise.all([
+  const [user, accounts, history] = await Promise.all([
     getUser(userId, env.DB),
     listAccounts(userId, env.DB),
+    periodIsHistory(userId, env.DB, periodId),
   ]);
   const tz = user?.timezone ?? 'America/Chicago';
   return {
-    ended: hasEnded(periodId, localToday(tz)),
+    // An imported-history month is never offered for closing.
+    ended: !history && hasEnded(periodId, localToday(tz)),
     readiness: closeReadiness(
       periodId,
       accounts.map((a) => ({
