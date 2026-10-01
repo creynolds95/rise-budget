@@ -1,5 +1,4 @@
 import { useTabRootTrap } from '../lib/gestures';
-import { isTabRoot } from '../lib/transition';
 import { NavDrawer } from './NavDrawer';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
@@ -44,10 +43,10 @@ export function Shell() {
   useTabRootTrap(location.pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = () => setMenuOpen(false);
-  const onTabRoot = isTabRoot(location.pathname);
-  // Sliding right from the left side of a tab opens the menu, where back would otherwise go.
+  const onDashboard = location.pathname === '/';
+  // The menu lives on the Dashboard only. Sliding right from the left side opens it there.
   useEffect(() => {
-    if (!onTabRoot) return;
+    if (!onDashboard) return;
     let start: { x: number; y: number } | null = null;
     const onStart = (e: TouchEvent) => {
       const t = e.touches[0];
@@ -74,8 +73,7 @@ export function Shell() {
       document.removeEventListener('touchstart', onStart);
       document.removeEventListener('touchend', onEnd);
     };
-  }, [onTabRoot]);
-  const onDashboard = location.pathname === '/';
+  }, [onDashboard]);
   const currentTab = TABS.find((t) =>
     t.path === '/' ? onDashboard : location.pathname.startsWith(t.path),
   );
@@ -152,17 +150,19 @@ export function Shell() {
       <div className="min-w-0 flex-1">
         <div
           ref={head}
-          className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between bg-canvas pt-[max(12px,env(safe-area-inset-top))] lg:hidden"
+          className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between border-b border-hairline bg-surface pb-1 pt-[max(12px,env(safe-area-inset-top))] shadow-soft lg:hidden"
         >
-          <div className="-ml-2 flex items-center gap-1">
-            <button
-              type="button"
-              aria-label="Menu"
-              onClick={() => setMenuOpen(true)}
-              className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-            >
-              <Icon name="menu" />
-            </button>
+          <div className={`flex items-center gap-1 ${onDashboard ? '-ml-2' : ''}`}>
+            {onDashboard && (
+              <button
+                type="button"
+                aria-label="Menu"
+                onClick={() => setMenuOpen(true)}
+                className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+              >
+                <Icon name="menu" />
+              </button>
+            )}
             <span className="type-page">{currentTab?.label ?? 'Rise'}</span>
           </div>
           <div className="-mr-2 flex items-center">{actions}</div>

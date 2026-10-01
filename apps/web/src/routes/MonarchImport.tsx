@@ -244,7 +244,12 @@ export function MonarchImport() {
                         </span>
                       </span>
                       <span className="flex items-center gap-3">
-                        <MoneyText cents={g.amountCents} />
+                        <span className="text-right">
+                          <MoneyText cents={g.amountCents} />
+                          <span className="block type-caption text-ink-muted">
+                            Skip {g.sourceIds.length - 1} of {g.sourceIds.length}
+                          </span>
+                        </span>
                         <input
                           type="checkbox"
                           aria-label={`Skip extras of ${g.merchant} on ${g.postedAt}`}
