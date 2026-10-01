@@ -132,7 +132,7 @@ export function AccountDetail() {
               field={
                 <select
                   aria-label="Account type"
-                  className="min-h-11 rounded-input border border-hairline bg-surface px-2"
+                  className="min-h-11 rounded-input border border-hairline bg-surface px-2 [text-align-last:right]"
                   value={a.kind}
                   onChange={(e) => void patch({ kind: e.target.value })}
                 >
@@ -186,7 +186,7 @@ export function AccountDetail() {
                   field={
                     <select
                       aria-label="Payment day"
-                      className="min-h-11 rounded-input border border-hairline bg-surface px-2"
+                      className="min-h-11 rounded-input border border-hairline bg-surface px-2 [text-align-last:right]"
                       value={a.paymentDay ?? ''}
                       onChange={(e) =>
                         void patch({ paymentDay: e.target.value ? Number(e.target.value) : null })
@@ -209,7 +209,7 @@ export function AccountDetail() {
                 field={
                   <select
                     aria-label="Sync cadence"
-                    className="min-h-11 rounded-input border border-hairline bg-surface px-2"
+                    className="min-h-11 rounded-input border border-hairline bg-surface px-2 [text-align-last:right]"
                     value={a.syncCadenceHours ?? 24}
                     onChange={(e) => void patch({ syncCadenceHours: Number(e.target.value) })}
                   >

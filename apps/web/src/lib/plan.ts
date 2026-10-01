@@ -32,3 +32,12 @@ export function planStats(history: MonthSpend[], month: string): PlanStats {
     averageCents: active.length ? Math.round(sum / active.length) : null,
   };
 }
+
+/** The twelve months ending at `month`, oldest first, zero where nothing was spent. */
+export function yearBars(history: MonthSpend[], month: string): MonthSpend[] {
+  const byId = new Map(history.map((h) => [h.periodId, h.spentCents]));
+  return Array.from({ length: 12 }, (_, i) => {
+    const periodId = addMonths(month, i - 11);
+    return { periodId, spentCents: byId.get(periodId) ?? 0 };
+  });
+}

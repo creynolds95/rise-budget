@@ -25,6 +25,7 @@ import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
 import { IconButton } from '../components/primitives/Icon';
 import { Sheet } from '../components/primitives/Sheet';
+import { Sortable } from '../components/primitives/Sortable';
 import { Reports } from './Reports';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
@@ -330,15 +331,20 @@ function CategoriesSection() {
     }
   };
   const input = 'min-h-11 min-w-0 flex-1 rounded-input border border-hairline bg-surface px-3';
-  const move = (g: CategoryGroup, dir: -1 | 1) => {
-    const i = groups.findIndex((x) => x.id === g.id);
-    const other = groups[i + dir];
-    if (!other) return;
+  // Dragging reports the new order; every row whose place changed gets its position as its
+  // sort order.
+  const reorder = (
+    kind: 'category-groups' | 'categories',
+    current: { id: string; sortOrder: number }[],
+    ids: string[],
+  ) => {
+    const byId = new Map(current.map((x) => [x.id, x]));
     void save(() =>
-      Promise.all([
-        api('PATCH', `/category-groups/${g.id}`, { sortOrder: other.sortOrder }),
-        api('PATCH', `/category-groups/${other.id}`, { sortOrder: g.sortOrder }),
-      ]),
+      Promise.all(
+        ids.flatMap((id, i) =>
+          byId.get(id)?.sortOrder === i ? [] : [api('PATCH', `/${kind}/${id}`, { sortOrder: i })],
+        ),
+      ),
     );
   };
   return (
@@ -349,55 +355,60 @@ function CategoriesSection() {
         </Button>
       </div>
       {error && <p className="mt-2 text-clay">{error}</p>}
-      {groups.map((g, i) => (
-        <section key={g.id} className="mt-6">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="type-label text-ink-muted">
-              {g.name}
-              {g.name.toLowerCase() !== g.kind &&
-                ` · ${g.kind === 'income' ? 'Income' : 'Expense'}`}
-            </h2>
-            <div className="flex items-center">
-              {ordering && (
-                <>
-                  <IconButton
-                    icon="chevronDown"
-                    iconClassName="rotate-180"
-                    label="Move up"
-                    disabled={i === 0}
-                    onClick={() => move(g, -1)}
-                  />
-                  <IconButton
-                    icon="chevronDown"
-                    label="Move down"
-                    disabled={i === groups.length - 1}
-                    onClick={() => move(g, 1)}
-                  />
-                </>
-              )}
-              {!ordering && (
-                <>
-                  <IconButton
-                    icon="pencil"
-                    label={`Rename ${g.name}`}
-                    onClick={() => setRenaming(g)}
-                  />
-                  {categories.filter((c) => c.groupId === g.id).length === 0 && (
+      <Sortable
+        items={groups}
+        onReorder={(ids) => reorder('category-groups', groups, ids)}
+        className="list-none"
+      >
+        {(g, groupGrip) => (
+          <section className="mt-6">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="type-label text-ink-muted">
+                {g.name}
+                {g.name.toLowerCase() !== g.kind &&
+                  ` · ${g.kind === 'income' ? 'Income' : 'Expense'}`}
+              </h2>
+              <div className="flex items-center">
+                {ordering ? (
+                  <span
+                    {...(groupGrip as object)}
+                    role="button"
+                    aria-label={`Drag ${g.name} to reorder`}
+                    className="flex size-11 items-center justify-center text-ink-faint"
+                  >
+                    <Grip />
+                  </span>
+                ) : (
+                  <>
                     <IconButton
-                      icon="trash"
-                      label={`Delete ${g.name}`}
-                      onClick={() => void save(() => api('DELETE', `/category-groups/${g.id}`))}
+                      icon="pencil"
+                      label={`Rename ${g.name}`}
+                      onClick={() => setRenaming(g)}
                     />
-                  )}
-                </>
-              )}
+                    {categories.filter((c) => c.groupId === g.id).length === 0 && (
+                      <IconButton
+                        icon="trash"
+                        label={`Delete ${g.name}`}
+                        onClick={() => void save(() => api('DELETE', `/category-groups/${g.id}`))}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-          <ul className="mt-2 divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft">
-            {categories
-              .filter((c) => c.groupId === g.id)
-              .map((c, ci, own) => (
-                <li key={c.id} className="flex items-center">
+            <Sortable
+              items={categories.filter((c) => c.groupId === g.id)}
+              onReorder={(ids) =>
+                reorder(
+                  'categories',
+                  categories.filter((c) => c.groupId === g.id),
+                  ids,
+                )
+              }
+              className="mt-2 divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft"
+            >
+              {(c, grip) => (
+                <div className="flex items-center bg-surface">
                   <button
                     onClick={() => setEditing(c)}
                     disabled={ordering}
@@ -410,59 +421,44 @@ function CategoriesSection() {
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{c.name}</span>
-                      {g.kind === 'expense' && c.budgeted && (
+                      {/* Not rolling over is the norm, so only a category that does says so. */}
+                      {(g.kind === 'expense' && c.budgeted && c.rolloverPolicy === 'roll') ||
+                      c.spendShape === 'fixed' ||
+                      !c.budgeted ? (
                         <span className="block type-caption text-ink-faint">
-                          {c.rolloverPolicy === 'roll' ? 'Leftover carries' : 'Leftover returns'}
-                          {c.spendShape === 'fixed' ? ' · like a bill' : ''}
+                          {[
+                            g.kind === 'expense' && c.budgeted && c.rolloverPolicy === 'roll'
+                              ? 'Rollover'
+                              : null,
+                            g.kind === 'expense' && c.budgeted && c.spendShape === 'fixed'
+                              ? 'Like a bill'
+                              : null,
+                            !c.budgeted ? 'Not budgeted' : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </span>
-                      )}
-                      {!c.budgeted && (
-                        <span className="block type-caption text-ink-faint">Not budgeted</span>
-                      )}
+                      ) : null}
                     </span>
                     {!ordering && <Chevron />}
                   </button>
                   {ordering && (
-                    <>
-                      <IconButton
-                        icon="chevronDown"
-                        iconClassName="rotate-180"
-                        label={`Move ${c.name} up`}
-                        disabled={ci === 0}
-                        onClick={() => {
-                          const other = own[ci - 1];
-                          if (!other) return;
-                          void save(() =>
-                            Promise.all([
-                              api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
-                              api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
-                            ]),
-                          );
-                        }}
-                      />
-                      <IconButton
-                        icon="chevronDown"
-                        label={`Move ${c.name} down`}
-                        disabled={ci === own.length - 1}
-                        onClick={() => {
-                          const other = own[ci + 1];
-                          if (!other) return;
-                          void save(() =>
-                            Promise.all([
-                              api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
-                              api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
-                            ]),
-                          );
-                        }}
-                      />
-                    </>
+                    <span
+                      {...(grip as object)}
+                      role="button"
+                      aria-label={`Drag ${c.name} to reorder`}
+                      className="flex size-12 shrink-0 items-center justify-center text-ink-faint"
+                    >
+                      <Grip />
+                    </span>
                   )}
-                </li>
-              ))}
-          </ul>
-          {g.kind === 'income' && <IncomeCategoryAdd groupId={g.id} onSave={save} />}
-        </section>
-      ))}
+                </div>
+              )}
+            </Sortable>
+            {g.kind === 'income' && <IncomeCategoryAdd groupId={g.id} onSave={save} />}
+          </section>
+        )}
+      </Sortable>
       <div className="mt-6 flex flex-col items-start">
         <Button variant="quiet" className="-ml-4" onClick={() => setAdding(true)}>
           Add an expense category
@@ -540,6 +536,17 @@ function CategoriesSection() {
         )}
       </Sheet>
     </>
+  );
+}
+
+/** Six dots: the handle to pick a row up by. */
+function Grip() {
+  return (
+    <svg aria-hidden width="14" height="20" viewBox="0 0 14 20" className="fill-current">
+      {[3, 10, 17].flatMap((y) =>
+        [3, 11].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.6" />),
+      )}
+    </svg>
   );
 }
 

@@ -2,7 +2,7 @@ import type { ViewCategory } from '@rise/shared/budget';
 import { merchantName } from '../lib/merchant';
 import type { Category, CategoryGroup, Reallocation } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { usePlanFlow } from '../components/PlanFlow';
@@ -57,6 +57,19 @@ export function Budget() {
     const cat = byId.get(c.categoryId);
     return c.groupKind === 'expense' && cat?.budgeted ? n + c.carriedInCents : n;
   }, 0);
+
+  // C8: unbudgeted categories (Transfer, Credit Card Payment, Other) have a real category row
+  // for splits and rules, but never a budget line — showing one here would let the user "plan"
+  // money for something that isn't spending. Budgeted ones with nothing planned, carried or
+  // spent this month go to the collapsed Unbudgeted list instead of crowding the groups.
+  const expenseRows = p.categories.filter((c) => {
+    const cat = byId.get(c.categoryId);
+    return c.groupKind === 'expense' && cat?.budgeted;
+  });
+  const idle = (c: ViewCategory) =>
+    c.plannedCents === 0 && c.carriedInCents === 0 && c.spentCents === 0;
+  const visibleRows = expenseRows.filter((c) => !idle(c));
+  const unbudgetedRows = expenseRows.filter(idle);
 
   const selectCategory = (categoryId: string) => {
     const next = new URLSearchParams(params);
@@ -172,17 +185,30 @@ export function Budget() {
           {expenseGroups.length === 0 ? (
             <EmptyBudget onAdd={() => setAdding(true)} />
           ) : (
-            expenseGroups.map((g) => (
-              <GroupSection
-                key={g.id}
-                group={g}
-                rows={p.categories.filter((c) => {
-                  const cat = byId.get(c.categoryId);
-                  // C8: unbudgeted categories (Transfer, Credit Card Payment, Other) have a
-                  // real category row for splits and rules, but never a budget line — showing
-                  // one here would let the user "plan" money for something that isn't spending.
-                  return cat?.groupId === g.id && cat.budgeted;
-                })}
+            <>
+              {expenseGroups.map((g) => {
+                const rows = visibleRows.filter((c) => byId.get(c.categoryId)?.groupId === g.id);
+                if (rows.length === 0) return null;
+                return (
+                  <GroupSection
+                    key={g.id}
+                    group={g}
+                    rows={rows}
+                    byId={byId}
+                    month={month}
+                    editable={!closed}
+                    onEdit={(row) => {
+                      const category = byId.get(row.categoryId);
+                      if (category) plan.open(category, row, p.poolCents);
+                    }}
+                    isDesktop={isDesktop}
+                    onSelect={selectCategory}
+                    kind="expense"
+                  />
+                );
+              })}
+              <UnbudgetedSection
+                rows={unbudgetedRows}
                 byId={byId}
                 month={month}
                 editable={!closed}
@@ -190,11 +216,8 @@ export function Budget() {
                   const category = byId.get(row.categoryId);
                   if (category) plan.open(category, row, p.poolCents);
                 }}
-                isDesktop={isDesktop}
-                onSelect={selectCategory}
-                kind="expense"
               />
-            ))
+            </>
           )}
         </section>
 
@@ -475,60 +498,57 @@ function BudgetRow({
   const over = remainingCents < 0 && kind !== 'income';
   const navigate = useNavigate();
   const to = `/budget/${row.categoryId}?m=${month}`;
+  const rolls = category?.rolloverPolicy === 'roll' && kind === 'expense';
+  const open = (e: ReactMouseEvent) => {
+    // H5: desktop opens the category beside the list instead of pushing over it.
+    if (isDesktop) {
+      e.preventDefault();
+      onSelect(row.categoryId);
+      return;
+    }
+    transitionClick(navigate, to)(e);
+  };
   return (
     <li className="gutter border-b border-hairline last:border-b-0">
-      <Link
-        to={to}
-        onClick={(e) => {
-          // H5: desktop opens the category beside the list instead of pushing over it.
-          if (isDesktop) {
-            e.preventDefault();
-            onSelect(row.categoryId);
-            return;
-          }
-          transitionClick(navigate, to)(e);
-        }}
-        className="block pt-2 active:bg-sage-100"
-      >
-        <span className="flex min-h-9 min-w-0 items-center gap-1.5 text-sm font-medium">
+      <div className="flex items-center gap-2 pt-1.5">
+        <Link
+          to={to}
+          onClick={open}
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 text-sm font-medium active:bg-sage-100"
+        >
           {category?.emoji && (
             <span aria-hidden className="text-base leading-none">
               {category.emoji}
             </span>
           )}
           <span className="truncate">{category?.name ?? 'Category'}</span>
-        </span>
-        <div className="mt-1.5">
-          {kind === 'income' ? (
-            <FillBar filledCents={earnedCents} targetCents={row.availableCents} tick={null} />
-          ) : (
-            <Rail
-              carriedInCents={row.carriedInCents}
-              plannedCents={row.plannedCents}
-              spentCents={row.spentCents}
-              availableCents={row.availableCents}
-              tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
-            />
+          {rolls && (
+            <span
+              role="img"
+              aria-label="Leftover carries into next month"
+              title="Leftover carries into next month"
+              className="shrink-0 text-ink-faint"
+            >
+              <Icon name="refresh" size={14} />
+            </span>
           )}
-        </div>
-      </Link>
-      <div className="flex items-center justify-end gap-3 pt-1.5 pb-2">
+        </Link>
         {editable ? (
           <button
             onClick={onEdit}
             aria-label={`Planned for ${category?.name ?? 'category'}: ${formatCents(row.plannedCents)}. Change`}
-            className="flex min-h-9 w-[72px] items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
+            className="flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
           >
             <MoneyText cents={row.plannedCents} whole={row.plannedCents % 100 === 0} />
           </button>
         ) : (
-          <span className="flex min-h-9 w-[72px] items-center justify-end rounded-input border border-hairline px-2 text-sm text-ink-muted">
+          <span className="flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm text-ink-muted">
             <MoneyText cents={row.plannedCents} tone="muted" whole={row.plannedCents % 100 === 0} />
           </span>
         )}
         <span
           aria-label={`${over ? 'Over' : 'Remaining'}: ${formatCents(Math.abs(remainingCents))}`}
-          className={`flex min-h-9 w-[72px] items-center justify-end gap-1 rounded-full px-2 text-sm font-semibold ${
+          className={`flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-full px-2 text-sm font-semibold ${
             remainingCents === 0
               ? 'bg-sage-100 text-ink-muted'
               : over
@@ -536,24 +556,92 @@ function BudgetRow({
                 : 'bg-sage-100 text-sage-700'
           }`}
         >
-          {row.carriedInCents !== 0 && (
-            <span
-              aria-hidden
-              title={
-                row.carriedInCents < 0
-                  ? `Carried a ${formatCents(-row.carriedInCents)} deficit`
-                  : `Carried ${formatCents(row.carriedInCents)} forward`
-              }
-            >
-              <Icon name="refresh" size={12} />
-            </span>
-          )}
           <span className="money">
             {formatCents(Math.abs(remainingCents), { whole: remainingCents % 100 === 0 })}
           </span>
         </span>
       </div>
+      <Link to={to} onClick={open} tabIndex={-1} aria-hidden className="block pb-3">
+        {kind === 'income' ? (
+          <FillBar filledCents={earnedCents} targetCents={row.availableCents} tick={null} />
+        ) : (
+          <Rail
+            carriedInCents={row.carriedInCents}
+            plannedCents={row.plannedCents}
+            spentCents={row.spentCents}
+            availableCents={row.availableCents}
+            tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
+          />
+        )}
+      </Link>
     </li>
+  );
+}
+
+/** Categories with nothing planned this month, folded away until you want to give one a plan. */
+function UnbudgetedSection({
+  rows,
+  byId,
+  month,
+  editable,
+  onEdit,
+}: {
+  rows: ViewCategory[];
+  byId: Map<string, Category>;
+  month: string;
+  editable: boolean;
+  onEdit: (row: ViewCategory) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (rows.length === 0) return null;
+  return (
+    <section className="mt-4">
+      <button
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="gutter flex min-h-11 w-full items-center justify-between text-left"
+      >
+        <h3 className="type-label text-ink-muted">
+          <span className="inline-flex items-center gap-1">
+            <Disclosure open={open} />
+            Unbudgeted
+          </span>
+        </h3>
+        <span className="mr-4 type-caption text-ink-faint">{rows.length}</span>
+      </button>
+      {open && (
+        <div className="gutter">
+          <ul className="overflow-hidden rounded-card bg-surface shadow-soft">
+            {rows.map((r) => {
+              const cat = byId.get(r.categoryId);
+              return (
+                <li
+                  key={r.categoryId}
+                  className="gutter flex items-center gap-2 border-b border-hairline last:border-b-0"
+                >
+                  <Link
+                    to={`/budget/${r.categoryId}?m=${month}`}
+                    className="flex min-h-12 min-w-0 flex-1 items-center gap-1.5 text-sm font-medium"
+                  >
+                    {cat?.emoji && <span aria-hidden>{cat.emoji}</span>}
+                    <span className="truncate">{cat?.name ?? 'Category'}</span>
+                  </Link>
+                  {editable && (
+                    <button
+                      onClick={() => onEdit(r)}
+                      aria-label={`Plan ${cat?.name ?? 'category'}`}
+                      className="flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink-muted active:bg-sage-100"
+                    >
+                      $0
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
