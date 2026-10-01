@@ -10,7 +10,8 @@ import {
 } from '@rise/shared/import';
 import { MONARCH_WINDOW, type MonarchBatch, type MonarchRowsResult } from '@rise/shared/schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { Chevron } from '../components/primitives/Rows';
 import { Button } from '../components/primitives/Button';
 import { Group, GroupRow } from '../components/primitives/Group';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -135,6 +136,13 @@ export function MonarchImport() {
   const matched = plan?.categories.filter((c) => c.matched) ?? [];
   const busy = run.isPending;
   const extras = skippedIds(dupes, skipGroups).size;
+  const left = plan
+    ? plan.skipped.outsideWindow + Object.values(plan.skipped.categories).reduce((n, v) => n + v, 0)
+    : 0;
+  const accountsNew =
+    plan?.accounts.filter((a) => (accountChoices[a.monarchName] ?? a.choice).type === 'create')
+      .length ?? 0;
+  const accountsMerged = (plan?.accounts.length ?? 0) - accountsNew;
 
   return (
     <>
@@ -159,8 +167,7 @@ export function MonarchImport() {
             {parsed ? 'Choose a different file' : 'Choose Transactions CSV'}
           </Button>
           <p className="type-caption text-ink-faint">
-            {shortDate(MONARCH_WINDOW.from)} – {shortDate(MONARCH_WINDOW.to)}. Read on this device;
-            nothing is saved until you confirm.
+            {shortDate(MONARCH_WINDOW.from)} – {shortDate(MONARCH_WINDOW.to)} · history only
           </p>
         </div>
       </Group>
@@ -196,105 +203,68 @@ export function MonarchImport() {
 
       {plan && parsed && (
         <>
-          <Group title="Summary">
+          <Group>
             <GroupRow label="Transactions">
-              <span className="money">{plan.rows.length}</span>
+              <span className="money">{plan.rows.length - extras}</span>
             </GroupRow>
-            <GroupRow label="Outside the dates">
-              <span className="money text-ink-muted">{plan.skipped.outsideWindow}</span>
-            </GroupRow>
-            {Object.entries(plan.skipped.categories).map(([name, n]) => (
-              <GroupRow key={name} label={`${name} (skipped)`}>
-                <span className="money text-ink-muted">{n}</span>
-              </GroupRow>
-            ))}
-            {parsed.errors.length > 0 && (
-              <GroupRow
-                label="Unreadable rows"
-                hint={parsed.errors
-                  .slice(0, 3)
-                  .map((e) => `Line ${e.line}: ${e.message}`)
-                  .join(' · ')}
-              >
-                <span className="money text-clay">{parsed.errors.length}</span>
-              </GroupRow>
-            )}
-          </Group>
-
-          <Group title="Accounts">
-            {plan.accounts.map((a) => {
-              const c = accountChoices[a.monarchName] ?? a.choice;
-              const value = c.type === 'existing' ? `acct:${c.accountId}` : `new:${c.kind}`;
-              return (
-                <div
-                  key={a.monarchName}
-                  className="flex items-center justify-between gap-3 px-4 py-3"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate">{a.monarchName}</span>
-                    <span className="type-caption text-ink-muted money">
-                      {a.rows} · {shortDate(a.first)} – {shortDate(a.last)}
-                    </span>
-                  </span>
-                  <select
-                    aria-label={`Account for ${a.monarchName}`}
-                    className={SELECT}
-                    value={value}
-                    onChange={(e) => {
-                      const [t, v] = e.target.value.split(':') as [string, string];
-                      setAccountChoices((s) => ({
-                        ...s,
-                        [a.monarchName]:
-                          t === 'acct'
-                            ? { type: 'existing', accountId: v }
-                            : { type: 'create', kind: v as GuessedAccountKind },
-                      }));
-                    }}
+            <Fold
+              label="Accounts"
+              summary={`${accountsNew} history-only${accountsMerged ? `, ${accountsMerged} merged` : ''}`}
+            >
+              {plan.accounts.map((a) => {
+                const c = accountChoices[a.monarchName] ?? a.choice;
+                const value = c.type === 'existing' ? `acct:${c.accountId}` : `new:${c.kind}`;
+                return (
+                  <div
+                    key={a.monarchName}
+                    className="flex items-center justify-between gap-3 px-4 py-3"
                   >
-                    <optgroup label="Past account (history only)">
-                      {Object.entries(ACCOUNT_KINDS).map(([k, label]) => (
-                        <option key={k} value={`new:${k}`}>
-                          {label}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Merge into">
-                      {accounts.map((x) => (
-                        <option key={x.id} value={`acct:${x.id}`}>
-                          {x.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
-                </div>
-              );
-            })}
-          </Group>
-
-          <Group
-            title={`Categories to confirm (${unmatched.length})`}
-            footer={
-              unmatched.length === 0
-                ? undefined
-                : 'New ones are created as you see them. Pick an existing category to fold them in.'
-            }
-          >
-            {unmatched.length === 0 && <GroupRow label="Every category matched" />}
-            {unmatched.map((p) => (
-              <CategoryChoiceRow
-                key={p.monarchName}
-                name={p.monarchName}
-                rows={p.rows}
-                choice={categoryChoices[p.monarchName] ?? p.choice}
-                onChange={(c) => setCategoryChoices((s) => ({ ...s, [p.monarchName]: c }))}
-                cats={categories}
-                groups={groups}
-              />
-            ))}
-          </Group>
-          {matched.length > 0 && (
-            <Group title={`Matched by name (${matched.length})`}>
-              {matched.map((p) => (
+                    <span className="min-w-0">
+                      <span className="block truncate">{a.monarchName}</span>
+                      <span className="type-caption text-ink-muted money">
+                        {a.rows} · {shortDate(a.first)} – {shortDate(a.last)}
+                      </span>
+                    </span>
+                    <select
+                      aria-label={`Account for ${a.monarchName}`}
+                      className={SELECT}
+                      value={value}
+                      onChange={(e) => {
+                        const [t, v] = e.target.value.split(':') as [string, string];
+                        setAccountChoices((s) => ({
+                          ...s,
+                          [a.monarchName]:
+                            t === 'acct'
+                              ? { type: 'existing', accountId: v }
+                              : { type: 'create', kind: v as GuessedAccountKind },
+                        }));
+                      }}
+                    >
+                      <optgroup label="Past account (history only)">
+                        {Object.entries(ACCOUNT_KINDS).map(([k, label]) => (
+                          <option key={k} value={`new:${k}`}>
+                            {label}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Merge into">
+                        {accounts.map((x) => (
+                          <option key={x.id} value={`acct:${x.id}`}>
+                            {x.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </div>
+                );
+              })}
+            </Fold>
+            <Fold
+              label="Categories"
+              summary={`${matched.length} matched, ${unmatched.length} new`}
+              start={unmatched.length > 0}
+            >
+              {[...unmatched, ...matched].map((p) => (
                 <CategoryChoiceRow
                   key={p.monarchName}
                   name={p.monarchName}
@@ -305,63 +275,66 @@ export function MonarchImport() {
                   groups={groups}
                 />
               ))}
-            </Group>
-          )}
-
-          {dupes.length > 0 && (
-            <Group
-              title={`Possible duplicates (${dupes.length})`}
-              footer="Same account, day, amount and merchant. All are kept unless you tick one to skip the extras."
-            >
-              {dupes.map((g) => {
-                const k = duplicateKey(g);
-                return (
-                  <label key={k} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <span className="min-w-0">
-                      <span className="block truncate">
-                        {g.merchant} · {g.sourceIds.length}×
+            </Fold>
+            {dupes.length > 0 && (
+              <Fold
+                label="Possible duplicates"
+                summary={extras ? `${extras} skipped` : `${dupes.length}, all kept`}
+              >
+                {dupes.map((g) => {
+                  const k = duplicateKey(g);
+                  return (
+                    <label key={k} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <span className="min-w-0">
+                        <span className="block truncate">
+                          {g.merchant} · {g.sourceIds.length}×
+                        </span>
+                        <span className="type-caption text-ink-muted">
+                          {shortDate(g.postedAt)} · {g.account}
+                        </span>
                       </span>
-                      <span className="type-caption text-ink-muted">
-                        {shortDate(g.postedAt)} · {g.account}
+                      <span className="flex items-center gap-3">
+                        <MoneyText cents={g.amountCents} />
+                        <input
+                          type="checkbox"
+                          aria-label={`Skip extras of ${g.merchant} on ${g.postedAt}`}
+                          className="size-5"
+                          checked={skipGroups.has(k)}
+                          onChange={(e) =>
+                            setSkipGroups((s) => {
+                              const n = new Set(s);
+                              if (e.target.checked) n.add(k);
+                              else n.delete(k);
+                              return n;
+                            })
+                          }
+                        />
                       </span>
-                    </span>
-                    <span className="flex items-center gap-3">
-                      <MoneyText cents={g.amountCents} />
-                      <input
-                        type="checkbox"
-                        aria-label={`Skip extras of ${g.merchant} on ${g.postedAt}`}
-                        className="size-5"
-                        checked={skipGroups.has(k)}
-                        onChange={(e) =>
-                          setSkipGroups((s) => {
-                            const n = new Set(s);
-                            if (e.target.checked) n.add(k);
-                            else n.delete(k);
-                            return n;
-                          })
-                        }
-                      />
-                    </span>
-                  </label>
-                );
-              })}
-            </Group>
-          )}
+                    </label>
+                  );
+                })}
+              </Fold>
+            )}
+            {(left > 0 || parsed.errors.length > 0) && (
+              <GroupRow
+                label="Left out"
+                hint={parsed.errors
+                  .slice(0, 2)
+                  .map((e) => `Line ${e.line}: ${e.message}`)
+                  .join(' · ')}
+              >
+                <span className="money text-ink-muted">{left + parsed.errors.length}</span>
+              </GroupRow>
+            )}
+          </Group>
 
-          <div className="mt-6">
-            <Button
-              className="w-full"
-              disabled={busy || plan.rows.length === 0}
-              onClick={() => run.mutate()}
-            >
-              {busy && progress
-                ? `Importing ${progress.done} / ${progress.total}…`
-                : `Import ${plan.rows.length - extras} transactions`}
-            </Button>
-            <p className="mt-2 px-1 type-caption text-ink-faint">
-              History only: no budget, carry or month-close changes. You can undo it below.
-            </p>
-          </div>
+          <Button
+            className="mt-6 w-full"
+            disabled={busy || plan.rows.length === 0}
+            onClick={() => run.mutate()}
+          >
+            {busy && progress ? `Importing ${progress.done} / ${progress.total}…` : 'Import'}
+          </Button>
         </>
       )}
 
@@ -390,6 +363,38 @@ export function MonarchImport() {
         </Group>
       )}
     </>
+  );
+}
+
+/** A summary row that opens to its detail; closed unless it needs a decision. */
+function Fold({
+  label,
+  summary,
+  start = false,
+  children,
+}: {
+  label: string;
+  summary: string;
+  start?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(start);
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex min-h-13 w-full items-center justify-between gap-4 px-4 py-3 text-left active:bg-sage-100"
+      >
+        <span>{label}</span>
+        <span className="flex items-center gap-2 text-ink-muted">
+          {summary}
+          <Chevron />
+        </span>
+      </button>
+      {open && <div className="divide-y divide-hairline border-t border-hairline">{children}</div>}
+    </div>
   );
 }
 
