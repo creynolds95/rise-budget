@@ -87,6 +87,7 @@
     touch-action: manipulation;
     overscroll-behavior: none;
     -webkit-text-size-adjust: 100%;
+    overflow-x: clip;
   }
   html[data-theme='light'] {
     color-scheme: light;

@@ -1,6 +1,6 @@
 import { isLiabilityKind, type AccountKind } from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
@@ -175,8 +175,9 @@ export function Accounts() {
 }
 
 /** Net worth over time (T40), reused on the Dashboard as well as here. */
-export function NetWorthSection() {
+export function NetWorthSection({ to }: { to?: string } = {}) {
   const today = useToday();
+  const navigate = useNavigate();
   const [range, setRange] = useState<Range>('6M');
   const start = rangeStart(range, today);
   const nw = useNetWorth(start, today);
@@ -195,7 +196,18 @@ export function NetWorthSection() {
   return (
     <>
       <h2 className="type-title">Net worth</h2>
-      <div className="mt-1 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+      {/* `to`: the whole tile opens that tab; the range chips keep working. */}
+      <div
+        {...(to
+          ? {
+              role: 'link',
+              onClick: (e: MouseEvent<HTMLDivElement>) => {
+                if (!(e.target as Element).closest('button')) navigate(to, { replace: true });
+              },
+            }
+          : {})}
+        className={`mt-1 overflow-hidden rounded-card bg-surface p-4 shadow-soft ${to ? 'cursor-pointer' : ''}`}
+      >
         <p className="type-display">
           {last ? (
             <MoneyText

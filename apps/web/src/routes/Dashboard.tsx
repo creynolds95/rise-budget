@@ -3,6 +3,7 @@ import { merchantName } from '../lib/merchant';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { NetWorthSection } from './Accounts';
+import { surplusTone } from '../lib/surplus';
 import { SummaryCard } from './Budget';
 import { SpendingSection } from '../components/SpendingSection';
 import { HealthNotes } from '../components/HealthNotes';
@@ -102,7 +103,12 @@ export function Dashboard() {
           ) : surplus.data.paySchedules.length === 0 ? (
             <p className="type-display text-ink-muted">Confirm your pay dates</p>
           ) : (
-            <MoneyText cents={surplus.data.freeToMoveCents} className="type-display" whole />
+            <MoneyText
+              cents={surplus.data.freeToMoveCents}
+              tone={surplusTone(surplus.data.freeToMoveCents)}
+              className="type-display"
+              whole
+            />
           )}
         </Link>
         {((queue.data?.count ?? 0) > 0 || p.period.needsRecalc) && (
@@ -137,7 +143,7 @@ export function Dashboard() {
       <section className="mt-8">
         <h2 className="type-title">Budget</h2>
         <div className="mt-2">
-          <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
+          <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} to="/budget" />
         </div>
       </section>
 
@@ -184,7 +190,7 @@ export function Dashboard() {
 
       {/* 5. Net worth trend */}
       <section className="mt-10">
-        <NetWorthSection />
+        <NetWorthSection to="/accounts" />
       </section>
 
       {(upcoming.length > 0 || broken.length > 0) && (

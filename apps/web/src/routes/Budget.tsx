@@ -224,45 +224,43 @@ export function Budget() {
   );
 }
 
-/** The collapsible "Summary" tile: Income and Expenses at a glance, before the group cards. */
+/** The "Summary" tile: Income and Expenses at a glance. `to` makes the tile open that tab. */
 export function SummaryCard({
   p,
   expenseCarriedCents,
+  to,
 }: {
   p: PeriodResponse;
   expenseCarriedCents: number;
+  to?: string;
 }) {
-  const [open, setOpen] = useState(true);
+  const navigate = useNavigate();
+  // The income categories are the plan (Paychecks is the source of truth); the period's own
+  // stored expected-income figure is only the fallback when none are planned.
+  const plannedIncome = p.categories
+    .filter((c) => c.groupKind === 'income')
+    .reduce((n, c) => n + c.plannedCents, 0);
   return (
-    <div className="rounded-card bg-surface shadow-soft">
-      <button
-        aria-expanded={open}
-        aria-label="Summary"
-        onClick={() => setOpen(!open)}
-        className="flex min-h-11 w-full items-center gap-1 px-4 pt-3 text-left"
-      >
-        <Disclosure open={open} />
-      </button>
-      {open && (
-        <div className="px-4 pb-1">
-          <SummaryRow
-            label="Income"
-            plannedCents={p.expectedIncomeCents}
-            filledCents={p.actualIncomeCents}
-            doneLabel="earned"
-            tick={p.pace}
-            good
-          />
-          <SummaryRow
-            label="Expenses"
-            plannedCents={p.totals.plannedCents}
-            filledCents={p.totals.spentCents}
-            doneLabel="spent"
-            tick={p.pace}
-            carriedCents={expenseCarriedCents}
-          />
-        </div>
-      )}
+    <div
+      {...(to ? { role: 'link', onClick: () => navigate(to, { replace: true }) } : {})}
+      className={`rounded-card bg-surface px-4 py-1 shadow-soft ${to ? 'cursor-pointer active:bg-sage-100' : ''}`}
+    >
+      <SummaryRow
+        label="Income"
+        plannedCents={plannedIncome || p.expectedIncomeCents}
+        filledCents={p.actualIncomeCents}
+        doneLabel="earned"
+        tick={p.pace}
+        good
+      />
+      <SummaryRow
+        label="Expenses"
+        plannedCents={p.totals.plannedCents}
+        filledCents={p.totals.spentCents}
+        doneLabel="spent"
+        tick={p.pace}
+        carriedCents={expenseCarriedCents}
+      />
     </div>
   );
 }
