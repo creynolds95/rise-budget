@@ -2,6 +2,8 @@
 export interface LinePoint {
   cents: number;
   inferred: boolean;
+  /** What a touch on this point reads out, e.g. the date. */
+  label?: string;
 }
 
 export interface Segment {
@@ -50,6 +52,25 @@ export function lineSegments(
     }
   }
   return out;
+}
+
+/** Every point's position in the same box `lineSegments` draws into. */
+export function linePositions(
+  points: readonly LinePoint[],
+  width: number,
+  height: number,
+  pad = 4,
+): [number, number][] {
+  return lineSegments(points, width, height, pad).flatMap((s, i) =>
+    // A segment after the first starts on the previous one's last point; count it once.
+    i === 0 ? s.points : s.points.slice(1),
+  );
+}
+
+/** Which of `count` evenly spaced points a touch at `fraction` (0–1) across the chart is on. */
+export function nearestIndex(fraction: number, count: number): number {
+  if (count <= 1) return 0;
+  return Math.min(count - 1, Math.max(0, Math.round(fraction * (count - 1))));
 }
 
 /** Where $0 falls on a `lineSegments` chart, so it can be drawn as a reference line. */

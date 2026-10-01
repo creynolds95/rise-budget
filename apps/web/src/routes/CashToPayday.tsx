@@ -453,31 +453,6 @@ export function CashToPayday() {
                       ))}
                   </>
                 )}
-
-                {dismissed.length > 0 && (
-                  <>
-                    <h3 className="mt-6 type-title border-b border-hairline pb-3">
-                      No longer counted
-                    </h3>
-                    {dismissed.map((d) => (
-                      <div
-                        key={d.merchant}
-                        className="flex items-center justify-between gap-4 border-b border-hairline py-3"
-                      >
-                        <span className="text-ink-muted">{d.displayName}</span>
-                        <button
-                          type="button"
-                          className="type-caption text-sage-700"
-                          onClick={() =>
-                            setDismissed.mutate(dismissed.filter((x) => x.merchant !== d.merchant))
-                          }
-                        >
-                          Restore
-                        </button>
-                      </div>
-                    ))}
-                  </>
-                )}
               </>
             ),
           },

@@ -94,155 +94,158 @@ export function AccountDetail() {
         <Chart
           kind="line"
           label={`${a.name} balance over time. Dashed where estimated between reports.`}
-          points={known.map((p) => ({ cents: p.netWorthCents, inferred: p.inferred }))}
+          points={known.map((p) => ({
+            cents: p.netWorthCents,
+            inferred: p.inferred,
+            label: shortDate(p.date),
+          }))}
           range={range}
           onRange={setRange}
         />
       }
+      factsTitle="Transactions"
       facts={
-        <>
-          {manual && (
-            <EditRow
-              label="Name"
-              field={<NameField value={a.name} onCommit={(name) => void patch({ name })} />}
-            />
-          )}
-          <EditRow
-            label="Type"
-            field={
-              <select
-                aria-label="Account type"
-                className="min-h-11 rounded-input border border-hairline bg-surface px-2"
-                value={a.kind}
-                onChange={(e) => void patch({ kind: e.target.value })}
-              >
-                <option value="depository">Cash</option>
-                <option value="credit">Credit card</option>
-                <option value="loan">Loan</option>
-                <option value="investment">Investment</option>
-                <option value="other">Other</option>
-              </select>
-            }
-          />
-          {manual && (
-            <EditRow
-              label={owes ? 'Owed today' : 'Balance today'}
-              field={
-                <MoneyField
-                  label="Balance today"
-                  cents={owes ? -a.balanceCents : a.balanceCents}
-                  onCommit={async (v) => {
-                    try {
-                      await api('POST', `/accounts/${id}/snapshots`, {
-                        asOf: today,
-                        balanceCents: owes ? -v : v,
-                      });
-                      await Promise.all([
-                        invalidate(),
-                        qc.invalidateQueries({ queryKey: ['snapshots', id] }),
-                      ]);
-                    } catch (e) {
-                      setError(e instanceof ApiError ? e.message : 'Could not save.');
-                    }
-                  }}
-                />
-              }
-            />
-          )}
-          {a.kind === 'loan' && (
-            <>
+        manual ? undefined : (
+          <>
+            {list.length === 0 && <p className="py-3 text-ink-muted">None yet.</p>}
+            {list.slice(0, 5).map((t) => (
+              <TxnRow key={t.id} t={t} from={`${a.name}|/accounts/${id}`} />
+            ))}
+            {list.length > 5 && (
+              <NavRow to={`/transactions?account=${id}`} label="All transactions" />
+            )}
+          </>
+        )
+      }
+      related={{
+        title: 'Summary',
+        children: (
+          <>
+            {manual && (
               <EditRow
-                label="Monthly payment"
-                field={
-                  <MoneyField
-                    label="Monthly payment"
-                    cents={a.expectedPaymentCents ?? 0}
-                    onCommit={(v) => void patch({ expectedPaymentCents: v || null })}
-                  />
-                }
+                label="Name"
+                field={<NameField value={a.name} onCommit={(name) => void patch({ name })} />}
               />
-              <EditRow
-                label="Payment day"
-                field={
-                  <select
-                    aria-label="Payment day"
-                    className="min-h-11 rounded-input border border-hairline bg-surface px-2"
-                    value={a.paymentDay ?? ''}
-                    onChange={(e) =>
-                      void patch({ paymentDay: e.target.value ? Number(e.target.value) : null })
-                    }
-                  >
-                    <option value="">Not set</option>
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                      <option key={d} value={d}>
-                        Day {d}
-                      </option>
-                    ))}
-                  </select>
-                }
-              />
-            </>
-          )}
-          {!manual && (
+            )}
             <EditRow
-              label="Updates every"
+              label="Type"
               field={
                 <select
-                  aria-label="Sync cadence"
+                  aria-label="Account type"
                   className="min-h-11 rounded-input border border-hairline bg-surface px-2"
-                  value={a.syncCadenceHours ?? 24}
-                  onChange={(e) => void patch({ syncCadenceHours: Number(e.target.value) })}
+                  value={a.kind}
+                  onChange={(e) => void patch({ kind: e.target.value })}
                 >
-                  <option value={24}>Day</option>
-                  <option value={168}>Week</option>
-                  <option value={720}>Month</option>
+                  <option value="depository">Cash</option>
+                  <option value="credit">Credit card</option>
+                  <option value="loan">Loan</option>
+                  <option value="investment">Investment</option>
+                  <option value="other">Other</option>
                 </select>
               }
             />
-          )}
-          <EditRow
-            label="Counts toward budget"
-            field={
-              <Toggle
-                label="Counts toward budget"
-                on={a.includeInBudget}
-                onChange={(v) => void patch({ includeInBudget: v })}
+            {manual && (
+              <EditRow
+                label={owes ? 'Owed today' : 'Balance today'}
+                field={
+                  <MoneyField
+                    label="Balance today"
+                    cents={owes ? -a.balanceCents : a.balanceCents}
+                    onCommit={async (v) => {
+                      try {
+                        await api('POST', `/accounts/${id}/snapshots`, {
+                          asOf: today,
+                          balanceCents: owes ? -v : v,
+                        });
+                        await Promise.all([
+                          invalidate(),
+                          qc.invalidateQueries({ queryKey: ['snapshots', id] }),
+                        ]);
+                      } catch (e) {
+                        setError(e instanceof ApiError ? e.message : 'Could not save.');
+                      }
+                    }}
+                  />
+                }
               />
-            }
-          />
-          <EditRow
-            label="Counts toward net worth"
-            field={
-              <Toggle
-                label="Counts toward net worth"
-                on={a.includeInNetWorth}
-                onChange={(v) => void patch({ includeInNetWorth: v })}
+            )}
+            {a.kind === 'loan' && (
+              <>
+                <EditRow
+                  label="Monthly payment"
+                  field={
+                    <MoneyField
+                      label="Monthly payment"
+                      cents={a.expectedPaymentCents ?? 0}
+                      onCommit={(v) => void patch({ expectedPaymentCents: v || null })}
+                    />
+                  }
+                />
+                <EditRow
+                  label="Payment day"
+                  field={
+                    <select
+                      aria-label="Payment day"
+                      className="min-h-11 rounded-input border border-hairline bg-surface px-2"
+                      value={a.paymentDay ?? ''}
+                      onChange={(e) =>
+                        void patch({ paymentDay: e.target.value ? Number(e.target.value) : null })
+                      }
+                    >
+                      <option value="">Not set</option>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>
+                          Day {d}
+                        </option>
+                      ))}
+                    </select>
+                  }
+                />
+              </>
+            )}
+            {!manual && (
+              <EditRow
+                label="Updates every"
+                field={
+                  <select
+                    aria-label="Sync cadence"
+                    className="min-h-11 rounded-input border border-hairline bg-surface px-2"
+                    value={a.syncCadenceHours ?? 24}
+                    onChange={(e) => void patch({ syncCadenceHours: Number(e.target.value) })}
+                  >
+                    <option value={24}>Day</option>
+                    <option value={168}>Week</option>
+                    <option value={720}>Month</option>
+                  </select>
+                }
               />
-            }
-          />
-          {a.institutionName && <StaticRow label="Institution" value={a.institutionName} />}
-          <StaticRow label="Source" value={manual ? 'Manual' : 'SimpleFIN'} />
-          {error && <p className="py-2 text-clay">{error}</p>}
-        </>
-      }
-      related={
-        manual
-          ? undefined
-          : {
-              title: 'Recent transactions',
-              children: (
-                <>
-                  {list.length === 0 && <p className="py-3 text-ink-muted">None yet.</p>}
-                  {list.slice(0, 5).map((t) => (
-                    <TxnRow key={t.id} t={t} from={`${a.name}|/accounts/${id}`} />
-                  ))}
-                  {list.length > 5 && (
-                    <NavRow to={`/transactions?account=${id}`} label="All transactions" />
-                  )}
-                </>
-              ),
-            }
-      }
+            )}
+            <EditRow
+              label="Counts toward budget"
+              field={
+                <Toggle
+                  label="Counts toward budget"
+                  on={a.includeInBudget}
+                  onChange={(v) => void patch({ includeInBudget: v })}
+                />
+              }
+            />
+            <EditRow
+              label="Counts toward net worth"
+              field={
+                <Toggle
+                  label="Counts toward net worth"
+                  on={a.includeInNetWorth}
+                  onChange={(v) => void patch({ includeInNetWorth: v })}
+                />
+              }
+            />
+            {a.institutionName && <StaticRow label="Institution" value={a.institutionName} />}
+            <StaticRow label="Source" value={manual ? 'Manual' : 'SimpleFIN'} />
+            {error && <p className="py-2 text-clay">{error}</p>}
+          </>
+        ),
+      }}
       manage={
         manual ? (
           <AccountManage

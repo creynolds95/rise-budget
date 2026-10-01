@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { allowsPercentChange, lineSegments, rangeStart, sharedScalePaths, zeroY } from './chart';
+import {
+  allowsPercentChange,
+  linePositions,
+  lineSegments,
+  nearestIndex,
+  rangeStart,
+  sharedScalePaths,
+  zeroY,
+} from './chart';
 
 describe('line segments', () => {
   it('splits measured and inferred runs; a step touching an inferred point is dashed', () => {
@@ -100,5 +108,23 @@ describe('sharedScalePaths', () => {
   it('handles empty and flat input without dividing by zero', () => {
     expect(sharedScalePaths([[]], 30, 10, 10)).toEqual([{ points: [], last: null }]);
     expect(sharedScalePaths([[0]], 1, 10, 10, 0)).toEqual([{ points: [[5, 10]], last: [5, 10] }]);
+  });
+});
+
+describe('touching a line chart', () => {
+  it('positions every point once, across segment boundaries', () => {
+    const pts = [
+      { cents: 0, inferred: false },
+      { cents: 100, inferred: true },
+      { cents: 50, inferred: false },
+    ];
+    expect(linePositions(pts, 100, 100, 0)).toHaveLength(3);
+    expect(linePositions([], 100, 100)).toEqual([]);
+  });
+  it('picks the nearest point and clamps at the ends', () => {
+    expect(nearestIndex(0.5, 5)).toBe(2);
+    expect(nearestIndex(-1, 5)).toBe(0);
+    expect(nearestIndex(2, 5)).toBe(4);
+    expect(nearestIndex(0.5, 1)).toBe(0);
   });
 });

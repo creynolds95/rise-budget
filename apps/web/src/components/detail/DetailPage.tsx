@@ -19,6 +19,8 @@ export interface DetailPageProps {
   identity?: { label: string; hero: ReactNode; context?: ReactNode } | undefined;
   shape?: ReactNode;
   facts?: ReactNode;
+  /** A small header over the facts tile, when the page has more than one tile to tell apart. */
+  factsTitle?: ReactNode;
   /** One card, or several side by side in the same zone (e.g. income and expenses split out). */
   related?:
     | { title: ReactNode; children: ReactNode }
@@ -64,13 +66,16 @@ export function DetailPage(p: DetailPageProps) {
       )}
       {p.facts && (
         <section data-zone="facts" className="gutter">
+          {p.factsTitle && (
+            <h2 className="mb-2 type-label font-semibold text-ink-muted">{p.factsTitle}</h2>
+          )}
           <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">{p.facts}</div>
         </section>
       )}
       {p.related &&
         (Array.isArray(p.related) ? p.related : [p.related]).map((r, i) => (
           <section key={i} data-zone="related" className="gutter pt-8">
-            <h2 className="type-label text-ink-muted">{r.title}</h2>
+            <h2 className="type-label font-semibold text-ink-muted">{r.title}</h2>
             <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
               {r.children}
             </div>

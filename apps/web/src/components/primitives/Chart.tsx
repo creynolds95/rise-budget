@@ -1,6 +1,9 @@
+import { useState, type PointerEvent } from 'react';
 import {
   RANGES,
+  linePositions,
   lineSegments,
+  nearestIndex,
   sharedScalePaths,
   zeroY,
   type LinePoint,
@@ -24,9 +27,34 @@ export function Chart(
   ) & { label: string; range?: Range; onRange?: (r: Range) => void },
 ) {
   const zeroAt = props.kind === 'line' ? zeroY(props.points, H) : null;
+  const [active, setActive] = useState<number | null>(null);
+  const linePoints = props.kind === 'line' ? props.points : [];
+  const xy = props.kind === 'line' ? linePositions(linePoints, W, H) : [];
+  const scrub = (e: PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setActive(nearestIndex((e.clientX - r.left) / Math.max(1, r.width), linePoints.length));
+  };
+  const hit = active !== null ? linePoints[active] : undefined;
+  const at = active !== null ? xy[active] : undefined;
   return (
     <figure className="m-0">
-      <div className="relative">
+      {/* Touch and drag along a line chart to read the balance on that date. */}
+      <div
+        className="relative select-none"
+        {...(props.kind === 'line' && linePoints.length > 0
+          ? {
+              style: { touchAction: 'pan-y' },
+              onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
+                if (e.pointerType !== 'mouse') e.currentTarget.setPointerCapture(e.pointerId);
+                scrub(e);
+              },
+              onPointerMove: scrub,
+              onPointerUp: () => setActive(null),
+              onPointerCancel: () => setActive(null),
+              onPointerLeave: () => setActive(null),
+            }
+          : {})}
+      >
         <svg
           viewBox={`0 0 ${W} ${H}`}
           role="img"
@@ -74,6 +102,31 @@ export function Chart(
             ))}
           {props.kind === 'bar' && bars(props.bars)}
         </svg>
+        {hit && at && (
+          <>
+            <span
+              aria-hidden
+              className="pointer-events-none absolute top-0 h-full w-px bg-ink-faint"
+              style={{ left: `${(at[0] / W) * 100}%` }}
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sage-700 ring-2 ring-surface"
+              style={{ left: `${(at[0] / W) * 100}%`, top: `${(at[1] / H) * 100}%` }}
+            />
+            <span
+              aria-live="polite"
+              className="pointer-events-none absolute -top-1 z-10 -translate-y-full whitespace-nowrap rounded-input bg-ink px-2 py-1 type-caption text-surface money"
+              style={{
+                left: `${Math.min(80, Math.max(20, (at[0] / W) * 100))}%`,
+                transform: 'translate(-50%, -100%)',
+              }}
+            >
+              {hit.label ? `${hit.label} · ` : ''}
+              {formatCents(hit.cents)}
+            </span>
+          </>
+        )}
         {/* Plain HTML, not SVG text: the svg above stretches non-uniformly
             (preserveAspectRatio="none"), which would distort glyphs. Height scale is 1:1
             (the box is always h-40 = H), so a top percentage lines up with the svg's y. */}
