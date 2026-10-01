@@ -141,17 +141,6 @@ async function ownedIds(
   return new Set(results.map((r) => r.id));
 }
 
-async function closedPeriods(userId: UserId, db: D1Database, ids: string[]): Promise<Set<string>> {
-  const { results } = await db
-    .prepare(
-      `SELECT id FROM period WHERE user_id = ?1 AND status = 'closed'
-         AND id IN (SELECT value FROM json_each(?2))`,
-    )
-    .bind(userId, JSON.stringify([...new Set(ids)]))
-    .all<{ id: string }>();
-  return new Set(results.map((r) => r.id));
-}
-
 async function presentSourceIds(
   userId: UserId,
   db: D1Database,
@@ -180,7 +169,7 @@ export async function importMonarchRows(
   b: MonarchRowsBody,
   window: { from: string; to: string },
 ): Promise<{ imported: number; duplicate: number; overlap: number; rejected: number }> {
-  const [accounts, categories, closed] = await Promise.all([
+  const [accounts, categories] = await Promise.all([
     ownedIds(
       userId,
       db,
@@ -193,19 +182,13 @@ export async function importMonarchRows(
       'category',
       b.rows.map((r) => r.categoryId),
     ),
-    closedPeriods(
-      userId,
-      db,
-      b.rows.map((r) => periodOf(r.postedAt)),
-    ),
   ]);
   const usable = b.rows.filter(
     (r) =>
       accounts.has(r.accountId) &&
       categories.has(r.categoryId) &&
       r.postedAt >= window.from &&
-      r.postedAt <= window.to &&
-      !closed.has(periodOf(r.postedAt)),
+      r.postedAt <= window.to,
   );
   const rejected = b.rows.length - usable.length;
   if (usable.length === 0) return { imported: 0, duplicate: 0, overlap: 0, rejected };

@@ -7,7 +7,6 @@ import {
   AuditAction,
   CategoryGroupKind,
   ImportFormat,
-  PeriodStatus,
   RecurringCadence,
   RecurringStatus,
   ReviewState,
@@ -23,7 +22,6 @@ import {
 /** Entity shapes as the API speaks them (camelCase, booleans as booleans). */
 
 export const UserSettings = z.object({
-  rollIncomeVariance: z.boolean().default(true),
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
   planChangesApplyToFuture: z.boolean().default(false),
@@ -113,12 +111,7 @@ export type Category = z.infer<typeof Category>;
 
 export const Period = z.object({
   id: PeriodId,
-  status: PeriodStatus,
   expectedIncomeCents: Cents,
-  returnedSurplusCents: Cents,
-  needsRecalc: z.boolean(),
-  recalcDeltaCents: Cents,
-  closedAt: IsoDateTime.nullable(),
 });
 export type Period = z.infer<typeof Period>;
 

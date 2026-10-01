@@ -138,10 +138,9 @@ describe('T25 categorisation', () => {
     );
   });
 
-  it('bulk-accept batches a closed-period row: recalc flag set, aggregates refreshed', async () => {
+  it('bulk-accept batches a past-month row: aggregates refreshed', async () => {
     const s = await setup();
     await s.api('PATCH', '/periods/2026-08', { expectedIncomeCents: 500_000 });
-    await s.api('POST', '/periods/2026-08/close', {});
 
     const lateId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -152,7 +151,7 @@ describe('T25 categorisation', () => {
     )
       .bind(lateId, s.userId, s.card.id, now)
       .run();
-    // A rule refreshes suggestions for every queued row, including this closed-month one.
+    // A rule refreshes suggestions for every queued row, including this past-month one.
     await s.api('POST', '/rules', {
       matchField: 'merchant',
       matchType: 'equals',
@@ -176,13 +175,6 @@ describe('T25 categorisation', () => {
       reviewState: 'reviewed',
       splits: [{ categoryId: s.gas.id, amountCents: 2_000 }],
     });
-
-    const aug = await env.DB.prepare(
-      "SELECT needs_recalc, recalc_delta_cents FROM period WHERE user_id = ?1 AND id = '2026-08'",
-    )
-      .bind(s.userId)
-      .first<{ needs_recalc: number; recalc_delta_cents: number }>();
-    expect(aug).toMatchObject({ needs_recalc: 1, recalc_delta_cents: 2_000 });
 
     const agg = await env.DB.prepare(
       "SELECT spent_cents FROM period_aggregate WHERE user_id = ?1 AND period_id = '2026-08' AND category_id = ?2",

@@ -16,10 +16,8 @@ describe('buildPeriodView', () => {
   it('composes category math, pace, pool and totals', () => {
     const v = buildPeriodView({
       periodId: '2026-09',
-      status: 'open',
       today: '2026-09-15',
       expectedIncomeCents: 500_000,
-      returnedSurplusPrevCents: 10_000,
       categories: [
         cat({
           categoryId: 'eat',
@@ -39,7 +37,7 @@ describe('buildPeriodView', () => {
       ],
     });
     expect(v.pace).toEqual({ elapsedDays: 15, totalDays: 30 });
-    expect(v.poolCents).toBe(500_000 + 10_000 - 188_000);
+    expect(v.poolCents).toBe(500_000 - 188_000);
     expect(v.actualIncomeCents).toBe(260_000);
     expect(v.totals).toEqual({
       plannedCents: 188_000,
@@ -62,10 +60,8 @@ describe('buildPeriodView', () => {
   it('an empty period: pool equals income, nothing divides by zero (edge 14)', () => {
     const v = buildPeriodView({
       periodId: '2026-02',
-      status: 'open',
       today: '2026-02-01',
       expectedIncomeCents: 520_000,
-      returnedSurplusPrevCents: 0,
       categories: [],
     });
     expect(v.poolCents).toBe(520_000);

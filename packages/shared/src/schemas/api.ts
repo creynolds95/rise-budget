@@ -27,8 +27,6 @@ export const ErrorCode = z.enum([
   'CONFLICT',
   'INSUFFICIENT_POOL',
   'SPLITS_DO_NOT_SUM',
-  'PERIOD_NOT_ENDED',
-  'PERIOD_NOT_READY',
   'CATEGORY_IN_USE',
   'PERIOD_CLOSED',
   'NOTHING_TO_FORGIVE',
@@ -54,7 +52,6 @@ export type ApiError = z.infer<typeof ApiError>;
 // PATCH bodies are written out without `.default()`s: `.partial()` on a defaulted field
 // re-applies the default when the key is absent, silently resetting the user's choice.
 export const PatchSettingsBody = z.object({
-  rollIncomeVariance: z.boolean().optional(),
   appLock: AppLock.optional(),
   planChangesApplyToFuture: z.boolean().optional(),
   cushionCents: Cents.optional(),
@@ -186,11 +183,6 @@ export const RunSyncBody = z.object({
 });
 
 export const PatchPeriodBody = z.object({ expectedIncomeCents: Cents.nonnegative() });
-
-export const ClosePeriodBody = z.object({
-  /** Close even though some accounts haven't reported past period end (edge 10c). */
-  override: z.boolean().default(false),
-});
 
 export const FundingSource = z.object({ fromCategoryId: Id, amountCents: Cents.positive() });
 export type FundingSource = z.infer<typeof FundingSource>;

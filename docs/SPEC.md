@@ -61,110 +61,68 @@ spent     = SUM(split.amount_cents) for splits in this category and period
 remaining = available - spent
 ```
 
-`carried_in` is a **stored fact**, not a computed value. It is written once when the
-previous period closes and never recomputed implicitly (see §2.4).
+`carried_in` is **computed** from the month before (see §2.4), never stored.
 
 ### 2.2 Rollover policy
 
 Each category has `rollover_policy ∈ { roll, return_to_pool }`, changeable at any time.
+In the UI this is one switch: **Rolls over to next month**.
 
-**The policy governs surplus only. Deficits always carry.** This is a deliberate product
-decision: overspending is a debt you repay, not something you can configure away.
-
-At close of period `P`, for each category:
+**Only a rolling category carries, in both directions** (Caleb, 2026-10-01). Credit or debit,
+a category that is not marked to roll starts every month fresh: its leftover and its overspend
+both stay in the month they happened in. Neither goes to the pool.
 
 ```
-if remaining < 0:
-    carried_out = remaining                 # ALWAYS, regardless of policy
-elif policy == roll:
-    carried_out = remaining
-elif policy == return_to_pool:
-    carried_out = 0
-    contributes `remaining` to returned_surplus(P)
+carried_out(c, P) = remaining(c, P)   if policy == roll
+                  = 0                 otherwise
 ```
 
 **Defaults on category creation:** discretionary categories default to `roll`; categories
 flagged `is_bill` default to `return_to_pool`. The user can override either.
 
-**Changing a policy never rewrites history.** It affects the next close only. A separate,
-explicit `POST /periods/{id}/recalculate` exists for when the user genuinely wants history
-restated — it is never triggered automatically.
+**Income never rolls.** A month that earned more or less than planned changes nothing about
+the next one.
 
-### 2.3 The unallocated pool
-
-```
-pool(P) = expected_income(P)
-        + returned_surplus(P-1)
-        - SUM(planned(c, P) for all expense categories c)
-```
-
-The pool is **derived**, never stored. A reallocation between two categories leaves
-`SUM(planned)` unchanged and therefore does not move the pool — which is correct and is
-why reallocations are a *log of why planned changed*, not a separate ledger.
-
-`pool` may be negative. A negative pool means over-allocated and must be shown plainly
-("$240 over-allocated"), not hidden or clamped to zero.
-
-`returned_surplus(P)` also includes income variance when
-`settings.roll_income_variance` is on (default on):
+### 2.3 The unallocated pool ("Left to budget")
 
 ```
-returned_surplus(P) = SUM(surplus from return_to_pool categories)
-                    + (actual_income(P) - expected_income(P))
+pool(P) = expected_income(P) - SUM(planned(c, P) for all expense categories c)
 ```
 
-### 2.4 Period close
+The pool is **derived**, never stored, and shown at the top of the Budget screen as
+**Left to budget** (sage when positive, plain at $0) or **Over budget** (clay when negative).
+A reallocation between two categories leaves `SUM(planned)` unchanged and therefore does not
+move the pool.
 
-A period is `open` or `closed`. Closing is what computes and freezes `carried_in` for the
-next period.
+`pool` may be negative. A negative pool means over-allocated and must be shown plainly, not
+hidden or clamped to zero. Nothing flows into the pool from the month before.
 
-**Close is lazy and explicit, never a silent background job.** A period becomes eligible
-to close once the calendar month has ended. The app prompts; the user confirms.
+### 2.4 Live rollover (there is no month close)
 
-Why not auto-close on the 1st: Apple Card syncs monthly, so on the 1st the previous month
-is usually incomplete. Auto-closing would freeze a number that is knowably wrong.
-
-**Close readiness.** A period is not *offered* for closing until every account with
-`include_in_budget = 1` has reported past the period boundary
-(`account.last_synced_at > period_end`). Until then the close control explains what it is
-waiting for rather than being silently unavailable:
-
-> September can't close yet — Apple Card hasn't reported past Sep 30.
-
-The user may override and close anyway; late arrivals then follow §2.5. This turns the
-monthly-sync account from a recurring surprise into an expected, named wait.
+Months are never closed. Each month's `carried_in` is computed from the month before it:
 
 ```
-close(P):
-  require P.status == open
-  require P is in the past
-  for each category c:
-      compute carried_out(c, P) per §2.2
-      write allocation(P+1, c).carried_in_cents = carried_out(c, P)
-  write P.returned_surplus_cents
-  P.status = closed
+carried_in(c, P) = carried_out(c, P-1) + carry_adjust(c, P)
+available        = carried_in + planned
+remaining        = available - spent
 ```
 
-Closing is **idempotent** and wrapped in a single transaction.
+The chain starts at **October 2026** (`ROLLOVER_START`). Nothing carries into October 2026 or
+out of any earlier month: those months are history (this is where the Monarch import lives),
+and nothing about them can change what a later month carries.
+
+The rollover therefore happens by itself on the 1st, and any change to a past month — a
+recategorisation, a late-posting transaction, an edited plan — flows forward into every later
+month on the next read. This replaces the earlier close / recalculate flow, where carry was
+frozen and a banner asked the user to restate it.
+
+`carry_adjust` is the only stored carry figure: the amount a deficit forgiveness (§2.8) added.
 
 ### 2.5 Late-arriving transactions (the Apple Card problem)
 
-A transaction may post into a period that is already closed. This is normal, not an error.
-
-```
-on insert/update of a split whose period is closed:
-    period.needs_recalc = true
-    period.recalc_delta_cents += <change>
-```
-
-The UI surfaces this as a dismissible banner on the affected month:
-
-> **September changed.** $412.30 of Apple Card spending arrived after this month closed.
-> [ Recalculate carry-forward ]  [ Leave as is ]
-
-Recalculating re-runs `close(P)` for `P` and cascades forward through every subsequent
-closed period, in order. Leaving it as-is keeps the frozen numbers and clears the flag.
-**Never recalculate without the user saying so.**
+A transaction may post into a month that has already ended. This is normal, not an error. The
+month's spending and every later month's carry simply read the new numbers; there is nothing
+to confirm and no banner.
 
 ### 2.6 Reallocation
 
@@ -233,10 +191,11 @@ Never estimate the missing amount. State what is missing.
 
 A category can get stuck permanently underwater. There is a deliberate escape hatch:
 
-`POST /categories/{id}/forgive` — zeroes a negative `carried_in` for the current open
-period, writing an audit row with the amount and the user's reason. It appears in the
-category's history. It lives in the **Manage** zone of the category detail page, styled as
-a destructive-adjacent action, and requires confirmation naming the amount.
+`POST /categories/{id}/forgive` — adds back a negative `carried_in` for the current month by
+writing a `carry_adjust` that brings it to zero, plus an audit row with the amount and the
+user's reason. Later months then carry from the adjusted figure. It lives in the **Manage**
+zone of the category detail page, styled as a destructive-adjacent action, and requires
+confirmation naming the amount.
 
 ### 2.9 Plan defaults ("apply to all future months")
 
@@ -617,14 +576,14 @@ The PWA must be readable offline — the user checks it at arbitrary times.
 | 2 | Re-import an overlapping CSV date range | Zero duplicates |
 | 3 | Credit card payment from checking | Transfer; excluded from spend |
 | 4 | Pending becomes posted with a different amount | Row updated in place; category/notes/review state preserved |
-| 5 | Transaction posts into a closed period | `needs_recalc` set; nothing recalculated automatically |
-| 6 | Rollover policy changed after a close | History unchanged; next close uses the new policy |
-| 7 | Category with negative `carried_in` | Deficit carries regardless of policy |
+| 5 | Transaction posts into a past month | That month's spending and every later month's carry read the new numbers; nothing to confirm |
+| 6 | Rollover policy changed | Applies across the whole chain from October 2026 |
+| 7 | Overspent category | Carries only if it is marked to roll; otherwise it resets next month |
 | 8 | Reallocation exceeding pool | Funding source required before commit |
 | 9 | Fixed-shape category on day 1 | Pace does not report "overspent" |
 | 10 | Monthly-cadence account 20 days since sync | **Not** marked stale — within its expected cadence |
 | 10b | Monthly-cadence account 45 days since sync | Marked stale with reason; no estimate of missing spend |
-| 10c | Close attempted before an account reports past period end | Close explains what it is waiting for; override permitted |
+| 10c | Account has not reported past month end | Not applicable: there is no close to wait on |
 | 11 | Split amounts not summing to parent | Rejected with a clear error |
 | 12 | Sync run repeated over the same window | Idempotent, zero new rows |
 | 13 | Refund posted to a category | Reduces `spent`; may push `remaining` positive |

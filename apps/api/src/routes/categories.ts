@@ -1,4 +1,4 @@
-import { categoryDefaults, forgiveDeficit } from '@rise/shared/budget';
+import { categoryDefaults, forgiveDeficit, resolvePlanned } from '@rise/shared/budget';
 import {
   CreateCategoryBody,
   CreateCategoryGroupBody,
@@ -12,7 +12,7 @@ import {
   archiveGroup,
   categoryHistory,
   categoryMoneyInOpenMonths,
-  clearCarriedInStmt,
+  forgiveCarryStmt,
   clearCategoryOpenAllocationsStmt,
   createCategory,
   createGroup,
@@ -20,7 +20,6 @@ import {
   ensureCatchallCategory,
   getCategory,
   getGroup,
-  getPeriod,
   getUser,
   groupHasActiveCategories,
   groupHasCategories,
@@ -36,6 +35,7 @@ import {
 } from '../db';
 import type { AppEnv } from '../env';
 import { localToday } from '../lib/dates';
+import { loadRollover } from '../lib/rollover';
 import { AppError } from '../lib/errors';
 import { body } from '../lib/validate';
 
@@ -135,7 +135,9 @@ categories.delete('/:id', async (c) => {
       'CONFLICT',
       `${cat.name} is the fallback category and can't be deleted.`,
     );
-  const inUse = await categoryMoneyInOpenMonths(userId, db, id);
+  const user = await getUser(userId, db);
+  const thisMonth = localToday(user?.timezone ?? 'America/Chicago').slice(0, 7);
+  const inUse = await categoryMoneyInOpenMonths(userId, db, id, thisMonth);
   const reassign = c.req.query('reassign') === 'true';
   if (inUse && !reassign) {
     throw new AppError(
@@ -150,8 +152,8 @@ categories.delete('/:id', async (c) => {
   let transactionsMoved = 0;
   if (inUse && reassign) {
     const catchall = await ensureCatchallCategory(userId, db);
-    const moved = await reassignOpenCategoryStmts(userId, db, id, catchall.id);
-    stmts.push(clearCategoryOpenAllocationsStmt(userId, db, id), ...moved.stmts);
+    const moved = await reassignOpenCategoryStmts(userId, db, id, catchall.id, thisMonth);
+    stmts.push(clearCategoryOpenAllocationsStmt(userId, db, id, thisMonth), ...moved.stmts);
     transactionsMoved = moved.movedCount;
   }
   await db.batch(stmts);
@@ -188,7 +190,18 @@ categories.get('/:id/history', async (c) => {
     const [y, m] = [Number(from.slice(0, 4)), Number(from.slice(5, 7))];
     from = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
   }
-  return c.json(await categoryHistory(userId, c.env.DB, id, from, to, planDefaultOf(cat)));
+  const rolled = await loadRollover(c.env, userId, to);
+  return c.json(
+    await categoryHistory(
+      userId,
+      c.env.DB,
+      id,
+      from,
+      to,
+      planDefaultOf(cat),
+      (periodId) => rolled.get(periodId)?.carriedIn.get(id) ?? 0,
+    ),
+  );
 });
 
 /**
@@ -204,34 +217,39 @@ categories.post('/:id/forgive', async (c) => {
   const b = await body(c, ForgiveBody);
   const user = await getUser(userId, db);
   const periodId = localToday(user?.timezone ?? 'America/Chicago').slice(0, 7);
-  const [period, allocs] = await Promise.all([
-    getPeriod(userId, db, periodId),
+  const [cat, allocs, rolled] = await Promise.all([
+    getCategory(userId, db, id),
     listAllocations(userId, db, periodId),
+    loadRollover(c.env, userId, periodId),
   ]);
-  const carried = allocs.find((a) => a.category_id === id)?.carried_in_cents ?? 0;
+  const carried = rolled.get(periodId)?.carriedIn.get(id) ?? 0;
   const r = forgiveDeficit({
     categoryId: id,
     periodId,
-    periodStatus: period?.status ?? 'open',
     carriedInCents: carried,
     confirmedAmountCents: b.amountCents,
     reason: b.reason,
   });
   if (!r.ok) {
-    const status = r.code === 'PERIOD_CLOSED' || r.code === 'NOTHING_TO_FORGIVE' ? 409 : 422;
+    const status = r.code === 'NOTHING_TO_FORGIVE' ? 409 : 422;
     const code = r.code === 'REASON_REQUIRED' ? 'BAD_REQUEST' : r.code;
     throw new AppError(
       status,
       code,
       {
-        PERIOD_CLOSED: `${periodId} is closed`,
         NOTHING_TO_FORGIVE: 'There is no carried deficit to forgive',
         AMOUNT_MISMATCH: 'The amount must match the carried deficit exactly',
         REASON_REQUIRED: 'Say why',
       }[r.code],
     );
   }
-  await db.batch([clearCarriedInStmt(userId, db, periodId, id)]);
+  const row = allocs.find((a) => a.category_id === id);
+  const seed = resolvePlanned(
+    row && { plannedCents: row.planned_cents },
+    cat ? planDefaultOf(cat) : null,
+    periodId,
+  );
+  await db.batch([forgiveCarryStmt(userId, db, periodId, id, -carried, seed)]);
   await writeAudit(userId, db, r.audit.action, {
     type: r.audit.targetType,
     id: r.audit.targetId,

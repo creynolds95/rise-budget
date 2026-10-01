@@ -291,9 +291,8 @@ describe('T27 SimpleFIN sync', () => {
     expect(await s.spent('2026-09', s.food.id)).toBe(0);
   });
 
-  it('a posted row landing in a closed month only flags it (edge 5 via sync)', async () => {
+  it('a posted row landing in a past month changes that month and nothing needs confirming (edge 5 via sync)', async () => {
     const s = await setup();
-    await s.api('PATCH', '/me/settings', { rollIncomeVariance: false });
     const card = (t: FakeTxn) =>
       fake([{ id: 'card', name: 'Chase Credit', txns: [t], reported: '2026-09-02' }]);
     await runSync(
@@ -307,7 +306,7 @@ describe('T27 SimpleFIN sync', () => {
     );
     const id = String((await s.txns())[0]?.id);
     await s.api('PATCH', `/transactions/${id}`, { categoryId: s.gas.id });
-    expect((await s.api('POST', '/periods/2026-08/close', { override: true })).status).toBe(200);
+    expect(await s.spent('2026-08', s.gas.id)).toBe(4_000);
     await runSync(
       env.DB,
       s.userId,
@@ -316,8 +315,8 @@ describe('T27 SimpleFIN sync', () => {
         now: at('2026-09-02T20:00:00Z'),
       },
     );
-    const aug = (await s.api('GET', '/periods/2026-08')).json.period;
-    expect(aug).toMatchObject({ status: 'closed', needsRecalc: true, recalcDeltaCents: 60 });
+    // The posted amount replaced the pending one; the month simply reads the new number.
+    expect(await s.spent('2026-08', s.gas.id)).toBe(4_060);
   });
 
   it('one failing account yields partial without rolling back the others', async () => {

@@ -168,12 +168,9 @@ CREATE TABLE category (
 CREATE TABLE period (
   id                     TEXT NOT NULL,      -- '2026-09' — unique per user, not globally
   user_id                TEXT NOT NULL REFERENCES user(id),
-  status                 TEXT NOT NULL DEFAULT 'open',  -- open|closed
+  status                 TEXT NOT NULL DEFAULT 'open',  -- UNUSED since 2026-10-01: months are never closed
   expected_income_cents  INTEGER NOT NULL DEFAULT 0,
-  returned_surplus_cents INTEGER NOT NULL DEFAULT 0,
-  needs_recalc           INTEGER NOT NULL DEFAULT 0,
-  recalc_delta_cents     INTEGER NOT NULL DEFAULT 0,
-  closed_at              TEXT,
+  -- returned_surplus_cents, needs_recalc, recalc_delta_cents, closed_at: UNUSED (live rollover)
   PRIMARY KEY (user_id, id)
 );
 
@@ -183,7 +180,8 @@ CREATE TABLE allocation (
   period_id         TEXT NOT NULL,
   category_id       TEXT NOT NULL REFERENCES category(id),
   planned_cents     INTEGER NOT NULL DEFAULT 0,
-  carried_in_cents  INTEGER NOT NULL DEFAULT 0,   -- FROZEN at close; never recomputed implicitly
+  carried_in_cents  INTEGER NOT NULL DEFAULT 0,   -- UNUSED since 2026-10-01 (carry is computed live; see SPEC §2.4)
+  carry_adjust_cents INTEGER NOT NULL DEFAULT 0,  -- migration 0012: what a deficit forgiveness added
   UNIQUE(user_id, period_id, category_id),
   FOREIGN KEY (user_id, period_id) REFERENCES period(user_id, id)
 );
@@ -377,8 +375,6 @@ GET    /review/queue?cursor               grouped, with confidence + suggestions
 
 GET    /periods/:id                       allocations, pool, pace, totals
 PATCH  /periods/:id                       expected_income
-POST   /periods/:id/close
-POST   /periods/:id/recalculate
 GET    /periods/:id/reallocations
 
 PATCH  /allocations/:id                   { planned_cents, funding: [{from_category_id, amount_cents}] }
@@ -449,7 +445,6 @@ for each synced account:
     run categorisation for new rows
     update account.balance_cents and last_synced_at
     recompute period_aggregate for touched periods
-    flag closed periods as needs_recalc if touched
 write sync_run
 ```
 

@@ -446,57 +446,55 @@ export function setPlanDefaultStmt(
 }
 
 /**
- * SPEC §2.10: what keeps a category from being deleted, if anything — money in any open month.
+ * SPEC §2.10: what keeps a category from being deleted, if anything — money in this month or
+ * a later one. Earlier months are history and keep their categories.
  * Null when it's free to go.
  */
 export async function categoryMoneyInOpenMonths(
   userId: UserId,
   db: D1Database,
   id: string,
+  fromPeriod: string,
 ): Promise<{ periodId: string } | null> {
   const row = await db
     .prepare(
       `SELECT a.period_id AS period_id FROM allocation a
-       LEFT JOIN period p ON p.user_id = a.user_id AND p.id = a.period_id
-       WHERE a.user_id = ?1 AND a.category_id = ?2 AND COALESCE(p.status, 'open') = 'open'
-         AND (a.planned_cents != 0 OR a.carried_in_cents != 0)
+       WHERE a.user_id = ?1 AND a.category_id = ?2 AND a.period_id >= ?3
+         AND (a.planned_cents != 0 OR a.carry_adjust_cents != 0)
        UNION ALL
        SELECT s.period_id FROM split s
        JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
-       LEFT JOIN period p ON p.user_id = s.user_id AND p.id = s.period_id
-       WHERE s.user_id = ?1 AND s.category_id = ?2 AND COALESCE(p.status, 'open') = 'open'
+       WHERE s.user_id = ?1 AND s.category_id = ?2 AND s.period_id >= ?3
          AND t.review_state != 'dropped'
        LIMIT 1`,
     )
-    .bind(userId, id)
+    .bind(userId, id, fromPeriod)
     .first<{ period_id: string }>();
   return row ? { periodId: row.period_id } : null;
 }
 
 /**
- * The `categoryMoneyInOpenMonths` money, cleared: every open-month allocation for this
- * category (planned and carried-in) goes to 0, freeing it back to Ready to assign. Mirrors
- * that function's own "open" definition — a period with no row yet still counts as open.
+ * The `categoryMoneyInOpenMonths` money, cleared: this month's and later allocations for this
+ * category (planned and any forgiveness) go to 0, freeing it back to Ready to assign.
  */
 export function clearCategoryOpenAllocationsStmt(
   userId: UserId,
   db: D1Database,
   categoryId: string,
+  fromPeriod: string,
 ): D1PreparedStatement {
   return db
     .prepare(
-      `UPDATE allocation SET planned_cents = 0, carried_in_cents = 0
-       WHERE user_id = ?1 AND category_id = ?2
-         AND NOT EXISTS (SELECT 1 FROM period p
-           WHERE p.user_id = ?1 AND p.id = allocation.period_id AND p.status = 'closed')`,
+      `UPDATE allocation SET planned_cents = 0, carry_adjust_cents = 0
+       WHERE user_id = ?1 AND category_id = ?2 AND period_id >= ?3`,
     )
-    .bind(userId, categoryId);
+    .bind(userId, categoryId, fromPeriod);
 }
 
 /**
- * The other half of `categoryMoneyInOpenMonths`'s money: every open-month, non-dropped
+ * The other half of `categoryMoneyInOpenMonths`'s money: every current-or-later, non-dropped
  * transaction still filed under this category moves to `toCategoryId` (the catch-all) and
- * goes back to needs-review, same as any other unconfirmed guess. Closed-month history keeps
+ * goes back to needs-review, same as any other unconfirmed guess. Earlier months keep
  * its category untouched (SPEC §2.10 "archive, never erase").
  */
 export async function reassignOpenCategoryStmts(
@@ -504,6 +502,7 @@ export async function reassignOpenCategoryStmts(
   db: D1Database,
   categoryId: string,
   toCategoryId: string,
+  fromPeriod: string,
 ): Promise<{ stmts: D1PreparedStatement[]; movedCount: number }> {
   const { results: rows } = await db
     .prepare(
@@ -511,10 +510,9 @@ export async function reassignOpenCategoryStmts(
        FROM split s
        JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
        WHERE s.user_id = ?1 AND s.category_id = ?2 AND t.review_state != 'dropped'
-         AND NOT EXISTS (SELECT 1 FROM period p
-           WHERE p.user_id = ?1 AND p.id = s.period_id AND p.status = 'closed')`,
+         AND s.period_id >= ?3`,
     )
-    .bind(userId, categoryId)
+    .bind(userId, categoryId, fromPeriod)
     .all<{ id: string; posted_at: string; amount_cents: number }>();
 
   const oldSplits = await splitsFor(

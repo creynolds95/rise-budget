@@ -135,7 +135,6 @@ describe('T18 categories, groups, periods, allocations', () => {
     expect(res.json.poolCents).toBe(520_000);
     expect(res.json.period).toMatchObject({
       id: PERIOD,
-      status: 'open',
       expectedIncomeCents: 520_000,
     });
   });
@@ -176,10 +175,8 @@ describe('T18 categories, groups, periods, allocations', () => {
     );
     const expected = buildPeriodView({
       periodId: PERIOD,
-      status: 'open',
       today: localToday('America/Chicago'),
       expectedIncomeCents: 500_000,
-      returnedSurplusPrevCents: 0,
       categories: [
         cat(s.fun.id, 'expense', 0, 0, s.fun),
         cat(s.groceries.id, 'expense', 60_000, 19_500, s.groceries),
@@ -188,9 +185,8 @@ describe('T18 categories, groups, periods, allocations', () => {
         cat(transferCat.id, 'expense', 0, 0, transferCat),
       ],
     });
-    const { period, close, ...view } = res.json;
+    const { period, ...view } = res.json;
     expect(period.id).toBe(PERIOD);
-    expect(close.ended).toBe(localToday('America/Chicago') > '2026-09-30');
     const byId = (xs: { categoryId: string }[]) =>
       [...xs].sort((a, b) => a.categoryId.localeCompare(b.categoryId));
     expect({ ...view, categories: byId(view.categories) }).toEqual({
@@ -307,18 +303,8 @@ describe('T19 allocation edit + reallocation', () => {
     expect(res.json.poolCents).toBe(80_000);
   });
 
-  it('closed periods cannot be edited; unknown ids 404', async () => {
+  it('unknown allocation ids 404', async () => {
     const s = await setup();
-    await s.api('PATCH', `/periods/2026-08`, { expectedIncomeCents: 1 });
-    await env.DB.prepare(
-      "UPDATE period SET status = 'closed' WHERE user_id = ?1 AND id = '2026-08'",
-    )
-      .bind(s.userId)
-      .run();
-    expect(
-      (await s.api('PATCH', `/allocations/2026-08:${s.groceries.id}`, { plannedCents: 1 })).json
-        .error.code,
-    ).toBe('PERIOD_CLOSED');
     expect((await s.api('PATCH', `/allocations/nope`, { plannedCents: 1 })).status).toBe(404);
   });
 

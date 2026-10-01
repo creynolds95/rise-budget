@@ -112,7 +112,7 @@ export function Dashboard() {
             />
           )}
         </Link>
-        {((queue.data?.count ?? 0) > 0 || p.period.needsRecalc) && (
+        {(queue.data?.count ?? 0) > 0 && (
           <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
             {(queue.data?.count ?? 0) > 0 && (
               <NavRow
@@ -122,17 +122,6 @@ export function Dashboard() {
                   <span className="rounded-full bg-sage-600 px-2 py-0.5 type-caption font-semibold text-surface money">
                     {queue.data?.count}
                   </span>
-                }
-              />
-            )}
-            {p.period.needsRecalc && (
-              <NavRow
-                to="/budget"
-                label="A closed month changed"
-                value={
-                  p.period.recalcDeltaCents !== 0 ? (
-                    <MoneyText cents={p.period.recalcDeltaCents} />
-                  ) : undefined
                 }
               />
             )}

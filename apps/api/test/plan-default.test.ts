@@ -8,7 +8,6 @@ async function setup() {
     call(method, path, { access: u.access, body });
   const group = (await api('POST', '/category-groups', { name: 'Everyday', kind: 'expense' })).json;
   const food = (await api('POST', '/categories', { groupId: group.id, name: 'Groceries' })).json;
-  await api('PATCH', '/me/settings', { rollIncomeVariance: false });
   // Raising a plan needs income behind it (§2.6).
   for (const m of ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'])
     await api('PATCH', `/periods/${m}`, { expectedIncomeCents: 500_000 });
@@ -92,17 +91,14 @@ describe('SPEC §2.9 apply to all future months', () => {
     expect(await s.planned('2026-09')).toBe(30_000);
   });
 
-  it('closing a month keeps the default on the next month’s new carry row', async () => {
+  it('a month with no row of its own still carries into the next and uses the default plan', async () => {
     const s = await setup();
-    await s.plan('2026-07', 40_000, true); // default from August
-    await spend(s.userId, s.food.id, 10_000, '2026-07-12');
-    // Months close in order; June exists because setup gave it income.
-    expect((await s.api('POST', '/periods/2026-06/close', { override: true })).status).toBe(200);
-    expect((await s.api('POST', '/periods/2026-07/close', { override: true })).status).toBe(200);
-    const aug = (await s.api('GET', '/periods/2026-08')).json.categories.find(
+    await s.plan('2026-10', 40_000, true); // default from November
+    await spend(s.userId, s.food.id, 10_000, '2026-10-12');
+    const nov = (await s.api('GET', '/periods/2026-11')).json.categories.find(
       (c: { categoryId: string }) => c.categoryId === s.food.id,
     );
-    expect(aug).toMatchObject({ carriedInCents: 30_000, plannedCents: 40_000 });
+    expect(nov).toMatchObject({ carriedInCents: 30_000, plannedCents: 40_000 });
   });
 
   it('history reads the resolved plan', async () => {
@@ -118,17 +114,18 @@ describe('SPEC §2.9 apply to all future months', () => {
 });
 
 describe('SPEC §2.10 deleting a category', () => {
-  it('is refused while the category holds money in an open month', async () => {
+  it('is refused while the category holds money this month or later', async () => {
     const s = await setup();
-    await s.plan('2026-09', 10_000);
+    await s.api('PATCH', '/periods/2099-12', { expectedIncomeCents: 500_000 });
+    await s.plan('2099-12', 10_000);
     const r = await s.api('DELETE', `/categories/${s.food.id}`);
     expect(r.status).toBe(409);
     expect(r.json.error.code).toBe('CATEGORY_IN_USE');
   });
 
-  it('is refused while it has spending in an open month', async () => {
+  it('is refused while it has spending this month or later', async () => {
     const s = await setup();
-    await spend(s.userId, s.food.id, 1_200, '2026-09-03');
+    await spend(s.userId, s.food.id, 1_200, '2099-12-03');
     expect((await s.api('DELETE', `/categories/${s.food.id}`)).status).toBe(409);
   });
 

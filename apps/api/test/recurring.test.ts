@@ -155,41 +155,9 @@ describe('T31 recurring detection', () => {
   });
 });
 
-describe('T32 late arrivals and close readiness through sync', () => {
-  it('names the account a month is waiting on, from the bank’s own report dates (edge 10c)', async () => {
+describe('T32 late arrivals through sync', () => {
+  it('a late split into a past month lands with a real category and changes that month only', async () => {
     const s = await setup();
-    await runSync(
-      env.DB,
-      s.userId,
-      bridge([
-        { id: 'chk', name: 'USAA Checking', reported: '2026-09-02', txns: [] },
-        { id: 'apple', name: 'Apple Card', reported: '2026-08-01', txns: [] },
-        { id: 'sav', name: 'Apple Savings', reported: '2026-08-01', txns: [] },
-      ]),
-      { now: new Date('2026-09-02T20:00:00Z') },
-    );
-    const close = (await s.api('GET', '/periods/2026-08')).json.close;
-    // Savings is out of the budget, so only the card holds the month open.
-    expect(close.readiness).toMatchObject({
-      ready: false,
-      waitingOn: [{ name: 'Apple Card', lastSyncedDate: '2026-08-01' }],
-    });
-
-    await runSync(
-      env.DB,
-      s.userId,
-      bridge([{ id: 'apple', name: 'Apple Card', reported: '2026-09-01', txns: [] }]),
-      {
-        now: new Date('2026-09-03T20:00:00Z'),
-      },
-    );
-    expect((await s.api('GET', '/periods/2026-08')).json.close.readiness.ready).toBe(true);
-  });
-
-  it('a late split into a closed month flags it and recalculates nothing', async () => {
-    const s = await setup();
-    await s.api('PATCH', '/me/settings', { rollIncomeVariance: false });
-    await s.api('POST', '/periods/2026-08/close', { override: true });
     await runSync(
       env.DB,
       s.userId,
@@ -203,19 +171,19 @@ describe('T32 late arrivals and close readiness through sync', () => {
       ]),
       { now: new Date('2026-09-05T20:00:00Z'), since: '2026-08-01' },
     );
-    const before = (await s.api('GET', '/periods/2026-08')).json.period;
-    // H1: it landed with a real (guessed) category already, so it flags the closed month
-    // the moment it arrives — nobody needs to categorise it first for it to be real money.
-    expect(before).toMatchObject({ status: 'closed', needsRecalc: true, recalcDeltaCents: 1_549 });
     const [t] = (await s.api('GET', '/transactions?q=NETFLIX')).json.items as { id: string }[];
+    // H1: it landed with a real (guessed) category already, so it is real money on arrival.
+    const spent = async () => {
+      const row = await env.DB.prepare(
+        "SELECT COALESCE(SUM(spent_cents), 0) AS n FROM period_aggregate WHERE user_id = ?1 AND period_id = '2026-08'",
+      )
+        .bind(s.userId)
+        .first<{ n: number }>();
+      return row?.n;
+    };
+    expect(await spent()).toBe(1_549);
     await s.api('PATCH', `/transactions/${String(t?.id)}`, { categoryId: s.subs.id });
-    const after = (await s.api('GET', '/periods/2026-08')).json;
-    // Correcting the category moves no money, so the flagged delta is unchanged.
-    expect(after.period).toMatchObject({
-      status: 'closed',
-      needsRecalc: true,
-      recalcDeltaCents: 1_549,
-    });
-    expect(after.period.returnedSurplusCents).toBe(before.returnedSurplusCents);
+    // Correcting the category moves no money.
+    expect(await spent()).toBe(1_549);
   });
 });

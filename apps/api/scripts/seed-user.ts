@@ -32,7 +32,7 @@ if (!values.email || !values.name || !secret) {
 const sql = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const id = randomUUID();
 const now = new Date().toISOString();
-const settings = JSON.stringify({ rollIncomeVariance: true, appLock: 'off' });
+const settings = JSON.stringify({ appLock: 'off' });
 const insert =
   `INSERT INTO user (id, email, display_name, timezone, settings_json, created_at) VALUES ` +
   `(${sql(id)}, ${sql(values.email)}, ${sql(values.name)}, 'America/Chicago', ${sql(settings)}, ${sql(now)});`;

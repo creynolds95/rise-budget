@@ -39,7 +39,7 @@ describe('schemas', () => {
     });
   });
 
-  it('user settings default roll_income_variance on, plan changes to this month only', () => {
+  it('user settings default plan changes to this month only', () => {
     const u = User.parse({
       id: 'u1',
       email: 'me@example.com',
@@ -48,7 +48,6 @@ describe('schemas', () => {
       createdAt: '2026-09-23T20:00:00Z',
     });
     expect(u.settings).toEqual({
-      rollIncomeVariance: true,
       appLock: 'off',
       planChangesApplyToFuture: false,
       cushionCents: 50_000,

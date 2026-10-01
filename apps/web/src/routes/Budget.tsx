@@ -61,7 +61,6 @@ export function Budget() {
 
   if (!period.data || !groups.data || !categories.data) return <BudgetSkeleton />;
   const p = period.data;
-  const closed = p.period.status === 'closed';
   const byId = new Map(categories.data.map((c) => [c.id, c]));
   const expenseGroups = groups.data.filter((g) => g.kind === 'expense');
   const incomeGroups = groups.data.filter((g) => g.kind === 'income');
@@ -118,16 +117,14 @@ export function Budget() {
           </Link>
         </div>
 
-        <section className="gutter mt-2">
+        <LeftToBudget poolCents={p.poolCents} />
+
+        <section className="gutter mt-4">
           <h2 className="type-title">Summary</h2>
           <div className="mt-2">
             <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} />
           </div>
         </section>
-
-        <div className="gutter mt-6">
-          <CloseControl month={month} data={p} />
-        </div>
 
         {(error ?? plan.error) && <p className="gutter mt-4 text-clay">{error ?? plan.error}</p>}
 
@@ -166,7 +163,7 @@ export function Budget() {
                 rows={p.categories.filter((c) => byId.get(c.categoryId)?.groupId === g.id)}
                 byId={byId}
                 month={month}
-                editable={!closed}
+                editable
                 onEdit={(row) => {
                   const category = byId.get(row.categoryId);
                   if (category) plan.open(category, row, p.poolCents);
@@ -200,7 +197,7 @@ export function Budget() {
                     idle={idleRows}
                     byId={byId}
                     month={month}
-                    editable={!closed}
+                    editable
                     onEdit={(row) => {
                       const category = byId.get(row.categoryId);
                       if (category) plan.open(category, row, p.poolCents);
@@ -215,7 +212,7 @@ export function Budget() {
           )}
         </section>
 
-        {expenseGroups.length > 0 && !closed && (
+        {expenseGroups.length > 0 && (
           <div className="gutter mt-6">
             <Button variant="quiet" onClick={() => setAdding(true)}>
               + Add category
@@ -604,98 +601,24 @@ function BudgetRow({
   );
 }
 
-function CloseControl({ month, data }: { month: string; data: PeriodResponse }) {
-  const invalidate = useInvalidateMoney();
-  const [confirm, setConfirm] = useState<'close' | 'override' | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const next = monthName(addMonths(month, 1), false);
-  const name = monthName(month, false);
-
-  const run = async (path: string, body?: unknown) => {
-    setError(null);
-    try {
-      await api('POST', `/periods/${month}/${path}`, body);
-      setConfirm(null);
-      await invalidate();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not do that.');
-    }
-  };
-
-  if (data.period.status === 'closed') {
-    if (!data.period.needsRecalc) return null;
-    return (
-      <section className="gutter mb-6">
-        <div className="rounded-card bg-clay-100 p-4">
-          <p className="text-ink">
-            {data.period.recalcDeltaCents !== 0 ? (
-              <>
-                <MoneyText cents={data.period.recalcDeltaCents} /> changed in {name} since it
-                closed.
-              </>
-            ) : (
-              <>Money moved between categories in {name} since it closed.</>
-            )}{' '}
-            Its carry into {next} still uses the old numbers.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button onClick={() => run('recalculate')}>Recalculate carry into {next}</Button>
-            <Button variant="quiet" onClick={() => run('dismiss-recalc')}>
-              Leave as is
-            </Button>
-          </div>
-          {error && <p className="mt-2 text-clay">{error}</p>}
-        </div>
-      </section>
-    );
-  }
-  if (!data.close.ended) return null;
-  const waiting = data.close.readiness.waitingOn;
+/**
+ * Income minus everything planned (plus last month's extra income): the pool. Positive means
+ * money still to give a job, zero is a fully planned month, negative means planned past income.
+ */
+function LeftToBudget({ poolCents }: { poolCents: number }) {
+  const over = poolCents < 0;
   return (
-    <section className="gutter mb-6">
-      <div className="rounded-card bg-sage-100 p-4">
-        <p className="font-medium">{name} has ended.</p>
-        {waiting.length > 0 ? (
-          <p className="mt-1 text-ink-muted">
-            Waiting on{' '}
-            {waiting
-              .map(
-                (w) =>
-                  `${w.name} (last reported ${w.lastSyncedDate ? shortDate(w.lastSyncedDate) : 'never'})`,
-              )
-              .join(', ')}{' '}
-            to report past month end.
-          </p>
-        ) : (
-          <p className="mt-1 text-ink-muted">Every budget account has reported. Ready to close.</p>
-        )}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={() => setConfirm(waiting.length > 0 ? 'override' : 'close')}>
-            {waiting.length > 0 ? 'Close anyway' : `Close ${name}`}
-          </Button>
-        </div>
-        {error && <p className="mt-2 text-clay">{error}</p>}
-      </div>
-      <Sheet open={confirm !== null} title={`Close ${name}?`} onClose={() => setConfirm(null)}>
-        <p className="text-ink-muted">
-          Closing freezes what each category carries into {next}: leftovers and overspending carry,
-          bill leftovers return to the pool. Spending that arrives later won't change it unless you
-          ask to recalculate.
-        </p>
-        {confirm === 'override' && (
-          <p className="mt-3 text-clay">
-            {waiting.map((w) => w.name).join(', ')} {waiting.length === 1 ? "hasn't" : "haven't"}{' '}
-            reported past month end, so {name} may be missing spending.
-          </p>
-        )}
-        <Button
-          className="mt-6 w-full"
-          onClick={() => run('close', { override: confirm === 'override' })}
-        >
-          Close {name}
-        </Button>
-      </Sheet>
-    </section>
+    <div
+      className={`gutter mt-2 flex items-center justify-between rounded-card px-4 py-3 ${over ? 'bg-clay-100' : poolCents > 0 ? 'bg-sage-100' : 'bg-surface shadow-soft'}`}
+      role="status"
+    >
+      <span className="font-medium">{over ? 'Over budget' : 'Left to budget'}</span>
+      <MoneyText
+        cents={Math.abs(poolCents)}
+        tone={over ? 'over' : poolCents > 0 ? 'in' : 'ink'}
+        className="text-lg font-semibold"
+      />
+    </div>
   );
 }
 

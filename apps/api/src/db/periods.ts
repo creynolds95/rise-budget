@@ -1,39 +1,20 @@
 import { resolvePlanned, type PlanDefault } from '@rise/shared/budget';
 import { Period } from '@rise/shared/schemas';
-import { flagClosedPeriodStmt } from './transactions';
 import { nowIso, type UserId } from './util';
 
 interface PeriodRow {
   id: string;
-  status: string;
   expected_income_cents: number;
-  returned_surplus_cents: number;
-  needs_recalc: number;
-  recalc_delta_cents: number;
-  closed_at: string | null;
 }
 
 const toPeriod = (r: PeriodRow): Period =>
   Period.parse({
     id: r.id,
-    status: r.status,
     expectedIncomeCents: r.expected_income_cents,
-    returnedSurplusCents: r.returned_surplus_cents,
-    needsRecalc: r.needs_recalc === 1,
-    recalcDeltaCents: r.recalc_delta_cents,
-    closedAt: r.closed_at,
   });
 
-/** A month with no row yet is an open month with no income set — not an error. */
-export const blankPeriod = (id: string): Period => ({
-  id,
-  status: 'open',
-  expectedIncomeCents: 0,
-  returnedSurplusCents: 0,
-  needsRecalc: false,
-  recalcDeltaCents: 0,
-  closedAt: null,
-});
+/** A month with no row yet has no income set — not an error. */
+export const blankPeriod = (id: string): Period => ({ id, expectedIncomeCents: 0 });
 
 export async function getPeriod(
   userId: UserId,
@@ -47,69 +28,24 @@ export async function getPeriod(
   return row ? toPeriod(row) : null;
 }
 
-/**
- * A period can have real spending (a categorised split) with no `period` row at all — nothing
- * ever set its income or plan, but a transaction was still filed into it. H2: that's the case
- * closing must not skip past, even though `getPeriod` returns null for it.
- */
-export async function periodHasActivity(
-  userId: UserId,
-  db: D1Database,
-  id: string,
-): Promise<boolean> {
-  // Imported history doesn't count: it has no plan and no carry, so it must never be what
-  // makes a later month wait on it (and a close would turn its spending into carried debt).
-  const row = await db
-    .prepare(
-      `SELECT 1 FROM split s JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
-       WHERE s.user_id = ?1 AND s.period_id = ?2 AND t.import_batch_id IS NULL LIMIT 1`,
-    )
-    .bind(userId, id)
-    .first();
-  return row !== null;
-}
-
-/** A month whose only transactions came from a history import. It is never closed. */
-export async function periodIsHistory(
-  userId: UserId,
-  db: D1Database,
-  id: string,
-): Promise<boolean> {
-  const row = await db
-    .prepare(
-      `SELECT 1 FROM split s JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
-       WHERE s.user_id = ?1 AND s.period_id = ?2 AND t.import_batch_id IS NOT NULL LIMIT 1`,
-    )
-    .bind(userId, id)
-    .first();
-  return row !== null && !(await periodHasActivity(userId, db, id));
-}
-
 export function ensurePeriodStmt(userId: UserId, db: D1Database, id: string): D1PreparedStatement {
   return db
     .prepare('INSERT INTO period (id, user_id) VALUES (?2, ?1) ON CONFLICT(user_id, id) DO NOTHING')
     .bind(userId, id);
 }
 
-/**
- * Past months aren't frozen — expected income can be corrected after close too. Unlike a
- * blocked edit, this always writes; when the period is already closed, it also flags it for
- * recalculation with the income delta, same as a late or recategorized split (SPEC §2.5, M1).
- */
+/** Past months aren't frozen: expected income can be corrected any time, and carry follows. */
 export async function setExpectedIncome(
   userId: UserId,
   db: D1Database,
   id: string,
   cents: number,
 ): Promise<Period> {
-  const existing = await getPeriod(userId, db, id);
-  const delta = cents - (existing?.expectedIncomeCents ?? 0);
   await db.batch([
     ensurePeriodStmt(userId, db, id),
     db
       .prepare('UPDATE period SET expected_income_cents = ?3 WHERE user_id = ?1 AND id = ?2')
       .bind(userId, id, cents),
-    flagClosedPeriodStmt(userId, db, id, delta),
   ]);
   return (await getPeriod(userId, db, id)) as Period;
 }
@@ -119,7 +55,7 @@ export async function setExpectedIncome(
 export interface AllocationRow {
   category_id: string;
   planned_cents: number;
-  carried_in_cents: number;
+  carry_adjust_cents: number;
 }
 
 export async function listAllocations(
@@ -129,7 +65,7 @@ export async function listAllocations(
 ): Promise<AllocationRow[]> {
   const { results } = await db
     .prepare(
-      'SELECT category_id, planned_cents, carried_in_cents FROM allocation WHERE user_id = ?1 AND period_id = ?2',
+      'SELECT category_id, planned_cents, carry_adjust_cents FROM allocation WHERE user_id = ?1 AND period_id = ?2',
     )
     .bind(userId, periodId)
     .all<AllocationRow>();
@@ -192,8 +128,7 @@ export function setPlannedStmt(
   return db
     .prepare(
       `UPDATE allocation SET planned_cents = ?4
-       WHERE user_id = ?1 AND period_id = ?2 AND category_id = ?3
-         AND NOT EXISTS (SELECT 1 FROM period p WHERE p.user_id = ?1 AND p.id = ?2 AND p.status = 'closed')`,
+       WHERE user_id = ?1 AND period_id = ?2 AND category_id = ?3`,
     )
     .bind(userId, periodId, categoryId, plannedCents);
 }
@@ -292,99 +227,76 @@ export async function spentByCategory(
   return new Map(results.map((r) => [r.category_id, r.spent]));
 }
 
-// ── close & recalculate writes (SPEC §2.4, §2.5) ──────────────────────────────
+// ── live rollover inputs ──────────────────────────────────────────────────────
 
-export interface CloseWrite {
-  periodId: string;
-  nextPeriodId: string;
-  carryIn: { categoryId: string; carriedInCents: number }[];
-  returnedSurplusCents: number;
+/** Every allocation in an inclusive range of months. */
+export async function allocationsBetween(
+  userId: UserId,
+  db: D1Database,
+  from: string,
+  to: string,
+): Promise<(AllocationRow & { period_id: string })[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT period_id, category_id, planned_cents, carry_adjust_cents FROM allocation
+       WHERE user_id = ?1 AND period_id BETWEEN ?2 AND ?3`,
+    )
+    .bind(userId, from, to)
+    .all<AllocationRow & { period_id: string }>();
+  return results;
 }
 
-/** A category's resolved plan for a month with no row yet, by category id (SPEC §2.9). */
-export type PlanSeeds = (periodId: string, categoryId: string) => number;
+/** `spentByCategory` for an inclusive range of months, read from the splits themselves. */
+export async function spentBetween(
+  userId: UserId,
+  db: D1Database,
+  from: string,
+  to: string,
+): Promise<{ period_id: string; category_id: string; spent: number }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT s.period_id, s.category_id, SUM(s.amount_cents) AS spent
+       FROM split s
+       JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+       JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
+       WHERE s.user_id = ?1 AND s.period_id BETWEEN ?2 AND ?3 AND c.budgeted = 1
+         AND t.review_state != 'dropped'
+       GROUP BY s.period_id, s.category_id`,
+    )
+    .bind(userId, from, to)
+    .all<{ period_id: string; category_id: string; spent: number }>();
+  return results;
+}
 
 /**
- * Statements that freeze one close outcome: carry-ins on P+1, returned surplus and status on P.
- * The caller runs them (possibly several outcomes) in a single atomic batch.
+ * SPEC §2.8: forgive a carried deficit. The carry itself is computed, so this records an
+ * adjustment on the month that brings its carry-in back to zero.
  */
-export function closeWriteStmts(
-  userId: UserId,
-  db: D1Database,
-  w: CloseWrite,
-  closedAt: string,
-  seeds: PlanSeeds = () => 0,
-): D1PreparedStatement[] {
-  return [
-    ensurePeriodStmt(userId, db, w.periodId),
-    ensurePeriodStmt(userId, db, w.nextPeriodId),
-    ...w.carryIn.map((c) =>
-      db
-        .prepare(
-          `INSERT INTO allocation (id, user_id, period_id, category_id, carried_in_cents, planned_cents)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-           ON CONFLICT(user_id, period_id, category_id) DO UPDATE SET carried_in_cents = excluded.carried_in_cents
-           WHERE allocation.user_id = ?2`,
-        )
-        .bind(
-          allocationId(w.nextPeriodId, c.categoryId),
-          userId,
-          w.nextPeriodId,
-          c.categoryId,
-          c.carriedInCents,
-          seeds(w.nextPeriodId, c.categoryId),
-        ),
-    ),
-    db
-      .prepare(
-        `UPDATE period SET status = 'closed', returned_surplus_cents = ?3, needs_recalc = 0, recalc_delta_cents = 0,
-           closed_at = COALESCE(closed_at, ?4)
-         WHERE user_id = ?1 AND id = ?2`,
-      )
-      .bind(userId, w.periodId, w.returnedSurplusCents, closedAt),
-  ];
-}
-
-export async function dismissRecalcFlag(
-  userId: UserId,
-  db: D1Database,
-  periodId: string,
-): Promise<void> {
-  await db
-    .prepare(
-      'UPDATE period SET needs_recalc = 0, recalc_delta_cents = 0 WHERE user_id = ?1 AND id = ?2',
-    )
-    .bind(userId, periodId)
-    .run();
-}
-
-/** Closed periods from `fromId` onward, ascending — the recalculation cascade's range. */
-export async function listPeriodsFrom(
-  userId: UserId,
-  db: D1Database,
-  fromId: string,
-): Promise<Period[]> {
-  const { results } = await db
-    .prepare('SELECT * FROM period WHERE user_id = ?1 AND id >= ?2 ORDER BY id')
-    .bind(userId, fromId)
-    .all<PeriodRow>();
-  return results.map(toPeriod);
-}
-
-/** SPEC §2.8: forgiveness zeroes the carried deficit of an OPEN period — nothing else. */
-export function clearCarriedInStmt(
+export function forgiveCarryStmt(
   userId: UserId,
   db: D1Database,
   periodId: string,
   categoryId: string,
+  amountCents: number,
+  /** The month's resolved plan, so creating the row changes nothing else (SPEC §2.9). */
+  seedPlannedCents: number,
 ): D1PreparedStatement {
   return db
     .prepare(
-      `UPDATE allocation SET carried_in_cents = 0
-       WHERE user_id = ?1 AND period_id = ?2 AND category_id = ?3 AND carried_in_cents < 0
-         AND EXISTS (SELECT 1 FROM period p WHERE p.user_id = ?1 AND p.id = ?2 AND p.status = 'open')`,
+      `INSERT INTO allocation (id, user_id, period_id, category_id, planned_cents, carry_adjust_cents)
+       VALUES (?1, ?2, ?3, ?4, ?6, ?5)
+       ON CONFLICT(user_id, period_id, category_id)
+         DO UPDATE SET carry_adjust_cents = carry_adjust_cents + ?5
+       WHERE allocation.user_id = ?2`,
     )
-    .bind(userId, periodId, categoryId);
+    .bind(
+      allocationId(periodId, categoryId),
+      userId,
+      periodId,
+      categoryId,
+      amountCents,
+      seedPlannedCents,
+    );
 }
 
 export interface CategoryHistoryRow {
@@ -401,16 +313,17 @@ export async function categoryHistory(
   categoryId: string,
   from: string,
   to: string,
-  planDefault: PlanDefault | null = null,
+  planDefault: PlanDefault | null,
+  carriedIn: (periodId: string) => number,
 ): Promise<CategoryHistoryRow[]> {
   const [alloc, agg] = await Promise.all([
     db
       .prepare(
-        `SELECT period_id, planned_cents, carried_in_cents FROM allocation
+        `SELECT period_id, planned_cents FROM allocation
          WHERE user_id = ?1 AND category_id = ?2 AND period_id BETWEEN ?3 AND ?4`,
       )
       .bind(userId, categoryId, from, to)
-      .all<{ period_id: string; planned_cents: number; carried_in_cents: number }>(),
+      .all<{ period_id: string; planned_cents: number }>(),
     db
       .prepare(
         `SELECT period_id, spent_cents FROM period_aggregate
@@ -427,7 +340,7 @@ export async function categoryHistory(
     out.push({
       periodId: p,
       plannedCents: resolvePlanned(a && { plannedCents: a.planned_cents }, planDefault, p),
-      carriedInCents: a?.carried_in_cents ?? 0,
+      carriedInCents: carriedIn(p),
       spentCents: spent.get(p) ?? 0,
     });
     const [y, m] = [Number(p.slice(0, 4)), Number(p.slice(5, 7))];
