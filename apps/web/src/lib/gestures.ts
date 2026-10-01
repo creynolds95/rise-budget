@@ -23,6 +23,45 @@ export function installNoZoom() {
   );
 }
 
+/** Width of the screen edge where iOS starts its own back gesture. */
+const EDGE = 20;
+
+/**
+ * iOS starts its own slide-back from the left edge and shows the previous screen, which in
+ * an installed app is whatever the history holds. Cancelling a touch that begins in the
+ * edge strip stops that; screens that go back do so with `useSwipeBack` instead. A tap that
+ * lands in the strip is re-sent as a click, since cancelling the touch suppresses it.
+ */
+export function installEdgeGuard() {
+  let tap: { x: number; y: number; el: Element } | null = null;
+  document.addEventListener(
+    'touchstart',
+    (e) => {
+      const t = e.touches[0];
+      const el = e.target as Element | null;
+      tap = null;
+      if (!t || e.touches.length !== 1 || t.clientX > EDGE || !el) return;
+      if (el.closest('[data-zoomable], input, textarea, select')) return;
+      tap = { x: t.clientX, y: t.clientY, el };
+      e.preventDefault();
+    },
+    { passive: false },
+  );
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const t = e.changedTouches[0];
+      const start = tap;
+      tap = null;
+      if (!start || !t) return;
+      if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10) return;
+      const target = start.el.closest('a, button, [role=button]') ?? start.el;
+      (target as HTMLElement).click?.();
+    },
+    { passive: true },
+  );
+}
+
 /** Where in the page a link points, or null for anything that leaves the app. */
 function internalPath(a: HTMLAnchorElement): string | null {
   if (a.target && a.target !== '_self') return null;
@@ -59,7 +98,7 @@ export function useLinkTransitions() {
 
 /**
  * Swipe right from the left part of the screen to go back, on a screen that slid in from
- * the side. The very edge is left to iOS's own back gesture.
+ * the side. The edge strip is included: `installEdgeGuard` keeps iOS's own gesture out of it.
  */
 export function useSwipeBack(to: string) {
   const navigate = useNavigate();
@@ -71,7 +110,6 @@ export function useSwipeBack(to: string) {
       start =
         e.touches.length === 1 &&
         t &&
-        t.clientX > 16 &&
         t.clientX < window.innerWidth * 0.4 &&
         !el?.closest('[data-zoomable], [data-no-swipe], input, textarea, [role=dialog]')
           ? { x: t.clientX, y: t.clientY }
