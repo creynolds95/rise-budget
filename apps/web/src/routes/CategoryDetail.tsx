@@ -9,6 +9,7 @@ import { Button } from '../components/primitives/Button';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow, ValueRow } from '../components/primitives/Rows';
 import { IconButton } from '../components/primitives/Icon';
+import { FillBar } from '../components/primitives/FillBar';
 import { Rail } from '../components/primitives/Rail';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
@@ -87,6 +88,7 @@ function CategoryDetailBody({
   const plan = usePlanFlow(month, categories.data ?? []);
 
   const cat = categories.data?.find((c) => c.id === categoryId);
+  const isIncome = groups.data?.find((g) => g.id === cat?.groupId)?.kind === 'income';
   const row = period.data?.categories.find((c) => c.categoryId === categoryId);
   if (!cat || !row || !period.data) {
     return (
@@ -97,9 +99,11 @@ function CategoryDetailBody({
     );
   }
   const open = period.data.period.status === 'open';
+  // Income is stored as negative spending (SPEC §1.1); show it as what came in.
+  const earnedCents = isIncome ? -row.spentCents : row.spentCents;
+  const remainingCents = isIncome ? row.availableCents - earnedCents : row.remainingCents;
   const list = txns.data?.pages.flatMap((p) => p.items) ?? [];
   const yearly = yearBars(history.data ?? [], month);
-  const isIncome = groups.data?.find((g) => g.id === cat?.groupId)?.kind === 'income';
   const bars = isIncome ? earnedBars(yearly) : yearly;
   const name = monthName(month, false);
 
@@ -119,10 +123,10 @@ function CategoryDetailBody({
         factsTitle="Summary"
         facts={
           <>
-            <ValueRow label={`Left in ${name}`}>
+            <ValueRow label={isIncome ? `Left to earn in ${name}` : `Left in ${name}`}>
               <MoneyText
-                cents={row.remainingCents}
-                tone={row.remainingCents < 0 ? 'over' : 'ink'}
+                cents={remainingCents}
+                tone={remainingCents < 0 && !isIncome ? 'over' : 'ink'}
               />
             </ValueRow>
             {(cat.rolloverPolicy === 'roll' || row.carriedInCents !== 0) && (
@@ -134,13 +138,17 @@ function CategoryDetailBody({
               </ValueRow>
             )}
             <div className="border-b border-hairline py-3">
-              <Rail
-                carriedInCents={row.carriedInCents}
-                plannedCents={row.plannedCents}
-                spentCents={row.spentCents}
-                availableCents={row.availableCents}
-                tick={null}
-              />
+              {isIncome ? (
+                <FillBar filledCents={earnedCents} targetCents={row.availableCents} tick={null} />
+              ) : (
+                <Rail
+                  carriedInCents={row.carriedInCents}
+                  plannedCents={row.plannedCents}
+                  spentCents={row.spentCents}
+                  availableCents={row.availableCents}
+                  tick={null}
+                />
+              )}
             </div>
             <ValueRow
               label="Planned"
@@ -148,12 +156,12 @@ function CategoryDetailBody({
             >
               <MoneyText cents={row.plannedCents} />
             </ValueRow>
-            <ValueRow label="Total amount">
-              <MoneyText cents={row.spentCents} />
+            <ValueRow label={isIncome ? 'Earned' : 'Total amount'}>
+              <MoneyText cents={earnedCents} />
             </ValueRow>
             {list.length > 0 && !txns.hasNextPage && (
               <ValueRow label="Average transaction">
-                <MoneyText cents={Math.round(row.spentCents / list.length)} />
+                <MoneyText cents={Math.round(earnedCents / list.length)} />
               </ValueRow>
             )}
             {open && row.carriedInCents < 0 && (
