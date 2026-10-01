@@ -47,6 +47,18 @@ export function Budget() {
   const isDesktop = useIsDesktop();
   const selected = params.get('category');
 
+  const settingsHref = `/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`;
+  useHeaderActions(
+    <Link
+      to={settingsHref}
+      onClick={transitionClick(navigate, settingsHref)}
+      aria-label="Budget settings"
+      className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+    >
+      <Icon name="more" />
+    </Link>,
+  );
+
   if (!period.data || !groups.data || !categories.data) return <BudgetSkeleton />;
   const p = period.data;
   const closed = p.period.status === 'closed';
@@ -76,18 +88,6 @@ export function Budget() {
     next.set('category', categoryId);
     setParams(next);
   };
-
-  const settingsHref = `/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`;
-  useHeaderActions(
-    <Link
-      to={settingsHref}
-      onClick={transitionClick(navigate, settingsHref)}
-      aria-label="Budget settings"
-      className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-    >
-      <Icon name="more" />
-    </Link>,
-  );
 
   return (
     <div className={selected ? 'lg:flex lg:items-start lg:gap-10 lg:px-8' : ''}>
