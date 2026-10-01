@@ -405,6 +405,8 @@ export const MonarchSetupBody = z.object({
       z.object({
         monarchName: z.string().trim().min(1).max(200),
         kind: z.enum(['income', 'expense', 'transfer']),
+        /** The group the person picked; without one it waits in "Imported" at $0. */
+        groupId: Id.optional(),
       }),
     )
     .max(200),

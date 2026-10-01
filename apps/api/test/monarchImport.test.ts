@@ -38,6 +38,23 @@ const count = async (userId: string, table: string) =>
   )?.n;
 
 describe('Monarch import: setup', () => {
+  it('puts a new category in the group the person picked, and rejects an unknown one', async () => {
+    const { api, group } = await setup();
+    const picked = await api('POST', '/import/monarch/setup', {
+      accounts: [],
+      categories: [{ monarchName: 'Gym', kind: 'expense', groupId: group.id }],
+    });
+    const gym = await env.DB.prepare('SELECT group_id AS g FROM category WHERE id = ?1')
+      .bind(picked.json.categories.Gym)
+      .first<{ g: string }>();
+    expect(gym?.g).toBe(group.id);
+    const bad = await api('POST', '/import/monarch/setup', {
+      accounts: [],
+      categories: [{ monarchName: 'Pool', kind: 'expense', groupId: crypto.randomUUID() }],
+    });
+    expect(bad.status).toBe(400);
+  });
+
   it('creates history-only accounts and categories, once', async () => {
     const u = await signedInUser();
     const api = (m: string, p: string, b?: unknown) => call(m, p, { access: u.access, body: b });

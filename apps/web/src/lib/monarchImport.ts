@@ -24,6 +24,7 @@ export function setupBody(
   categories: CategoryPlan[],
   accountChoices: Record<string, AccountChoice>,
   categoryChoices: Record<string, CategoryChoice>,
+  categoryGroups: Record<string, string> = {},
 ): MonarchSetupBody {
   const a: MonarchSetupBody['accounts'] = [];
   for (const p of accounts) {
@@ -33,7 +34,13 @@ export function setupBody(
   const k: MonarchSetupBody['categories'] = [];
   for (const p of categories) {
     const c = categoryChoices[p.monarchName] ?? p.choice;
-    if (c.type === 'create') k.push({ monarchName: p.monarchName, kind: c.kind });
+    if (c.type !== 'create') continue;
+    const groupId = categoryGroups[p.monarchName];
+    k.push(
+      groupId && c.kind !== 'transfer'
+        ? { monarchName: p.monarchName, kind: c.kind, groupId }
+        : { monarchName: p.monarchName, kind: c.kind },
+    );
   }
   return { accounts: a, categories: k };
 }
@@ -81,3 +88,18 @@ export const CATEGORY_KINDS: Record<CategoryKind, string> = {
   income: 'Income',
   transfer: 'Transfer (not spending)',
 };
+
+/** New income or expense categories still waiting for a group. Transfers get theirs automatically. */
+export function needGroup(
+  categories: CategoryPlan[],
+  choices: Record<string, CategoryChoice>,
+  groups: Record<string, string>,
+): string[] {
+  const out: string[] = [];
+  for (const p of categories) {
+    const c = choices[p.monarchName] ?? p.choice;
+    if (c.type === 'create' && c.kind !== 'transfer' && !groups[p.monarchName])
+      out.push(p.monarchName);
+  }
+  return out;
+}

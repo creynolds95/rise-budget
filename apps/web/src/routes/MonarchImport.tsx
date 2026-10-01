@@ -22,6 +22,7 @@ import {
   CATEGORY_KINDS,
   chunk,
   duplicateKey,
+  needGroup,
   resolveIds,
   setupBody,
   skippedIds,
@@ -46,6 +47,7 @@ export function MonarchImport() {
   const [error, setError] = useState<string | null>(null);
   const [accountChoices, setAccountChoices] = useState<Record<string, AccountChoice>>({});
   const [categoryChoices, setCategoryChoices] = useState<Record<string, CategoryChoice>>({});
+  const [categoryGroups, setCategoryGroups] = useState<Record<string, string>>({});
   const [skipGroups, setSkipGroups] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<Progress | null>(null);
   const [result, setResult] = useState<MonarchRowsResult | null>(null);
@@ -83,6 +85,7 @@ export function MonarchImport() {
       setParsed(parseMonarchCsv(await file.text()));
       setAccountChoices({});
       setCategoryChoices({});
+      setCategoryGroups({});
       setSkipGroups(new Set());
     } catch (e) {
       setParsed(null);
@@ -99,7 +102,7 @@ export function MonarchImport() {
       }>(
         'POST',
         '/import/monarch/setup',
-        setupBody(plan.accounts, plan.categories, accountChoices, categoryChoices),
+        setupBody(plan.accounts, plan.categories, accountChoices, categoryChoices, categoryGroups),
       );
       const accountIds = resolveIds(plan.accounts, accountChoices, created.accounts);
       const categoryIds = resolveIds(plan.categories, categoryChoices, created.categories);
@@ -134,6 +137,7 @@ export function MonarchImport() {
 
   const unmatched = plan?.categories.filter((c) => !c.matched) ?? [];
   const matched = plan?.categories.filter((c) => c.matched) ?? [];
+  const ungrouped = plan ? needGroup(plan.categories, categoryChoices, categoryGroups) : [];
   const busy = run.isPending;
   const extras = skippedIds(dupes, skipGroups).size;
   const accountsNew =
@@ -213,6 +217,8 @@ export function MonarchImport() {
                     rows={p.rows}
                     choice={categoryChoices[p.monarchName] ?? p.choice}
                     onChange={(c) => setCategoryChoices((s) => ({ ...s, [p.monarchName]: c }))}
+                    groupId={categoryGroups[p.monarchName] ?? ''}
+                    onGroup={(g) => setCategoryGroups((s) => ({ ...s, [p.monarchName]: g }))}
                     cats={categories}
                     groups={groups}
                   />
@@ -320,6 +326,8 @@ export function MonarchImport() {
                     rows={p.rows}
                     choice={categoryChoices[p.monarchName] ?? p.choice}
                     onChange={(c) => setCategoryChoices((s) => ({ ...s, [p.monarchName]: c }))}
+                    groupId={categoryGroups[p.monarchName] ?? ''}
+                    onGroup={(g) => setCategoryGroups((s) => ({ ...s, [p.monarchName]: g }))}
                     cats={categories}
                     groups={groups}
                   />
@@ -341,10 +349,14 @@ export function MonarchImport() {
 
           <Button
             className="mt-6 w-full"
-            disabled={busy || plan.rows.length === 0}
+            disabled={busy || plan.rows.length === 0 || ungrouped.length > 0}
             onClick={() => run.mutate()}
           >
-            {busy && progress ? `Importing ${progress.done} / ${progress.total}…` : 'Import'}
+            {busy && progress
+              ? `Importing ${progress.done} / ${progress.total}…`
+              : ungrouped.length > 0
+                ? `Choose a group for ${ungrouped.length} new categor${ungrouped.length === 1 ? 'y' : 'ies'}`
+                : 'Import'}
           </Button>
         </>
       )}
@@ -416,55 +428,80 @@ function CategoryChoiceRow({
   onChange,
   cats,
   groups,
+  groupId = '',
+  onGroup,
 }: {
   name: string;
   rows: number;
   choice: CategoryChoice;
   onChange: (c: CategoryChoice) => void;
   cats: { id: string; name: string; groupId: string }[];
-  groups: { id: string; name: string }[];
+  groups: { id: string; name: string; kind: string }[];
+  groupId?: string;
+  onGroup?: (groupId: string) => void;
 }) {
   const value = choice.type === 'existing' ? `cat:${choice.categoryId}` : `new:${choice.kind}`;
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3">
+    <div className="flex items-start justify-between gap-3 px-4 py-3">
       <span className="min-w-0">
         <span className="block truncate">{name}</span>
         <span className="type-caption text-ink-muted money">{rows}</span>
       </span>
-      <select
-        aria-label={`Category for ${name}`}
-        className={SELECT}
-        value={value}
-        onChange={(e) => {
-          const [t, v] = e.target.value.split(':') as [string, string];
-          onChange(
-            t === 'cat'
-              ? { type: 'existing', categoryId: v }
-              : { type: 'create', kind: v as CategoryKind },
-          );
-        }}
-      >
-        <optgroup label="Add category">
-          {Object.entries(CATEGORY_KINDS).map(([k, label]) => (
-            <option key={k} value={`new:${k}`}>
-              Add as new · {label}
+      <div className="flex min-w-0 flex-1 flex-col items-end gap-2">
+        <select
+          aria-label={`Category for ${name}`}
+          className={SELECT}
+          value={value}
+          onChange={(e) => {
+            const [t, v] = e.target.value.split(':') as [string, string];
+            onChange(
+              t === 'cat'
+                ? { type: 'existing', categoryId: v }
+                : { type: 'create', kind: v as CategoryKind },
+            );
+          }}
+        >
+          <optgroup label="Add category">
+            {Object.entries(CATEGORY_KINDS).map(([k, label]) => (
+              <option key={k} value={`new:${k}`}>
+                Add as new · {label}
+              </option>
+            ))}
+          </optgroup>
+          {groups.map((g) => {
+            const inGroup = cats.filter((c) => c.groupId === g.id);
+            if (inGroup.length === 0) return null;
+            return (
+              <optgroup key={g.id} label={g.name}>
+                {inGroup.map((c) => (
+                  <option key={c.id} value={`cat:${c.id}`}>
+                    {c.name}
+                  </option>
+                ))}
+              </optgroup>
+            );
+          })}
+        </select>
+        {choice.type === 'create' && choice.kind !== 'transfer' && onGroup && (
+          <select
+            aria-label={`Group for ${name}`}
+            className={SELECT}
+            value={groupId}
+            onChange={(e) => onGroup(e.target.value)}
+          >
+            <option value="" disabled>
+              Choose a group
             </option>
-          ))}
-        </optgroup>
-        {groups.map((g) => {
-          const inGroup = cats.filter((c) => c.groupId === g.id);
-          if (inGroup.length === 0) return null;
-          return (
-            <optgroup key={g.id} label={g.name}>
-              {inGroup.map((c) => (
-                <option key={c.id} value={`cat:${c.id}`}>
-                  {c.name}
+            {groups
+              .filter((g) => g.kind === (choice.kind === 'income' ? 'income' : 'expense'))
+              .map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
                 </option>
               ))}
-            </optgroup>
-          );
-        })}
-      </select>
+          </select>
+        )}
+      </div>
     </div>
   );
 }

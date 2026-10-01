@@ -10,6 +10,7 @@ import {
   listCategories,
   listGroups,
 } from './categories';
+import { AppError } from '../lib/errors';
 import { newId, nowIso, type UserId } from './util';
 
 /**
@@ -74,12 +75,19 @@ export async function monarchSetup(
     if (c.kind === 'transfer') await ensureTransferCategory(userId, db);
     const groupName =
       c.kind === 'transfer' ? 'Transfers' : c.kind === 'income' ? 'Imported income' : 'Imported';
-    const groupId = await ensureGroup(
-      userId,
-      db,
-      groupName,
-      c.kind === 'income' ? 'income' : 'expense',
-    );
+    let groupId: string;
+    if (c.groupId && c.kind !== 'transfer') {
+      const picked = (await listGroups(userId, db)).find((g) => g.id === c.groupId);
+      if (!picked) throw new AppError(400, 'BAD_REQUEST', `Unknown group for ${c.monarchName}`);
+      groupId = picked.id;
+    } else {
+      groupId = await ensureGroup(
+        userId,
+        db,
+        groupName,
+        c.kind === 'income' ? 'income' : 'expense',
+      );
+    }
     const existing = (await listCategories(userId, db)).find(
       (x) => x.groupId === groupId && !x.archivedAt && key(x.name) === key(c.monarchName),
     );
