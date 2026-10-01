@@ -1,6 +1,11 @@
 import { periodOf } from '@rise/shared/budget';
 import { normalizeMerchant } from '@rise/shared/categorize';
-import type { MonarchRowsBody, MonarchSetupBody } from '@rise/shared/schemas';
+import { maskOf } from '@rise/shared/import';
+import type {
+  MonarchMergeCandidate,
+  MonarchRowsBody,
+  MonarchSetupBody,
+} from '@rise/shared/schemas';
 import { archiveAccount, createAccount } from './accounts';
 import { refreshAggregateStmts } from './aggregates';
 import {
@@ -331,4 +336,84 @@ export async function undoMonarchBatch(
     ...periods.flatMap((p) => refreshAggregateStmts(userId, db, p.id)),
   ]);
   return count?.n ?? 0;
+}
+
+/**
+ * Import-made history accounts that have a live twin: same trailing mask, exactly one live
+ * account. The person confirms each pair; nothing is merged on a guess.
+ */
+export async function listMergeCandidates(
+  userId: UserId,
+  db: D1Database,
+): Promise<MonarchMergeCandidate[]> {
+  const { results: accounts } = await db
+    .prepare(
+      `SELECT a.id, a.name, a.mask, a.archived_at, a.source,
+         (SELECT COUNT(*) FROM txn t WHERE t.user_id = a.user_id AND t.account_id = a.id) AS rows,
+         (SELECT COUNT(*) FROM txn t WHERE t.user_id = a.user_id AND t.account_id = a.id
+            AND t.source = 'csv' AND t.import_batch_id IS NOT NULL) AS imported
+       FROM account a WHERE a.user_id = ?1`,
+    )
+    .bind(userId)
+    .all<{
+      id: string;
+      name: string;
+      mask: string | null;
+      archived_at: string | null;
+      source: string;
+      rows: number;
+      imported: number;
+    }>();
+  const maskFor = (a: { name: string; mask: string | null }) =>
+    maskOf(a.name) ?? (a.mask ? a.mask.toLowerCase() : null);
+  const live = accounts.filter((a) => !a.archived_at && a.source !== 'manual');
+  const out: MonarchMergeCandidate[] = [];
+  for (const h of accounts) {
+    if (!h.archived_at || h.source !== 'manual' || h.imported === 0 || h.imported !== h.rows)
+      continue;
+    const mask = maskFor(h);
+    if (!mask) continue;
+    const twins = live.filter((l) => maskFor(l) === mask);
+    const twin = twins[0];
+    if (twins.length === 1 && twin)
+      out.push({
+        historyId: h.id,
+        historyName: h.name,
+        liveId: twin.id,
+        liveName: twin.name,
+        rows: h.rows,
+      });
+  }
+  return out;
+}
+
+/** Move a history account's transactions onto its live twin and remove the emptied copy. */
+export async function mergeHistoryAccount(
+  userId: UserId,
+  db: D1Database,
+  historyId: string,
+  liveId: string,
+): Promise<number> {
+  const pair = (await listMergeCandidates(userId, db)).find(
+    (c) => c.historyId === historyId && c.liveId === liveId,
+  );
+  if (!pair) throw new AppError(404, 'NOT_FOUND', 'Those accounts are not a mergeable pair');
+  await db.batch([
+    db
+      .prepare('UPDATE txn SET account_id = ?3 WHERE user_id = ?1 AND account_id = ?2')
+      .bind(userId, historyId, liveId),
+    db
+      .prepare('DELETE FROM deleted_txn WHERE user_id = ?1 AND account_id = ?2')
+      .bind(userId, historyId),
+    db
+      .prepare('DELETE FROM balance_snapshot WHERE user_id = ?1 AND account_id = ?2')
+      .bind(userId, historyId),
+    db
+      .prepare(
+        `DELETE FROM account WHERE user_id = ?1 AND id = ?2
+           AND NOT EXISTS (SELECT 1 FROM txn WHERE user_id = ?1 AND account_id = ?2)`,
+      )
+      .bind(userId, historyId),
+  ]);
+  return pair.rows;
 }

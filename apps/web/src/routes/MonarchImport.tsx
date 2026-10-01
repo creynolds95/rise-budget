@@ -8,7 +8,12 @@ import {
   type CategoryKind,
   type GuessedAccountKind,
 } from '@rise/shared/import';
-import { MONARCH_WINDOW, type MonarchBatch, type MonarchRowsResult } from '@rise/shared/schemas';
+import {
+  MONARCH_WINDOW,
+  type MonarchBatch,
+  type MonarchMergeCandidate,
+  type MonarchRowsResult,
+} from '@rise/shared/schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Chevron } from '../components/primitives/Rows';
@@ -69,6 +74,20 @@ export function MonarchImport() {
   const batches = useQuery({
     queryKey: ['monarch-batches'],
     queryFn: () => get<MonarchBatch[]>('/import/monarch/batches'),
+  });
+  const merges = useQuery({
+    queryKey: ['monarch-merges'],
+    queryFn: () => get<MonarchMergeCandidate[]>('/import/monarch/merges'),
+  });
+  const merge = useMutation({
+    mutationFn: (c: MonarchMergeCandidate) =>
+      api<{ moved: number }>('POST', '/import/monarch/merges', {
+        historyId: c.historyId,
+        liveId: c.liveId,
+      }),
+    onSuccess: async () => {
+      await Promise.all([invalidate(), qc.invalidateQueries({ queryKey: ['monarch-merges'] })]);
+    },
   });
   const undo = useMutation({
     mutationFn: (id: string) => api<null>('DELETE', `/import/monarch/batches/${id}`),
@@ -364,6 +383,36 @@ export function MonarchImport() {
                 : 'Import'}
           </Button>
         </>
+      )}
+
+      {(merges.data?.length ?? 0) > 0 && (
+        <Group title="Split accounts">
+          {merges.data?.map((c) => (
+            <div key={c.historyId} className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="min-w-0">
+                <span className="block truncate">{c.liveName}</span>
+                <span className="type-caption text-ink-muted money">
+                  {c.rows} older transactions
+                </span>
+              </span>
+              <Button
+                variant="quiet"
+                disabled={merge.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Move ${c.rows} older transactions into ${c.liveName}? The separate history copy is removed.`,
+                    )
+                  )
+                    merge.mutate(c);
+                }}
+              >
+                Merge
+              </Button>
+            </div>
+          ))}
+          {merge.isError && <p className="px-4 pb-3 text-clay">{(merge.error as Error).message}</p>}
+        </Group>
       )}
 
       {(batches.data?.length ?? 0) > 0 && (

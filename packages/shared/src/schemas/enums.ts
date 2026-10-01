@@ -66,5 +66,6 @@ export const AuditAction = z.enum([
   'data.exported',
   'import.monarch',
   'import.monarch.undone',
+  'import.monarch.merged',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

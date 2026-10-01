@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MonarchRow } from './adapters/monarch';
 import {
   guessAccountKind,
+  maskOf,
   planMonarchImport,
   possibleDuplicates,
   toImportRows,
@@ -55,6 +56,16 @@ describe('planMonarchImport scope', () => {
       outsideWindow: 2,
       categories: { 'Balance Adjustments': 2 },
     });
+  });
+});
+
+describe('maskOf', () => {
+  it('reads the trailing mask with or without dots', () => {
+    expect(maskOf('USAA CLASSIC CHECKING (...1335)')).toBe('1335');
+    expect(maskOf('USAA CLASSIC CHECKING (1335)')).toBe('1335');
+    expect(maskOf('COLLEGE ACCESS LOAN (...3107-CL0001) ')).toBe('3107-cl0001');
+    expect(maskOf('Savings (12)')).toBeNull();
+    expect(maskOf('No mask here')).toBeNull();
   });
 });
 
