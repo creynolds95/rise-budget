@@ -329,18 +329,22 @@ function CategoriesSection() {
   const [newGroup, setNewGroup] = useState<{ name: string; kind: CategoryGroupKind } | null>(null);
   const [renaming, setRenaming] = useState<CategoryGroup | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<CategoryGroupKind>('expense');
+  const [tab, setTab] = useState<'income' | 'expense' | 'transfer'>('expense');
   const [query, setQuery] = useState('');
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => setSlot(document.getElementById('settings-action')), []);
   const q = query.trim().toLowerCase();
-  const shownGroups = groups.filter(
-    (g) =>
-      g.kind === tab &&
-      (!q ||
-        g.name.toLowerCase().includes(q) ||
-        categories.some((c) => c.groupId === g.id && c.name.toLowerCase().includes(q))),
-  );
+  // Transfers (account moves, card payments) are the unbudgeted categories; they live in
+  // expense groups but aren't expenses, so they get their own tab.
+  const inTab = (c: Category, g: CategoryGroup) =>
+    g.kind === 'income' ? tab === 'income' : tab === (c.budgeted ? 'expense' : 'transfer');
+  const matches = (c: Category, g: CategoryGroup) =>
+    !q || g.name.toLowerCase().includes(q) || c.name.toLowerCase().includes(q);
+  const shownGroups = groups.filter((g) => {
+    const all = categories.filter((c) => c.groupId === g.id);
+    if (all.length === 0) return tab === (g.kind === 'income' ? 'income' : 'expense') && !q;
+    return all.some((c) => inTab(c, g) && matches(c, g));
+  });
   const save = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
@@ -378,7 +382,8 @@ function CategoriesSection() {
               {
                 label: 'Add group',
                 icon: 'plus',
-                onSelect: () => setNewGroup({ name: '', kind: tab }),
+                onSelect: () =>
+                  setNewGroup({ name: '', kind: tab === 'income' ? 'income' : 'expense' }),
               },
             ]}
           />,
@@ -396,8 +401,8 @@ function CategoriesSection() {
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
-      <div role="tablist" className="mt-3 grid grid-cols-2 rounded-input bg-sage-100 p-1">
-        {(['income', 'expense'] as const).map((k) => (
+      <div role="tablist" className="mt-3 grid grid-cols-3 rounded-input bg-sage-100 p-1">
+        {(['income', 'expense', 'transfer'] as const).map((k) => (
           <button
             key={k}
             role="tab"
@@ -407,7 +412,7 @@ function CategoriesSection() {
               tab === k ? 'bg-surface text-ink shadow-soft' : 'text-ink-muted'
             }`}
           >
-            {k === 'income' ? 'Income' : 'Expenses'}
+            {k === 'income' ? 'Income' : k === 'expense' ? 'Expenses' : 'Transfers'}
           </button>
         ))}
       </div>
@@ -426,9 +431,7 @@ function CategoriesSection() {
       >
         {(g, groupGrip) => {
           const inGroup = categories.filter(
-            (c) =>
-              c.groupId === g.id &&
-              (!q || g.name.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)),
+            (c) => c.groupId === g.id && inTab(c, g) && matches(c, g),
           );
           return (
             <section className="mt-5 overflow-hidden rounded-card bg-surface shadow-soft">
@@ -500,15 +503,6 @@ function CategoriesSection() {
                           </span>
                         ) : null}
                       </span>
-                      {!c.budgeted && (
-                        <span
-                          className="text-ink-faint"
-                          title="Not budgeted"
-                          aria-label="Not budgeted"
-                        >
-                          <Icon name="eyeOff" size={18} />
-                        </span>
-                      )}
                     </button>
                   </div>
                 )}
