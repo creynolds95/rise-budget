@@ -83,6 +83,7 @@ describe('T27 SimpleFIN sync', () => {
       env.DB,
       s.userId,
       mockSimpleFin(() => at('2026-09-24T15:00:00Z')),
+      { now: at('2026-09-24T15:00:00Z') },
     );
     expect(r.status).toBe('ok');
     expect(r.accountsTouched).toBe(7);
@@ -142,6 +143,7 @@ describe('T27 SimpleFIN sync', () => {
       env.DB,
       s.userId,
       mockSimpleFin(() => at('2026-09-24T15:00:00Z')),
+      { now: at('2026-09-24T15:00:00Z') },
     );
     const pendingBefore = (await s.txns()).filter((t) => t.is_pending === 1);
     expect(pendingBefore.length).toBeGreaterThan(0);
@@ -149,6 +151,7 @@ describe('T27 SimpleFIN sync', () => {
       env.DB,
       s.userId,
       mockSimpleFin(() => at('2026-09-26T15:00:00Z')),
+      { now: at('2026-09-26T15:00:00Z') },
     );
     expect(r.status).toBe('ok');
     const after = await s.txns();
