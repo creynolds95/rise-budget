@@ -1,5 +1,8 @@
 /** The handful of line icons Rise uses, drawn on a 24px grid at 1.75 stroke. */
 const PATHS = {
+  search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
+  eyeOff:
+    'M3 3l18 18M10.6 6.2A9.5 9.5 0 0 1 12 6c5 0 8.5 4 9.5 6a14 14 0 0 1-2.6 3.3M6.7 7.7A14 14 0 0 0 2.5 12c1 2 4.5 6 9.5 6 1.3 0 2.5-.3 3.5-.7M9.9 10a3 3 0 0 0 4.1 4.1',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   plus: 'M12 5v14M5 12h14',
   refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',

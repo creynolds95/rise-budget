@@ -2,7 +2,7 @@ import type { ViewCategory } from '@rise/shared/budget';
 import { merchantName } from '../lib/merchant';
 import type { Category, CategoryGroup, Reallocation } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { usePlanFlow } from '../components/PlanFlow';
@@ -47,23 +47,6 @@ export function Budget() {
   const isDesktop = useIsDesktop();
   const selected = params.get('category');
 
-  if (!period.data || !groups.data || !categories.data) return <BudgetSkeleton />;
-  const p = period.data;
-  const closed = p.period.status === 'closed';
-  const byId = new Map(categories.data.map((c) => [c.id, c]));
-  const expenseGroups = groups.data.filter((g) => g.kind === 'expense');
-  const incomeGroups = groups.data.filter((g) => g.kind === 'income');
-  const expenseCarriedCents = p.categories.reduce((n, c) => {
-    const cat = byId.get(c.categoryId);
-    return c.groupKind === 'expense' && cat?.budgeted ? n + c.carriedInCents : n;
-  }, 0);
-
-  const selectCategory = (categoryId: string) => {
-    const next = new URLSearchParams(params);
-    next.set('category', categoryId);
-    setParams(next);
-  };
-
   const settingsHref = `/settings/budget?from=${encodeURIComponent(`Budget|/budget${month === today.slice(0, 7) ? '' : `?m=${month}`}`)}`;
   useHeaderActions(
     <Link
@@ -75,6 +58,36 @@ export function Budget() {
       <Icon name="more" />
     </Link>,
   );
+
+  if (!period.data || !groups.data || !categories.data) return <BudgetSkeleton />;
+  const p = period.data;
+  const closed = p.period.status === 'closed';
+  const byId = new Map(categories.data.map((c) => [c.id, c]));
+  const expenseGroups = groups.data.filter((g) => g.kind === 'expense');
+  const incomeGroups = groups.data.filter((g) => g.kind === 'income');
+  const expenseCarriedCents = p.categories.reduce((n, c) => {
+    const cat = byId.get(c.categoryId);
+    return c.groupKind === 'expense' && cat?.budgeted ? n + c.carriedInCents : n;
+  }, 0);
+
+  // C8: unbudgeted categories (Transfer, Credit Card Payment, Other) have a real category row
+  // for splits and rules, but never a budget line — showing one here would let the user "plan"
+  // money for something that isn't spending. Budgeted ones with nothing planned, carried or
+  // spent this month go to the collapsed Unbudgeted list instead of crowding the groups.
+  const expenseRows = p.categories.filter((c) => {
+    const cat = byId.get(c.categoryId);
+    return c.groupKind === 'expense' && cat?.budgeted;
+  });
+  const idle = (c: ViewCategory) =>
+    c.plannedCents === 0 && c.carriedInCents === 0 && c.spentCents === 0;
+  const visibleRows = expenseRows.filter((c) => !idle(c));
+  const unbudgetedRows = expenseRows.filter(idle);
+
+  const selectCategory = (categoryId: string) => {
+    const next = new URLSearchParams(params);
+    next.set('category', categoryId);
+    setParams(next);
+  };
 
   return (
     <div className={selected ? 'lg:flex lg:items-start lg:gap-10 lg:px-8' : ''}>
@@ -172,29 +185,33 @@ export function Budget() {
           {expenseGroups.length === 0 ? (
             <EmptyBudget onAdd={() => setAdding(true)} />
           ) : (
-            expenseGroups.map((g) => (
-              <GroupSection
-                key={g.id}
-                group={g}
-                rows={p.categories.filter((c) => {
-                  const cat = byId.get(c.categoryId);
-                  // C8: unbudgeted categories (Transfer, Credit Card Payment, Other) have a
-                  // real category row for splits and rules, but never a budget line — showing
-                  // one here would let the user "plan" money for something that isn't spending.
-                  return cat?.groupId === g.id && cat.budgeted;
-                })}
-                byId={byId}
-                month={month}
-                editable={!closed}
-                onEdit={(row) => {
-                  const category = byId.get(row.categoryId);
-                  if (category) plan.open(category, row, p.poolCents);
-                }}
-                isDesktop={isDesktop}
-                onSelect={selectCategory}
-                kind="expense"
-              />
-            ))
+            <>
+              {expenseGroups.map((g) => {
+                const rows = visibleRows.filter((c) => byId.get(c.categoryId)?.groupId === g.id);
+                const idleRows = unbudgetedRows.filter(
+                  (c) => byId.get(c.categoryId)?.groupId === g.id,
+                );
+                if (rows.length === 0 && idleRows.length === 0) return null;
+                return (
+                  <GroupSection
+                    key={g.id}
+                    group={g}
+                    rows={rows}
+                    idle={idleRows}
+                    byId={byId}
+                    month={month}
+                    editable={!closed}
+                    onEdit={(row) => {
+                      const category = byId.get(row.categoryId);
+                      if (category) plan.open(category, row, p.poolCents);
+                    }}
+                    isDesktop={isDesktop}
+                    onSelect={selectCategory}
+                    kind="expense"
+                  />
+                );
+              })}
+            </>
           )}
         </section>
 
@@ -368,6 +385,7 @@ function ColumnHeadings() {
 function GroupSection({
   group,
   rows,
+  idle = [],
   byId,
   month,
   editable,
@@ -378,6 +396,8 @@ function GroupSection({
 }: {
   group: CategoryGroup;
   rows: ViewCategory[];
+  /** $0 categories: hidden behind "Show N unbudgeted" so the group stays short. */
+  idle?: ViewCategory[];
   byId: Map<string, Category>;
   month: string;
   editable: boolean;
@@ -387,6 +407,7 @@ function GroupSection({
   kind: 'income' | 'expense';
 }) {
   const [open, setOpen] = useState(true);
+  const [showIdle, setShowIdle] = useState(false);
   const plannedTotal = rows.reduce((n, r) => n + r.plannedCents, 0);
   const remainingTotal = rows.reduce((n, r) => {
     const earned = kind === 'income' ? -r.spentCents : r.spentCents;
@@ -441,7 +462,31 @@ function GroupSection({
                   kind={kind}
                 />
               ))}
+            {showIdle &&
+              idle.map((r) => (
+                <BudgetRow
+                  key={r.categoryId}
+                  row={r}
+                  category={byId.get(r.categoryId)}
+                  month={month}
+                  editable={editable}
+                  onEdit={() => onEdit(r)}
+                  isDesktop={isDesktop}
+                  onSelect={onSelect}
+                  kind={kind}
+                />
+              ))}
           </ul>
+          {idle.length > 0 && (
+            <button
+              onClick={() => setShowIdle(!showIdle)}
+              aria-expanded={showIdle}
+              className="mt-1 flex min-h-11 items-center gap-2 text-ink-muted"
+            >
+              <Icon name="eyeOff" size={18} />
+              {showIdle ? 'Collapse' : 'Show'} {idle.length} unbudgeted
+            </button>
+          )}
         </div>
       )}
     </section>
@@ -475,60 +520,57 @@ function BudgetRow({
   const over = remainingCents < 0 && kind !== 'income';
   const navigate = useNavigate();
   const to = `/budget/${row.categoryId}?m=${month}`;
+  const rolls = category?.rolloverPolicy === 'roll' && kind === 'expense';
+  const open = (e: ReactMouseEvent) => {
+    // H5: desktop opens the category beside the list instead of pushing over it.
+    if (isDesktop) {
+      e.preventDefault();
+      onSelect(row.categoryId);
+      return;
+    }
+    transitionClick(navigate, to)(e);
+  };
   return (
     <li className="gutter border-b border-hairline last:border-b-0">
-      <Link
-        to={to}
-        onClick={(e) => {
-          // H5: desktop opens the category beside the list instead of pushing over it.
-          if (isDesktop) {
-            e.preventDefault();
-            onSelect(row.categoryId);
-            return;
-          }
-          transitionClick(navigate, to)(e);
-        }}
-        className="block pt-2 active:bg-sage-100"
-      >
-        <span className="flex min-h-9 min-w-0 items-center gap-1.5 text-sm font-medium">
+      <div className="flex items-center gap-2 pt-1.5">
+        <Link
+          to={to}
+          onClick={open}
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 text-sm font-medium active:bg-sage-100"
+        >
           {category?.emoji && (
             <span aria-hidden className="text-base leading-none">
               {category.emoji}
             </span>
           )}
           <span className="truncate">{category?.name ?? 'Category'}</span>
-        </span>
-        <div className="mt-1.5">
-          {kind === 'income' ? (
-            <FillBar filledCents={earnedCents} targetCents={row.availableCents} tick={null} />
-          ) : (
-            <Rail
-              carriedInCents={row.carriedInCents}
-              plannedCents={row.plannedCents}
-              spentCents={row.spentCents}
-              availableCents={row.availableCents}
-              tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
-            />
+          {rolls && (
+            <span
+              role="img"
+              aria-label="Leftover carries into next month"
+              title="Leftover carries into next month"
+              className="shrink-0 text-ink-faint"
+            >
+              <Icon name="refresh" size={14} />
+            </span>
           )}
-        </div>
-      </Link>
-      <div className="flex items-center justify-end gap-3 pt-1.5 pb-2">
+        </Link>
         {editable ? (
           <button
             onClick={onEdit}
             aria-label={`Planned for ${category?.name ?? 'category'}: ${formatCents(row.plannedCents)}. Change`}
-            className="flex min-h-9 w-[72px] items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
+            className="flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
           >
             <MoneyText cents={row.plannedCents} whole={row.plannedCents % 100 === 0} />
           </button>
         ) : (
-          <span className="flex min-h-9 w-[72px] items-center justify-end rounded-input border border-hairline px-2 text-sm text-ink-muted">
+          <span className="flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm text-ink-muted">
             <MoneyText cents={row.plannedCents} tone="muted" whole={row.plannedCents % 100 === 0} />
           </span>
         )}
         <span
           aria-label={`${over ? 'Over' : 'Remaining'}: ${formatCents(Math.abs(remainingCents))}`}
-          className={`flex min-h-9 w-[72px] items-center justify-end gap-1 rounded-full px-2 text-sm font-semibold ${
+          className={`flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-full px-2 text-sm font-semibold ${
             remainingCents === 0
               ? 'bg-sage-100 text-ink-muted'
               : over
@@ -536,23 +578,24 @@ function BudgetRow({
                 : 'bg-sage-100 text-sage-700'
           }`}
         >
-          {row.carriedInCents !== 0 && (
-            <span
-              aria-hidden
-              title={
-                row.carriedInCents < 0
-                  ? `Carried a ${formatCents(-row.carriedInCents)} deficit`
-                  : `Carried ${formatCents(row.carriedInCents)} forward`
-              }
-            >
-              <Icon name="refresh" size={12} />
-            </span>
-          )}
           <span className="money">
             {formatCents(Math.abs(remainingCents), { whole: remainingCents % 100 === 0 })}
           </span>
         </span>
       </div>
+      <Link to={to} onClick={open} tabIndex={-1} aria-hidden className="block pb-3">
+        {kind === 'income' ? (
+          <FillBar filledCents={earnedCents} targetCents={row.availableCents} tick={null} />
+        ) : (
+          <Rail
+            carriedInCents={row.carriedInCents}
+            plannedCents={row.plannedCents}
+            spentCents={row.spentCents}
+            availableCents={row.availableCents}
+            tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
+          />
+        )}
+      </Link>
     </li>
   );
 }

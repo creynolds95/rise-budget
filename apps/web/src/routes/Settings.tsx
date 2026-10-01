@@ -8,7 +8,8 @@ import type {
   RuleMatchType,
 } from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { CategoryEditSheet } from '../components/CategoryEditSheet';
@@ -23,8 +24,10 @@ import { getThemeSetting, setThemeSetting, type ThemeSetting } from '../lib/them
 import { CategoryPicker } from '../components/CategoryPicker';
 import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
-import { IconButton } from '../components/primitives/Icon';
+import { Icon, IconButton } from '../components/primitives/Icon';
+import { Menu } from '../components/primitives/Menu';
 import { Sheet } from '../components/primitives/Sheet';
+import { Sortable } from '../components/primitives/Sortable';
 import { Reports } from './Reports';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
@@ -207,7 +210,7 @@ export function SettingsSection() {
           {back.label}
         </Link>
         <h1 className="type-body font-semibold">{SECTIONS[s]}</h1>
-        <span />
+        <span id="settings-action" className="justify-self-end" />
       </header>
       {s === 'reports' && <Reports />}
       <div className="gutter pt-4">
@@ -318,8 +321,18 @@ function CategoriesSection() {
   const [newGroup, setNewGroup] = useState<{ name: string; kind: CategoryGroupKind } | null>(null);
   const [renaming, setRenaming] = useState<CategoryGroup | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Arrows only while reordering, so a row is one target the rest of the time (C15).
-  const [ordering, setOrdering] = useState(false);
+  const [tab, setTab] = useState<CategoryGroupKind>('expense');
+  const [query, setQuery] = useState('');
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => setSlot(document.getElementById('settings-action')), []);
+  const q = query.trim().toLowerCase();
+  const shownGroups = groups.filter(
+    (g) =>
+      g.kind === tab &&
+      (!q ||
+        g.name.toLowerCase().includes(q) ||
+        categories.some((c) => c.groupId === g.id && c.name.toLowerCase().includes(q))),
+  );
   const save = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
@@ -330,151 +343,177 @@ function CategoriesSection() {
     }
   };
   const input = 'min-h-11 min-w-0 flex-1 rounded-input border border-hairline bg-surface px-3';
-  const move = (g: CategoryGroup, dir: -1 | 1) => {
-    const i = groups.findIndex((x) => x.id === g.id);
-    const other = groups[i + dir];
-    if (!other) return;
+  // Dragging reports the new order; every row whose place changed gets its position as its
+  // sort order.
+  const reorder = (
+    kind: 'category-groups' | 'categories',
+    current: { id: string; sortOrder: number }[],
+    ids: string[],
+  ) => {
+    const byId = new Map(current.map((x) => [x.id, x]));
     void save(() =>
-      Promise.all([
-        api('PATCH', `/category-groups/${g.id}`, { sortOrder: other.sortOrder }),
-        api('PATCH', `/category-groups/${other.id}`, { sortOrder: g.sortOrder }),
-      ]),
+      Promise.all(
+        ids.flatMap((id, i) =>
+          byId.get(id)?.sortOrder === i ? [] : [api('PATCH', `/${kind}/${id}`, { sortOrder: i })],
+        ),
+      ),
     );
   };
   return (
     <>
-      <div className="flex justify-end">
-        <Button variant="quiet" className="-mr-4" onClick={() => setOrdering(!ordering)}>
-          {ordering ? 'Done' : 'Reorder'}
-        </Button>
+      {slot &&
+        createPortal(
+          <Menu
+            label="Category options"
+            items={[
+              { label: 'Add category', icon: 'plus', onSelect: () => setAdding(true) },
+              {
+                label: 'Add group',
+                icon: 'plus',
+                onSelect: () => setNewGroup({ name: '', kind: tab }),
+              },
+            ]}
+          />,
+          slot,
+        )}
+      <label className="flex min-h-11 items-center gap-2 rounded-input bg-surface px-3 shadow-soft">
+        <span className="text-ink-faint">
+          <Icon name="search" size={18} />
+        </span>
+        <input
+          aria-label="Search categories"
+          className="min-w-0 flex-1 bg-transparent outline-none"
+          placeholder="Search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </label>
+      <div role="tablist" className="mt-3 grid grid-cols-2 rounded-input bg-sage-100 p-1">
+        {(['income', 'expense'] as const).map((k) => (
+          <button
+            key={k}
+            role="tab"
+            aria-selected={tab === k}
+            onClick={() => setTab(k)}
+            className={`min-h-9 rounded-[10px] font-medium ${
+              tab === k ? 'bg-surface text-ink shadow-soft' : 'text-ink-muted'
+            }`}
+          >
+            {k === 'income' ? 'Income' : 'Expenses'}
+          </button>
+        ))}
       </div>
       {error && <p className="mt-2 text-clay">{error}</p>}
-      {groups.map((g, i) => (
-        <section key={g.id} className="mt-6">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="type-label text-ink-muted">
-              {g.name}
-              {g.name.toLowerCase() !== g.kind &&
-                ` · ${g.kind === 'income' ? 'Income' : 'Expense'}`}
-            </h2>
-            <div className="flex items-center">
-              {ordering && (
-                <>
+      <Sortable
+        items={shownGroups}
+        onReorder={(ids) =>
+          reorder(
+            'category-groups',
+            groups,
+            // Reordering a filtered tab keeps the other kind's groups where they were.
+            [...ids, ...groups.filter((g) => !ids.includes(g.id)).map((g) => g.id)],
+          )
+        }
+        className="list-none"
+      >
+        {(g, groupGrip) => {
+          const inGroup = categories.filter(
+            (c) =>
+              c.groupId === g.id &&
+              (!q || g.name.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)),
+          );
+          return (
+            <section className="mt-5 overflow-hidden rounded-card bg-surface shadow-soft">
+              <div className="flex items-center bg-sage-100/60">
+                <span
+                  {...(groupGrip as object)}
+                  role="button"
+                  aria-label={`Drag ${g.name} to reorder`}
+                  className="flex size-11 shrink-0 items-center justify-center text-ink-faint"
+                >
+                  <Grip />
+                </span>
+                <h2 className="min-w-0 flex-1 truncate font-bold text-ink">{g.name}</h2>
+                <IconButton
+                  icon="pencil"
+                  label={`Rename ${g.name}`}
+                  onClick={() => setRenaming(g)}
+                />
+                {categories.filter((c) => c.groupId === g.id).length === 0 && (
                   <IconButton
-                    icon="chevronDown"
-                    iconClassName="rotate-180"
-                    label="Move up"
-                    disabled={i === 0}
-                    onClick={() => move(g, -1)}
+                    icon="trash"
+                    label={`Delete ${g.name}`}
+                    onClick={() => void save(() => api('DELETE', `/category-groups/${g.id}`))}
                   />
-                  <IconButton
-                    icon="chevronDown"
-                    label="Move down"
-                    disabled={i === groups.length - 1}
-                    onClick={() => move(g, 1)}
-                  />
-                </>
-              )}
-              {!ordering && (
-                <>
-                  <IconButton
-                    icon="pencil"
-                    label={`Rename ${g.name}`}
-                    onClick={() => setRenaming(g)}
-                  />
-                  {categories.filter((c) => c.groupId === g.id).length === 0 && (
-                    <IconButton
-                      icon="trash"
-                      label={`Delete ${g.name}`}
-                      onClick={() => void save(() => api('DELETE', `/category-groups/${g.id}`))}
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-          <ul className="mt-2 divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft">
-            {categories
-              .filter((c) => c.groupId === g.id)
-              .map((c, ci, own) => (
-                <li key={c.id} className="flex items-center">
-                  <button
-                    onClick={() => setEditing(c)}
-                    disabled={ordering}
-                    className="flex min-h-13 min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left active:bg-sage-100"
-                  >
-                    {c.emoji && (
-                      <span aria-hidden className="w-7 text-center text-xl leading-none">
-                        {c.emoji}
-                      </span>
-                    )}
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">{c.name}</span>
-                      {g.kind === 'expense' && c.budgeted && (
-                        <span className="block type-caption text-ink-faint">
-                          {c.rolloverPolicy === 'roll' ? 'Leftover carries' : 'Leftover returns'}
-                          {c.spendShape === 'fixed' ? ' · like a bill' : ''}
+                )}
+              </div>
+              <Sortable
+                items={inGroup}
+                onReorder={(ids) =>
+                  reorder(
+                    'categories',
+                    categories.filter((c) => c.groupId === g.id),
+                    ids,
+                  )
+                }
+                className="divide-y divide-hairline"
+              >
+                {(c, grip) => (
+                  <div className="flex items-center bg-surface">
+                    <span
+                      {...(grip as object)}
+                      role="button"
+                      aria-label={`Drag ${c.name} to reorder`}
+                      className="flex size-11 shrink-0 items-center justify-center text-ink-faint"
+                    >
+                      <Grip />
+                    </span>
+                    <button
+                      onClick={() => setEditing(c)}
+                      className="flex min-h-13 min-w-0 flex-1 items-center gap-3 py-3 pr-4 text-left active:bg-sage-100"
+                    >
+                      {c.emoji && (
+                        <span aria-hidden className="w-7 text-center text-xl leading-none">
+                          {c.emoji}
                         </span>
                       )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{c.name}</span>
+                        {/* Not rolling over is the norm, so only a category that does says so. */}
+                        {(g.kind === 'expense' && c.budgeted && c.rolloverPolicy === 'roll') ||
+                        (g.kind === 'expense' && c.budgeted && c.spendShape === 'fixed') ? (
+                          <span className="block type-caption text-ink-faint">
+                            {[
+                              c.rolloverPolicy === 'roll' ? 'Rollover' : null,
+                              c.spendShape === 'fixed' ? 'Like a bill' : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                        ) : null}
+                      </span>
                       {!c.budgeted && (
-                        <span className="block type-caption text-ink-faint">Not budgeted</span>
+                        <span
+                          className="text-ink-faint"
+                          title="Not budgeted"
+                          aria-label="Not budgeted"
+                        >
+                          <Icon name="eyeOff" size={18} />
+                        </span>
                       )}
-                    </span>
-                    {!ordering && <Chevron />}
-                  </button>
-                  {ordering && (
-                    <>
-                      <IconButton
-                        icon="chevronDown"
-                        iconClassName="rotate-180"
-                        label={`Move ${c.name} up`}
-                        disabled={ci === 0}
-                        onClick={() => {
-                          const other = own[ci - 1];
-                          if (!other) return;
-                          void save(() =>
-                            Promise.all([
-                              api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
-                              api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
-                            ]),
-                          );
-                        }}
-                      />
-                      <IconButton
-                        icon="chevronDown"
-                        label={`Move ${c.name} down`}
-                        disabled={ci === own.length - 1}
-                        onClick={() => {
-                          const other = own[ci + 1];
-                          if (!other) return;
-                          void save(() =>
-                            Promise.all([
-                              api('PATCH', `/categories/${c.id}`, { sortOrder: other.sortOrder }),
-                              api('PATCH', `/categories/${other.id}`, { sortOrder: c.sortOrder }),
-                            ]),
-                          );
-                        }}
-                      />
-                    </>
-                  )}
-                </li>
-              ))}
-          </ul>
-          {g.kind === 'income' && <IncomeCategoryAdd groupId={g.id} onSave={save} />}
-        </section>
-      ))}
-      <div className="mt-6 flex flex-col items-start">
-        <Button variant="quiet" className="-ml-4" onClick={() => setAdding(true)}>
-          Add an expense category
-        </Button>
-        <Button
-          variant="quiet"
-          className="-ml-4"
-          onClick={() => setNewGroup({ name: '', kind: 'income' })}
-        >
-          Add a group
-        </Button>
-      </div>
+                    </button>
+                  </div>
+                )}
+              </Sortable>
+              {g.kind === 'income' && (
+                <div className="px-4 pb-3">
+                  <IncomeCategoryAdd groupId={g.id} onSave={save} />
+                </div>
+              )}
+            </section>
+          );
+        }}
+      </Sortable>
       <AddCategorySheet open={adding} groups={groups} onClose={() => setAdding(false)} />
       <CategoryEditSheet category={editing} groups={groups} onClose={() => setEditing(null)} />
       <Sheet open={newGroup !== null} title="New group" onClose={() => setNewGroup(null)}>
@@ -540,6 +579,17 @@ function CategoriesSection() {
         )}
       </Sheet>
     </>
+  );
+}
+
+/** Six dots: the handle to pick a row up by. */
+function Grip() {
+  return (
+    <svg aria-hidden width="14" height="20" viewBox="0 0 14 20" className="fill-current">
+      {[3, 10, 17].flatMap((y) =>
+        [3, 11].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.6" />),
+      )}
+    </svg>
   );
 }
 

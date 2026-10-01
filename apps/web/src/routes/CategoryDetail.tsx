@@ -6,13 +6,14 @@ import { usePlanFlow } from '../components/PlanFlow';
 import { TxnRow } from '../components/TxnRow';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
-import { Chart } from '../components/primitives/Chart';
 import { MoneyText } from '../components/primitives/MoneyText';
-import { EditRow, NavRow, StaticRow } from '../components/primitives/Rows';
+import { NavRow, ValueRow } from '../components/primitives/Rows';
+import { IconButton } from '../components/primitives/Icon';
+import { Rail } from '../components/primitives/Rail';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
-import type { Range } from '../lib/chart';
+import { yearBars, type MonthSpend } from '../lib/plan';
 import { monthEnd, monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { backFrom } from '../lib/nav';
@@ -24,15 +25,6 @@ import {
   useToday,
   useTransactions,
 } from '../lib/queries';
-
-const RANGE_MONTHS: Record<Range, number> = {
-  '1M': 1,
-  '3M': 3,
-  '6M': 6,
-  YTD: 12,
-  '1Y': 12,
-  ALL: 36,
-};
 
 /** T42. The hero is the number — available this month — never a chart. */
 export function CategoryDetail() {
@@ -62,17 +54,11 @@ function CategoryDetailBody({
   month: string;
   back: { label: string; to: string };
 }) {
-  const today = useToday();
   const period = usePeriod(month);
   const categories = useCategories();
-  const [range, setRange] = useState<Range>('6M');
-  const months = range === 'YTD' ? Number(today.slice(5, 7)) : RANGE_MONTHS[range];
   const history = useQuery({
-    queryKey: ['category-history', categoryId, months],
-    queryFn: () =>
-      get<{ periodId: string; spentCents: number }[]>(
-        `/categories/${categoryId}/history?months=${months}`,
-      ),
+    queryKey: ['category-history', categoryId, 13],
+    queryFn: () => get<MonthSpend[]>(`/categories/${categoryId}/history?months=13`),
   });
   const txns = useTransactions({ category: categoryId, from: `${month}-01`, to: monthEnd(month) });
   const [forgiving, setForgiving] = useState(false);
@@ -93,6 +79,8 @@ function CategoryDetailBody({
   }
   const open = period.data.period.status === 'open';
   const list = txns.data?.pages.flatMap((p) => p.items) ?? [];
+  const bars = yearBars(history.data ?? [], month);
+  const name = monthName(month, false);
 
   return (
     <>
@@ -101,80 +89,65 @@ function CategoryDetailBody({
           back,
           title: `${cat.emoji ? `${cat.emoji} ` : ''}${cat.name}`,
           action: (
-            <button
-              onClick={() => setEditingCat(true)}
-              className="min-h-11 px-1 font-medium text-sage-700"
-            >
-              Edit
-            </button>
+            <IconButton icon="pencil" label="Edit category" onClick={() => setEditingCat(true)} />
           ),
         }}
-        identity={{
-          label: `Left in ${monthName(month, false)}`,
-          hero: (
-            <MoneyText cents={row.remainingCents} tone={row.remainingCents < 0 ? 'over' : 'ink'} />
-          ),
-          context: (
-            <>
-              <MoneyText cents={row.availableCents} tone="muted" /> available ·{' '}
-              <MoneyText cents={row.spentCents} tone="muted" /> spent
-            </>
-          ),
-        }}
-        shape={
-          <Chart
-            kind="bar"
-            label={`${cat.name} spending by month`}
-            bars={(history.data ?? []).map((h) => ({
-              label: monthName(h.periodId, false).slice(0, 3),
-              cents: h.spentCents,
-            }))}
-            range={range}
-            onRange={setRange}
-          />
-        }
+        shape={<MonthBars bars={bars} selected={month} loading={history.isPending} />}
+        factsTitle="Summary"
         facts={
           <>
-            <EditRow
-              label="Planned"
-              field={
-                open ? (
-                  <button
-                    onClick={() => plan.open(cat, row, period.data?.poolCents ?? 0)}
-                    aria-label={`Planned for ${cat.name}: ${formatCents(row.plannedCents)}. Change`}
-                    className="flex min-h-11 items-center rounded-full bg-sage-100 px-3.5 font-semibold text-sage-700 active:bg-sage-300"
-                  >
-                    <MoneyText cents={row.plannedCents} className="text-sage-700" />
-                  </button>
-                ) : (
-                  <MoneyText cents={row.plannedCents} />
-                )
-              }
-            />
-            <StaticRow
-              label="Carried in"
-              value={
+            <ValueRow label={`Left in ${name}`}>
+              <MoneyText
+                cents={row.remainingCents}
+                tone={row.remainingCents < 0 ? 'over' : 'ink'}
+              />
+            </ValueRow>
+            {(cat.rolloverPolicy === 'roll' || row.carriedInCents !== 0) && (
+              <ValueRow label="Rolled over from last month">
                 <MoneyText
                   cents={row.carriedInCents}
                   tone={row.carriedInCents < 0 ? 'over' : 'ink'}
                 />
-              }
-            />
-            <StaticRow
-              label="Leftover at month end"
-              value={cat.rolloverPolicy === 'roll' ? 'Carries forward' : 'Returns to pool'}
-            />
-            <StaticRow
-              label="Spending pattern"
-              value={cat.spendShape === 'fixed' ? 'All at once, like a bill' : 'Through the month'}
-            />
-            {cat.typicalPostDay && (
-              <StaticRow label="Usually posts" value={`Day ${cat.typicalPostDay}`} />
+              </ValueRow>
+            )}
+            <div className="border-b border-hairline py-3">
+              <Rail
+                carriedInCents={row.carriedInCents}
+                plannedCents={row.plannedCents}
+                spentCents={row.spentCents}
+                availableCents={row.availableCents}
+                tick={null}
+              />
+            </div>
+            <ValueRow
+              label="Planned"
+              {...(open ? { onClick: () => plan.open(cat, row, period.data?.poolCents ?? 0) } : {})}
+            >
+              <MoneyText cents={row.plannedCents} />
+            </ValueRow>
+            <ValueRow label="Total amount">
+              <MoneyText cents={row.spentCents} />
+            </ValueRow>
+            {list.length > 0 && !txns.hasNextPage && (
+              <ValueRow label="Average transaction">
+                <MoneyText cents={Math.round(row.spentCents / list.length)} />
+              </ValueRow>
+            )}
+            {open && row.carriedInCents < 0 && (
+              <div className="py-3">
+                <Button
+                  variant="quiet"
+                  className="w-full bg-sage-100"
+                  onClick={() => setForgiving(true)}
+                >
+                  Reset rollover
+                </Button>
+              </div>
             )}
           </>
         }
         related={{
-          title: `Transactions in ${monthName(month, false)}`,
+          title: 'Transactions',
           children: (
             <>
               {list.length === 0 && <p className="py-3 text-ink-muted">Nothing filed here yet.</p>}
@@ -190,13 +163,6 @@ function CategoryDetailBody({
             </>
           ),
         }}
-        manage={
-          open && row.carriedInCents < 0 ? (
-            <Button variant="danger" className="-ml-4" onClick={() => setForgiving(true)}>
-              Forgive carried deficit of {formatCents(-row.carriedInCents)}
-            </Button>
-          ) : undefined
-        }
       />
       {plan.sheets}
       <CategoryEditSheet
@@ -284,5 +250,55 @@ function ForgiveSheet({
         Forgive {formatCents(amountCents)}
       </Button>
     </Sheet>
+  );
+}
+
+/** Twelve months of spending, the one on screen picked out. */
+function MonthBars({
+  bars,
+  selected,
+  loading,
+}: {
+  bars: MonthSpend[];
+  selected: string;
+  loading: boolean;
+}) {
+  const max = Math.max(1, ...bars.map((b) => b.spentCents));
+  const H = 120;
+  return (
+    <figure className="m-0" aria-label="Spending by month">
+      <div className="flex items-end gap-1.5" style={{ height: H }}>
+        {bars.map((b) => {
+          const h = loading ? 6 : Math.max(Math.round((Math.max(b.spentCents, 0) / max) * H), 4);
+          return (
+            <div key={b.periodId} className="flex h-full min-w-0 flex-1 items-end">
+              <div
+                title={`${monthName(b.periodId, false)}: ${formatCents(b.spentCents)}`}
+                className={`w-full rounded-t-[5px] rounded-b-[2px] ${
+                  loading
+                    ? 'animate-pulse bg-hairline'
+                    : b.periodId === selected
+                      ? 'bg-sage-600'
+                      : 'bg-sage-300'
+                }`}
+                style={{ height: h }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div aria-hidden className="mt-1.5 flex gap-1.5">
+        {bars.map((b) => (
+          <span
+            key={b.periodId}
+            className={`min-w-0 flex-1 text-center text-[10px] tracking-wide uppercase ${
+              b.periodId === selected ? 'font-semibold text-ink' : 'text-ink-faint'
+            }`}
+          >
+            {monthName(b.periodId, false).slice(0, 3)}
+          </span>
+        ))}
+      </div>
+    </figure>
   );
 }

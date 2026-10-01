@@ -7,7 +7,6 @@ import { addMonths, monthName } from '../lib/dates';
 import { centsToInput, formatCents, parseMoney } from '../lib/money';
 import { planStats, upToDollar, type MonthSpend } from '../lib/plan';
 import { useMe } from '../lib/queries';
-import { Group, GroupRow } from './primitives/Group';
 import { MoneyText } from './primitives/MoneyText';
 import { Sheet } from './primitives/Sheet';
 import { Toggle } from './primitives/Toggle';
@@ -55,6 +54,9 @@ function Editor({
   const { category, row, month, poolCents } = edit;
   const me = useMe().data;
   const [text, setText] = useState(centsToInput(row.plannedCents).replace(/\.00$/, ''));
+  // Add and Remove adjust the current plan by what you type; neither is the default.
+  const [mode, setMode] = useState<'set' | 'add' | 'remove'>('set');
+  const [hint, setHint] = useState(false);
   const [future, setFuture] = useState(me?.settings.planChangesApplyToFuture ?? false);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -69,8 +71,24 @@ function Editor({
   });
   const stats = planStats(history.data ?? [], month);
   const parsed = parseMoney(text);
-  const valid = parsed !== null && parsed >= 0;
-  const cents = valid ? parsed : row.plannedCents;
+  const delta = mode === 'set' ? 0 : (parsed ?? 0);
+  const valid = parsed !== null && parsed >= 0 && (mode !== 'remove' || parsed <= row.plannedCents);
+  const cents = !valid
+    ? row.plannedCents
+    : mode === 'set'
+      ? parsed
+      : mode === 'add'
+        ? row.plannedCents + delta
+        : row.plannedCents - delta;
+  const pick = (m: 'add' | 'remove') => {
+    if (mode === m) {
+      setMode('set');
+      set(row.plannedCents);
+    } else {
+      setMode(m);
+      setText('');
+    }
+  };
   const left = row.carriedInCents + cents - row.spentCents;
   const poolAfter = poolCents - (cents - row.plannedCents);
   const set = (c: number) => setText(centsToInput(c).replace(/\.00$/, ''));
@@ -102,7 +120,34 @@ function Editor({
         disabled: !valid || busy,
       }}
     >
-      <div>
+      <div className="flex min-h-full flex-col">
+        <div className="grid grid-cols-2 pt-1">
+          {(['add', 'remove'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => pick(m)}
+              aria-pressed={mode === m}
+              className={`flex min-h-11 items-center justify-center gap-2 font-medium ${
+                mode === m ? 'text-sage-700' : 'text-ink'
+              }`}
+            >
+              <svg
+                aria-hidden
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                className="fill-none stroke-current"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d={m === 'add' ? 'M12 8v8M8 12h8' : 'M8 12h8'} />
+              </svg>
+              {m === 'add' ? 'Add' : 'Remove'}
+            </button>
+          ))}
+        </div>
         <label className="flex flex-col items-center pt-2">
           <span className="sr-only">Planned for {monthShort}</span>
           <span
@@ -111,7 +156,7 @@ function Editor({
             } focus-within:bg-sage-100`}
           >
             <span aria-hidden className="mr-0.5 text-ink-faint">
-              $
+              {mode === 'add' ? '+$' : mode === 'remove' ? '−$' : '$'}
             </span>
             <input
               ref={input}
@@ -134,10 +179,15 @@ function Editor({
             />
           </span>
         </label>
-        <p className="mt-1 text-center type-label text-ink-muted">
-          Left in {monthShort}:{' '}
-          <MoneyText cents={left} tone={left < 0 ? 'over' : 'ink'} className="font-semibold" />
+        <p className="mt-1 text-center type-label tracking-widest text-ink-muted">
+          Remaining:{' '}
+          <MoneyText cents={left} tone={left < 0 ? 'over' : 'in'} className="font-semibold" />
         </p>
+        {mode !== 'set' && (
+          <p className="mt-1 text-center type-caption text-ink-muted">
+            New plan for {monthShort}: <MoneyText cents={cents} tone="muted" />
+          </p>
+        )}
         {cents !== row.plannedCents && (
           <p className="mt-1 text-center type-caption text-ink-muted">
             Ready to assign after this:{' '}
@@ -177,18 +227,32 @@ function Editor({
           </>
         )}
 
-        <Group>
-          <GroupRow
-            label={`Apply ${valid ? formatCents(cents, { whole: cents % 100 === 0 }) : ''} to all future months`}
-            hint={
-              future
-                ? `${monthName(addMonths(month, 1), false)} onward plans this too. Months before stay as they are.`
-                : `Only ${monthShort} changes.`
-            }
-          >
+        <div className="flex-1" />
+        <div className="sticky bottom-0 -mx-4 mt-6 bg-surface px-4">
+          <div className="flex min-h-14 items-center justify-between gap-4">
+            <span className="min-w-0 text-[17px]">
+              Apply {valid ? formatCents(cents, { whole: cents % 100 === 0 }) : ''} to all future
+              months
+              <button
+                type="button"
+                aria-label="What does this do?"
+                aria-expanded={hint}
+                onClick={() => setHint(!hint)}
+                className="ml-2 inline-flex size-5 translate-y-1 items-center justify-center rounded-full border border-ink-faint text-[11px] text-ink-faint"
+              >
+                i
+              </button>
+            </span>
             <Toggle label="Apply to all future months" on={future} onChange={setFuture} />
-          </GroupRow>
-        </Group>
+          </div>
+          {hint && (
+            <p className="pb-3 type-caption text-ink-muted">
+              {future
+                ? `${monthName(addMonths(month, 1), false)} onward plans this too. Months before stay as they are.`
+                : `Only ${monthShort} changes.`}
+            </p>
+          )}
+        </div>
       </div>
     </Sheet>
   );

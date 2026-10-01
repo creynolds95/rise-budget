@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planStats, upToDollar } from './plan';
+import { planStats, upToDollar, yearBars } from './plan';
 
 describe('planStats', () => {
   it('takes the six months before the one being planned', () => {
@@ -45,5 +45,15 @@ describe('upToDollar', () => {
     expect(upToDollar(11_701)).toBe(11_800);
     expect(upToDollar(11_700)).toBe(11_700);
     expect(upToDollar(-500)).toBe(0);
+  });
+});
+
+describe('yearBars', () => {
+  it('is the twelve months ending at the one on screen, zero where nothing was spent', () => {
+    const bars = yearBars([{ periodId: '2026-09', spentCents: 500 }], '2026-10');
+    expect(bars).toHaveLength(12);
+    expect(bars[0]?.periodId).toBe('2025-11');
+    expect(bars[11]).toEqual({ periodId: '2026-10', spentCents: 0 });
+    expect(bars[10]).toEqual({ periodId: '2026-09', spentCents: 500 });
   });
 });

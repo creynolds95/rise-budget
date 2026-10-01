@@ -263,7 +263,7 @@ function Editor({
               id="cat-group"
               value={groupId}
               onChange={(e) => setGroupId(e.target.value)}
-              className="min-h-11 appearance-none bg-transparent pr-6 text-right text-ink outline-none"
+              className="min-h-11 appearance-none bg-transparent pr-6 text-right text-ink outline-none [text-align-last:right]"
             >
               {groups
                 .filter((g) => g.kind === kind)
