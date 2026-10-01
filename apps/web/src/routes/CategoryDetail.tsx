@@ -9,11 +9,12 @@ import { Button } from '../components/primitives/Button';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow, ValueRow } from '../components/primitives/Rows';
 import { IconButton } from '../components/primitives/Icon';
+import { FillBar } from '../components/primitives/FillBar';
 import { Rail } from '../components/primitives/Rail';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
-import { yearBars, type MonthSpend } from '../lib/plan';
+import { earnedBars, yearBars, type MonthSpend } from '../lib/plan';
 import { monthEnd, monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { backFrom } from '../lib/nav';
@@ -26,6 +27,22 @@ import {
   useTransactions,
 } from '../lib/queries';
 
+/** Switches the month on screen by rewriting `?m=`, keeping every other param. */
+function useMonthPicker() {
+  const [, setParams] = useSearchParams();
+  const today = useToday().slice(0, 7);
+  return (m: string) =>
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p);
+        if (m === today) n.delete('m');
+        else n.set('m', m);
+        return n;
+      },
+      { replace: true },
+    );
+}
+
 /** T42. The hero is the number — available this month — never a chart. */
 export function CategoryDetail() {
   const { categoryId = '' } = useParams();
@@ -37,7 +54,8 @@ export function CategoryDetail() {
     label: 'Budget',
     to: month === today.slice(0, 7) ? '/budget' : `/budget?m=${month}`,
   });
-  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} />;
+  const onMonth = useMonthPicker();
+  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} onMonth={onMonth} />;
 }
 
 /**
@@ -49,10 +67,12 @@ function CategoryDetailBody({
   categoryId,
   month,
   back,
+  onMonth,
 }: {
   categoryId: string;
   month: string;
   back: { label: string; to: string };
+  onMonth: (m: string) => void;
 }) {
   const period = usePeriod(month);
   const categories = useCategories();
@@ -68,6 +88,7 @@ function CategoryDetailBody({
   const plan = usePlanFlow(month, categories.data ?? []);
 
   const cat = categories.data?.find((c) => c.id === categoryId);
+  const isIncome = groups.data?.find((g) => g.id === cat?.groupId)?.kind === 'income';
   const row = period.data?.categories.find((c) => c.categoryId === categoryId);
   if (!cat || !row || !period.data) {
     return (
@@ -78,8 +99,12 @@ function CategoryDetailBody({
     );
   }
   const open = period.data.period.status === 'open';
+  // Income is stored as negative spending (SPEC §1.1); show it as what came in.
+  const earnedCents = isIncome ? -row.spentCents : row.spentCents;
+  const remainingCents = isIncome ? row.availableCents - earnedCents : row.remainingCents;
   const list = txns.data?.pages.flatMap((p) => p.items) ?? [];
-  const bars = yearBars(history.data ?? [], month);
+  const yearly = yearBars(history.data ?? [], month);
+  const bars = isIncome ? earnedBars(yearly) : yearly;
   const name = monthName(month, false);
 
   return (
@@ -92,14 +117,16 @@ function CategoryDetailBody({
             <IconButton icon="pencil" label="Edit category" onClick={() => setEditingCat(true)} />
           ),
         }}
-        shape={<MonthBars bars={bars} selected={month} loading={history.isPending} />}
+        shape={
+          <MonthBars bars={bars} selected={month} loading={history.isPending} onPick={onMonth} />
+        }
         factsTitle="Summary"
         facts={
           <>
-            <ValueRow label={`Left in ${name}`}>
+            <ValueRow label={isIncome ? `Left to earn in ${name}` : `Left in ${name}`}>
               <MoneyText
-                cents={row.remainingCents}
-                tone={row.remainingCents < 0 ? 'over' : 'ink'}
+                cents={remainingCents}
+                tone={remainingCents < 0 && !isIncome ? 'over' : 'ink'}
               />
             </ValueRow>
             {(cat.rolloverPolicy === 'roll' || row.carriedInCents !== 0) && (
@@ -111,13 +138,17 @@ function CategoryDetailBody({
               </ValueRow>
             )}
             <div className="border-b border-hairline py-3">
-              <Rail
-                carriedInCents={row.carriedInCents}
-                plannedCents={row.plannedCents}
-                spentCents={row.spentCents}
-                availableCents={row.availableCents}
-                tick={null}
-              />
+              {isIncome ? (
+                <FillBar filledCents={earnedCents} targetCents={row.availableCents} tick={null} />
+              ) : (
+                <Rail
+                  carriedInCents={row.carriedInCents}
+                  plannedCents={row.plannedCents}
+                  spentCents={row.spentCents}
+                  availableCents={row.availableCents}
+                  tick={null}
+                />
+              )}
             </div>
             <ValueRow
               label="Planned"
@@ -125,12 +156,12 @@ function CategoryDetailBody({
             >
               <MoneyText cents={row.plannedCents} />
             </ValueRow>
-            <ValueRow label="Total amount">
-              <MoneyText cents={row.spentCents} />
+            <ValueRow label={isIncome ? 'Earned' : 'Total amount'}>
+              <MoneyText cents={earnedCents} />
             </ValueRow>
             {list.length > 0 && !txns.hasNextPage && (
               <ValueRow label="Average transaction">
-                <MoneyText cents={Math.round(row.spentCents / list.length)} />
+                <MoneyText cents={Math.round(earnedCents / list.length)} />
               </ValueRow>
             )}
             {open && row.carriedInCents < 0 && (
@@ -194,7 +225,8 @@ export function CategoryDetailPanel({ categoryId, month }: { categoryId: string;
     label: 'Close',
     to: month === today.slice(0, 7) ? '/budget' : `/budget?m=${month}`,
   };
-  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} />;
+  const onMonth = useMonthPicker();
+  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} onMonth={onMonth} />;
 }
 
 /** SPEC §2.8: the confirm names the amount and asks why. */
@@ -258,10 +290,12 @@ function MonthBars({
   bars,
   selected,
   loading,
+  onPick,
 }: {
   bars: MonthSpend[];
   selected: string;
   loading: boolean;
+  onPick: (m: string) => void;
 }) {
   const max = Math.max(1, ...bars.map((b) => b.spentCents));
   const H = 120;
@@ -271,7 +305,15 @@ function MonthBars({
         {bars.map((b) => {
           const h = loading ? 6 : Math.max(Math.round((Math.max(b.spentCents, 0) / max) * H), 4);
           return (
-            <div key={b.periodId} className="flex h-full min-w-0 flex-1 items-end">
+            <button
+              type="button"
+              key={b.periodId}
+              aria-label={`${monthName(b.periodId, false)}: ${formatCents(b.spentCents)}`}
+              aria-pressed={b.periodId === selected}
+              disabled={loading}
+              onClick={() => onPick(b.periodId)}
+              className="flex h-full min-w-0 flex-1 items-end"
+            >
               <div
                 title={`${monthName(b.periodId, false)}: ${formatCents(b.spentCents)}`}
                 className={`w-full rounded-t-[5px] rounded-b-[2px] ${
@@ -283,7 +325,7 @@ function MonthBars({
                 }`}
                 style={{ height: h }}
               />
-            </div>
+            </button>
           );
         })}
       </div>

@@ -34,6 +34,11 @@ export function planStats(history: MonthSpend[], month: string): PlanStats {
 }
 
 /** The twelve months ending at `month`, oldest first, zero where nothing was spent. */
+/** Income is stored as negative spending (SPEC §1.1); the bars show what came in, positive. */
+export function earnedBars(bars: MonthSpend[]): MonthSpend[] {
+  return bars.map((b) => ({ ...b, spentCents: 0 - b.spentCents }));
+}
+
 export function yearBars(history: MonthSpend[], month: string): MonthSpend[] {
   const byId = new Map(history.map((h) => [h.periodId, h.spentCents]));
   return Array.from({ length: 12 }, (_, i) => {
