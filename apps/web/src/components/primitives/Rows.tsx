@@ -57,3 +57,46 @@ export function Chevron() {
     </svg>
   );
 }
+
+/**
+ * A labeled field in a detail screen, Monarch-style: the label on the left, the value on the
+ * right with no box around it. Tappable rows (`onClick`) show a chevron; the value is the
+ * control, so there is no separate text field to find.
+ */
+export function ValueRow({
+  label,
+  children,
+  onClick,
+  muted = false,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+  onClick?: () => void;
+  muted?: boolean;
+}) {
+  const inner = (
+    <>
+      <span className="shrink-0 text-ink-muted">{label}</span>
+      <span
+        className={`flex min-w-0 items-center justify-end gap-2 text-right ${muted ? 'text-ink-faint' : 'text-ink'}`}
+      >
+        <span className="min-w-0 break-words">{children}</span>
+        {onClick && <Chevron />}
+      </span>
+    </>
+  );
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${base} w-full text-left active:bg-sage-100`}
+      data-row="edit"
+    >
+      {inner}
+    </button>
+  ) : (
+    <div className={base} data-row="static">
+      {inner}
+    </div>
+  );
+}

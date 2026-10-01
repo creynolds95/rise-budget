@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
+import { AddTransactionSheet } from '../components/AddTransactionSheet';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { FilterSheet } from '../components/FilterSheet';
 import { TxnAmount } from '../components/TxnAmount';
@@ -42,6 +43,7 @@ export function Transactions() {
   const filters = parseFilters(params);
   const [q, setQ] = useState(filters.q);
   const [sheet, setSheet] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [recategorizing, setRecategorizing] = useState<string | null>(null);
   const [marking, setMarking] = useState(false);
   const qc = useQueryClient();
@@ -178,16 +180,28 @@ export function Transactions() {
       onClick={() => setSheet(true)}
     />
   );
-  useHeaderActions(filterButton);
+  const addButton = (
+    <IconButton icon="plus" label="Add transaction" onClick={() => setAdding(true)} />
+  );
+  useHeaderActions(
+    <>
+      {filterButton}
+      {addButton}
+    </>,
+  );
 
   return (
     <div className={`mx-auto pb-12 ${desktop ? 'max-w-5xl' : 'max-w-2xl'}`}>
       <header className="gutter hidden items-center justify-between pt-3 lg:flex">
         <h1 className="type-page">Transactions</h1>
-        <div className="-mr-2">{filterButton}</div>
+        <div className="-mr-2 flex">
+          {filterButton}
+          {addButton}
+        </div>
       </header>
 
-      <div className="gutter mt-2">
+      {/* Stays under the tab title while the list scrolls. */}
+      <div className="gutter sticky top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px))] z-[5] bg-canvas py-2">
         <label className="flex min-h-11 items-center gap-2 rounded-full bg-surface px-4 shadow-soft focus-within:ring-2 focus-within:ring-sage-600">
           <span className="text-ink-faint">
             <svg
@@ -289,7 +303,7 @@ export function Transactions() {
         ) : byDate ? (
           groupByDay(items).map(([day, rows]) => (
             <section key={day}>
-              <h2 className="sticky top-[var(--banner-h,0px)] z-[1] -mx-4 bg-canvas px-4 pt-4 pb-1 type-label text-ink-muted md:-mx-6 md:px-6">
+              <h2 className="sticky top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px)+60px)] z-[1] -mx-4 bg-canvas px-4 pt-4 pb-1 type-label text-ink-muted md:-mx-6 md:px-6">
                 {dayLabel(day, today)}
               </h2>
               <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
@@ -314,6 +328,7 @@ export function Transactions() {
         )}
       </div>
 
+      <AddTransactionSheet open={adding} onClose={() => setAdding(false)} />
       <FilterSheet
         open={sheet}
         value={filters}

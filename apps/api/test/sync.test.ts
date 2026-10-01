@@ -166,6 +166,28 @@ describe('T27 SimpleFIN sync', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('a transaction the user deleted stays deleted through the next sync', async () => {
+    const s = await setup();
+    const bank = (): SimpleFinSource =>
+      fake([
+        {
+          id: 'chk',
+          name: 'Checking',
+          txns: [
+            { id: 'keep', date: '2026-09-18', cents: 1_000, desc: 'COFFEE' },
+            { id: 'gone', date: '2026-09-19', cents: 2_000, desc: 'DUPLICATE CHARGE' },
+          ],
+        },
+      ]);
+    await runSync(env.DB, s.userId, bank(), { now: at('2026-09-20T20:00:00Z') });
+    const doomed = (await s.txns()).find((t) => t.source_id === 'gone');
+    expect(doomed).toBeTruthy();
+    expect((await s.api('DELETE', `/transactions/${String(doomed?.id)}`)).status).toBe(204);
+    expect((await s.txns()).map((t) => t.source_id)).toEqual(['keep']);
+    await runSync(env.DB, s.userId, bank(), { now: at('2026-09-21T20:00:00Z') });
+    expect((await s.txns()).map((t) => t.source_id)).toEqual(['keep']);
+  });
+
   it('#4 a posted amount drift updates in place and keeps category, splits, notes, review (edge 4)', async () => {
     const s = await setup();
     const hold: FakeTxn = {

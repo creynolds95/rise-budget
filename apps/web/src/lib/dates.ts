@@ -31,6 +31,11 @@ export function shortDate(date: string): string {
   return `${MONTHS[Number(date.slice(5, 7)) - 1]} ${Number(date.slice(8, 10))}`;
 }
 
+/** "2026-09-30" → "September 30, 2026". */
+export function longDate(date: string): string {
+  return `${LONG[Number(date.slice(5, 7)) - 1]} ${Number(date.slice(8, 10))}, ${date.slice(0, 4)}`;
+}
+
 /** "2026-09" → "September 2026". */
 export function monthName(period: string, withYear = true): string {
   const name = LONG[Number(period.slice(5, 7)) - 1] ?? period;

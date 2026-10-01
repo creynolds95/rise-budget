@@ -33,6 +33,7 @@ import {
   updateSyncedTxnStmts,
   type SyncedAccountRow,
   type UserId,
+  deletedSourceIds,
 } from '../db';
 import { suggestFor } from '../lib/categorize';
 import { localToday } from '../lib/dates';
@@ -185,10 +186,14 @@ export async function runSync(
       if (existing?.archived_at) continue; // the user unlinked it
       const accountId = existing?.id ?? newId();
 
-      const incoming: IncomingWithMerchant[] = sf.transactions.map((t) => {
-        const i = toIncomingTxn(t, tz);
-        return { ...i, merchant: normalizeMerchant(i.descriptor) };
-      });
+      const gone = existing ? await deletedSourceIds(userId, db, accountId) : new Set<string>();
+      const incoming: IncomingWithMerchant[] = sf.transactions
+        .map((t) => {
+          const i = toIncomingTxn(t, tz);
+          return { ...i, merchant: normalizeMerchant(i.descriptor) };
+        })
+        // What the user deleted stays deleted, even while the bank keeps reporting it.
+        .filter((i) => !i.sourceId || !gone.has(i.sourceId));
       const stored = existing ? await listStoredForSync(userId, db, accountId, from) : [];
       const ops = planAccountSync(stored, incoming, today);
 

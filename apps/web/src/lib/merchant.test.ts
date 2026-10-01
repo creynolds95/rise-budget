@@ -15,7 +15,13 @@ describe('merchantName', () => {
     expect(m('CHIPOTLE')).toBe('Chipotle');
     expect(m('PAYROLL DIRECT DEPOSIT')).toBe('Payroll Direct Deposit');
     expect(m('USAA FUNDS TRANSFER DB')).toBe('USAA Funds Transfer DB');
-    expect(m('OG&E UTILITY PAYMENT')).toBe('OG&E Utility Payment');
-    expect(m('SHELL OIL 57442')).toBe('Shell Oil 57442');
+    expect(m('OG&E UTILITY PAYMENT')).toBe('OG&E Utility');
+    expect(m('SHELL OIL 57442')).toBe('Shell Oil');
+  });
+  it('drops reference numbers, masks and payment words, never the whole name', () => {
+    expect(m('Att payment ********')).toBe('Att');
+    expect(m('ATT PAYMENT 0042 ****')).toBe('Att');
+    expect(m('PAYMENT')).toBe('Payment');
+    expect(m('7-ELEVEN 33012')).toBe('7-ELEVEN');
   });
 });

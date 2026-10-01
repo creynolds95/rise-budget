@@ -346,3 +346,34 @@ describe('recurring cash withdrawal / paycheck tag (cash-to-payday tool)', () =>
     expect(tag.status).toBe(400);
   });
 });
+
+describe('deleting a transaction', () => {
+  it('takes its spending with it and is gone', async () => {
+    const s = await setup();
+    await s.add('2026-09-10', 5_000, 'CHIPOTLE', s.home.id);
+    const t = await s.add('2026-09-11', 7_000, 'CHIPOTLE', s.home.id);
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(12_000);
+    expect((await s.api('DELETE', `/transactions/${t.json.id}`)).status).toBe(204);
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(5_000);
+    expect((await s.api('GET', `/transactions/${t.json.id}`)).status).toBe(404);
+    expect((await s.api('DELETE', `/transactions/${t.json.id}`)).status).toBe(404);
+  });
+
+  it('refuses while it is half of a linked transfer', async () => {
+    const s = await setup();
+    const savings = (await s.api('POST', '/accounts', { name: 'Savings', kind: 'depository' }))
+      .json;
+    const out = await s.add('2026-09-10', 5_000, 'TRANSFER OUT');
+    const inn = (
+      await s.api('POST', '/transactions', {
+        accountId: savings.id,
+        postedAt: '2026-09-10',
+        amountCents: -5_000,
+        descriptor: 'TRANSFER IN',
+      })
+    ).json;
+    await s.api('POST', `/transactions/${out.json.id}/transfer-link`, { otherTxnId: inn.id });
+    const r = await s.api('DELETE', `/transactions/${out.json.id}`);
+    expect(r.status).toBe(409);
+  });
+});

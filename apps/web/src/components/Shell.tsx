@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
 import { Icon } from './primitives/Icon';
 import { HeaderActionsContext } from '../lib/headerActions';
@@ -44,6 +44,18 @@ export function Shell() {
   );
   const isActiveTab = (path: string) =>
     path === '/' ? onDashboard : location.pathname.startsWith(path);
+  // Screens that pin something under the tab title (the Transactions search) need its height.
+  const head = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = head.current;
+    if (!el) return;
+    const set = () =>
+      document.documentElement.style.setProperty('--tabhead-h', `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const initials = (me?.displayName ?? '')
     .split(/\s+/)
     .map((w) => w[0])
@@ -101,7 +113,10 @@ export function Shell() {
       </aside>
 
       <div className="min-w-0 flex-1">
-        <div className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between bg-canvas pt-[max(12px,env(safe-area-inset-top))] lg:hidden">
+        <div
+          ref={head}
+          className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between bg-canvas pt-[max(12px,env(safe-area-inset-top))] lg:hidden"
+        >
           <span className="type-page">{currentTab?.label ?? 'Rise'}</span>
           <div className="-mr-2 flex items-center">
             {actions ??

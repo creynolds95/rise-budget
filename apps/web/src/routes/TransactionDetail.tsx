@@ -2,7 +2,7 @@ import type { Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { RuleOfferSheet } from '../components/RuleOfferSheet';
 import { TxnAmount } from '../components/TxnAmount';
@@ -11,11 +11,13 @@ import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
-import { EditRow, StaticRow } from '../components/primitives/Rows';
+import { Menu } from '../components/primitives/Menu';
+import { ValueRow } from '../components/primitives/Rows';
+import { navigateWithTransition } from '../lib/transition';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
-import { daysBetween, shortDate } from '../lib/dates';
+import { daysBetween, longDate, shortDate } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { backFrom } from '../lib/nav';
 import {
@@ -53,6 +55,8 @@ export function TransactionDetail() {
   const qc = useQueryClient();
   const [picking, setPicking] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const navigate = useNavigate();
   const [linking, setLinking] = useState(false);
   const [taggingWithdrawal, setTaggingWithdrawal] = useState(false);
   const [offer, setOffer] = useState<Parameters<typeof RuleOfferSheet>[0]['offer']>(null);
@@ -132,18 +136,105 @@ export function TransactionDetail() {
   return (
     <>
       <DetailPage
-        header={{ back, title: name }}
+        header={{
+          back,
+          title: name,
+          action: (
+            <Menu
+              label="Transaction options"
+              items={[
+                ...(!t.isTransfer
+                  ? [
+                      {
+                        label: t.splits.length > 1 ? 'Edit split' : 'Split transaction',
+                        icon: 'sliders' as const,
+                        onSelect: () => setSplitting(true),
+                      },
+                    ]
+                  : []),
+                ...(t.reviewState === 'needs_review' && !t.isTransfer
+                  ? [
+                      {
+                        label: 'Mark reviewed',
+                        icon: 'check' as const,
+                        onSelect: () => void save({ id, reviewState: 'reviewed' }),
+                      },
+                    ]
+                  : []),
+                ...(t.reviewState === 'reviewed'
+                  ? [
+                      {
+                        label: 'Send back to review',
+                        icon: 'refresh' as const,
+                        onSelect: () => void save({ id, reviewState: 'needs_review' }),
+                      },
+                    ]
+                  : []),
+                t.isTransfer
+                  ? {
+                      label: t.transferPairId ? 'Not a transfer (unlink both)' : 'Not a transfer',
+                      icon: 'flow' as const,
+                      onSelect: async () => {
+                        try {
+                          await api('DELETE', `/transactions/${id}/transfer-link`);
+                          await refresh();
+                        } catch (e) {
+                          setError(e instanceof ApiError ? e.message : 'Could not unlink.');
+                        }
+                      },
+                    }
+                  : {
+                      label: 'Link as a transfer',
+                      icon: 'flow' as const,
+                      onSelect: () => setLinking(true),
+                    },
+                ...(!t.isTransfer
+                  ? [
+                      withdrawalRule
+                        ? {
+                            label: `Untag recurring ${income ? 'paycheck' : 'cash withdrawal'}`,
+                            icon: 'refresh' as const,
+                            onSelect: async () => {
+                              try {
+                                await api(
+                                  'DELETE',
+                                  `/transactions/${id}/recurring-cash-withdrawal`,
+                                );
+                                await refresh();
+                              } catch (e) {
+                                setError(e instanceof ApiError ? e.message : 'Could not untag.');
+                              }
+                            },
+                          }
+                        : {
+                            label: `Recurring ${income ? 'paycheck' : 'cash withdrawal'}`,
+                            icon: 'refresh' as const,
+                            onSelect: () => setTaggingWithdrawal(true),
+                          },
+                    ]
+                  : []),
+                {
+                  label: 'Delete transaction',
+                  icon: 'trash' as const,
+                  onSelect: () => setDeleting(true),
+                },
+              ]}
+            />
+          ),
+        }}
         identity={{
           label: t.isTransfer ? 'Transfer' : income ? 'Money in' : 'Spent',
           hero: <TxnAmount t={t} />,
-          context: (
-            <>
-              {shortDate(t.postedAt)} · {account?.name ?? 'Unknown account'}
-              {t.isPending && ' · Pending'}
-              {t.reviewState === 'needs_review' && ' · To review'}
-              {t.reviewState === 'dropped' && ' · Never posted'}
-            </>
-          ),
+          context:
+            t.isPending || t.reviewState === 'needs_review' || t.reviewState === 'dropped' ? (
+              <span className="inline-flex items-center rounded-full bg-sage-100 px-3 py-0.5 type-caption font-medium text-ink-muted">
+                {t.reviewState === 'dropped'
+                  ? 'Never posted'
+                  : t.isPending
+                    ? 'Pending'
+                    : 'To review'}
+              </span>
+            ) : undefined,
         }}
         shape={
           needsCategory && (amazon || top.length > 0) ? (
@@ -167,55 +258,48 @@ export function TransactionDetail() {
         }
         facts={
           <>
+            <ValueRow label="Merchant" onClick={() => setRenaming(true)}>
+              {name}
+            </ValueRow>
+            <ValueRow label="Original statement" muted>
+              <span className="break-all">{t.descriptorRaw}</span>
+            </ValueRow>
+            <ValueRow label="Account">{account?.name ?? '—'}</ValueRow>
             {t.isTransfer ? (
-              <StaticRow label="Category" value="Transfer, not spending" />
+              <ValueRow label="Category" muted>
+                Transfer, not spending
+              </ValueRow>
             ) : t.splits.length > 1 ? (
               t.splits.map((s) => (
-                <StaticRow
+                <ValueRow
                   key={s.id}
                   label={catName(s.categoryId)}
-                  value={<MoneyText cents={s.amountCents} />}
-                />
+                  onClick={() => setSplitting(true)}
+                >
+                  <MoneyText cents={s.amountCents} />
+                </ValueRow>
               ))
             ) : (
-              <EditRow
-                label="Category"
-                field={
-                  <button
-                    className="min-h-11 rounded-input border border-hairline bg-surface px-3"
-                    onClick={() => setPicking(true)}
-                  >
-                    {t.splits[0] ? catName(t.splits[0].categoryId) : 'Choose…'}
-                  </button>
-                }
-              />
+              <ValueRow label="Category" onClick={() => setPicking(true)}>
+                {t.splits[0] ? catName(t.splits[0].categoryId) : 'Choose…'}
+              </ValueRow>
             )}
-            <EditRow
-              label="Merchant"
-              field={
-                <button
-                  className="min-h-11 max-w-48 truncate rounded-input border border-hairline bg-surface px-3"
-                  onClick={() => setRenaming(true)}
-                >
-                  {name}
-                </button>
-              }
-            />
-            <EditRow
-              label="Notes"
-              field={<NotesField value={t.notes} onCommit={(notes) => void save({ id, notes })} />}
-            />
-            <StaticRow
-              label="Account"
-              value={
-                <span className="max-w-56 break-words text-right">{account?.name ?? '—'}</span>
-              }
-            />
-            <StaticRow label="Date" value={shortDate(t.postedAt)} />
-            <StaticRow
-              label="Bank description"
-              value={<span className="break-all type-caption">{t.descriptorRaw}</span>}
-            />
+            <label className="relative block">
+              <ValueRow label="Date" onClick={() => {}}>
+                {longDate(t.postedAt)}
+              </ValueRow>
+              <input
+                type="date"
+                aria-label="Date"
+                value={t.postedAt}
+                onChange={(e) => e.target.value && void save({ id, postedAt: e.target.value })}
+                className="absolute inset-0 size-full cursor-pointer opacity-0"
+              />
+            </label>
+            <div className="flex min-h-12 items-center justify-between gap-4 py-3">
+              <span className="shrink-0 text-ink-muted">Notes</span>
+              <NotesField value={t.notes} onCommit={(notes) => void save({ id, notes })} />
+            </div>
             {error && <p className="py-2 text-clay">{error}</p>}
           </>
         }
@@ -229,68 +313,34 @@ export function TransactionDetail() {
               }
             : undefined
         }
-        manage={
-          <div className="-ml-4 flex flex-col items-start">
-            {!t.isTransfer && (
-              <Button variant="quiet" onClick={() => setSplitting(true)}>
-                {t.splits.length > 1 ? 'Edit split' : 'Split transaction'}
-              </Button>
-            )}
-            {t.reviewState === 'needs_review' && !t.isTransfer && (
-              <Button variant="quiet" onClick={() => void save({ id, reviewState: 'reviewed' })}>
-                Mark reviewed
-              </Button>
-            )}
-            {t.reviewState === 'reviewed' && (
-              <Button
-                variant="quiet"
-                onClick={() => void save({ id, reviewState: 'needs_review' })}
-              >
-                Send back to review
-              </Button>
-            )}
-            {t.isTransfer ? (
-              <Button
-                variant="danger"
-                onClick={async () => {
-                  try {
-                    await api('DELETE', `/transactions/${id}/transfer-link`);
-                    await refresh();
-                  } catch (e) {
-                    setError(e instanceof ApiError ? e.message : 'Could not unlink.');
-                  }
-                }}
-              >
-                {t.transferPairId ? 'Not a transfer — unlink both sides' : 'Not a transfer'}
-              </Button>
-            ) : (
-              <Button variant="quiet" onClick={() => setLinking(true)}>
-                Link as a transfer…
-              </Button>
-            )}
-            {!t.isTransfer &&
-              (withdrawalRule ? (
-                <Button
-                  variant="danger"
-                  onClick={async () => {
-                    try {
-                      await api('DELETE', `/transactions/${id}/recurring-cash-withdrawal`);
-                      await refresh();
-                    } catch (e) {
-                      setError(e instanceof ApiError ? e.message : 'Could not untag.');
-                    }
-                  }}
-                >
-                  Untag recurring {income ? 'paycheck' : 'cash withdrawal'}
-                </Button>
-              ) : (
-                <Button variant="quiet" onClick={() => setTaggingWithdrawal(true)}>
-                  Recurring {income ? 'paycheck' : 'cash withdrawal'}…
-                </Button>
-              ))}
-          </div>
-        }
       />
+      <Sheet open={deleting} title="Delete transaction?" onClose={() => setDeleting(false)}>
+        <p className="text-ink-muted">
+          {t.source === 'manual'
+            ? 'It is removed from your spending and every total it counted toward. This can’t be undone.'
+            : 'It is removed from your spending and every total it counted toward, and the next bank sync won’t bring it back. This can’t be undone.'}
+        </p>
+        {error && <p className="mt-2 text-clay">{error}</p>}
+        <Button
+          variant="danger"
+          className="mt-4 w-full"
+          onClick={async () => {
+            try {
+              await api('DELETE', `/transactions/${id}`);
+              setDeleting(false);
+              await refresh();
+              navigateWithTransition(navigate, back.to, 'back');
+            } catch (e) {
+              setError(e instanceof ApiError ? e.message : 'Could not delete.');
+            }
+          }}
+        >
+          Delete transaction
+        </Button>
+        <Button variant="quiet" className="mt-2 w-full" onClick={() => setDeleting(false)}>
+          Keep it
+        </Button>
+      </Sheet>
       <CategoryPicker
         open={picking}
         onClose={() => setPicking(false)}
@@ -342,9 +392,9 @@ function NotesField({
   return (
     <input
       aria-label="Notes"
-      className="min-h-11 w-48 rounded-input border border-hairline bg-surface px-3 focus:border-sage-600 focus:outline-none"
+      className="min-h-11 min-w-0 flex-1 bg-transparent text-right placeholder:text-ink-faint focus:outline-none"
       value={text}
-      placeholder="Add a note"
+      placeholder="Add notes…"
       onChange={(e) => setText(e.target.value)}
       onBlur={() => {
         const next = text.trim() || null;
@@ -505,8 +555,9 @@ function RenameSheet({
   const submit = async (displayName: string | null) => {
     try {
       await api('PATCH', `/merchants/${encodeURIComponent(merchant)}`, { displayName });
-      await onSaved();
+      // Close on success; the screen catching up behind it needn't hold the prompt open.
       onClose();
+      await onSaved();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not rename.');
     }
