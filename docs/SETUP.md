@@ -32,7 +32,8 @@ npx wrangler r2 bucket create rise-backups   # enable R2 in the dashboard first;
 
 ## 2. Point the config at your domain
 
-Edit `apps/api/wrangler.toml`:
+`apps/api/wrangler.toml` ships with placeholders (`00000000-…` and `rise.example.workers.dev`).
+Replace them locally:
 
 | Field | Set to |
 |---|---|
@@ -42,6 +43,9 @@ Edit `apps/api/wrangler.toml`:
 
 Your workers.dev subdomain is shown in the Cloudflare dashboard under Workers & Pages.
 Passkeys only work on the exact domain in `RP_ID`; get this wrong and sign-in fails.
+
+If your fork is public, don't commit these values. Deploy from GitHub Actions instead (below),
+which fills them in from secrets at deploy time.
 
 ## 3. Secrets
 
@@ -115,13 +119,21 @@ Notes:
 
 ## Optional: deploy from GitHub Actions
 
-`ci.yml` + `deploy.yml` deploy on every push to `main`. Add repo secrets
-`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (token permissions: Workers Scripts,
-D1, Workers R2 Storage, all Edit). Actions on a private repo use paid minutes once the free
-allowance runs out.
+`ci.yml` + `deploy.yml` deploy on every push to `main`. Add these repo secrets
+(Settings → Secrets and variables → Actions):
 
-Do **not** use `seed-user.yml`: it is hard-coded to the original deployment's domain, and in
-a public repo its log would expose your passkey-registration link.
+| Secret | Value |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID` | from the Cloudflare dashboard |
+| `CLOUDFLARE_API_TOKEN` | permissions: Workers Scripts, D1, Workers R2 Storage (all Edit) |
+| `D1_DATABASE_ID` | the id from step 1 |
+| `RISE_HOST` | your Worker's host, e.g. `rise.<your-subdomain>.workers.dev` |
+
+The deploy job swaps the last two into `wrangler.toml` and GitHub masks them in logs.
+Actions on a private repo use paid minutes once the free allowance runs out.
+
+Never create your user (step 5) from Actions: in a public repo the log would expose your
+passkey-registration link.
 
 ## Local development
 

@@ -16,7 +16,7 @@ const TRAILING_REFS = [/\s*\*[A-Z0-9]{4,}$/, /\s*#\d+$/];
 const LONG_NUMBERS = /\b\d{6,}\b/g;
 /**
  * A store number ("CHIPOTLE 2231", "ALDI #72031 BROKEN ARROW OK") and whatever location
- * follows it. Caleb's call (2026-09-24): one merchant across all its locations, so memory
+ * follows it. The owner's call (2026-09-24): one merchant across all its locations, so memory
  * learns it once. Three-digit bare numbers stay — too often part of a name ("PIZZA 360").
  */
 const STORE_NUMBER = /^(.*?[A-Z].*?)\s+(?:#\s?\d+|\d{4,5})\b.*$/;

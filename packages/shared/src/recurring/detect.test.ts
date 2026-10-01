@@ -275,7 +275,7 @@ describe('projecting a series forward (cash-to-payday)', () => {
   });
 });
 
-describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to auto-detect)', () => {
+describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to auto-detect)', () => {
   it('walks a monthly anchor forward to the first date on or after today', () => {
     expect(firstUpcoming('monthly', '2026-09-01', null, '2026-09-25')).toBe('2026-10-01');
     // Already in the future: stays put.

@@ -331,7 +331,7 @@ describe('T19 allocation edit + reallocation', () => {
     expect(row.plannedCents).toBe(260_000);
   });
 
-  it("a paycheck's plan is the period's expected income — the two never drift (Caleb 2026-09-25)", async () => {
+  it("a paycheck's plan is the period's expected income — the two never drift (owner 2026-09-25)", async () => {
     const s = await setup();
     const wife = (await s.api('POST', '/categories', { groupId: s.pay.groupId, name: 'Wife pay' }))
       .json;

@@ -88,7 +88,7 @@ describe('SimpleFIN adapter (SPEC §6.1, §6.3)', () => {
     ).toBe('1970-01-01');
   });
 
-  it('guesses kind for Caleb’s accounts; savings stay out of the budget; Apple is monthly', () => {
+  it('guesses kind for typical accounts; savings stay out of the budget; Apple is monthly', () => {
     const g = (name: string, org: string, balance = '100.00') =>
       toIncomingAccount(account({ name, org: { name: org }, balance }), TZ);
     expect(g('USAA Checking', 'USAA')).toMatchObject({

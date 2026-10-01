@@ -26,13 +26,13 @@ const row = (o: Partial<MonarchRow> = {}): MonarchRow => ({
 
 describe('guessAccountKind', () => {
   it.each([
-    ['COLLEGE ACCESS LOAN (...3107-CL0001)', 'loan'],
+    ['STUDENT LOAN (...5502-LN0001)', 'loan'],
     ['Current Mortgage (...0461)', 'loan'],
     ['Costco Anywhere Visa Card by Citi (...8182)', 'credit'],
     ['CREDIT CARD (...4905)', 'credit'],
     ['Apple Card', 'credit'],
     ['Apple Cash', 'depository'],
-    ["Hannah's Savings (...9098)", 'depository'],
+    ["Sam's Savings (...7310)", 'depository'],
   ])('%s is %s', (name, kind) => expect(guessAccountKind(name)).toBe(kind));
 });
 
@@ -61,9 +61,9 @@ describe('planMonarchImport scope', () => {
 
 describe('maskOf', () => {
   it('reads the trailing mask with or without dots', () => {
-    expect(maskOf('USAA CLASSIC CHECKING (...1335)')).toBe('1335');
-    expect(maskOf('USAA CLASSIC CHECKING (1335)')).toBe('1335');
-    expect(maskOf('COLLEGE ACCESS LOAN (...3107-CL0001) ')).toBe('3107-cl0001');
+    expect(maskOf('USAA CLASSIC CHECKING (...4821)')).toBe('4821');
+    expect(maskOf('USAA CLASSIC CHECKING (4821)')).toBe('4821');
+    expect(maskOf('STUDENT LOAN (...5502-LN0001) ')).toBe('5502-ln0001');
     expect(maskOf('Savings (12)')).toBeNull();
     expect(maskOf('No mask here')).toBeNull();
   });
@@ -71,8 +71,8 @@ describe('maskOf', () => {
 
 describe('planMonarchImport accounts', () => {
   const rows = [
-    row({ account: 'USAA CLASSIC CHECKING (...1335)', postedAt: '2024-01-02' }),
-    row({ account: 'USAA CLASSIC CHECKING (...1335)', postedAt: '2024-03-01', sourceId: 'x' }),
+    row({ account: 'USAA CLASSIC CHECKING (...4821)', postedAt: '2024-01-02' }),
+    row({ account: 'USAA CLASSIC CHECKING (...4821)', postedAt: '2024-03-01', sourceId: 'x' }),
     row({ account: 'Apple Card', sourceId: 'y' }),
   ];
 
@@ -87,12 +87,12 @@ describe('planMonarchImport accounts', () => {
   it('matches by the account number when the name differs', () => {
     const plan = planMonarchImport(
       rows,
-      [{ id: 'a2', name: 'USAA Checking (...1335)' }],
+      [{ id: 'a2', name: 'USAA Checking (...4821)' }],
       [],
       WINDOW,
     );
     expect(plan.accounts[0]).toMatchObject({
-      monarchName: 'USAA CLASSIC CHECKING (...1335)',
+      monarchName: 'USAA CLASSIC CHECKING (...4821)',
       rows: 2,
       first: '2024-01-02',
       last: '2024-03-01',
@@ -105,8 +105,8 @@ describe('planMonarchImport accounts', () => {
     const plan = planMonarchImport(
       rows,
       [
-        { id: 'a2', name: 'Checking (...1335)' },
-        { id: 'a3', name: 'Other (...1335)' },
+        { id: 'a2', name: 'Checking (...4821)' },
+        { id: 'a3', name: 'Other (...4821)' },
         { id: 'a4', name: 'Apple Card' },
         { id: 'a5', name: 'apple card' },
       ],

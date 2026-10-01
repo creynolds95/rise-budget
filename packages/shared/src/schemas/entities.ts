@@ -206,7 +206,7 @@ export const RecurringSeries = z.object({
   nextExpectedDate: IsoDate.nullable(),
   status: RecurringStatus,
   updatedAt: IsoDateTime,
-  /** 'manual' = Caleb's "Recurring Cash Withdrawal" tag; 'detected' = auto-detected (SPEC §7). */
+  /** 'manual' = the owner's "Recurring Cash Withdrawal" tag; 'detected' = auto-detected (SPEC §7). */
   source: z.enum(['detected', 'manual']),
 });
 export type RecurringSeries = z.infer<typeof RecurringSeries>;
