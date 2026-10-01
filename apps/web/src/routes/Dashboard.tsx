@@ -175,14 +175,7 @@ export function Dashboard() {
             recentTxns.map((tx) => {
               const c =
                 tx.splits.length === 1 ? byId.get(tx.splits[0]?.categoryId ?? '') : undefined;
-              return (
-                <TxnRow
-                  key={tx.id}
-                  t={tx}
-                  categoryName={c ? `${c.emoji ? `${c.emoji} ` : ''}${c.name}` : undefined}
-                  from="Dashboard|/"
-                />
-              );
+              return <TxnRow key={tx.id} t={tx} categoryEmoji={c?.emoji} from="Dashboard|/" />;
             })
           )}
         </div>
