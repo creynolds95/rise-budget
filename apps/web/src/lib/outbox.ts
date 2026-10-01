@@ -24,7 +24,7 @@ export type SendResult = 'ok' | 'offline' | { rejected: string };
 
 /**
  * Only changes that are safe to apply late, without the person seeing the answer first.
- * Closing a month, recalculating carry, forgiving a deficit, creating a rule or moving
+ * Forgiving a deficit, creating a rule or moving
  * planned money can each need a decision from the server's reply — those need a connection
  * (CLAUDE.md: nothing about money changes silently).
  */

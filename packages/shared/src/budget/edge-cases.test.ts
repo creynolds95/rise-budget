@@ -4,13 +4,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import { spentFrom, categoryMath } from './category';
-import { closePeriod, closeReadiness, computeClose, recordSplitChange } from './close';
 import { paceFor, staleness, SYNC_CADENCE_HOURS } from './pace';
 import { pace } from './period';
 import { pool } from './pool';
+import { computeMonthEnd, rollChain } from './rollover';
 import { buildReallocation, planAllocationChange } from './reallocation';
 import { validateSplits } from './splits';
-import { cat, period, slackCat } from './test-helpers';
+import { cat, chainCat, month, slackCat } from './test-helpers';
 
 describe('SPEC §11 edge cases', () => {
   it.todo('#1 two identical CSV rows same day both survive — CSV import dropped by owner (T30)');
@@ -29,87 +29,59 @@ describe('SPEC §11 edge cases', () => {
 
   // #4 lives in src/sync/sync.test.ts (planning) and apps/api/test/sync.test.ts (preservation).
 
-  it('#5 a transaction posting into a closed period flags it and recalculates nothing', () => {
-    const sept = { status: 'closed' as const, needsRecalc: false, recalcDeltaCents: 0 };
-    const after = recordSplitChange(sept, 41_230);
-    expect(after).toEqual({ status: 'closed', needsRecalc: true, recalcDeltaCents: 41_230 });
-    // The flag is the only output — no carry, no close outcome is produced.
-    expect(Object.keys(after).sort()).toEqual(['needsRecalc', 'recalcDeltaCents', 'status']);
+  it('#5 a transaction landing in a past month flows its carry into every later month', () => {
+    const chain = (octSpent: number) => [
+      month({
+        periodId: '2026-10',
+        categories: [chainCat({ categoryId: 'eat', plannedCents: 30_000, spentCents: octSpent })],
+      }),
+      month({
+        periodId: '2026-11',
+        categories: [chainCat({ categoryId: 'eat', plannedCents: 30_000, spentCents: 30_000 })],
+      }),
+      month({ periodId: '2026-12', categories: [chainCat({ categoryId: 'eat' })] }),
+    ];
+    expect(rollChain(chain(25_000))[2]?.carriedIn.get('eat')).toBe(5_000);
+    // $412.30 of Apple Card arrives in October after the fact: December moves with it.
+    expect(rollChain(chain(66_230))[2]?.carriedIn.get('eat')).toBe(-36_230);
   });
 
-  it('#6 changing rollover policy after a close leaves history unchanged; next close uses it', () => {
-    const today = '2026-10-05';
-    const ready = { ready: true, waitingOn: [] };
-    const sept = period({
-      periodId: '2026-09',
-      categories: [
-        cat({
-          categoryId: 'gifts',
-          rolloverPolicy: 'roll',
-          plannedCents: 10_000,
-          spentCents: 4_000,
-        }),
-      ],
-    });
-    const closed = closePeriod(sept, { today, readiness: ready, override: false });
-    expect(closed.kind === 'closed' && closed.outcome.carryIn).toEqual([
-      { categoryId: 'gifts', carriedInCents: 6_000 },
-    ]);
-
-    // Policy flips to return_to_pool. September is closed: re-closing is a no-op, not a restatement.
-    const septAfterFlip = {
-      ...sept,
-      status: 'closed' as const,
-      categories: [
-        cat({
-          categoryId: 'gifts',
-          rolloverPolicy: 'return_to_pool',
-          plannedCents: 10_000,
-          spentCents: 4_000,
-        }),
-      ],
-    };
-    expect(closePeriod(septAfterFlip, { today, readiness: ready, override: false })).toEqual({
-      kind: 'already_closed',
-    });
-
-    // October's close uses the new policy.
-    const oct = period({
-      periodId: '2026-10',
-      categories: [
-        cat({
-          categoryId: 'gifts',
-          rolloverPolicy: 'return_to_pool',
-          carriedInCents: 6_000,
-          plannedCents: 10_000,
-          spentCents: 1_000,
-        }),
-      ],
-    });
-    const out = computeClose(oct);
-    expect(out.carryIn).toEqual([{ categoryId: 'gifts', carriedInCents: 0 }]);
-    expect(out.returnedSurplusCents).toBe(15_000);
+  it('#6 changing rollover policy applies to the whole chain', () => {
+    const chain = (rolloverPolicy: 'roll' | 'return_to_pool') => [
+      month({
+        periodId: '2026-10',
+        categories: [
+          chainCat({
+            categoryId: 'gifts',
+            rolloverPolicy,
+            plannedCents: 10_000,
+            spentCents: 4_000,
+          }),
+        ],
+      }),
+      month({
+        periodId: '2026-11',
+        categories: [chainCat({ categoryId: 'gifts', rolloverPolicy })],
+      }),
+    ];
+    expect(rollChain(chain('roll'))[1]?.carriedIn.get('gifts')).toBe(6_000);
+    expect(rollChain(chain('return_to_pool'))[1]?.carriedIn.get('gifts')).toBe(0);
   });
 
-  it('#7 a deficit carries regardless of policy', () => {
-    for (const rolloverPolicy of ['roll', 'return_to_pool'] as const) {
-      const out = computeClose(
-        period({
-          periodId: '2026-09',
-          categories: [
-            cat({
-              categoryId: 'eat',
-              rolloverPolicy,
-              carriedInCents: -4_000,
-              plannedCents: 30_000,
-              spentCents: 29_300,
-            }),
-          ],
+  it('#7 only a rollover category carries, deficit or surplus', () => {
+    const out = (rolloverPolicy: 'roll' | 'return_to_pool', spentCents: number) =>
+      computeMonthEnd([
+        cat({
+          categoryId: 'eat',
+          rolloverPolicy,
+          carriedInCents: -4_000,
+          plannedCents: 30_000,
+          spentCents,
         }),
-      );
-      expect(out.carryIn).toEqual([{ categoryId: 'eat', carriedInCents: -3_300 }]);
-      expect(out.returnedSurplusCents).toBe(0);
-    }
+      ]);
+    expect(out('roll', 29_300)).toEqual([{ categoryId: 'eat', carriedInCents: -3_300 }]);
+    expect(out('return_to_pool', 29_300)).toEqual([{ categoryId: 'eat', carriedInCents: 0 }]);
+    expect(out('return_to_pool', 1_000)).toEqual([{ categoryId: 'eat', carriedInCents: 0 }]);
   });
 
   it('#8 a reallocation exceeding the pool requires a funding source before commit', () => {
@@ -173,26 +145,7 @@ describe('SPEC §11 edge cases', () => {
     expect(Object.keys(s)).not.toContain('estimatedMissingCents');
   });
 
-  it('#10c close before an account reports past period end explains the wait; override permitted', () => {
-    const readiness = closeReadiness('2026-09', [
-      {
-        accountId: 'apple',
-        name: 'Apple Card',
-        source: 'simplefin',
-        includeInBudget: true,
-        lastSyncedDate: '2026-09-01',
-      },
-    ]);
-    const sept = period({ periodId: '2026-09' });
-    expect(closePeriod(sept, { today: '2026-10-01', readiness, override: false })).toEqual({
-      kind: 'waiting',
-      waitingOn: [{ accountId: 'apple', name: 'Apple Card', lastSyncedDate: '2026-09-01' }],
-    });
-    expect(closePeriod(sept, { today: '2026-10-01', readiness, override: true })).toMatchObject({
-      kind: 'closed',
-      overridden: true,
-    });
-  });
+  // #10c: there is no close to wait on; a late account's spending simply flows forward (#5).
 
   it('#11 split amounts not summing to the parent are rejected with a clear error', () => {
     expect(
@@ -221,9 +174,7 @@ describe('SPEC §11 edge cases', () => {
   });
 
   it('#14 a period with no allocations: pool equals expected income, no divide-by-zero in pace', () => {
-    expect(
-      pool({ expectedIncomeCents: 520_000, returnedSurplusPrevCents: 0, plannedCents: [] }),
-    ).toBe(520_000);
+    expect(pool({ expectedIncomeCents: 520_000, plannedCents: [] })).toBe(520_000);
     const p = pace('2026-02', '2026-02-01');
     expect(p.totalDays).toBeGreaterThan(0);
     expect(

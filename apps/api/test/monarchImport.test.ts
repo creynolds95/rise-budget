@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
-import { listAggregates, periodHasActivity } from '../src/db';
+import { listAggregates } from '../src/db';
 import { call, signedInUser } from './helpers/http';
 
 async function setup() {
@@ -195,23 +195,17 @@ describe('Monarch import: rows', () => {
     expect(res.json).toEqual({ imported: 1, duplicate: 0, overlap: 2, rejected: 0 });
   });
 
-  it('rejects rows outside the window, in a closed month, or with ids that are not yours', async () => {
+  it('rejects rows outside the window or with ids that are not yours', async () => {
     const s = await setup();
     const other = await setup();
-    await env.DB.prepare(
-      `INSERT INTO period (id, user_id, status) VALUES ('2024-03', ?1, 'closed')`,
-    )
-      .bind(s.userId)
-      .run();
     const res = await s.rows([
       s.row({ sourceId: 'a', postedAt: '2022-12-31' }),
       s.row({ sourceId: 'b', postedAt: '2026-09-01' }),
-      s.row({ sourceId: 'c', postedAt: '2024-03-10' }),
       s.row({ sourceId: 'd', accountId: other.card.id }),
       s.row({ sourceId: 'e', categoryId: other.groceries.id }),
       s.row({ sourceId: 'f', postedAt: '2023-01-01' }),
     ]);
-    expect(res.json).toEqual({ imported: 1, duplicate: 0, overlap: 0, rejected: 5 });
+    expect(res.json).toEqual({ imported: 1, duplicate: 0, overlap: 0, rejected: 4 });
     expect(await count(other.userId, 'txn')).toBe(0);
   });
 
@@ -220,31 +214,6 @@ describe('Monarch import: rows', () => {
     expect((await s.rows([])).status).toBe(400);
     const many = Array.from({ length: 201 }, (_, i) => s.row({ sourceId: `m${i}` }));
     expect((await s.rows(many)).status).toBe(400);
-  });
-});
-
-describe('Monarch import: history months', () => {
-  it('are never offered for closing and never make a later month wait', async () => {
-    const s = await setup();
-    await s.rows([s.row({ postedAt: '2026-08-10' })]);
-    expect(await periodHasActivity(s.userId, env.DB, '2026-08')).toBe(false);
-    const view = (await s.api('GET', '/periods/2026-08')).json;
-    expect(view.close.ended).toBe(false);
-    const close = await s.api('POST', '/periods/2026-08/close', {});
-    expect(close.status).toBe(409);
-    expect(close.json.error.message).toMatch(/imported history/);
-  });
-
-  it('count as activity again once a real transaction lands in them', async () => {
-    const s = await setup();
-    await s.rows([s.row({ postedAt: '2026-08-10' })]);
-    await s.api('POST', '/transactions', {
-      accountId: s.card.id,
-      postedAt: '2026-08-12',
-      amountCents: 100,
-      descriptor: 'Coffee',
-    });
-    expect(await periodHasActivity(s.userId, env.DB, '2026-08')).toBe(true);
   });
 });
 

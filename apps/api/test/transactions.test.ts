@@ -105,24 +105,22 @@ describe('T21 transactions & splits', () => {
     expect(await spentIn(s, '2026-09', s.kids.id)).toBe(4_000);
   });
 
-  it('a split into a closed month flags it and recalculates nothing (edge 5)', async () => {
+  it('a split into a past month changes that month and carries on with no confirmation (edge 5)', async () => {
     const s = await setup();
-    await s.api('PATCH', '/periods/2026-08', { expectedIncomeCents: 100_000 });
-    await s.api('PATCH', `/allocations/2026-08:${s.home.id}`, { plannedCents: 20_000 });
-    await s.api('POST', '/periods/2026-08/close', {});
-    const carryBefore = (await s.api('GET', '/periods/2026-09')).json.categories.find(
-      (c: { categoryId: string }) => c.categoryId === s.home.id,
-    ).carriedInCents;
+    await s.api('PATCH', '/periods/2026-10', { expectedIncomeCents: 100_000 });
+    await s.api('PATCH', '/periods/2026-11', { expectedIncomeCents: 100_000 });
+    await s.api('PATCH', `/allocations/2026-10:${s.home.id}`, { plannedCents: 20_000 });
+    const carry = async () =>
+      (await s.api('GET', '/periods/2026-11')).json.categories.find(
+        (c: { categoryId: string }) => c.categoryId === s.home.id,
+      ).carriedInCents;
+    expect(await carry()).toBe(20_000);
 
-    const late = await s.add('2026-08-29', 41_230);
+    const late = await s.add('2026-10-29', 4_123);
     await s.api('PATCH', `/transactions/${late.json.id}`, { categoryId: s.home.id });
 
-    const aug = (await s.api('GET', '/periods/2026-08')).json.period;
-    expect(aug).toMatchObject({ status: 'closed', needsRecalc: true, recalcDeltaCents: 41_230 });
-    const carryAfter = (await s.api('GET', '/periods/2026-09')).json.categories.find(
-      (c: { categoryId: string }) => c.categoryId === s.home.id,
-    ).carriedInCents;
-    expect(carryAfter).toBe(carryBefore);
+    expect(await spentIn(s, '2026-10', s.home.id)).toBe(4_123);
+    expect(await carry()).toBe(20_000 - 4_123);
   });
 
   it('paginates newest first with a stable cursor and filters', async () => {

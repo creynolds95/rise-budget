@@ -2,8 +2,6 @@ import { assertCents, sumCents, type Cents } from './money';
 
 export interface PoolInput {
   expectedIncomeCents: Cents;
-  /** `returned_surplus(P-1)` — stored on the previous period at its close. */
-  returnedSurplusPrevCents: Cents;
   /** `planned` for every expense category in P. */
   plannedCents: readonly Cents[];
 }
@@ -14,8 +12,6 @@ export interface PoolInput {
  */
 export function pool(input: PoolInput): Cents {
   return (
-    assertCents(input.expectedIncomeCents, 'expectedIncomeCents') +
-    assertCents(input.returnedSurplusPrevCents, 'returnedSurplusPrevCents') -
-    sumCents(input.plannedCents)
+    assertCents(input.expectedIncomeCents, 'expectedIncomeCents') - sumCents(input.plannedCents)
   );
 }

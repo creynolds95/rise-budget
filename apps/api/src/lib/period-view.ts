@@ -1,6 +1,5 @@
 import {
   buildPeriodView,
-  prevPeriod,
   resolvePlanned,
   type PeriodView,
   type ViewCategoryInput,
@@ -18,6 +17,7 @@ import {
 } from '../db';
 import type { Env } from '../env';
 import { localToday } from './dates';
+import { loadRollover } from './rollover';
 
 export interface LoadedPeriod {
   period: Period;
@@ -31,10 +31,10 @@ export async function loadPeriodView(
   periodId: string,
 ): Promise<LoadedPeriod> {
   const db = env.DB;
-  const [user, period, prev, groups, categories, allocations, spent] = await Promise.all([
+  const [user, period, rolled, groups, categories, allocations, spent] = await Promise.all([
     getUser(userId, db),
     getPeriod(userId, db, periodId),
-    getPeriod(userId, db, prevPeriod(periodId)),
+    loadRollover(env, userId, periodId).then((r) => r.get(periodId)),
     listGroups(userId, db),
     listCategories(userId, db),
     listAllocations(userId, db, periodId),
@@ -49,7 +49,7 @@ export async function loadPeriodView(
     rolloverPolicy: c.rolloverPolicy,
     spendShape: c.spendShape,
     typicalPostDay: c.typicalPostDay,
-    carriedInCents: alloc.get(c.id)?.carried_in_cents ?? 0,
+    carriedInCents: rolled?.carriedIn.get(c.id) ?? 0,
     plannedCents: resolvePlanned(
       alloc.has(c.id) ? { plannedCents: alloc.get(c.id)?.planned_cents ?? 0 } : undefined,
       planDefaultOf(c),
@@ -59,10 +59,8 @@ export async function loadPeriodView(
   }));
   const view = buildPeriodView({
     periodId,
-    status: p.status,
     today: localToday(user?.timezone ?? 'America/Chicago'),
     expectedIncomeCents: p.expectedIncomeCents,
-    returnedSurplusPrevCents: prev?.status === 'closed' ? prev.returnedSurplusCents : 0,
     categories: inputs,
   });
   return { period: p, view };

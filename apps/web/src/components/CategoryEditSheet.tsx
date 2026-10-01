@@ -297,14 +297,14 @@ function Editor({
       {kind === 'expense' && (
         <Group title="Month end">
           <GroupRow
-            label="Leftover carries into next month"
+            label="Rolls over to next month"
             hint={
               roll
-                ? 'Unspent money stays here and builds up. Overspending always carries.'
-                : 'Unspent money goes back to Ready to assign. Overspending still carries.'
+                ? 'Unspent money and overspending both carry into next month.'
+                : 'Each month starts fresh; nothing carries.'
             }
           >
-            <Toggle label="Leftover carries into next month" on={roll} onChange={setRoll} />
+            <Toggle label="Rolls over to next month" on={roll} onChange={setRoll} />
           </GroupRow>
           <GroupRow
             label="Spent all at once, like a bill"
@@ -317,12 +317,6 @@ function Editor({
             <Toggle label="Spent all at once, like a bill" on={once} onChange={setOnce} />
           </GroupRow>
         </Group>
-      )}
-      {(roll !== (category.rolloverPolicy === 'roll') ||
-        once !== (category.spendShape === 'fixed')) && (
-        <p className="mt-2 px-1 type-caption text-ink-muted">
-          Takes effect at the next month end. Months already closed stay as they are.
-        </p>
       )}
 
       {error && <p className="mt-4 px-1 text-clay">{error}</p>}

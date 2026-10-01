@@ -20,9 +20,6 @@ export type RolloverPolicy = z.infer<typeof RolloverPolicy>;
 export const SpendShape = z.enum(['linear', 'fixed']);
 export type SpendShape = z.infer<typeof SpendShape>;
 
-export const PeriodStatus = z.enum(['open', 'closed']);
-export type PeriodStatus = z.infer<typeof PeriodStatus>;
-
 export const ReviewState = z.enum(['needs_review', 'reviewed', 'dropped']);
 export type ReviewState = z.infer<typeof ReviewState>;
 

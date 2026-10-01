@@ -303,7 +303,6 @@ describe('T16 auth middleware + error contract', () => {
     const u = await signedInUser();
     const res = await call('PATCH', '/me/settings', { access: u.access, body: { appLock: '5m' } });
     expect(res.json).toEqual({
-      rollIncomeVariance: true,
       appLock: '5m',
       planChangesApplyToFuture: false,
       cushionCents: 50_000,

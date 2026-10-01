@@ -74,6 +74,7 @@ function CategoryDetailBody({
   back: { label: string; to: string };
   onMonth: (m: string) => void;
 }) {
+  const today = useToday();
   const period = usePeriod(month);
   const categories = useCategories();
   const history = useQuery({
@@ -98,7 +99,7 @@ function CategoryDetailBody({
       />
     );
   }
-  const open = period.data.period.status === 'open';
+  const open = true;
   // Income is stored as negative spending (SPEC §1.1); show it as what came in.
   const earnedCents = isIncome ? -row.spentCents : row.spentCents;
   const remainingCents = isIncome ? row.availableCents - earnedCents : row.remainingCents;
@@ -164,7 +165,7 @@ function CategoryDetailBody({
                 <MoneyText cents={Math.round(earnedCents / list.length)} />
               </ValueRow>
             )}
-            {open && row.carriedInCents < 0 && (
+            {month === today.slice(0, 7) && row.carriedInCents < 0 && (
               <div className="py-3">
                 <Button
                   variant="quiet"

@@ -16,9 +16,10 @@ Personal budgeting tool. Single user. Installable PWA on Cloudflare Workers + D1
    side effects. It must reach 100% branch coverage before Phase 2 starts.
 3. **Raw SQL lives only in `apps/api/src/db`.** Every query function takes `userId` first
    and filters on it.
-4. **Nothing about the user's money changes silently.** Period close, carry recalculation,
-   rule creation, and deficit forgiveness are all explicitly confirmed. A background job
-   never restates a closed month.
+4. **Nothing about the user's money changes silently.** Rule creation and deficit forgiveness
+   are explicitly confirmed. Carry is computed live from the month before (no close step, from
+   October 2026), so a past month's numbers are always whatever its transactions say; history
+   imports never touch the chain.
 5. **Types are inferred from Zod schemas** in `packages/shared/src/schemas`. Never maintain
    a parallel hand-written type.
 6. **Overspend renders in `--clay`, never red.** Rollover means going over is a debt, not a
@@ -30,7 +31,7 @@ Personal budgeting tool. Single user. Installable PWA on Cloudflare Workers + D1
 
 `SPEC §11` lists 15 cases that must each have a named, passing test. They are the ones that
 silently corrupt financial data — duplicate CSV rows, credit-card payments counted as
-spending, pending-to-posted drift, late arrivals into closed periods. Treat them as the
+spending, pending-to-posted drift, late arrivals into past months. Treat them as the
 real acceptance bar.
 
 ## Working style

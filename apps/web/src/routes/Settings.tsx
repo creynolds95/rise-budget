@@ -14,7 +14,6 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-r
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { CategoryEditSheet } from '../components/CategoryEditSheet';
 import { Group, GroupRow, RadioRow } from '../components/primitives/Group';
-import { Toggle } from '../components/primitives/Toggle';
 import { backFrom } from '../lib/nav';
 import { useSwipeBack } from '../lib/gestures';
 import { transitionClick } from '../lib/transition';
@@ -267,8 +266,7 @@ function BudgetSection() {
   const me = useMe().data;
   const qc = useQueryClient();
   const patch = useMutation({
-    mutationFn: (b: { planChangesApplyToFuture?: boolean; rollIncomeVariance?: boolean }) =>
-      api('PATCH', '/me/settings', b),
+    mutationFn: (b: { planChangesApplyToFuture?: boolean }) => api('PATCH', '/me/settings', b),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
   });
   const future = me?.settings.planChangesApplyToFuture ?? false;
@@ -290,18 +288,6 @@ function BudgetSection() {
           checked={future}
           onSelect={() => patch.mutate({ planChangesApplyToFuture: true })}
         />
-      </Group>
-      <Group title="Month end">
-        <GroupRow
-          label="Carry income differences"
-          hint="When pay comes in above or below what you expected, the difference moves next month's Ready to assign."
-        >
-          <Toggle
-            label="Carry income differences"
-            on={me?.settings.rollIncomeVariance ?? true}
-            onChange={(v) => patch.mutate({ rollIncomeVariance: v })}
-          />
-        </GroupRow>
       </Group>
       <Group title="Categories">
         <Link

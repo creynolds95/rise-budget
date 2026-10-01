@@ -1,4 +1,4 @@
-import type { CategoryGroupKind, PeriodStatus, RolloverPolicy, SpendShape } from '../schemas/enums';
+import type { CategoryGroupKind, RolloverPolicy, SpendShape } from '../schemas/enums';
 import { categoryMath } from './category';
 import { sumCents, type Cents } from './money';
 import { paceFor, type PaceResult } from './pace';
@@ -18,10 +18,8 @@ export interface ViewCategoryInput {
 
 export interface PeriodViewInput {
   periodId: PeriodId;
-  status: PeriodStatus;
   today: IsoDate;
   expectedIncomeCents: Cents;
-  returnedSurplusPrevCents: Cents;
   categories: readonly ViewCategoryInput[];
 }
 
@@ -34,7 +32,6 @@ export interface ViewCategory extends ViewCategoryInput {
 
 export interface PeriodView {
   periodId: PeriodId;
-  status: PeriodStatus;
   pace: Pace;
   poolCents: Cents;
   expectedIncomeCents: Cents;
@@ -77,11 +74,9 @@ export function buildPeriodView(input: PeriodViewInput): PeriodView {
   const income = categories.filter((c) => c.groupKind === 'income');
   return {
     periodId: input.periodId,
-    status: input.status,
     pace: p,
     poolCents: pool({
       expectedIncomeCents: input.expectedIncomeCents,
-      returnedSurplusPrevCents: input.returnedSurplusPrevCents,
       plannedCents: expense.map((c) => c.plannedCents),
     }),
     expectedIncomeCents: input.expectedIncomeCents,

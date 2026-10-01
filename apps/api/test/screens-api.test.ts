@@ -26,7 +26,7 @@ async function carry(userId: string, categoryId: string, cents: number) {
       "INSERT OR IGNORE INTO period (id, user_id, status) VALUES (?1, ?2, 'open')",
     ).bind(thisMonth, userId),
     env.DB.prepare(
-      `INSERT INTO allocation (id, user_id, period_id, category_id, planned_cents, carried_in_cents)
+      `INSERT INTO allocation (id, user_id, period_id, category_id, planned_cents, carry_adjust_cents)
        VALUES (?1, ?2, ?3, ?4, 0, ?5)`,
     ).bind(`${thisMonth}:${categoryId}`, userId, thisMonth, categoryId, cents),
   ]);

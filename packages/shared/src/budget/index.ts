@@ -3,7 +3,7 @@ export * from './period';
 export * from './category';
 export * from './defaults';
 export * from './splits';
-export * from './close';
+export * from './rollover';
 export * from './pool';
 export * from './pace';
 export * from './reallocation';
