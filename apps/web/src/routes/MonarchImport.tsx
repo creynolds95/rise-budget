@@ -204,6 +204,21 @@ export function MonarchImport() {
             <GroupRow label="Transactions">
               <span className="money">{plan.rows.length - extras}</span>
             </GroupRow>
+            {unmatched.length > 0 && (
+              <Fold label="New categories" summary={`${unmatched.length} to add or match`} start>
+                {unmatched.map((p) => (
+                  <CategoryChoiceRow
+                    key={p.monarchName}
+                    name={p.monarchName}
+                    rows={p.rows}
+                    choice={categoryChoices[p.monarchName] ?? p.choice}
+                    onChange={(c) => setCategoryChoices((s) => ({ ...s, [p.monarchName]: c }))}
+                    cats={categories}
+                    groups={groups}
+                  />
+                ))}
+              </Fold>
+            )}
             {dupes.length > 0 && (
               <Fold
                 label="Possible duplicates"
@@ -297,11 +312,8 @@ export function MonarchImport() {
                   );
                 })}
               </Fold>
-              <Fold
-                label="Categories"
-                summary={`${matched.length} matched, ${unmatched.length} new`}
-              >
-                {[...unmatched, ...matched].map((p) => (
+              <Fold label="Categories" summary={`${matched.length} matched`}>
+                {matched.map((p) => (
                   <CategoryChoiceRow
                     key={p.monarchName}
                     name={p.monarchName}
@@ -432,10 +444,10 @@ function CategoryChoiceRow({
           );
         }}
       >
-        <optgroup label="Create new">
+        <optgroup label="Add category">
           {Object.entries(CATEGORY_KINDS).map(([k, label]) => (
             <option key={k} value={`new:${k}`}>
-              New · {label}
+              Add as new · {label}
             </option>
           ))}
         </optgroup>
