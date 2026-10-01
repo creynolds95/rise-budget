@@ -491,3 +491,42 @@ export async function listAcceptable(
     .all<TxnRow>();
   return results;
 }
+
+/**
+ * Remove a transaction. Its splits go first through `replaceSplits` so the aggregates and a
+ * closed month's recalculation flag stay right; a synced row leaves a tombstone so the next
+ * sync doesn't bring it back.
+ */
+export async function deleteTransaction(
+  userId: UserId,
+  db: D1Database,
+  txn: TxnRow,
+): Promise<void> {
+  await replaceSplits(userId, db, txn, []);
+  await db.batch([
+    db.prepare('DELETE FROM txn WHERE user_id = ?1 AND id = ?2').bind(userId, txn.id),
+    ...(txn.source_id
+      ? [
+          db
+            .prepare(
+              `INSERT OR IGNORE INTO deleted_txn (user_id, account_id, source, source_id, deleted_at)
+               VALUES (?1, ?2, ?3, ?4, ?5)`,
+            )
+            .bind(userId, txn.account_id, txn.source, txn.source_id, nowIso()),
+        ]
+      : []),
+  ]);
+}
+
+/** Bank ids the user deleted from this account, for sync to skip. */
+export async function deletedSourceIds(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+): Promise<Set<string>> {
+  const { results } = await db
+    .prepare('SELECT source_id FROM deleted_txn WHERE user_id = ?1 AND account_id = ?2')
+    .bind(userId, accountId)
+    .all<{ source_id: string }>();
+  return new Set(results.map((r) => r.source_id));
+}

@@ -111,6 +111,7 @@ export const EXPORT_TABLES = [
   'merchant_memory',
   'merchant_meta',
   'recurring_series',
+  'deleted_txn',
   'sync_run',
   'import_batch',
   'audit_log',

@@ -22,13 +22,31 @@ function word(w: string): string {
   return w.charAt(0) + w.slice(1).toLowerCase();
 }
 
+/** Trailing words that say what the charge was, not who it was. */
+const NOISE = new Set(['payment', 'pmt', 'pymt', 'autopay', 'ach', 'debit', 'purchase']);
+
+/**
+ * The bank's descriptor without its tail: "ATT PAYMENT ********" → "ATT". Strips trailing
+ * reference numbers, masks and payment words, but never down to nothing.
+ */
+export function tidyDescriptor(raw: string): string {
+  const words = raw.trim().split(/\s+/);
+  while (words.length > 1) {
+    const last = words[words.length - 1] ?? '';
+    if (/^[\d#*xX.-]+$/.test(last) || NOISE.has(last.toLowerCase())) words.pop();
+    else break;
+  }
+  return words.join(' ');
+}
+
 /**
  * The name to show for a transaction (C11, M6): the user's own display name when set, else
- * the bank's descriptor — shouted in capitals by most banks — put into title case.
+ * the bank's descriptor — tidied of reference numbers and payment words, and put into title
+ * case if the bank shouted it.
  */
 export function merchantName(t: { merchantDisplay?: string | null; merchantNormalized: string }) {
   if (t.merchantDisplay) return t.merchantDisplay;
-  const n = t.merchantNormalized;
+  const n = tidyDescriptor(t.merchantNormalized);
   if (/[a-z]/.test(n)) return n;
   return n.replace(/[A-Z0-9&'.-]+/g, word);
 }

@@ -16,6 +16,7 @@ import {
   bumpMemoryStmt,
   categoryIdsExist,
   deleteManualRuleStmt,
+  deleteTransaction,
   ensureCatchallCategory,
   ensureTransferCategory,
   flagClosedPeriodStmt,
@@ -182,6 +183,17 @@ transactions.patch('/:id', async (c) => {
   }
   await updateTransactionFields(userId, c.env.DB, id, b);
   return c.json({ ...(await getTransaction(userId, c.env.DB, id)), ruleOffer });
+});
+
+/** Remove a transaction for good. A linked transfer must be unlinked first. */
+transactions.delete('/:id', async (c) => {
+  const userId = c.get('userId');
+  const row = await getTransactionRow(userId, c.env.DB, c.req.param('id'));
+  if (!row) throw notFound();
+  if (row.transfer_pair_id)
+    throw new AppError(409, 'CONFLICT', 'Unlink this transfer from the other side before deleting');
+  await deleteTransaction(userId, c.env.DB, row);
+  return c.body(null, 204);
 });
 
 /** Replace the full split set. Amounts must sum exactly to the parent (edge 11). */

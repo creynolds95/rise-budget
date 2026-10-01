@@ -177,6 +177,7 @@ export function usePatchTransaction() {
       categoryId?: string;
       notes?: string | null;
       reviewState?: 'reviewed' | 'needs_review';
+      postedAt?: string;
     }) => api<PatchedTransaction>('PATCH', `/transactions/${id}`, body),
     onSuccess: invalidate,
   });
