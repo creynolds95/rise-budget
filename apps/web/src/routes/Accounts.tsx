@@ -4,7 +4,8 @@ import { useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
-import { quietWhenStale, StaleNotes, staleText } from '../components/StaleNotes';
+import { HealthNotes } from '../components/HealthNotes';
+import { quietInstitutions, quietWhenStale, StaleNotes, staleText } from '../components/StaleNotes';
 import { Button } from '../components/primitives/Button';
 import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
@@ -56,7 +57,8 @@ export function Accounts() {
 
   const live = (accounts.data ?? []).filter((a) => !a.archivedAt);
 
-  const syncMode = useSyncStatus().data?.mode;
+  const syncStatus = useSyncStatus();
+  const syncMode = syncStatus.data?.mode;
   const refresh = useMutation({
     mutationFn: () => api<SyncRunResult>('POST', '/sync/run', {}),
     onSuccess: () =>
@@ -135,6 +137,12 @@ export function Accounts() {
       </section>
 
       <section className="gutter mt-6">
+        <HealthNotes
+          sync={syncStatus.data}
+          backups={undefined}
+          today={today}
+          quiet={quietInstitutions(accounts.data ?? [])}
+        />
         <StaleNotes accounts={live} today={today} tz={tz} />
       </section>
 

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { daysBetween, shortDate } from '../lib/dates';
 import type { SyncStatus } from '../lib/types';
@@ -40,22 +41,60 @@ export function healthNotes(
   return out;
 }
 
+const DISMISSED_KEY = 'rise.dismissedHealthNotes';
+
+function readDismissed(): string[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * `dismissible` notes (the Dashboard) can be hidden by their text on this device, so a known
+ * problem stops nagging; a different message shows again. The Accounts page lists them all.
+ */
 export function HealthNotes(props: {
   sync: SyncStatus | undefined;
   backups: Backups | undefined;
   today: string;
   quiet?: string[];
+  dismissible?: boolean;
 }) {
-  const notes = healthNotes(props.sync, props.backups, props.today, props.quiet);
+  const [dismissed, setDismissed] = useState(readDismissed);
+  const notes = healthNotes(props.sync, props.backups, props.today, props.quiet).filter(
+    (n) => !props.dismissible || !dismissed.includes(n.text),
+  );
+  const dismiss = (text: string) => {
+    const next = [...dismissed, text];
+    setDismissed(next);
+    try {
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
+    } catch {
+      /* storage unavailable: hidden until reload */
+    }
+  };
   if (notes.length === 0) return null;
   return (
     <ul className="flex flex-col gap-1" aria-label="Background jobs needing attention">
       {notes.map((n) => (
-        <li key={n.text}>
+        <li key={n.text} className="flex items-start justify-between gap-2">
           <Link to={n.to} className="flex items-baseline gap-2 type-caption text-clay">
             <span aria-hidden className="size-2 shrink-0 translate-y-[-1px] rounded-full bg-clay" />
             {n.text}
           </Link>
+          {props.dismissible && (
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => dismiss(n.text)}
+              className="-mt-2 -mr-2 flex size-11 shrink-0 items-center justify-center text-ink-muted"
+            >
+              ✕
+            </button>
+          )}
         </li>
       ))}
     </ul>
