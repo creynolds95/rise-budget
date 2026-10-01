@@ -2,6 +2,7 @@ import { periodOf } from '@rise/shared/budget';
 import { normalizeMerchant } from '@rise/shared/categorize';
 import { maskOf } from '@rise/shared/import';
 import type {
+  MonarchFeedOverlap,
   MonarchMergeCandidate,
   MonarchRowsBody,
   MonarchSetupBody,
@@ -111,6 +112,18 @@ export async function monarchSetup(
         ).id;
   }
   return { accounts, categories };
+}
+
+/**
+ * SQL: the bank feed already covers this account on this day. Its first synced transaction
+ * marks where SimpleFIN's history starts; from then on every row is SimpleFIN's, so a Monarch
+ * row dated that day or later is the same purchase again (often a day or two off, so an exact
+ * date match alone misses it). `?1` must be the user id.
+ */
+function coveredByFeed(accountSql: string, dateSql: string): string {
+  return `EXISTS (
+    SELECT 1 FROM txn f WHERE f.user_id = ?1 AND f.account_id = ${accountSql}
+      AND f.source = 'simplefin' AND f.review_state != 'dropped' AND f.posted_at <= ${dateSql})`;
 }
 
 async function ownedIds(
@@ -247,6 +260,7 @@ export async function importMonarchRows(
              AND o.account_id = json_extract(j.value, '$.accountId')
              AND o.posted_at = json_extract(j.value, '$.postedAt')
              AND o.amount_cents = json_extract(j.value, '$.amountCents'))
+           AND NOT ${coveredByFeed("json_extract(j.value, '$.accountId')", "json_extract(j.value, '$.postedAt')")}
          ON CONFLICT DO NOTHING`,
       )
       .bind(userId, json, b.batchId, now),
@@ -339,8 +353,43 @@ export async function undoMonarchBatch(
 }
 
 /**
+ * SQL: imported row `t` (a history copy's, to land on `liveSql`) is one the live account's bank
+ * feed already has, by the same rule the import itself uses.
+ */
+function duplicatesLive(liveSql: string): string {
+  return `(${coveredByFeed(liveSql, 't.posted_at')} OR EXISTS (
+    SELECT 1 FROM txn o WHERE o.user_id = ?1 AND o.account_id = ${liveSql} AND o.source != 'csv'
+      AND o.posted_at = t.posted_at AND o.amount_cents = t.amount_cents))`;
+}
+
+/** Remove imported transactions picked by `where` (over `txn t`), keeping the spending cache right. */
+async function dropImported(
+  userId: UserId,
+  db: D1Database,
+  where: string,
+  binds: unknown[],
+): Promise<D1PreparedStatement[]> {
+  const picked = `SELECT t.id FROM txn t WHERE t.user_id = ?1 AND t.source = 'csv'
+    AND t.import_batch_id IS NOT NULL AND ${where}`;
+  const { results: periods } = await db
+    .prepare(
+      `SELECT DISTINCT period_id AS id FROM split WHERE user_id = ?1 AND txn_id IN (${picked})`,
+    )
+    .bind(userId, ...binds)
+    .all<{ id: string }>();
+  return [
+    db
+      .prepare(`DELETE FROM split WHERE user_id = ?1 AND txn_id IN (${picked})`)
+      .bind(userId, ...binds),
+    db.prepare(`DELETE FROM txn WHERE user_id = ?1 AND id IN (${picked})`).bind(userId, ...binds),
+    ...periods.flatMap((p) => refreshAggregateStmts(userId, db, p.id)),
+  ];
+}
+
+/**
  * Import-made history accounts that have a live twin: same trailing mask, exactly one live
- * account. The person confirms each pair; nothing is merged on a guess.
+ * account. The person confirms each pair; nothing is merged on a guess. `duplicates` counts the
+ * rows the live account's bank feed already has: they are dropped, not moved.
  */
 export async function listMergeCandidates(
   userId: UserId,
@@ -375,30 +424,47 @@ export async function listMergeCandidates(
     if (!mask) continue;
     const twins = live.filter((l) => maskFor(l) === mask);
     const twin = twins[0];
-    if (twins.length === 1 && twin)
+    if (twins.length === 1 && twin) {
+      const dup = await db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM txn t WHERE t.user_id = ?1 AND t.account_id = ?2
+             AND ${duplicatesLive('?3')}`,
+        )
+        .bind(userId, h.id, twin.id)
+        .first<{ n: number }>();
+      const duplicates = dup?.n ?? 0;
       out.push({
         historyId: h.id,
         historyName: h.name,
         liveId: twin.id,
         liveName: twin.name,
-        rows: h.rows,
+        rows: h.rows - duplicates,
+        duplicates,
       });
+    }
   }
   return out;
 }
 
-/** Move a history account's transactions onto its live twin and remove the emptied copy. */
+/**
+ * Move a history account's transactions onto its live twin and remove the emptied copy. Rows
+ * the live account's bank feed already has are dropped instead, so nothing is counted twice.
+ */
 export async function mergeHistoryAccount(
   userId: UserId,
   db: D1Database,
   historyId: string,
   liveId: string,
-): Promise<number> {
+): Promise<{ moved: number; dropped: number }> {
   const pair = (await listMergeCandidates(userId, db)).find(
     (c) => c.historyId === historyId && c.liveId === liveId,
   );
   if (!pair) throw new AppError(404, 'NOT_FOUND', 'Those accounts are not a mergeable pair');
   await db.batch([
+    ...(await dropImported(userId, db, `t.account_id = ?2 AND ${duplicatesLive('?3')}`, [
+      historyId,
+      liveId,
+    ])),
     db
       .prepare('UPDATE txn SET account_id = ?3 WHERE user_id = ?1 AND account_id = ?2')
       .bind(userId, historyId, liveId),
@@ -415,5 +481,47 @@ export async function mergeHistoryAccount(
       )
       .bind(userId, historyId),
   ]);
-  return pair.rows;
+  return { moved: pair.rows, dropped: pair.duplicates };
+}
+
+/**
+ * Imported rows already sitting on a bank-fed account for days its feed covers: left by an
+ * import whose dates were a day or two off the bank's, or by a merge before merges dropped
+ * them. Listed per account so the person can remove them.
+ */
+export async function listFeedOverlaps(
+  userId: UserId,
+  db: D1Database,
+): Promise<MonarchFeedOverlap[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT a.id AS accountId, a.name AS accountName, COUNT(*) AS rows,
+         MIN(t.posted_at) AS "from", MAX(t.posted_at) AS "to"
+       FROM txn t JOIN account a ON a.id = t.account_id AND a.user_id = t.user_id
+       WHERE t.user_id = ?1 AND t.source = 'csv' AND t.import_batch_id IS NOT NULL
+         AND ${coveredByFeed('t.account_id', 't.posted_at')}
+       GROUP BY a.id ORDER BY a.name`,
+    )
+    .bind(userId)
+    .all<MonarchFeedOverlap>();
+  return results;
+}
+
+/** Remove one account's imported rows that its bank feed already covers. */
+export async function removeFeedOverlap(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+): Promise<number> {
+  const hit = (await listFeedOverlaps(userId, db)).find((o) => o.accountId === accountId);
+  if (!hit) throw new AppError(404, 'NOT_FOUND', 'Nothing to remove on that account');
+  await db.batch(
+    await dropImported(
+      userId,
+      db,
+      `t.account_id = ?2 AND ${coveredByFeed('t.account_id', 't.posted_at')}`,
+      [accountId],
+    ),
+  );
+  return hit.rows;
 }

@@ -67,5 +67,6 @@ export const AuditAction = z.enum([
   'import.monarch',
   'import.monarch.undone',
   'import.monarch.merged',
+  'import.monarch.overlap_removed',
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

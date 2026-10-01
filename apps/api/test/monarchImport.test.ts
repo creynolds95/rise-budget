@@ -30,6 +30,17 @@ async function setup() {
   return { ...u, api, group, groceries, card, batchId, row, rows };
 }
 
+/** A row as SimpleFIN sync would have written it. */
+async function bankRow(userId: string, accountId: string, postedAt: string, amountCents: number) {
+  await env.DB.prepare(
+    `INSERT INTO txn (id, user_id, account_id, posted_at, amount_cents, descriptor_raw,
+       merchant_normalized, review_state, source, source_id, created_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, 'BANK', 'bank', 'reviewed', 'simplefin', ?1, ?6, ?6)`,
+  )
+    .bind(crypto.randomUUID(), userId, accountId, postedAt, amountCents, new Date().toISOString())
+    .run();
+}
+
 const count = async (userId: string, table: string) =>
   (
     await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?1`)
@@ -173,6 +184,17 @@ describe('Monarch import: rows', () => {
     expect(await count(s.userId, 'split')).toBe(2);
   });
 
+  it('skips every row from the day the bank feed starts on that account, even a day off', async () => {
+    const s = await setup();
+    await bankRow(s.userId, s.card.id, '2026-07-01', 1);
+    const res = await s.rows([
+      s.row({ sourceId: 'monarch:1', postedAt: '2026-06-30' }),
+      s.row({ sourceId: 'monarch:2', postedAt: '2026-07-01' }),
+      s.row({ sourceId: 'monarch:3', postedAt: '2026-08-14' }),
+    ]);
+    expect(res.json).toEqual({ imported: 1, duplicate: 0, overlap: 2, rejected: 0 });
+  });
+
   it('rejects rows outside the window, in a closed month, or with ids that are not yours', async () => {
     const s = await setup();
     const other = await setup();
@@ -290,13 +312,14 @@ describe('Monarch import: merging history into a live account', () => {
         liveId: s.live.id,
         liveName: 'USAA CLASSIC CHECKING (1335)',
         rows: 2,
+        duplicates: 0,
       },
     ]);
     const done = await s.api('POST', '/import/monarch/merges', {
       historyId: s.historyId,
       liveId: s.live.id,
     });
-    expect(done.json).toEqual({ moved: 2 });
+    expect(done.json).toEqual({ moved: 2, dropped: 0 });
     const moved = await env.DB.prepare('SELECT COUNT(*) AS n FROM txn WHERE account_id = ?1')
       .bind(s.live.id)
       .first<{ n: number }>();
@@ -306,6 +329,30 @@ describe('Monarch import: merging history into a live account', () => {
       .first<{ n: number }>();
     expect(gone?.n).toBe(0);
     expect((await s.api('GET', '/import/monarch/merges')).json).toEqual([]);
+  });
+
+  it('drops rows the live bank feed already has instead of counting them twice', async () => {
+    const s = await pair();
+    // monarch:1 is 2025-05-05 for 4200; the feed starts the day after and repeats it a day late.
+    await bankRow(s.userId, s.live.id, '2025-05-06', 4200);
+    await s.rows([
+      s.row({ sourceId: 'monarch:3', accountId: s.historyId, postedAt: '2025-05-20' }),
+    ]);
+    const [c] = (await s.api('GET', '/import/monarch/merges')).json;
+    expect(c).toMatchObject({ rows: 2, duplicates: 1 });
+    const done = await s.api('POST', '/import/monarch/merges', {
+      historyId: s.historyId,
+      liveId: s.live.id,
+    });
+    expect(done.json).toEqual({ moved: 2, dropped: 1 });
+    const left = await env.DB.prepare(
+      `SELECT source_id AS id FROM txn WHERE account_id = ?1 AND source = 'csv' ORDER BY source_id`,
+    )
+      .bind(s.live.id)
+      .all<{ id: string }>();
+    expect(left.results.map((r) => r.id)).toEqual(['monarch:1', 'monarch:2']);
+    const may = await listAggregates(s.userId, env.DB, '2025-05', '2025-05');
+    expect(may).toEqual([expect.objectContaining({ spentCents: 4200 + 900 })]);
   });
 
   it('refuses a pair that was not offered', async () => {
@@ -335,5 +382,39 @@ describe('Monarch import: merging history into a live account', () => {
     const res = await call('GET', '/import/monarch/merges', { access: other.access });
     expect(res.json).toEqual([]);
     expect((await mine.api('GET', '/import/monarch/merges')).json).toHaveLength(1);
+  });
+});
+
+describe('Monarch import: rows the bank feed also has', () => {
+  it('lists imported rows a feed covers and removes them on request', async () => {
+    const s = await setup();
+    await s.rows([
+      s.row({ sourceId: 'monarch:1', postedAt: '2026-06-02' }),
+      s.row({ sourceId: 'monarch:2', postedAt: '2026-07-03' }),
+      s.row({ sourceId: 'monarch:3', postedAt: '2026-08-04' }),
+    ]);
+    // The feed arrived after the import, starting in July.
+    await bankRow(s.userId, s.card.id, '2026-07-01', 4200);
+    expect((await s.api('GET', '/import/monarch/overlaps')).json).toEqual([
+      {
+        accountId: s.card.id,
+        accountName: 'Apple Card',
+        rows: 2,
+        from: '2026-07-03',
+        to: '2026-08-04',
+      },
+    ]);
+
+    const other = await signedInUser();
+    expect(
+      (await call('DELETE', `/import/monarch/overlaps/${s.card.id}`, { access: other.access }))
+        .status,
+    ).toBe(404);
+
+    const done = await s.api('DELETE', `/import/monarch/overlaps/${s.card.id}`);
+    expect(done.json).toEqual({ removed: 2 });
+    expect((await s.api('GET', '/import/monarch/overlaps')).json).toEqual([]);
+    expect(await count(s.userId, 'split')).toBe(1);
+    expect(await listAggregates(s.userId, env.DB, '2026-07', '2026-08')).toEqual([]);
   });
 });
