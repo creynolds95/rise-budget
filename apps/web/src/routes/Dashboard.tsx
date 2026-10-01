@@ -87,6 +87,7 @@ export function Dashboard() {
         backups={backups.data}
         today={today}
         quiet={quietInstitutions(accounts.data ?? [])}
+        dismissible
       />
       {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}
 
