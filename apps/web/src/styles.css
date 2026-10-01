@@ -16,6 +16,8 @@
   --color-sage-600: #5f7a55;
   --color-sage-300: #a8bc9f;
   --color-sage-100: #edf1ea;
+  --color-banner: #4a6142;
+  --color-banner-ink: #ffffff;
   --color-gold: #c9a24d;
   --color-gold-text: #8a6d22;
   --color-gold-100: #f7f0de;
@@ -49,6 +51,8 @@
     --color-sage-600: #7a9a6d;
     --color-sage-300: #435239;
     --color-sage-100: #232b1d;
+    --color-banner: #2c3a25;
+    --color-banner-ink: #ecefe6;
     --color-gold: #d4b05b;
     --color-gold-text: #e0be72;
     --color-gold-100: #2e2712;
@@ -67,6 +71,8 @@
   --color-sage-600: #7a9a6d;
   --color-sage-300: #435239;
   --color-sage-100: #232b1d;
+  --color-banner: #2c3a25;
+  --color-banner-ink: #ecefe6;
   --color-gold: #d4b05b;
   --color-gold-text: #e0be72;
   --color-gold-100: #2e2712;
@@ -291,4 +297,13 @@ html[data-page-transition='back']::view-transition-new(root) {
     transform: translateX(0);
     filter: brightness(1);
   }
+}
+
+/* Title banner: controls inside inherit the banner ink instead of their usual muted/sage text. */
+.banner .text-ink-muted,
+.banner .text-sage-700 {
+  color: var(--color-banner-ink);
+}
+.banner [class*='active:bg-sage-100']:active {
+  background: rgb(255 255 255 / 0.16);
 }
