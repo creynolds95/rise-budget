@@ -188,12 +188,16 @@ export function Budget() {
             <>
               {expenseGroups.map((g) => {
                 const rows = visibleRows.filter((c) => byId.get(c.categoryId)?.groupId === g.id);
-                if (rows.length === 0) return null;
+                const idleRows = unbudgetedRows.filter(
+                  (c) => byId.get(c.categoryId)?.groupId === g.id,
+                );
+                if (rows.length === 0 && idleRows.length === 0) return null;
                 return (
                   <GroupSection
                     key={g.id}
                     group={g}
                     rows={rows}
+                    idle={idleRows}
                     byId={byId}
                     month={month}
                     editable={!closed}
@@ -207,16 +211,6 @@ export function Budget() {
                   />
                 );
               })}
-              <UnbudgetedSection
-                rows={unbudgetedRows}
-                byId={byId}
-                month={month}
-                editable={!closed}
-                onEdit={(row) => {
-                  const category = byId.get(row.categoryId);
-                  if (category) plan.open(category, row, p.poolCents);
-                }}
-              />
             </>
           )}
         </section>
@@ -391,6 +385,7 @@ function ColumnHeadings() {
 function GroupSection({
   group,
   rows,
+  idle = [],
   byId,
   month,
   editable,
@@ -401,6 +396,8 @@ function GroupSection({
 }: {
   group: CategoryGroup;
   rows: ViewCategory[];
+  /** $0 categories: hidden behind "Show N unbudgeted" so the group stays short. */
+  idle?: ViewCategory[];
   byId: Map<string, Category>;
   month: string;
   editable: boolean;
@@ -410,6 +407,7 @@ function GroupSection({
   kind: 'income' | 'expense';
 }) {
   const [open, setOpen] = useState(true);
+  const [showIdle, setShowIdle] = useState(false);
   const plannedTotal = rows.reduce((n, r) => n + r.plannedCents, 0);
   const remainingTotal = rows.reduce((n, r) => {
     const earned = kind === 'income' ? -r.spentCents : r.spentCents;
@@ -464,7 +462,31 @@ function GroupSection({
                   kind={kind}
                 />
               ))}
+            {showIdle &&
+              idle.map((r) => (
+                <BudgetRow
+                  key={r.categoryId}
+                  row={r}
+                  category={byId.get(r.categoryId)}
+                  month={month}
+                  editable={editable}
+                  onEdit={() => onEdit(r)}
+                  isDesktop={isDesktop}
+                  onSelect={onSelect}
+                  kind={kind}
+                />
+              ))}
           </ul>
+          {idle.length > 0 && (
+            <button
+              onClick={() => setShowIdle(!showIdle)}
+              aria-expanded={showIdle}
+              className="mt-1 flex min-h-11 items-center gap-2 text-ink-muted"
+            >
+              <Icon name="eyeOff" size={18} />
+              {showIdle ? 'Collapse' : 'Show'} {idle.length} unbudgeted
+            </button>
+          )}
         </div>
       )}
     </section>
@@ -575,73 +597,6 @@ function BudgetRow({
         )}
       </Link>
     </li>
-  );
-}
-
-/** Categories with nothing planned this month, folded away until you want to give one a plan. */
-function UnbudgetedSection({
-  rows,
-  byId,
-  month,
-  editable,
-  onEdit,
-}: {
-  rows: ViewCategory[];
-  byId: Map<string, Category>;
-  month: string;
-  editable: boolean;
-  onEdit: (row: ViewCategory) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  if (rows.length === 0) return null;
-  return (
-    <section className="mt-4">
-      <button
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="gutter flex min-h-11 w-full items-center justify-between text-left"
-      >
-        <h3 className="type-label text-ink-muted">
-          <span className="inline-flex items-center gap-1">
-            <Disclosure open={open} />
-            Unbudgeted
-          </span>
-        </h3>
-        <span className="mr-4 type-caption text-ink-faint">{rows.length}</span>
-      </button>
-      {open && (
-        <div className="gutter">
-          <ul className="overflow-hidden rounded-card bg-surface shadow-soft">
-            {rows.map((r) => {
-              const cat = byId.get(r.categoryId);
-              return (
-                <li
-                  key={r.categoryId}
-                  className="gutter flex items-center gap-2 border-b border-hairline last:border-b-0"
-                >
-                  <Link
-                    to={`/budget/${r.categoryId}?m=${month}`}
-                    className="flex min-h-12 min-w-0 flex-1 items-center gap-1.5 text-sm font-medium"
-                  >
-                    {cat?.emoji && <span aria-hidden>{cat.emoji}</span>}
-                    <span className="truncate">{cat?.name ?? 'Category'}</span>
-                  </Link>
-                  {editable && (
-                    <button
-                      onClick={() => onEdit(r)}
-                      aria-label={`Plan ${cat?.name ?? 'category'}`}
-                      className="flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink-muted active:bg-sage-100"
-                    >
-                      $0
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-    </section>
   );
 }
 
