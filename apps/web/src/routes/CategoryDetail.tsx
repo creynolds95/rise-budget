@@ -26,6 +26,22 @@ import {
   useTransactions,
 } from '../lib/queries';
 
+/** Switches the month on screen by rewriting `?m=`, keeping every other param. */
+function useMonthPicker() {
+  const [, setParams] = useSearchParams();
+  const today = useToday().slice(0, 7);
+  return (m: string) =>
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p);
+        if (m === today) n.delete('m');
+        else n.set('m', m);
+        return n;
+      },
+      { replace: true },
+    );
+}
+
 /** T42. The hero is the number — available this month — never a chart. */
 export function CategoryDetail() {
   const { categoryId = '' } = useParams();
@@ -37,7 +53,8 @@ export function CategoryDetail() {
     label: 'Budget',
     to: month === today.slice(0, 7) ? '/budget' : `/budget?m=${month}`,
   });
-  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} />;
+  const onMonth = useMonthPicker();
+  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} onMonth={onMonth} />;
 }
 
 /**
@@ -49,10 +66,12 @@ function CategoryDetailBody({
   categoryId,
   month,
   back,
+  onMonth,
 }: {
   categoryId: string;
   month: string;
   back: { label: string; to: string };
+  onMonth: (m: string) => void;
 }) {
   const period = usePeriod(month);
   const categories = useCategories();
@@ -92,7 +111,9 @@ function CategoryDetailBody({
             <IconButton icon="pencil" label="Edit category" onClick={() => setEditingCat(true)} />
           ),
         }}
-        shape={<MonthBars bars={bars} selected={month} loading={history.isPending} />}
+        shape={
+          <MonthBars bars={bars} selected={month} loading={history.isPending} onPick={onMonth} />
+        }
         factsTitle="Summary"
         facts={
           <>
@@ -194,7 +215,8 @@ export function CategoryDetailPanel({ categoryId, month }: { categoryId: string;
     label: 'Close',
     to: month === today.slice(0, 7) ? '/budget' : `/budget?m=${month}`,
   };
-  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} />;
+  const onMonth = useMonthPicker();
+  return <CategoryDetailBody categoryId={categoryId} month={month} back={back} onMonth={onMonth} />;
 }
 
 /** SPEC §2.8: the confirm names the amount and asks why. */
@@ -258,10 +280,12 @@ function MonthBars({
   bars,
   selected,
   loading,
+  onPick,
 }: {
   bars: MonthSpend[];
   selected: string;
   loading: boolean;
+  onPick: (m: string) => void;
 }) {
   const max = Math.max(1, ...bars.map((b) => b.spentCents));
   const H = 120;
@@ -271,7 +295,15 @@ function MonthBars({
         {bars.map((b) => {
           const h = loading ? 6 : Math.max(Math.round((Math.max(b.spentCents, 0) / max) * H), 4);
           return (
-            <div key={b.periodId} className="flex h-full min-w-0 flex-1 items-end">
+            <button
+              type="button"
+              key={b.periodId}
+              aria-label={`${monthName(b.periodId, false)}: ${formatCents(b.spentCents)}`}
+              aria-pressed={b.periodId === selected}
+              disabled={loading}
+              onClick={() => onPick(b.periodId)}
+              className="flex h-full min-w-0 flex-1 items-end"
+            >
               <div
                 title={`${monthName(b.periodId, false)}: ${formatCents(b.spentCents)}`}
                 className={`w-full rounded-t-[5px] rounded-b-[2px] ${
@@ -283,7 +315,7 @@ function MonthBars({
                 }`}
                 style={{ height: h }}
               />
-            </div>
+            </button>
           );
         })}
       </div>
