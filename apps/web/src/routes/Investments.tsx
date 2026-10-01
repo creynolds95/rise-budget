@@ -59,7 +59,7 @@ export function Investments() {
           <p className="mt-1 flex flex-wrap gap-x-4 type-caption">
             <span className="text-sage-700">● Portfolio {signedPct(last.portfolio)}</span>
             {last.sp500 !== null && (
-              <span className="text-ink-muted">● S&amp;P 500 {signedPct(last.sp500)}</span>
+              <span className="text-gold-text">● S&amp;P 500 {signedPct(last.sp500)}</span>
             )}
           </p>
         )}
@@ -150,7 +150,7 @@ function LinesChart({ series }: { series: GrowthPoint[] }) {
         <polyline
           fill="none"
           strokeWidth="2"
-          className="stroke-ink-faint"
+          className="stroke-gold"
           points={path((p) => p.sp500).join(' ')}
         />
         <polyline
@@ -170,7 +170,7 @@ function LinesChart({ series }: { series: GrowthPoint[] }) {
         >
           <p className="text-ink-muted">{shortDate(h.date)}</p>
           <p className="text-sage-700">Portfolio {signedPct(h.portfolio)}</p>
-          {h.sp500 !== null && <p className="text-ink-muted">S&amp;P 500 {signedPct(h.sp500)}</p>}
+          {h.sp500 !== null && <p className="text-gold-text">S&amp;P 500 {signedPct(h.sp500)}</p>}
         </div>
       )}
     </div>
