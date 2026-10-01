@@ -57,11 +57,32 @@ export async function periodHasActivity(
   db: D1Database,
   id: string,
 ): Promise<boolean> {
+  // Imported history doesn't count: it has no plan and no carry, so it must never be what
+  // makes a later month wait on it (and a close would turn its spending into carried debt).
   const row = await db
-    .prepare('SELECT 1 FROM split WHERE user_id = ?1 AND period_id = ?2 LIMIT 1')
+    .prepare(
+      `SELECT 1 FROM split s JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+       WHERE s.user_id = ?1 AND s.period_id = ?2 AND t.import_batch_id IS NULL LIMIT 1`,
+    )
     .bind(userId, id)
     .first();
   return row !== null;
+}
+
+/** A month whose only transactions came from a history import. It is never closed. */
+export async function periodIsHistory(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT 1 FROM split s JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+       WHERE s.user_id = ?1 AND s.period_id = ?2 AND t.import_batch_id IS NOT NULL LIMIT 1`,
+    )
+    .bind(userId, id)
+    .first();
+  return row !== null && !(await periodHasActivity(userId, db, id));
 }
 
 export function ensurePeriodStmt(userId: UserId, db: D1Database, id: string): D1PreparedStatement {

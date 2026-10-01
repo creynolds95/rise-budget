@@ -28,6 +28,7 @@ import {
   getUser,
   listPeriodsFrom,
   periodHasActivity,
+  periodIsHistory,
   writeAudit,
   insertReallocationStmt,
   listAllocations,
@@ -89,6 +90,10 @@ periods.post('/:id/close', async (c) => {
     getUser(userId, db),
   ]);
   const today = localToday(user?.timezone ?? 'America/Chicago');
+
+  if (await periodIsHistory(userId, db, id)) {
+    throw new AppError(409, 'CONFLICT', `${id} is imported history, so there is nothing to close`);
+  }
 
   // Close in order: a later month's carry-in depends on this one, and a closed month is never
   // restated. A month with no row is untouched (blankPeriod semantics), not closed — unless it

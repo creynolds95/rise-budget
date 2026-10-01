@@ -383,3 +383,73 @@ export const CashFlowReport = z.object({
   months: z.array(z.object({ periodId: PeriodId, incomeCents: Cents, expenseCents: Cents })),
 });
 export type CashFlowReport = z.infer<typeof CashFlowReport>;
+
+// ── Monarch history import ────────────────────────────────────────────────────
+
+/** Monarch rows outside these dates are never imported: SimpleFIN holds everything newer. */
+export const MONARCH_WINDOW = { from: '2023-01-01', to: '2026-08-31' } as const;
+
+export const MonarchSetupBody = z.object({
+  /** Accounts to create as history-only (archived, outside net worth and the budget). */
+  accounts: z
+    .array(
+      z.object({
+        monarchName: z.string().trim().min(1).max(200),
+        kind: z.enum(['depository', 'credit', 'loan']),
+      }),
+    )
+    .max(100),
+  /** Categories to create; `transfer` ones land in the unbudgeted Transfers group. */
+  categories: z
+    .array(
+      z.object({
+        monarchName: z.string().trim().min(1).max(200),
+        kind: z.enum(['income', 'expense', 'transfer']),
+      }),
+    )
+    .max(200),
+});
+export type MonarchSetupBody = z.infer<typeof MonarchSetupBody>;
+
+export const MonarchRowsBody = z.object({
+  /** One id for the whole import, so it can be undone as a unit. */
+  batchId: Id,
+  rows: z
+    .array(
+      z.object({
+        sourceId: z.string().min(1).max(100),
+        postedAt: IsoDate,
+        amountCents: Cents,
+        merchant: z.string().max(300),
+        originalStatement: z.string().max(500),
+        notes: z.string().max(2000),
+        accountId: Id,
+        categoryId: Id,
+        isTransfer: z.boolean(),
+        reviewed: z.boolean(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+export type MonarchRowsBody = z.infer<typeof MonarchRowsBody>;
+
+export const MonarchRowsResult = z.object({
+  imported: z.number().int(),
+  /** Already imported (same Monarch id), so left alone: re-running a file is safe. */
+  duplicate: z.number().int(),
+  /** Matches a transaction the bank feed already has on that account, same day and amount. */
+  overlap: z.number().int(),
+  /** Outside the import window, or in a month that is already closed. */
+  rejected: z.number().int(),
+});
+export type MonarchRowsResult = z.infer<typeof MonarchRowsResult>;
+
+export const MonarchBatch = z.object({
+  batchId: z.string(),
+  rows: z.number().int(),
+  from: IsoDate,
+  to: IsoDate,
+  importedAt: z.string(),
+});
+export type MonarchBatch = z.infer<typeof MonarchBatch>;
