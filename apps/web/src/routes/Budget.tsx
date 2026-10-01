@@ -353,21 +353,25 @@ function MonthSwitcher({
   // H6/A9: plan up to 12 months ahead of the current month.
   const furthest = addMonths(current, 12);
   return (
-    <nav aria-label="Month" className="gutter flex items-center justify-between pt-4">
-      <button
-        className="min-h-11 min-w-11 text-sage-700"
-        onClick={() => onChange(addMonths(month, -1))}
-      >
-        ‹ {monthName(addMonths(month, -1), false).slice(0, 3)}
-      </button>
-      <h1 className="type-title">{monthName(month, month.slice(0, 4) !== current.slice(0, 4))}</h1>
-      <button
-        className="min-h-11 min-w-11 text-sage-700 disabled:opacity-0"
-        disabled={month >= furthest}
-        onClick={() => onChange(addMonths(month, 1))}
-      >
-        {monthName(addMonths(month, 1), false).slice(0, 3)} ›
-      </button>
+    <nav aria-label="Month" className="gutter pt-4">
+      <div className="flex items-center justify-between rounded-card bg-surface p-1.5 shadow-soft ring-1 ring-hairline">
+        <button
+          className="min-h-11 rounded-button bg-sage-100 px-4 text-sage-700 active:opacity-70"
+          onClick={() => onChange(addMonths(month, -1))}
+        >
+          ‹ {monthName(addMonths(month, -1), false).slice(0, 3)}
+        </button>
+        <h1 className="type-title">
+          {monthName(month, month.slice(0, 4) !== current.slice(0, 4))}
+        </h1>
+        <button
+          className="min-h-11 rounded-button bg-sage-100 px-4 text-sage-700 active:opacity-70 disabled:opacity-30"
+          disabled={month >= furthest}
+          onClick={() => onChange(addMonths(month, 1))}
+        >
+          {monthName(addMonths(month, 1), false).slice(0, 3)} ›
+        </button>
+      </div>
     </nav>
   );
 }
