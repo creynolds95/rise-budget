@@ -462,9 +462,22 @@ export const MonarchMergeCandidate = z.object({
   historyName: z.string(),
   liveId: Id,
   liveName: z.string(),
+  /** Rows that move across. */
   rows: z.number().int(),
+  /** Rows the live account's bank feed already has: dropped, not moved. */
+  duplicates: z.number().int(),
 });
 export type MonarchMergeCandidate = z.infer<typeof MonarchMergeCandidate>;
 
 export const MonarchMergeBody = z.object({ historyId: Id, liveId: Id });
 export type MonarchMergeBody = z.infer<typeof MonarchMergeBody>;
+
+/** Imported rows on a bank-fed account for days its feed already covers. */
+export const MonarchFeedOverlap = z.object({
+  accountId: Id,
+  accountName: z.string(),
+  rows: z.number().int(),
+  from: z.string(),
+  to: z.string(),
+});
+export type MonarchFeedOverlap = z.infer<typeof MonarchFeedOverlap>;

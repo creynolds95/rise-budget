@@ -11,6 +11,7 @@ import {
 import {
   MONARCH_WINDOW,
   type MonarchBatch,
+  type MonarchFeedOverlap,
   type MonarchMergeCandidate,
   type MonarchRowsResult,
 } from '@rise/shared/schemas';
@@ -81,12 +82,27 @@ export function MonarchImport() {
   });
   const merge = useMutation({
     mutationFn: (c: MonarchMergeCandidate) =>
-      api<{ moved: number }>('POST', '/import/monarch/merges', {
+      api<{ moved: number; dropped: number }>('POST', '/import/monarch/merges', {
         historyId: c.historyId,
         liveId: c.liveId,
       }),
     onSuccess: async () => {
       await Promise.all([invalidate(), qc.invalidateQueries({ queryKey: ['monarch-merges'] })]);
+    },
+  });
+  const overlaps = useQuery({
+    queryKey: ['monarch-overlaps'],
+    queryFn: () => get<MonarchFeedOverlap[]>('/import/monarch/overlaps'),
+  });
+  const removeOverlap = useMutation({
+    mutationFn: (accountId: string) =>
+      api<{ removed: number }>('DELETE', `/import/monarch/overlaps/${accountId}`),
+    onSuccess: async () => {
+      await Promise.all([
+        invalidate(),
+        qc.invalidateQueries({ queryKey: ['monarch-overlaps'] }),
+        qc.invalidateQueries({ queryKey: ['monarch-batches'] }),
+      ]);
     },
   });
   const undo = useMutation({
@@ -393,6 +409,7 @@ export function MonarchImport() {
                 <span className="block truncate">{c.liveName}</span>
                 <span className="type-caption text-ink-muted money">
                   {c.rows} older transactions
+                  {c.duplicates > 0 && `, ${c.duplicates} already in the bank feed`}
                 </span>
               </span>
               <Button
@@ -401,7 +418,7 @@ export function MonarchImport() {
                 onClick={() => {
                   if (
                     window.confirm(
-                      `Move ${c.rows} older transactions into ${c.liveName}? The separate history copy is removed.`,
+                      `Move ${c.rows} older transactions into ${c.liveName}?${c.duplicates > 0 ? ` ${c.duplicates} the bank feed already has are left out.` : ''} The separate history copy is removed.`,
                     )
                   )
                     merge.mutate(c);
@@ -412,6 +429,38 @@ export function MonarchImport() {
             </div>
           ))}
           {merge.isError && <p className="px-4 pb-3 text-clay">{(merge.error as Error).message}</p>}
+        </Group>
+      )}
+
+      {(overlaps.data?.length ?? 0) > 0 && (
+        <Group title="Counted twice">
+          {overlaps.data?.map((o) => (
+            <div key={o.accountId} className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="min-w-0">
+                <span className="block truncate">{o.accountName}</span>
+                <span className="type-caption text-ink-muted money">
+                  {o.rows} imported, also in the bank feed · {shortDate(o.from)} – {shortDate(o.to)}
+                </span>
+              </span>
+              <Button
+                variant="danger"
+                disabled={removeOverlap.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Remove ${o.rows} imported transactions from ${o.accountName}? The bank feed's own copies stay.`,
+                    )
+                  )
+                    removeOverlap.mutate(o.accountId);
+                }}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          {removeOverlap.isError && (
+            <p className="px-4 pb-3 text-clay">{(removeOverlap.error as Error).message}</p>
+          )}
         </Group>
       )}
 

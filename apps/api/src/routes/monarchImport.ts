@@ -7,10 +7,12 @@ import {
 import { Hono } from 'hono';
 import {
   importMonarchRows,
+  listFeedOverlaps,
   listMergeCandidates,
   listMonarchBatches,
   mergeHistoryAccount,
   monarchSetup,
+  removeFeedOverlap,
   undoMonarchBatch,
   writeAudit,
 } from '../db';
@@ -68,11 +70,27 @@ monarchImport.get('/merges', async (c) =>
 monarchImport.post('/merges', async (c) => {
   const userId = c.get('userId');
   const b = await body(c, MonarchMergeBody);
-  const moved = await mergeHistoryAccount(userId, c.env.DB, b.historyId, b.liveId);
+  const { moved, dropped } = await mergeHistoryAccount(userId, c.env.DB, b.historyId, b.liveId);
   await writeAudit(userId, c.env.DB, 'import.monarch.merged', {
     type: 'account',
     id: b.liveId,
-    detail: { from: b.historyId, moved },
+    detail: { from: b.historyId, moved, dropped },
   });
-  return c.json({ moved });
+  return c.json({ moved, dropped });
+});
+
+monarchImport.get('/overlaps', async (c) =>
+  c.json(await listFeedOverlaps(c.get('userId'), c.env.DB)),
+);
+
+monarchImport.delete('/overlaps/:accountId', async (c) => {
+  const userId = c.get('userId');
+  const accountId = c.req.param('accountId');
+  const removed = await removeFeedOverlap(userId, c.env.DB, accountId);
+  await writeAudit(userId, c.env.DB, 'import.monarch.overlap_removed', {
+    type: 'account',
+    id: accountId,
+    detail: { removed },
+  });
+  return c.json({ removed });
 });
