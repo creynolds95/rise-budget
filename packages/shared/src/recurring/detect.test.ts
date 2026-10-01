@@ -6,6 +6,7 @@ import {
   detectSeries,
   firstUpcoming,
   nextDate,
+  nextScheduled,
   nextSemimonthlyDate,
   projectOccurrences,
   shiftWeekendToFriday,
@@ -370,5 +371,57 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
       nextExpectedDate: '2026-10-20',
       status: 'active',
     });
+  });
+});
+
+describe('last day of the month (day 31 pins a rule to the month end)', () => {
+  it('a monthly rule pinned to 31 lands on each month end', () => {
+    const series = {
+      cadence: 'monthly' as const,
+      expectedAmountCents: -100_000,
+      lastDate: '2026-01-31',
+      nextExpectedDate: '2026-01-31',
+      status: 'active' as const,
+      categoryId: null,
+      occurrences: 0,
+      anchorDays: [31, 31] as [number, number],
+    };
+    expect(projectOccurrences(series, 3).map((o) => o.date)).toEqual([
+      '2026-01-31',
+      '2026-02-28',
+      '2026-03-31',
+    ]);
+  });
+
+  it('firstUpcoming and advanceManualRule keep the pinned day', () => {
+    expect(firstUpcoming('monthly', '2026-10-31', [31, 31], '2026-11-05')).toBe('2026-11-30');
+    const rule: ManualRule = {
+      cadence: 'monthly',
+      anchorDays: [31, 31],
+      expectedAmountCents: 100_000,
+      nextExpectedDate: '2026-02-28',
+    };
+    const occ: Occurrence[] = [{ date: '2026-02-27', amountCents: 100_000, categoryId: null }];
+    expect(advanceManualRule(rule, occ, '2026-03-01').nextExpectedDate).toBe('2026-03-31');
+  });
+
+  it('a twice-a-month rule on the 15th and the last day shifts weekends back', () => {
+    expect(nextSemimonthlyDate('2026-01-15', [15, 31])).toBe('2026-01-30');
+    expect(nextSemimonthlyDate('2026-01-30', [15, 31])).toBe('2026-02-13');
+  });
+});
+
+describe('nextScheduled', () => {
+  it('twice a month: the next of the two days, weekend-shifted, never before today', () => {
+    expect(nextScheduled('semimonthly', '2026-10-01', [15, 31], '2026-10-01')).toBe('2026-10-15');
+    expect(nextScheduled('semimonthly', '2026-10-01', [1, 15], '2026-10-01')).toBe('2026-10-01');
+  });
+  it('monthly pinned to a day, including the last day', () => {
+    expect(nextScheduled('monthly', '2026-10-01', [31, 31], '2026-10-01')).toBe('2026-10-31');
+    expect(nextScheduled('monthly', '2026-10-01', [15, 15], '2026-10-20')).toBe('2026-11-15');
+  });
+  it('anything else walks from the given date', () => {
+    expect(nextScheduled('weekly', '2026-09-24', null, '2026-10-01')).toBe('2026-10-01');
+    expect(nextScheduled('monthly', '2026-09-01', null, '2026-09-25')).toBe('2026-10-01');
   });
 });

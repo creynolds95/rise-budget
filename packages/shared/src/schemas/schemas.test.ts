@@ -3,6 +3,8 @@ import {
   ApiError,
   Cents,
   CreateCategoryBody,
+  ManualCashEventBody,
+  ScheduleBody,
   PatchAccountBody,
   PatchAllocationBody,
   PatchSettingsBody,
@@ -86,6 +88,25 @@ describe('schemas', () => {
         updatedAt: '2026-10-01T00:00:00.000Z',
         source: 'manual',
       }).success,
+    ).toBe(true);
+  });
+
+  it('twice-a-month schedules need their two days, and an edit needs an id or merchant', () => {
+    const base = {
+      kind: 'income',
+      amountCents: 1000,
+      cadence: 'semimonthly',
+      anchorDate: '2026-10-01',
+    };
+    expect(ManualCashEventBody.safeParse({ ...base, label: 'Pay' }).success).toBe(false);
+    expect(
+      ManualCashEventBody.safeParse({ ...base, label: 'Pay', anchorDays: [15, 31] }).success,
+    ).toBe(true);
+    expect(ScheduleBody.safeParse({ ...base, id: 'x' }).success).toBe(false);
+    expect(ScheduleBody.safeParse({ ...base, anchorDays: [1, 15] }).success).toBe(false);
+    expect(ScheduleBody.safeParse({ ...base, id: 'x', anchorDays: [1, 15] }).success).toBe(true);
+    expect(
+      ScheduleBody.safeParse({ ...base, merchant: 'acme', anchorDays: [15, 31] }).success,
     ).toBe(true);
   });
 });

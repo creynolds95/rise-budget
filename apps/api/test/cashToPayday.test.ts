@@ -165,4 +165,109 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
     const res = await s.api('DELETE', '/cash-to-payday/manual-events/not-real');
     expect(res.status).toBe(404);
   });
+
+  describe('editing schedules from Surplus', () => {
+    const declare = (s: Awaited<ReturnType<typeof setup>>, extra: object = {}) =>
+      s.api('POST', '/cash-to-payday/manual-events', {
+        label: 'Church payroll',
+        kind: 'income',
+        amountCents: 230_840,
+        cadence: 'semimonthly',
+        anchorDate: '2026-10-01',
+        anchorDays: [15, 31],
+        ...extra,
+      });
+
+    it('lists every schedule with its days, and a last-day pin survives', async () => {
+      const s = await setup();
+      await declare(s);
+      const { schedules } = (await s.api('GET', '/cash-to-payday')).json;
+      expect(schedules).toContainEqual(
+        expect.objectContaining({
+          displayName: 'Church payroll',
+          kind: 'income',
+          cadence: 'semimonthly',
+          anchorDays: [15, 31],
+          isManual: true,
+          isHandAdded: true,
+        }),
+      );
+    });
+
+    it('a twice-a-month declaration needs its two days', async () => {
+      const s = await setup();
+      const res = await declare(s, { anchorDays: undefined });
+      expect(res.status).toBe(400);
+    });
+
+    it('edits a hand-added schedule in place, name included', async () => {
+      const s = await setup();
+      const { id } = (await declare(s)).json;
+      const put = await s.api('PUT', '/cash-to-payday/schedules', {
+        id,
+        kind: 'income',
+        amountCents: 240_000,
+        cadence: 'monthly',
+        anchorDate: '2026-10-01',
+        anchorDays: [31, 31],
+        label: 'Payroll',
+      });
+      expect(put.status).toBe(200);
+      const list = (await s.api('GET', '/cash-to-payday/manual-events')).json;
+      expect(list).toHaveLength(1);
+      expect(list[0]).toEqual(
+        expect.objectContaining({
+          label: 'Payroll',
+          amountCents: 240_000,
+          cadence: 'monthly',
+          anchorDays: [31, 31],
+        }),
+      );
+    });
+
+    it('404s editing a schedule that does not exist, and removing one', async () => {
+      const s = await setup();
+      const put = await s.api('PUT', '/cash-to-payday/schedules', {
+        id: 'nope',
+        kind: 'expense',
+        amountCents: 100,
+        cadence: 'weekly',
+        anchorDate: '2026-10-01',
+      });
+      expect(put.status).toBe(404);
+      expect((await s.api('DELETE', '/cash-to-payday/schedules/nope')).status).toBe(404);
+    });
+
+    it('takes a detected schedule over by merchant, then removes the manual copy', async () => {
+      const s = await setup();
+      const put = await s.api('PUT', '/cash-to-payday/schedules', {
+        merchant: 'acme payroll',
+        kind: 'income',
+        amountCents: 300_000,
+        cadence: 'semimonthly',
+        anchorDate: '2026-10-01',
+        anchorDays: [1, 15],
+      });
+      expect(put.status).toBe(200);
+      const { schedules } = (await s.api('GET', '/cash-to-payday')).json;
+      const row = schedules.find((r: { merchant: string }) => r.merchant === 'acme payroll');
+      expect(row).toEqual(expect.objectContaining({ isManual: true, isHandAdded: false }));
+      const del = await s.api(
+        'DELETE',
+        `/cash-to-payday/schedules/${encodeURIComponent(put.json.id)}`,
+      );
+      expect(del.status).toBe(204);
+    });
+
+    it('needs an id or a merchant', async () => {
+      const s = await setup();
+      const res = await s.api('PUT', '/cash-to-payday/schedules', {
+        kind: 'expense',
+        amountCents: 100,
+        cadence: 'weekly',
+        anchorDate: '2026-10-01',
+      });
+      expect(res.status).toBe(400);
+    });
+  });
 });

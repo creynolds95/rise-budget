@@ -292,7 +292,8 @@ export interface ProjectedOccurrence {
  * for a card payment, since those are never a predictable outflow.
  */
 export function projectOccurrences(series: DetectedSeries, count: number): ProjectedOccurrence[] {
-  const anchorDay = parts(series.nextExpectedDate).d;
+  // A monthly rule pinned to a day (31 = the last day) keeps it through short months.
+  const anchorDay = series.anchorDays?.[0] ?? parts(series.nextExpectedDate).d;
   const out: ProjectedOccurrence[] = [];
   let date = series.nextExpectedDate;
   for (let i = 0; i < count; i++) {
@@ -339,9 +340,32 @@ export function firstUpcoming(
     date =
       cadence === 'semimonthly'
         ? nextSemimonthlyDate(date, anchorDays as [number, number])
-        : nextDate(cadence, date, parts(anchorDate).d);
+        : nextDate(cadence, date, anchorDays?.[0] ?? parts(anchorDate).d);
   }
   return date;
+}
+
+/**
+ * The next date a declared schedule lands on, on or after `today`. A twice-a-month rule and a
+ * monthly rule pinned to a day (31 = the last day) are worked out from their days alone; the
+ * rest walk forward from the date the user gave.
+ */
+export function nextScheduled(
+  cadence: Cadence,
+  anchorDate: string,
+  anchorDays: [number, number] | null,
+  today: string,
+): string {
+  if (cadence === 'semimonthly') {
+    return nextSemimonthlyDate(
+      dateFromDayNumber(dayNumber(today) - 1),
+      anchorDays as [number, number],
+    );
+  }
+  if (cadence === 'monthly' && anchorDays) {
+    return firstUpcoming('monthly', addMonths(today, 0, anchorDays[0]), anchorDays, today);
+  }
+  return firstUpcoming(cadence, anchorDate, null, today);
 }
 
 /**
@@ -367,7 +391,7 @@ export function advanceManualRule(
     next =
       rule.cadence === 'semimonthly'
         ? nextSemimonthlyDate(o.date, rule.anchorDays as [number, number])
-        : nextDate(rule.cadence, o.date, parts(o.date).d);
+        : nextDate(rule.cadence, o.date, rule.anchorDays?.[0] ?? parts(o.date).d);
   }
   const status = dayNumber(today) - dayNumber(next) > MISSED_AFTER_DAYS ? 'broken' : 'active';
   return { nextExpectedDate: next, status };

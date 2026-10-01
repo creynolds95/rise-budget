@@ -1,6 +1,6 @@
 import { periodOf, validateSplits } from '@rise/shared/budget';
 import { normalizeMerchant } from '@rise/shared/categorize';
-import { firstUpcoming } from '@rise/shared/recurring';
+import { nextScheduled } from '@rise/shared/recurring';
 import {
   BulkAcceptBody,
   CreateTransactionBody,
@@ -424,7 +424,7 @@ transactions.post('/:id/recurring-cash-withdrawal', async (c) => {
   const user = await getUser(userId, db);
   const today = localToday(user?.timezone ?? 'America/Chicago');
   const anchorDays = b.anchorDays ?? null;
-  const nextExpectedDate = firstUpcoming(b.cadence, b.dueDate, anchorDays, today);
+  const nextExpectedDate = nextScheduled(b.cadence, b.dueDate, anchorDays, today);
   await db.batch([
     upsertManualRuleStmt(
       userId,

@@ -18,12 +18,15 @@ export function navigateWithTransition(
   to: string,
   direction: 'forward' | 'back',
 ) {
+  // Going back replaces the screen being left, so the way back never piles up history entries
+  // that a later swipe would walk through again.
+  const go = () => navigate(to, direction === 'back' ? { replace: true } : undefined);
   if (!supportsViewTransitions() || prefersReducedMotion()) {
-    navigate(to);
+    go();
     return;
   }
   document.documentElement.dataset.pageTransition = direction;
-  const transition = document.startViewTransition(() => flushSync(() => navigate(to)));
+  const transition = document.startViewTransition(() => flushSync(go));
   void transition.finished.finally(() => {
     delete document.documentElement.dataset.pageTransition;
   });
@@ -52,4 +55,9 @@ export function transitionClick(
     e.preventDefault();
     navigateWithTransition(navigate, to, direction);
   };
+}
+
+/** The four tab landing screens: nothing is "behind" them. */
+export function isTabRoot(path: string): boolean {
+  return /^\/(accounts|transactions|budget)?\/?$/.test(path.split('?')[0] ?? '');
 }

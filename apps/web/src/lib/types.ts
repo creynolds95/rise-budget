@@ -55,6 +55,21 @@ export interface MerchantView {
   topCategoryIds: string[];
 }
 
+/** One paycheck or bill schedule on the Surplus page. */
+export interface ScheduleRow {
+  /** The manual rule's id; null for a detected one (editing it takes it over). */
+  id: string | null;
+  merchant: string;
+  displayName: string;
+  kind: 'income' | 'expense';
+  amountCents: number;
+  cadence: string;
+  anchorDays: [number, number] | null;
+  nextExpectedDate: string;
+  isManual: boolean;
+  isHandAdded: boolean;
+}
+
 export interface CashToPaydayResponse {
   points: { date: string; balanceCents: number; label: string }[];
   lowestPoint: { date: string; balanceCents: number; label: string };
@@ -70,6 +85,7 @@ export interface CashToPaydayResponse {
     };
     isManual: boolean;
   }[];
+  schedules: ScheduleRow[];
   cashAccounts: { id: string; name: string }[];
   cushionCents: number;
   dismissedPayMerchants: { merchant: string; displayName: string }[];
@@ -82,4 +98,5 @@ export interface ManualCashEvent {
   amountCents: number;
   cadence: string;
   nextExpectedDate: string;
+  anchorDays: [number, number] | null;
 }
