@@ -13,7 +13,7 @@ import { Rail } from '../components/primitives/Rail';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
-import { yearBars, type MonthSpend } from '../lib/plan';
+import { earnedBars, yearBars, type MonthSpend } from '../lib/plan';
 import { monthEnd, monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { backFrom } from '../lib/nav';
@@ -98,7 +98,9 @@ function CategoryDetailBody({
   }
   const open = period.data.period.status === 'open';
   const list = txns.data?.pages.flatMap((p) => p.items) ?? [];
-  const bars = yearBars(history.data ?? [], month);
+  const yearly = yearBars(history.data ?? [], month);
+  const isIncome = groups.data?.find((g) => g.id === cat?.groupId)?.kind === 'income';
+  const bars = isIncome ? earnedBars(yearly) : yearly;
   const name = monthName(month, false);
 
   return (

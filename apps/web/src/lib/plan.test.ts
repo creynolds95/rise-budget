@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planStats, upToDollar, yearBars } from './plan';
+import { earnedBars, planStats, upToDollar, yearBars } from './plan';
 
 describe('planStats', () => {
   it('takes the six months before the one being planned', () => {
@@ -55,5 +55,19 @@ describe('yearBars', () => {
     expect(bars[0]?.periodId).toBe('2025-11');
     expect(bars[11]).toEqual({ periodId: '2026-10', spentCents: 0 });
     expect(bars[10]).toEqual({ periodId: '2026-09', spentCents: 500 });
+  });
+});
+
+describe('earnedBars', () => {
+  it('flips income (negative spending) to positive bars', () => {
+    expect(
+      earnedBars([
+        { periodId: '2026-01', spentCents: -230840 },
+        { periodId: '2026-02', spentCents: 0 },
+      ]),
+    ).toEqual([
+      { periodId: '2026-01', spentCents: 230840 },
+      { periodId: '2026-02', spentCents: 0 },
+    ]);
   });
 });
