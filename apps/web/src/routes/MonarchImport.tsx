@@ -136,9 +136,6 @@ export function MonarchImport() {
   const matched = plan?.categories.filter((c) => c.matched) ?? [];
   const busy = run.isPending;
   const extras = skippedIds(dupes, skipGroups).size;
-  const left = plan
-    ? plan.skipped.outsideWindow + Object.values(plan.skipped.categories).reduce((n, v) => n + v, 0)
-    : 0;
   const accountsNew =
     plan?.accounts.filter((a) => (accountChoices[a.monarchName] ?? a.choice).type === 'create')
       .length ?? 0;
@@ -207,79 +204,11 @@ export function MonarchImport() {
             <GroupRow label="Transactions">
               <span className="money">{plan.rows.length - extras}</span>
             </GroupRow>
-            <Fold
-              label="Accounts"
-              summary={`${accountsNew} history-only${accountsMerged ? `, ${accountsMerged} merged` : ''}`}
-            >
-              {plan.accounts.map((a) => {
-                const c = accountChoices[a.monarchName] ?? a.choice;
-                const value = c.type === 'existing' ? `acct:${c.accountId}` : `new:${c.kind}`;
-                return (
-                  <div
-                    key={a.monarchName}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate">{a.monarchName}</span>
-                      <span className="type-caption text-ink-muted money">
-                        {a.rows} · {shortDate(a.first)} – {shortDate(a.last)}
-                      </span>
-                    </span>
-                    <select
-                      aria-label={`Account for ${a.monarchName}`}
-                      className={SELECT}
-                      value={value}
-                      onChange={(e) => {
-                        const [t, v] = e.target.value.split(':') as [string, string];
-                        setAccountChoices((s) => ({
-                          ...s,
-                          [a.monarchName]:
-                            t === 'acct'
-                              ? { type: 'existing', accountId: v }
-                              : { type: 'create', kind: v as GuessedAccountKind },
-                        }));
-                      }}
-                    >
-                      <optgroup label="Past account (history only)">
-                        {Object.entries(ACCOUNT_KINDS).map(([k, label]) => (
-                          <option key={k} value={`new:${k}`}>
-                            {label}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Merge into">
-                        {accounts.map((x) => (
-                          <option key={x.id} value={`acct:${x.id}`}>
-                            {x.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    </select>
-                  </div>
-                );
-              })}
-            </Fold>
-            <Fold
-              label="Categories"
-              summary={`${matched.length} matched, ${unmatched.length} new`}
-              start={unmatched.length > 0}
-            >
-              {[...unmatched, ...matched].map((p) => (
-                <CategoryChoiceRow
-                  key={p.monarchName}
-                  name={p.monarchName}
-                  rows={p.rows}
-                  choice={categoryChoices[p.monarchName] ?? p.choice}
-                  onChange={(c) => setCategoryChoices((s) => ({ ...s, [p.monarchName]: c }))}
-                  cats={categories}
-                  groups={groups}
-                />
-              ))}
-            </Fold>
             {dupes.length > 0 && (
               <Fold
                 label="Possible duplicates"
                 summary={extras ? `${extras} skipped` : `${dupes.length}, all kept`}
+                start
               >
                 {dupes.map((g) => {
                   const k = duplicateKey(g);
@@ -315,15 +244,85 @@ export function MonarchImport() {
                 })}
               </Fold>
             )}
-            {(left > 0 || parsed.errors.length > 0) && (
+            <Fold label="Accounts and categories" summary="Automatic">
+              <Fold
+                label="Accounts"
+                summary={`${accountsNew} history-only${accountsMerged ? `, ${accountsMerged} merged` : ''}`}
+              >
+                {plan.accounts.map((a) => {
+                  const c = accountChoices[a.monarchName] ?? a.choice;
+                  const value = c.type === 'existing' ? `acct:${c.accountId}` : `new:${c.kind}`;
+                  return (
+                    <div
+                      key={a.monarchName}
+                      className="flex items-center justify-between gap-3 px-4 py-3"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate">{a.monarchName}</span>
+                        <span className="type-caption text-ink-muted money">
+                          {a.rows} · {shortDate(a.first)} – {shortDate(a.last)}
+                        </span>
+                      </span>
+                      <select
+                        aria-label={`Account for ${a.monarchName}`}
+                        className={SELECT}
+                        value={value}
+                        onChange={(e) => {
+                          const [t, v] = e.target.value.split(':') as [string, string];
+                          setAccountChoices((s) => ({
+                            ...s,
+                            [a.monarchName]:
+                              t === 'acct'
+                                ? { type: 'existing', accountId: v }
+                                : { type: 'create', kind: v as GuessedAccountKind },
+                          }));
+                        }}
+                      >
+                        <optgroup label="Past account (history only)">
+                          {Object.entries(ACCOUNT_KINDS).map(([k, label]) => (
+                            <option key={k} value={`new:${k}`}>
+                              {label}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Merge into">
+                          {accounts.map((x) => (
+                            <option key={x.id} value={`acct:${x.id}`}>
+                              {x.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    </div>
+                  );
+                })}
+              </Fold>
+              <Fold
+                label="Categories"
+                summary={`${matched.length} matched, ${unmatched.length} new`}
+              >
+                {[...unmatched, ...matched].map((p) => (
+                  <CategoryChoiceRow
+                    key={p.monarchName}
+                    name={p.monarchName}
+                    rows={p.rows}
+                    choice={categoryChoices[p.monarchName] ?? p.choice}
+                    onChange={(c) => setCategoryChoices((s) => ({ ...s, [p.monarchName]: c }))}
+                    cats={categories}
+                    groups={groups}
+                  />
+                ))}
+              </Fold>
+            </Fold>
+            {parsed.errors.length > 0 && (
               <GroupRow
-                label="Left out"
+                label="Unreadable rows"
                 hint={parsed.errors
                   .slice(0, 2)
                   .map((e) => `Line ${e.line}: ${e.message}`)
                   .join(' · ')}
               >
-                <span className="money text-ink-muted">{left + parsed.errors.length}</span>
+                <span className="money text-ink-muted">{parsed.errors.length}</span>
               </GroupRow>
             )}
           </Group>
