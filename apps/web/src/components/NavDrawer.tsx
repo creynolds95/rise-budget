@@ -39,7 +39,15 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
   const startX = useRef<number | null>(null);
   if (!mounted) return null;
   return (
-    <div className="fixed inset-0 z-50 lg:hidden">
+    <div
+      className="fixed inset-0 z-50 lg:hidden"
+      onTouchStart={(e) => (startX.current = e.touches[0]?.clientX ?? null)}
+      onTouchEnd={(e) => {
+        const t = e.changedTouches[0];
+        if (startX.current !== null && t && startX.current - t.clientX > 50) onClose();
+        startX.current = null;
+      }}
+    >
       <div
         aria-hidden
         onClick={onClose}
@@ -49,12 +57,6 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
       <nav
         aria-label="Menu"
         data-no-swipe
-        onTouchStart={(e) => (startX.current = e.touches[0]?.clientX ?? null)}
-        onTouchEnd={(e) => {
-          const t = e.changedTouches[0];
-          if (startX.current !== null && t && startX.current - t.clientX > 60) onClose();
-          startX.current = null;
-        }}
         className="absolute inset-y-0 left-0 flex w-[78%] max-w-xs flex-col border-r border-hairline bg-surface pt-[max(12px,env(safe-area-inset-top))] pb-[env(safe-area-inset-bottom)] shadow-2xl transition-transform ease-out"
         style={{
           transform: shown ? 'translateX(0)' : 'translateX(-100%)',

@@ -109,22 +109,22 @@ function PaceAgainstLastMonth(props: {
           slots={slots}
           xLabels={['1', ordinal(Math.ceil(slots / 2)), ordinal(slots)]}
           lines={[
-            ...(hasPrevious
-              ? [{ label: prevName, values: previous, color: series[1] as string }]
-              : []),
+            { label: prevName, values: previous, color: series[1] as string },
             { label: name, values: current, color: series[0] as string, live: true },
           ]}
         />
       </div>
       <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 type-caption text-ink-muted">
-        <Legend color={series[0]} label={name} />
-        {hasPrevious && (
-          <Legend color={series[1]} label={prevName}>
-            <span>
-              <MoneyText cents={previous.at(-1) ?? 0} tone="muted" whole /> all month
-            </span>
-          </Legend>
-        )}
+        <Legend color={series[0]} label={name}>
+          <span>
+            <MoneyText cents={props.spentCents} tone="muted" whole /> so far
+          </span>
+        </Legend>
+        <Legend color={series[1]} label={prevName}>
+          <span>
+            <MoneyText cents={previous.at(-1) ?? 0} tone="muted" whole /> all month
+          </span>
+        </Legend>
       </ul>
     </>
   );

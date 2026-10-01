@@ -485,9 +485,9 @@ function GroupSection({
             <button
               onClick={() => setShowIdle(!showIdle)}
               aria-expanded={showIdle}
-              className="mt-1 flex min-h-11 items-center gap-2 text-ink-muted"
+              className="mt-1 flex min-h-11 items-center gap-2 text-sm text-ink-muted"
             >
-              <Icon name="eyeOff" size={18} />
+              <Icon name="eyeOff" size={16} />
               {showIdle ? 'Collapse' : 'Show'} {idle.length} unbudgeted
             </button>
           )}
