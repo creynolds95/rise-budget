@@ -94,7 +94,7 @@ export function Transactions() {
       <TxnRow
         key={t.id}
         t={t}
-        categoryName={c ? `${c.emoji ? `${c.emoji} ` : ''}${c.name}` : undefined}
+        categoryEmoji={c?.emoji}
         from={back}
         hideDate={byDate}
         onRecategorize={batchReview ? () => setRecategorizing(t.id) : undefined}

@@ -9,13 +9,14 @@ import { Chevron } from './primitives/Rows';
 /** A transaction in a list: a NAV row. Pending shows italic with a P (SPEC §3.2). */
 export function TxnRow({
   t,
-  categoryName,
+  categoryEmoji,
   from,
   hideDate = false,
   onRecategorize,
 }: {
   t: Transaction;
-  categoryName?: string | undefined;
+  /** Shown before the merchant name; the category's name isn't repeated on the row. */
+  categoryEmoji?: string | null | undefined;
   from?: string;
   /** Under a date header the date would only repeat it. */
   hideDate?: boolean;
@@ -23,6 +24,13 @@ export function TxnRow({
   onRecategorize?: (() => void) | undefined;
 }) {
   const navigate = useNavigate();
+  const caption = [
+    hideDate ? null : shortDate(t.postedAt),
+    t.isTransfer ? 'Transfer' : t.splits.length > 1 ? 'Split' : null,
+    t.reviewState === 'needs_review' ? 'To review' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const to = `/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`;
   return (
     <div
@@ -34,6 +42,11 @@ export function TxnRow({
         className="min-w-0 flex-1 active:opacity-70"
       >
         <span className="block truncate">
+          {categoryEmoji && (
+            <span aria-hidden className="mr-2 not-italic">
+              {categoryEmoji}
+            </span>
+          )}
           {merchantName(t)}
           {t.isPending && (
             <span
@@ -44,15 +57,7 @@ export function TxnRow({
             </span>
           )}
         </span>
-        <span className="block truncate type-caption text-ink-faint">
-          {[
-            hideDate ? null : shortDate(t.postedAt),
-            t.isTransfer ? 'Transfer' : (categoryName ?? (t.splits.length > 1 ? 'Split' : null)),
-            t.reviewState === 'needs_review' ? 'To review' : null,
-          ]
-            .filter(Boolean)
-            .join(' · ') || 'Uncategorized'}
-        </span>
+        {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
       </Link>
       <span className="flex items-center gap-2">
         <TxnAmount t={t} />
