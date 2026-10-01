@@ -334,16 +334,15 @@ function CategoriesSection() {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => setSlot(document.getElementById('settings-action')), []);
   const q = query.trim().toLowerCase();
-  // Transfers (account moves, card payments) are the unbudgeted categories; they live in
-  // expense groups but aren't expenses, so they get their own tab.
-  const inTab = (c: Category, g: CategoryGroup) =>
-    g.kind === 'income' ? tab === 'income' : tab === (c.budgeted ? 'expense' : 'transfer');
+  // Transfers (account moves, card payments) is its own group, apart from expenses.
+  const groupTab = (g: CategoryGroup): 'income' | 'expense' | 'transfer' =>
+    g.kind === 'income' ? 'income' : g.name.toLowerCase() === 'transfers' ? 'transfer' : 'expense';
   const matches = (c: Category, g: CategoryGroup) =>
     !q || g.name.toLowerCase().includes(q) || c.name.toLowerCase().includes(q);
   const shownGroups = groups.filter((g) => {
+    if (groupTab(g) !== tab) return false;
     const all = categories.filter((c) => c.groupId === g.id);
-    if (all.length === 0) return tab === (g.kind === 'income' ? 'income' : 'expense') && !q;
-    return all.some((c) => inTab(c, g) && matches(c, g));
+    return all.length === 0 ? !q : all.some((c) => matches(c, g));
   });
   const save = async (fn: () => Promise<unknown>) => {
     setError(null);
@@ -430,9 +429,7 @@ function CategoriesSection() {
         className="list-none"
       >
         {(g, groupGrip) => {
-          const inGroup = categories.filter(
-            (c) => c.groupId === g.id && inTab(c, g) && matches(c, g),
-          );
+          const inGroup = categories.filter((c) => c.groupId === g.id && matches(c, g));
           return (
             <section className="mt-5 overflow-hidden rounded-card bg-surface shadow-soft">
               <div className="flex items-center bg-sage-100/60">
