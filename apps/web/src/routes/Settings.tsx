@@ -15,6 +15,7 @@ import { CategoryEditSheet } from '../components/CategoryEditSheet';
 import { Group, GroupRow, RadioRow } from '../components/primitives/Group';
 import { Toggle } from '../components/primitives/Toggle';
 import { backFrom } from '../lib/nav';
+import { useSwipeBack } from '../lib/gestures';
 import { transitionClick } from '../lib/transition';
 import { passkeyMessage } from '../lib/passkey';
 import { clearPin, hasPin, lockKeys, setPin, store as lockStore, validPin } from '../lib/lock';
@@ -24,6 +25,7 @@ import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
 import { IconButton } from '../components/primitives/Icon';
 import { Sheet } from '../components/primitives/Sheet';
+import { Reports } from './Reports';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -45,6 +47,7 @@ const SECTIONS = {
   appearance: 'Appearance',
   budget: 'Budget settings',
   categories: 'Categories',
+  reports: 'Reports',
   rules: 'Rules',
   sync: 'Bank sync',
   security: 'Security',
@@ -107,6 +110,7 @@ export function Settings() {
           title="Categories"
           state={categories ? `${categories.length} in use` : undefined}
         />
+        <Card to="/settings/reports" title="Reports" state="Cash flow and spending" />
         <Card
           to="/settings/rules"
           title="Rules"
@@ -186,12 +190,14 @@ export function SettingsSection() {
   const { section = '' } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const backTo = backFrom(params.get('from'), { label: 'Settings', to: '/settings' }).to;
+  useSwipeBack(backTo);
   if (!(section in SECTIONS)) return <Navigate to="/settings" replace />;
   const s = section as Section;
   const back = backFrom(params.get('from'), { label: 'Settings', to: '/settings' });
   return (
     <div className="mx-auto max-w-2xl pb-16">
-      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas/95 backdrop-blur">
+      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas">
         <Link
           to={back.to}
           onClick={transitionClick(navigate, back.to, 'back')}
@@ -203,6 +209,7 @@ export function SettingsSection() {
         <h1 className="type-body font-semibold">{SECTIONS[s]}</h1>
         <span />
       </header>
+      {s === 'reports' && <Reports />}
       <div className="gutter pt-4">
         {s === 'appearance' && <AppearanceSection />}
         {s === 'budget' && <BudgetSection />}

@@ -89,7 +89,7 @@ export function Budget() {
 
         <div className="gutter -mr-2 mt-2 flex items-center justify-end">
           <Link
-            to={`/reports${month === today.slice(0, 7) ? '' : `?m=${month}`}`}
+            to={`/settings/reports${month === today.slice(0, 7) ? '' : `?m=${month}`}`}
             aria-label="Reports"
             className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
           >

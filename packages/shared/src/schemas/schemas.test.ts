@@ -7,6 +7,7 @@ import {
   PatchAllocationBody,
   PatchSettingsBody,
   PeriodId,
+  RecurringSeries,
   User,
 } from './index';
 
@@ -66,5 +67,25 @@ describe('schemas', () => {
   it('PATCH bodies never inject defaults for absent keys', () => {
     expect(PatchSettingsBody.parse({ appLock: '5m' })).toEqual({ appLock: '5m' });
     expect(PatchAccountBody.parse({ name: 'USAA Savings' })).toEqual({ name: 'USAA Savings' });
+  });
+
+  it('RecurringSeries accepts the `<userId>|<merchant>` id of a long merchant name', () => {
+    // A UUID user id plus a merchant over ~27 characters is past 64 — /recurring used to 500
+    // on it, which every screen reading it reported as "Couldn't load this screen".
+    const uuid = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const id = `${uuid}|${uuid}`;
+    expect(
+      RecurringSeries.safeParse({
+        id,
+        merchantNormalized: 'x',
+        categoryId: null,
+        cadence: 'monthly',
+        expectedAmountCents: 100,
+        nextExpectedDate: null,
+        status: 'active',
+        updatedAt: '2026-10-01T00:00:00.000Z',
+        source: 'manual',
+      }).success,
+    ).toBe(true);
   });
 });

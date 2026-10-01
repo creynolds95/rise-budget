@@ -204,7 +204,8 @@ export const MerchantMeta = z.object({
 export type MerchantMeta = z.infer<typeof MerchantMeta>;
 
 export const RecurringSeries = z.object({
-  id: Id,
+  /** `<userId>|<merchant>` — longer than `Id`'s 64 for any merchant over ~27 characters. */
+  id: z.string().min(1),
   merchantNormalized: z.string(),
   categoryId: Id.nullable(),
   cadence: RecurringCadence,
