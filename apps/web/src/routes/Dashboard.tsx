@@ -47,7 +47,7 @@ export function Dashboard() {
   const backups = useBackupStatus();
   const queue = useQuery({
     queryKey: ['queue-count'],
-    queryFn: () => get<{ count: number }>('/review/queue'),
+    queryFn: () => get<{ count: number }>('/review/count'),
   });
 
   if (!period.data) {

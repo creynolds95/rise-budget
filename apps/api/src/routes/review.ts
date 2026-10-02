@@ -1,6 +1,6 @@
 import { rankMemory } from '@rise/shared/categorize';
 import { Hono } from 'hono';
-import { frequentCategoryIds, listTransactions, memoryFor } from '../db';
+import { countNeedsReview, frequentCategoryIds, listTransactions, memoryFor } from '../db';
 import type { AppEnv } from '../env';
 
 export const review = new Hono<AppEnv>();
@@ -8,6 +8,11 @@ export const review = new Hono<AppEnv>();
 const QUEUE_MAX = 500;
 const DROPPED_DAYS = 14;
 const FREQUENT_DAYS = 90;
+
+/** The Dashboard's "N to review" row: just the number, not the queue. */
+review.get('/count', async (c) =>
+  c.json({ count: await countNeedsReview(c.get('userId'), c.env.DB) }),
+);
 
 /**
  * SPEC §8: everything waiting for review, newest first, each with the merchant's top
