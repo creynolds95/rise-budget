@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       migrate:
-        description: "Run D1 migrations even if none changed since the last successful deploy"
+        description: 'Run D1 migrations even if none changed since the last successful deploy'
         type: boolean
         default: false
   workflow_run:
