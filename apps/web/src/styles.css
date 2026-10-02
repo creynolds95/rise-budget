@@ -299,11 +299,36 @@ html[data-page-transition='back']::view-transition-new(root) {
   }
 }
 
-/* Title banner: controls inside inherit the banner ink instead of their usual muted/sage text. */
+/* Title banner: one spacing for every page that has one, so the title always sits the same
+   distance below the island. Change --banner-pt here and every page moves together. */
+.banner {
+  --banner-pt: max(12px, calc(env(safe-area-inset-top) - 15px));
+  padding-top: var(--banner-pt);
+  padding-bottom: 4px;
+  min-height: calc(var(--banner-pt) + 48px);
+}
+/* Controls inside inherit the banner ink instead of their usual ink/muted/sage text. */
+.banner .text-ink,
 .banner .text-ink-muted,
 .banner .text-sage-700 {
   color: var(--color-banner-ink);
 }
 .banner [class*='active:bg-sage-100']:active {
   background: rgb(255 255 255 / 0.16);
+}
+/* A menu opened from the banner is a normal surface: normal ink. */
+.banner [role='menu'] {
+  color: var(--color-ink);
+}
+.banner [role='menu'] .text-ink {
+  color: var(--color-ink);
+}
+.banner [role='menu'] .text-ink-muted {
+  color: var(--color-ink-muted);
+}
+.banner [role='menu'] .text-sage-700 {
+  color: var(--color-sage-700);
+}
+.banner [role='menu'] [class*='active:bg-sage-100']:active {
+  background: var(--color-sage-100);
 }

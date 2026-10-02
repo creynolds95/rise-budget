@@ -234,7 +234,7 @@ export function Review() {
 
   return (
     <div className="mx-auto max-w-2xl pb-28">
-      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center banner bg-banner pt-[max(0px,calc(env(safe-area-inset-top)-15px))] text-banner-ink">
+      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft">
         <Link to="/" className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700">
           <span aria-hidden>‹</span>
           Dashboard
@@ -358,7 +358,7 @@ export function Review() {
       {toast && (
         <div
           role="status"
-          className="fixed inset-x-0 bottom-[max(16px,env(safe-area-inset-bottom))] z-30 mx-auto flex w-[min(100%-32px,560px)] items-center justify-between gap-3 rounded-card bg-ink px-4 py-2 text-surface shadow-soft"
+          className="fixed inset-x-0 bottom-[calc(max(16px,env(safe-area-inset-bottom))+72px)] z-30 lg:bottom-4 mx-auto flex w-[min(100%-32px,560px)] items-center justify-between gap-3 rounded-card bg-ink px-4 py-2 text-surface shadow-soft"
         >
           <span className="min-w-0 truncate">{toast}</span>
           <button onClick={undo} className="min-h-11 shrink-0 px-2 font-semibold text-sage-100">
