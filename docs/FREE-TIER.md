@@ -39,7 +39,13 @@ today ≈ 20×14k + 3×26k + 30k ≈ **390k (8% of cap)**. In 3 years (activity-
 
 **The write cap is the other real risk.** 100k/day ≈ 9k txns of import. The Monarch import used most of a day. Any re-link/backfill of years of history can hit it.
 
-## 3. Plan, prioritized
+## 3. Status (2026-10-02)
+
+Shipped: #1 skip-migrate on deploy (#111) · #7 client staleTime (#112) · #3/#4 carry chain + reports from `period_aggregate`, with the `budgeted`-flip cache fix and reads guard (#113) · #11 DB-limit 503 + banner (#114) · #12/#14 usage meter + backup download (#115) · #5 idle cron syncs skip recurring re-detection · #13/#15 `RUNBOOK.md`, grouped monthly Dependabot.
+
+Decided against: #6 skipping idle backups (sync runs write every day, so there is never an "unchanged" night; backup reads are ~1% of the cap) · #9 dropping `txn` indexes (saves ~1 of ~11 writes per row but risks slow queries) · #10 6am/6pm sync (immaterial). #9 chunked import: the import already sends small chunks and skips rows already in, so a limit hit mid-way is re-runnable after the reset; the 503 message now says so.
+
+## 4. Plan, prioritized
 
 Effort: S < ½ day, M ~1 day, L multi-day. Impact on "never stuck".
 
@@ -74,7 +80,7 @@ Effort: S < ½ day, M ~1 day, L multi-day. Impact on "never stuck".
 Now: #1 (done), #8, #7, #6 → then #3+#4 (with the budgeted-flag fix) → #11 → #12 → #13/#14 → #5, #9 as needed.
 Total ≈ 5–6 working days for everything; the first four are about a day and remove nearly all cap risk.
 
-## 4. If it breaks and no AI is around
+## 5. If it breaks and no AI is around (short form; full steps in RUNBOOK.md)
 
 **A deploy failed at "migrate"** (`code 7500`, "free tier daily row read limit"): it is not your code. Wait for 00:00 UTC (7 pm Central), GitHub → Actions → `deploy` → *Run workflow* with *migrate* ticked. After #1, ordinary merges never touch D1 in deploy, so this only happens for a commit that adds a migration.
 
