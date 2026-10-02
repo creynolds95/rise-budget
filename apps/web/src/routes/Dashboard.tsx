@@ -95,7 +95,7 @@ export function Dashboard() {
         <Link
           to="/review"
           onClick={transitionClick(navigate, '/review')}
-          className="flex min-h-14 items-center rounded-card border-l-4 border-sage-600 bg-sage-100 px-4 shadow-soft active:bg-sage-300"
+          className="flex min-h-14 items-center rounded-card border-l-4 border-gold bg-gold-100 px-4 shadow-soft active:brightness-95"
         >
           <span className="type-body font-semibold">
             <span className="money">{queue.data?.count}</span> to review
