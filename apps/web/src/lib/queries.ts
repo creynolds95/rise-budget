@@ -30,6 +30,9 @@ import type {
   TransactionPage,
 } from './types';
 
+/** Slow-changing reads: every write that touches them invalidates (useInvalidateMoney), and each refetch costs D1 rows against the free daily cap. */
+const SLOW = 5 * 60_000;
+
 export const useMe = () =>
   useQuery({ queryKey: ['me'], queryFn: () => get<User>('/me'), staleTime: 5 * 60_000 });
 
@@ -52,15 +55,31 @@ export function useToday(): string {
 }
 
 export const useAccounts = () =>
-  useQuery({ queryKey: ['accounts'], queryFn: () => get<AccountWithStaleness[]>('/accounts') });
+  useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => get<AccountWithStaleness[]>('/accounts'),
+    staleTime: SLOW,
+  });
 export const useGroups = () =>
-  useQuery({ queryKey: ['groups'], queryFn: () => get<CategoryGroup[]>('/category-groups') });
+  useQuery({
+    queryKey: ['groups'],
+    queryFn: () => get<CategoryGroup[]>('/category-groups'),
+    staleTime: SLOW,
+  });
 export const useCategories = () =>
-  useQuery({ queryKey: ['categories'], queryFn: () => get<Category[]>('/categories') });
+  useQuery({
+    queryKey: ['categories'],
+    queryFn: () => get<Category[]>('/categories'),
+    staleTime: SLOW,
+  });
 export const useRules = () =>
-  useQuery({ queryKey: ['rules'], queryFn: () => get<Rule[]>('/rules') });
+  useQuery({ queryKey: ['rules'], queryFn: () => get<Rule[]>('/rules'), staleTime: SLOW });
 export const useRecurring = () =>
-  useQuery({ queryKey: ['recurring'], queryFn: () => get<RecurringSeries[]>('/recurring') });
+  useQuery({
+    queryKey: ['recurring'],
+    queryFn: () => get<RecurringSeries[]>('/recurring'),
+    staleTime: SLOW,
+  });
 export const useSyncStatus = () =>
   useQuery({ queryKey: ['sync'], queryFn: () => get<SyncStatus>('/sync/status') });
 export const useCashToPayday = () =>
@@ -87,6 +106,7 @@ export const useSpendingReport = (month: string) =>
     queryKey: ['reports', 'spending', month],
     queryFn: () => get<SpendingReport>(`/reports/spending?month=${month}`),
     placeholderData: keepPreviousData,
+    staleTime: SLOW,
   });
 
 /** The Budget tab's "money flow" screen: income → expense groups → categories. */
@@ -95,6 +115,7 @@ export const useMoneyFlow = (month: string) =>
     queryKey: ['reports', 'money-flow', month],
     queryFn: () => get<MoneyFlowReport>(`/reports/money-flow?month=${month}`),
     placeholderData: keepPreviousData,
+    staleTime: SLOW,
   });
 
 /** Reports tab's Cash Flow "Bar" option: income vs. expense for the last six months. */
@@ -103,6 +124,7 @@ export const useCashFlowReport = (month: string) =>
     queryKey: ['reports', 'cash-flow', month],
     queryFn: () => get<CashFlowReport>(`/reports/cash-flow?month=${month}`),
     placeholderData: keepPreviousData,
+    staleTime: SLOW,
   });
 
 export const useTransaction = (id: string) =>

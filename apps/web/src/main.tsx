@@ -21,7 +21,9 @@ const CACHE_MAX_AGE = 14 * 24 * 3600_000;
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
+      // Every refetch bills D1 rows against the free daily cap, so a screen revisited within
+      // two minutes reuses what it has. Mutations invalidate the affected keys regardless.
+      staleTime: 120_000,
       // Kept as long as the persisted copy, or a cold start offline would find nothing.
       gcTime: CACHE_MAX_AGE,
       retry: (n, e) => !(e instanceof ApiError && e.status > 0 && e.status < 500) && n < 2,
