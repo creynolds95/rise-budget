@@ -264,6 +264,12 @@ function BudgetSection() {
   });
   const future = me?.settings.planChangesApplyToFuture ?? false;
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // Carry where Budget settings itself was opened from, so back from Categories retraces the path.
+  const own = params.get('from');
+  const categoriesHref = `/settings/categories?from=${encodeURIComponent(
+    `Budget settings|/settings/budget${own ? `?from=${encodeURIComponent(own)}` : ''}`,
+  )}`;
   return (
     <>
       <Group title="When you change a plan">
@@ -284,11 +290,8 @@ function BudgetSection() {
       </Group>
       <Group title="Categories">
         <Link
-          to="/settings/categories?from=Budget settings|/settings/budget"
-          onClick={transitionClick(
-            navigate,
-            '/settings/categories?from=Budget settings|/settings/budget',
-          )}
+          to={categoriesHref}
+          onClick={transitionClick(navigate, categoriesHref)}
           className="flex min-h-13 items-center justify-between px-4 py-3 active:bg-sage-100"
         >
           <span>Categories and groups</span>
