@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 const ITEMS: { label: string; to: string }[] = [
   { label: 'Surplus', to: '/cash-to-payday' },
   { label: 'Review', to: '/review' },
+  { label: 'Recurring', to: '/recurring' },
   { label: 'Reports', to: '/settings/reports' },
   { label: 'Investments', to: '/settings/investments' },
   { label: 'Categories', to: '/settings/categories' },
