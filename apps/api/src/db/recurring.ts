@@ -1,4 +1,4 @@
-import type { DetectedSeries, Occurrence } from '@rise/shared/recurring';
+import type { AccountOccurrence, DetectedSeries, SurplusSuggestion } from '@rise/shared/recurring';
 import { RecurringSeries } from '@rise/shared/schemas';
 import { nowIso, type UserId } from './util';
 
@@ -12,13 +12,13 @@ export async function listOccurrences(
   userId: UserId,
   db: D1Database,
   from: string,
-): Promise<Map<string, Occurrence[]>> {
+): Promise<Map<string, AccountOccurrence[]>> {
   // H1: every occurrence always has a split now (a guess or the catch-all), so a category
   // only counts here once the user has actually reviewed it — otherwise every merchant would
   // "establish" whatever its unconfirmed guess happened to be.
   const { results } = await db
     .prepare(
-      `SELECT t.merchant_normalized, t.posted_at, t.amount_cents,
+      `SELECT t.merchant_normalized, t.account_id, t.posted_at, t.amount_cents,
          CASE WHEN t.review_state = 'reviewed' THEN
            (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(s.category_id) END FROM split s
              WHERE s.user_id = ?1 AND s.txn_id = t.id)
@@ -31,13 +31,19 @@ export async function listOccurrences(
     .bind(userId, from)
     .all<{
       merchant_normalized: string;
+      account_id: string;
       posted_at: string;
       amount_cents: number;
       category_id: string | null;
     }>();
-  const out = new Map<string, Occurrence[]>();
+  const out = new Map<string, AccountOccurrence[]>();
   for (const r of results) {
-    const o = { date: r.posted_at, amountCents: r.amount_cents, categoryId: r.category_id };
+    const o = {
+      date: r.posted_at,
+      amountCents: r.amount_cents,
+      categoryId: r.category_id,
+      accountId: r.account_id,
+    };
     out.set(r.merchant_normalized, [...(out.get(r.merchant_normalized) ?? []), o]);
   }
   return out;
@@ -326,4 +332,56 @@ export function setTypicalPostDayStmt(
        WHERE user_id = ?1 AND id = ?2 AND (typical_post_day IS NULL OR typical_post_day != ?3)`,
     )
     .bind(userId, categoryId, day);
+}
+
+/** Rebuild the user's Surplus suggestions from scratch (one refresh's whole answer). */
+export function replaceSuggestionsStmts(
+  userId: UserId,
+  db: D1Database,
+  suggestions: readonly SurplusSuggestion[],
+): D1PreparedStatement[] {
+  const now = nowIso();
+  return [
+    db.prepare('DELETE FROM surplus_suggestion WHERE user_id = ?1').bind(userId),
+    ...suggestions.map(({ merchant, accountId, series: s }) =>
+      db
+        .prepare(
+          `INSERT INTO surplus_suggestion (id, user_id, merchant_normalized, account_id, cadence,
+             expected_amount_cents, next_expected_date, anchor_days, updated_at)
+           VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+        )
+        .bind(
+          userId,
+          seriesId(userId, merchant),
+          merchant,
+          accountId,
+          s.cadence,
+          s.expectedAmountCents,
+          s.nextExpectedDate,
+          s.anchorDays ? JSON.stringify(s.anchorDays) : null,
+          now,
+        ),
+    ),
+  ];
+}
+
+export interface SuggestionRow {
+  merchant_normalized: string;
+  account_id: string;
+  cadence: string;
+  expected_amount_cents: number;
+  next_expected_date: string;
+  anchor_days: string | null;
+}
+
+export async function listSuggestions(userId: UserId, db: D1Database): Promise<SuggestionRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT merchant_normalized, account_id, cadence, expected_amount_cents,
+         next_expected_date, anchor_days
+       FROM surplus_suggestion WHERE user_id = ?1 ORDER BY next_expected_date`,
+    )
+    .bind(userId)
+    .all<SuggestionRow>();
+  return results;
 }

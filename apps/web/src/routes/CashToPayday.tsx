@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router';
 import { axisPicks, surplusTone } from '../lib/surplus';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
@@ -14,7 +15,7 @@ import { localToday, shortDate } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { useAccounts, useCashToPayday, useMe } from '../lib/queries';
 import { describeSchedule, draftFrom, schedulePayload, type ScheduleDraft } from '../lib/schedule';
-import type { ScheduleRow } from '../lib/types';
+import type { ScheduleRow, SuggestionRow } from '../lib/types';
 import { ScheduleFields } from '../components/ScheduleFields';
 
 /**
@@ -248,9 +249,47 @@ function ScheduleList({
   );
 }
 
+/** What sync found in the cash accounts. Nothing here counts until it is added. */
+function SuggestionList({
+  rows,
+  onAdd,
+  onDismiss,
+}: {
+  rows: SuggestionRow[];
+  onAdd: (r: SuggestionRow) => void;
+  onDismiss: (r: SuggestionRow) => void;
+}) {
+  return (
+    <ul>
+      {rows.map((r) => (
+        <li key={r.merchant} className="border-b border-hairline py-3">
+          <div className="flex items-start justify-between gap-4">
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{r.displayName}</span>
+              <span className="block type-caption text-ink-faint">
+                {r.accountName} · {describeSchedule(r.cadence, r.anchorDays)} · next{' '}
+                {shortDate(r.nextExpectedDate)}
+              </span>
+            </span>
+            <MoneyText cents={r.amountCents} tone={r.kind === 'income' ? 'in' : 'ink'} />
+          </div>
+          <div className="mt-2 flex gap-2">
+            <Button className="flex-1" onClick={() => onAdd(r)}>
+              Add
+            </Button>
+            <Button variant="quiet" className="flex-1" onClick={() => onDismiss(r)}>
+              Dismiss
+            </Button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
- * Edit one schedule. A detected one is taken over by saving (so Rise stops re-detecting it);
- * "Remove" deletes a manual schedule or dismisses a detected one.
+ * Edit one schedule, or review a suggestion before adding it. "Remove" deletes a schedule;
+ * a suggestion is dismissed instead.
  */
 function EditScheduleSheet({
   row,
@@ -321,21 +360,21 @@ function EditScheduleSheet({
           )
         }
       >
-        {saving ? 'Saving…' : 'Save'}
+        {saving ? 'Saving…' : row.id ? 'Save' : 'Add to Surplus'}
       </Button>
       <Button
         variant="quiet"
         className="mt-2 w-full"
         disabled={saving}
         onClick={() =>
-          row.isManual && row.id
+          row.id
             ? void run(() =>
                 api('DELETE', `/cash-to-payday/schedules/${encodeURIComponent(row.id as string)}`),
               )
             : onDismiss()
         }
       >
-        Remove
+        {row.id ? 'Remove' : 'Dismiss'}
       </Button>
     </Sheet>
   );
@@ -361,6 +400,16 @@ export function CashToPayday() {
   });
   const [editing, setEditing] = useState<ScheduleRow | null>(null);
   const schedules = data?.schedules ?? [];
+  const suggestions = data?.suggestions ?? [];
+  const dismiss = (r: { merchant: string; displayName: string }) =>
+    setDismissed.mutate([...dismissed, { merchant: r.merchant, displayName: r.displayName }]);
+  // The Dashboard's "to review in Surplus" row lands here.
+  const { hash } = useLocation();
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const hasSuggestions = suggestions.length > 0;
+  useEffect(() => {
+    if (hash === '#review' && hasSuggestions) reviewRef.current?.scrollIntoView();
+  }, [hash, hasSuggestions]);
   // Only the Dashboard links here (routes/table.ts).
   const back = { label: 'Dashboard', to: '/' };
 
@@ -403,7 +452,7 @@ export function CashToPayday() {
             />
           ),
           context: noPaySchedule ? (
-            'No pay schedule found yet — add your income below, or wait for Rise to see a paycheck post.'
+            'Add your income below.'
           ) : data.lowestPoint.date !== data.points[0]?.date ? (
             <>
               Lowest point is{' '}
@@ -448,6 +497,22 @@ export function CashToPayday() {
           </>
         }
         related={[
+          ...(hasSuggestions
+            ? [
+                {
+                  title: 'To review',
+                  children: (
+                    <div ref={reviewRef} className="scroll-mt-16">
+                      <SuggestionList
+                        rows={suggestions}
+                        onAdd={(r) => setEditing({ ...r, id: null, isHandAdded: false })}
+                        onDismiss={dismiss}
+                      />
+                    </div>
+                  ),
+                },
+              ]
+            : []),
           {
             title: 'Upcoming income',
             children: (
@@ -530,10 +595,7 @@ export function CashToPayday() {
           onClose={() => setEditing(null)}
           onSaved={refresh}
           onDismiss={() => {
-            setDismissed.mutate([
-              ...dismissed,
-              { merchant: editing.merchant, displayName: editing.displayName },
-            ]);
+            dismiss(editing);
             setEditing(null);
           }}
         />

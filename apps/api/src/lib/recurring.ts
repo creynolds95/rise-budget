@@ -4,33 +4,40 @@ import {
   BROKEN_AFTER_DAYS,
   detectSemimonthly,
   detectSeries,
+  surplusSuggestions,
   typicalPostDay,
   type DetectedSeries,
 } from '@rise/shared/recurring';
 import {
   advanceManualRuleStmt,
+  getUser,
+  listAccounts,
   listManualRules,
   listOccurrences,
   manualRuleMerchants,
   markOverdueBrokenStmt,
+  replaceSuggestionsStmts,
   setTypicalPostDayStmt,
   upsertSeriesStmt,
   type UserId,
 } from '../db';
+import { cashAccountsOf } from './cashToPayday';
 
 /** Far enough back to see an annual charge three times. */
 export const LOOKBACK_DAYS = 3 * 366 + 8;
 
 /**
- * Re-detect every merchant's series (SPEC §7) and feed `typical_post_day`: per category,
- * the day of its largest monthly bill.
+ * Re-detect every merchant's series (SPEC §7), feed `typical_post_day` (per category, the
+ * day of its largest monthly bill), and rebuild the Surplus suggestions.
  */
 export async function refreshRecurring(db: D1Database, userId: UserId, today: string) {
   const from = dateFromDayNumber(dayNumber(today) - LOOKBACK_DAYS);
-  const [byMerchant, manual, manualMerchants] = await Promise.all([
+  const [byMerchant, manual, manualMerchants, user, accounts] = await Promise.all([
     listOccurrences(userId, db, from),
     listManualRules(userId, db),
     manualRuleMerchants(userId, db),
+    getUser(userId, db),
+    listAccounts(userId, db),
   ]);
   const found: [string, DetectedSeries][] = [];
   for (const [merchant, occ] of byMerchant) {
@@ -65,11 +72,23 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
     );
     return advanceManualRuleStmt(userId, db, r.id, advanced.nextExpectedDate, advanced.status);
   });
+  const suggestions = user
+    ? surplusSuggestions(
+        byMerchant,
+        new Set(cashAccountsOf(user.settings, accounts).map((a) => a.id)),
+        new Set([
+          ...manualMerchants,
+          ...user.settings.dismissedPayMerchants.map((d) => d.merchant),
+        ]),
+        today,
+      )
+    : [];
   await db.batch([
     ...found.map(([merchant, s]) => upsertSeriesStmt(userId, db, merchant, s)),
     ...manualUpdates,
     markOverdueBrokenStmt(userId, db, dateFromDayNumber(dayNumber(today) - BROKEN_AFTER_DAYS)),
     ...[...billDay].map(([categoryId, b]) => setTypicalPostDayStmt(userId, db, categoryId, b.day)),
+    ...replaceSuggestionsStmts(userId, db, suggestions),
   ]);
   return found.length;
 }

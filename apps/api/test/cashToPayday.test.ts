@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { upsertManualRuleStmt } from '../src/db';
 import { buildCashToPaydayProjection } from '../src/lib/cashToPayday';
 import { centsToDecimal } from '../src/sync/mock';
 import { runSync } from '../src/sync/run';
@@ -71,35 +72,84 @@ const feed = () =>
   ]);
 
 describe('cash to payday', () => {
-  it('projects paychecks in and real bills out, never a card payment', async () => {
+  it('suggests what sync found in cash, and projects only what the user adds', async () => {
     const s = await setup();
     await runSync(env.DB, s.userId, feed(), {
       now: new Date('2026-09-05T20:00:00Z'),
       since: '2026-06-01',
     });
-    // Called directly with an explicit `today`, same as recurring.test.ts does for
-    // refreshRecurring — the GET route binds to the real wall clock, which a date-sensitive
-    // test can't control.
-    const result = await buildCashToPaydayProjection(env.DB, s.userId, '2026-09-10', 200_000, 0);
+    // Called directly with an explicit `today` — the GET route binds to the real wall clock,
+    // which a date-sensitive test can't control.
+    const project = () => buildCashToPaydayProjection(env.DB, s.userId, '2026-09-10', 200_000, 0);
+    const before = await project();
+    expect(before.points).toEqual([{ date: '2026-09-10', balanceCents: 200_000, label: 'Today' }]);
+    expect(before.paySchedules).toEqual([]);
+    expect(before.suggestions).toEqual([
+      expect.objectContaining({
+        merchant: 'ACME CORP PAYROLL',
+        kind: 'income',
+        amountCents: 310_000,
+        cadence: 'semimonthly',
+        anchorDays: [5, 20],
+      }),
+      expect.objectContaining({ merchant: 'MORTGAGE SERVICING', kind: 'expense' }),
+    ]);
+
+    // Added through the same statement the Surplus "Add" saves with.
+    await env.DB.batch([
+      upsertManualRuleStmt(
+        s.userId,
+        env.DB,
+        'ACME CORP PAYROLL',
+        'semimonthly',
+        -310_000,
+        '2026-09-18',
+        [5, 20],
+      ),
+      upsertManualRuleStmt(
+        s.userId,
+        env.DB,
+        'MORTGAGE SERVICING',
+        'monthly',
+        180_000,
+        '2026-09-27',
+      ),
+    ]);
+    const after = await project();
+    expect(after.suggestions).toEqual([]);
     // Payday (09-18), the mortgage that follows it (09-27), then two more paydays through
     // the 3-paycheck horizon — the mortgage payment is real cash out; no card ever appears.
-    expect(result.points).toEqual([
+    expect(after.points).toEqual([
       { date: '2026-09-10', balanceCents: 200_000, label: 'Today' },
       { date: '2026-09-18', balanceCents: 510_000, label: 'ACME CORP PAYROLL' },
       { date: '2026-09-27', balanceCents: 330_000, label: 'MORTGAGE SERVICING' },
       { date: '2026-10-05', balanceCents: 640_000, label: 'ACME CORP PAYROLL' },
       { date: '2026-10-20', balanceCents: 950_000, label: 'ACME CORP PAYROLL' },
     ]);
-    expect(result.lowestPoint).toEqual({
-      date: '2026-09-10',
-      balanceCents: 200_000,
-      label: 'Today',
+  });
+
+  it('a dismissed suggestion stays gone, and the page names its account', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, feed(), { since: '2026-06-01' });
+    const listed = (await s.api('GET', '/cash-to-payday')).json;
+    const mortgage = listed.suggestions.find(
+      (r: { merchant: string }) => r.merchant === 'MORTGAGE SERVICING',
+    );
+    expect(mortgage?.accountName).toBe('USAA Checking');
+    await s.api('PATCH', '/me/settings', {
+      dismissedPayMerchants: [{ merchant: 'MORTGAGE SERVICING', displayName: 'Mortgage' }],
     });
-    expect(result.paySchedules).toHaveLength(1);
-    expect(result.paySchedules[0]).toMatchObject({
-      merchant: 'ACME CORP PAYROLL',
-      series: expect.objectContaining({ cadence: 'semimonthly', anchorDays: [5, 20] }),
-    });
+    const after = (await s.api('GET', '/cash-to-payday')).json;
+    expect(after.suggestions.map((r: { merchant: string }) => r.merchant)).not.toContain(
+      'MORTGAGE SERVICING',
+    );
+  });
+
+  it('suggests nothing from an account outside the cash accounts', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, feed(), { since: '2026-06-01' });
+    await s.api('PATCH', '/me/settings', { cashAccountIds: [s.checking.id] });
+    expect((await s.api('GET', '/cash-to-payday')).json.suggestions).toEqual([]);
   });
 
   it('a plain empty settings default counts every budgeted depository account as cash', async () => {
@@ -188,7 +238,6 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
           kind: 'income',
           cadence: 'semimonthly',
           anchorDays: [15, 31],
-          isManual: true,
           isHandAdded: true,
         }),
       );
@@ -251,7 +300,7 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
       expect(put.status).toBe(200);
       const { schedules } = (await s.api('GET', '/cash-to-payday')).json;
       const row = schedules.find((r: { merchant: string }) => r.merchant === 'acme payroll');
-      expect(row).toEqual(expect.objectContaining({ isManual: true, isHandAdded: false }));
+      expect(row).toEqual(expect.objectContaining({ isHandAdded: false }));
       const del = await s.api(
         'DELETE',
         `/cash-to-payday/schedules/${encodeURIComponent(put.json.id)}`,

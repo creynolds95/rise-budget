@@ -14,7 +14,7 @@ import {
 } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
-import { buildCashToPaydayProjection } from '../lib/cashToPayday';
+import { buildCashToPaydayProjection, cashAccountsOf } from '../lib/cashToPayday';
 import { localToday } from '../lib/dates';
 import { body } from '../lib/validate';
 
@@ -26,12 +26,8 @@ cashToPayday.get('/', async (c) => {
   if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
 
   const accounts = await listAccounts(userId, c.env.DB);
-  const { cashAccountIds, cushionCents, dismissedPayMerchants } = user.settings;
-  // Empty selection: every budgeted depository account counts as cash.
-  const cashAccounts =
-    cashAccountIds.length > 0
-      ? accounts.filter((a) => cashAccountIds.includes(a.id))
-      : accounts.filter((a) => a.kind === 'depository' && a.includeInBudget);
+  const { cushionCents, dismissedPayMerchants } = user.settings;
+  const cashAccounts = cashAccountsOf(user.settings, accounts);
   const startBalanceCents = cashAccounts.reduce((sum, a) => sum + a.balanceCents, 0);
 
   const today = localToday(user.timezone);
@@ -43,8 +39,13 @@ cashToPayday.get('/', async (c) => {
     cushionCents,
     dismissedPayMerchants.map((d) => d.merchant),
   );
+  const accountName = new Map(accounts.map((a) => [a.id, a.name]));
   return c.json({
     ...projection,
+    suggestions: projection.suggestions.map((s) => ({
+      ...s,
+      accountName: accountName.get(s.accountId) ?? '',
+    })),
     cashAccounts: cashAccounts.map((a) => ({ id: a.id, name: a.name })),
     cushionCents,
     dismissedPayMerchants,
