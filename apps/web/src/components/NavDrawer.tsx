@@ -5,10 +5,10 @@ const ITEMS: { label: string; to: string }[] = [
   { label: 'Surplus', to: '/cash-to-payday' },
   { label: 'Review', to: '/review' },
   { label: 'Recurring', to: '/recurring' },
-  { label: 'Reports', to: '/settings/reports' },
-  { label: 'Investments', to: '/settings/investments' },
-  { label: 'Categories', to: '/settings/categories' },
-  { label: 'Rules', to: '/settings/rules' },
+  { label: 'Reports', to: '/settings/reports?from=Dashboard|/' },
+  { label: 'Investments', to: '/settings/investments?from=Dashboard|/' },
+  { label: 'Categories', to: '/settings/categories?from=Dashboard|/' },
+  { label: 'Rules', to: '/settings/rules?from=Dashboard|/' },
   { label: 'Settings', to: '/settings' },
 ];
 

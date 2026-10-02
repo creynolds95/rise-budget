@@ -4,7 +4,7 @@ const PATHS = {
   eyeOff:
     'M3 3l18 18M10.6 6.2A9.5 9.5 0 0 1 12 6c5 0 8.5 4 9.5 6a14 14 0 0 1-2.6 3.3M6.7 7.7A14 14 0 0 0 2.5 12c1 2 4.5 6 9.5 6 1.3 0 2.5-.3 3.5-.7M9.9 10a3 3 0 0 0 4.1 4.1',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
-  back: 'M15 5l-7 7 7 7',
+  back: 'M19 12H5M11 5l-7 7 7 7',
   plus: 'M12 5v14M5 12h14',
   menu: 'M4 7h16M4 12h16M4 17h16',
   refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
@@ -32,7 +32,7 @@ export function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
       height={size}
       viewBox="0 0 24 24"
       className="shrink-0 fill-none stroke-current"
-      strokeWidth={name === 'more' ? 3 : 1.75}
+      strokeWidth={name === 'more' ? 3 : name === 'back' ? 2.5 : 1.75}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
