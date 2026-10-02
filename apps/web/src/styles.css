@@ -302,7 +302,7 @@ html[data-page-transition='back']::view-transition-new(root) {
 /* Title banner: one spacing for every page that has one, so the title always sits the same
    distance below the island. Change --banner-pt here and every page moves together. */
 .banner {
-  --banner-pt: max(12px, calc(env(safe-area-inset-top) - 15px));
+  --banner-pt: max(12px, calc(env(safe-area-inset-top) - 1px));
   padding-top: var(--banner-pt);
   padding-bottom: 4px;
   min-height: calc(var(--banner-pt) + 48px);
