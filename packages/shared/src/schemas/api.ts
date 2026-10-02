@@ -34,6 +34,7 @@ export const ErrorCode = z.enum([
   'IDEMPOTENCY_CONFLICT',
   'RATE_LIMITED',
   'STEP_UP_REQUIRED',
+  'DB_LIMIT',
   'INTERNAL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

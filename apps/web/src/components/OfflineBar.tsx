@@ -1,7 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
+  isDbLimited,
   isOnline,
+  onDbLimitChange,
   onConnectivityChange,
   onOutboxChange,
   outbox,
@@ -13,6 +15,11 @@ import type { Query, QueryClient } from '@tanstack/react-query';
 
 export function useOnline(): boolean {
   return useSyncExternalStore(onConnectivityChange, isOnline, () => true);
+}
+
+/** The free daily database allowance is spent; reads show saved data until it resets. */
+export function useDbLimited(): boolean {
+  return useSyncExternalStore(onDbLimitChange, isDbLimited, () => false);
 }
 
 /** Changes waiting on this device to be sent. */
@@ -68,6 +75,7 @@ export function OfflineBar() {
   const qc = useQueryClient();
   const [refused, setRefused] = useState<string[]>([]);
   const stuck = useStuckQueries();
+  const limited = useDbLimited();
   const retry = () => {
     void probe();
     void qc.refetchQueries({ predicate: isStuck });
@@ -144,7 +152,7 @@ export function OfflineBar() {
         ? "Couldn't load this screen"
         : "This screen isn't saved on this device yet"
       : null;
-  const show = text !== null || refused.length > 0 || failed !== null;
+  const show = text !== null || refused.length > 0 || failed !== null || limited;
 
   // Sticky headers sit below the bar rather than under it, however many rows it has.
   const bar = useRef<HTMLDivElement>(null);
@@ -173,6 +181,11 @@ export function OfflineBar() {
       {text && (
         <p className="flex h-8 items-center justify-center bg-ink px-4 type-caption text-surface">
           <span className="truncate">{text}</span>
+        </p>
+      )}
+      {limited && (
+        <p className="flex items-center justify-center bg-surface px-4 py-1 type-caption text-ink shadow-soft">
+          Daily database limit reached. It resets at 7 pm Central. Saved data still shows.
         </p>
       )}
       {failed && (

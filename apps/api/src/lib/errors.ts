@@ -19,6 +19,14 @@ export function errorBody(code: ErrorCode, message: string, detail?: unknown): A
   return { error: detail === undefined ? { code, message } : { code, message, detail } };
 }
 
+/**
+ * D1's free tier refuses every query once the daily rows-read or rows-written cap is spent
+ * (code 7500 / "exceeded D1's free tier daily … limit"). It resets at 00:00 UTC. Say so plainly
+ * instead of a generic 500, so the app can show saved data and explain.
+ */
+export const isDbLimit = (err: unknown) =>
+  err instanceof Error && /free tier|daily row (read|written?) limit|\b7500\b/i.test(err.message);
+
 export function renderError(err: Error, c: Context) {
   if (err instanceof HTTPException) {
     return c.json(
@@ -28,5 +36,13 @@ export function renderError(err: Error, c: Context) {
   }
   if (err instanceof AppError)
     return c.json(errorBody(err.code, err.message, err.detail), err.status);
+  if (isDbLimit(err))
+    return c.json(
+      errorBody(
+        'DB_LIMIT',
+        'Rise has used its free daily database allowance. It resets at 7 pm Central.',
+      ),
+      503,
+    );
   return c.json(errorBody('INTERNAL', 'Something went wrong'), 500);
 }

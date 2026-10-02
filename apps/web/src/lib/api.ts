@@ -64,6 +64,23 @@ export function refreshSession(): Promise<RefreshResult> {
 
 export const refresh = async () => (await refreshSession()) === 'ok';
 
+// ── database limit ───────────────────────────────────────────────────────────
+
+let dbLimited = false;
+const limitListeners = new Set<() => void>();
+
+/** True while the server is reporting that the free daily database allowance is spent. */
+export const isDbLimited = () => dbLimited;
+export function onDbLimitChange(fn: () => void): () => void {
+  limitListeners.add(fn);
+  return () => limitListeners.delete(fn);
+}
+function setDbLimited(v: boolean) {
+  if (v === dbLimited) return;
+  dbLimited = v;
+  for (const fn of limitListeners) fn();
+}
+
 // ── connectivity ─────────────────────────────────────────────────────────────
 
 let lastReachable = true;
@@ -172,12 +189,14 @@ export async function api<T>(
   if (res.status === 401 && !path.startsWith('/auth/') && (await refresh())) {
     res = await send(method, path, body, o);
   }
+  if (res.ok) setDbLimited(false);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   const json: unknown = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const err = (json as { error?: { code?: string; message?: string; detail?: unknown } } | null)
       ?.error;
+    if (err?.code === 'DB_LIMIT') setDbLimited(true);
     throw new ApiError(
       res.status,
       err?.code ?? 'UNKNOWN',
