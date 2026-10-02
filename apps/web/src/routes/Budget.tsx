@@ -1,5 +1,4 @@
 import type { ViewCategory } from '@rise/shared/budget';
-import { merchantName } from '../lib/merchant';
 import type { Category, CategoryGroup, Reallocation } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type MouseEvent as ReactMouseEvent } from 'react';
@@ -21,14 +20,7 @@ import { useIsDesktop } from '../lib/media';
 import { formatCents } from '../lib/money';
 import { transitionClick } from '../lib/transition';
 
-import {
-  useCategories,
-  useGroups,
-  useInvalidateMoney,
-  usePeriod,
-  useRecurring,
-  useToday,
-} from '../lib/queries';
+import { useCategories, useGroups, useInvalidateMoney, usePeriod, useToday } from '../lib/queries';
 import type { PeriodResponse } from '../lib/types';
 
 /** The Budget tab (T37): pool, groups with roll-ups, and a rail per category. */
@@ -220,7 +212,6 @@ export function Budget() {
           </div>
         )}
 
-        <Upcoming month={month} today={today} categories={categories.data} />
         <Moves month={month} categories={categories.data} />
 
         {plan.sheets}
@@ -619,56 +610,6 @@ function LeftToBudget({ poolCents }: { poolCents: number }) {
         className="text-lg font-semibold"
       />
     </div>
-  );
-}
-
-function Upcoming({
-  month,
-  today,
-  categories,
-}: {
-  month: string;
-  today: string;
-  categories: Category[];
-}) {
-  const recurring = useRecurring();
-  const rows = (recurring.data ?? []).filter(
-    (s) =>
-      s.status !== 'ended' &&
-      s.nextExpectedDate?.slice(0, 7) === month &&
-      s.expectedAmountCents > 0,
-  );
-  const broken = (recurring.data ?? []).filter((s) => s.status === 'broken');
-  if (rows.length === 0 && broken.length === 0) return null;
-  return (
-    <section className="gutter mt-10">
-      <h2 className="type-title">Recurring</h2>
-      <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-        {rows.map((s) => (
-          <li
-            key={s.id}
-            className="flex min-h-12 items-center justify-between border-b border-hairline py-3"
-          >
-            <span>
-              {merchantName(s)}
-              <span className="block type-caption text-ink-faint">
-                {s.nextExpectedDate && s.nextExpectedDate < today ? 'Due' : 'Expected'}{' '}
-                {shortDate(s.nextExpectedDate ?? '')}
-                {s.categoryId
-                  ? ` · ${categories.find((c) => c.id === s.categoryId)?.name ?? ''}`
-                  : ''}
-              </span>
-            </span>
-            <MoneyText cents={s.expectedAmountCents} />
-          </li>
-        ))}
-        {broken.map((s) => (
-          <li key={s.id} className="min-h-12 border-b border-hairline py-3 text-clay">
-            {merchantName(s)} hasn't charged since it was due {shortDate(s.nextExpectedDate ?? '')}.
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }
 
