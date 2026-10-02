@@ -91,6 +91,21 @@ export function Dashboard() {
       />
       {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}
 
+      {(queue.data?.count ?? 0) > 0 && (
+        <Link
+          to="/review"
+          onClick={transitionClick(navigate, '/review')}
+          className="flex min-h-14 items-center justify-between gap-3 rounded-card border-l-4 border-sage-600 bg-sage-100 px-4 shadow-soft active:bg-sage-300"
+        >
+          <span className="type-body font-semibold">
+            <span className="money">{queue.data?.count}</span> to review
+          </span>
+          <span className="rounded-full bg-sage-600 px-3 py-1 type-caption font-semibold text-surface">
+            Review
+          </span>
+        </Link>
+      )}
+
       {/* 1. Surplus */}
       <section className="mt-8 first:mt-0">
         <h2 className="type-title">Surplus</h2>
@@ -112,21 +127,6 @@ export function Dashboard() {
             />
           )}
         </Link>
-        {(queue.data?.count ?? 0) > 0 && (
-          <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-            {(queue.data?.count ?? 0) > 0 && (
-              <NavRow
-                to="/review"
-                label="To review"
-                value={
-                  <span className="rounded-full bg-sage-600 px-2 py-0.5 type-caption font-semibold text-surface money">
-                    {queue.data?.count}
-                  </span>
-                }
-              />
-            )}
-          </div>
-        )}
       </section>
 
       {/* 2. Summary */}
