@@ -150,7 +150,7 @@ export function Shell() {
       <div className="min-w-0 flex-1">
         <div
           ref={head}
-          className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between banner bg-banner text-banner-ink pb-1 pt-[max(12px,env(safe-area-inset-top))] shadow-soft lg:hidden"
+          className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between banner bg-banner text-banner-ink pb-1 pt-[max(12px,calc(env(safe-area-inset-top)-14px))] shadow-soft lg:hidden"
         >
           <div className={`flex items-center gap-1 ${onDashboard ? '-ml-2' : ''}`}>
             {onDashboard && (
