@@ -72,4 +72,18 @@ describe('buildPeriodView', () => {
       remainingCents: 0,
     });
   });
+
+  it('the pool uses income as planned on the income line, not what has landed or the stored figure', () => {
+    const v = buildPeriodView({
+      periodId: '2026-10',
+      today: '2026-10-02',
+      expectedIncomeCents: 0,
+      categories: [
+        cat({ categoryId: 'pay', groupKind: 'income', plannedCents: 1_068_400, spentCents: 0 }),
+        cat({ categoryId: 'rent', spendShape: 'fixed', plannedCents: 1_008_200 }),
+      ],
+    });
+    expect(v.expectedIncomeCents).toBe(1_068_400);
+    expect(v.poolCents).toBe(60_200);
+  });
 });
