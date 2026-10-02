@@ -1,6 +1,11 @@
 name: deploy
 on:
   workflow_dispatch:
+    inputs:
+      migrate:
+        description: 'Run D1 migrations even if none changed in the last commit'
+        type: boolean
+        default: false
   workflow_run:
     workflows: [ci]
     types: [completed]
@@ -11,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -18,8 +25,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @rise/web build
+      # Even listing applied migrations costs D1 reads, and fails outright once the free daily
+      # cap is spent — which used to block releases that had no schema change at all. So only
+      # touch D1 when this commit adds or changes a migration (or a manual run asks to).
+      - id: migrations
+        run: |
+          if [ "${{ inputs.migrate }}" = "true" ] || ! git diff --quiet HEAD~1 HEAD -- apps/api/migrations; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No migration changes in this commit; skipping D1 migrate."
+          fi
       # Migrations before the code that depends on them goes live.
-      - run: pnpm --filter @rise/api migrate:remote
+      - if: steps.migrations.outputs.run == 'true'
+        run: pnpm --filter @rise/api migrate:remote
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
