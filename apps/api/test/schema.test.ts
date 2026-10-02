@@ -41,6 +41,8 @@ const INDEXES = [
   'ix_audit_action',
   'ix_idempotency_created',
   'ix_sync_run_started',
+  // 0013
+  'ix_txn_user_date',
 ];
 
 describe('migration 0001', () => {
