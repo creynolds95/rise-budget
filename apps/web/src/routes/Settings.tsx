@@ -39,6 +39,7 @@ import { localToday, shortDate } from '../lib/dates';
 import {
   useAccounts,
   useBackupStatus,
+  useUsage,
   useCategories,
   useDevices,
   useGroups,
@@ -1288,13 +1289,59 @@ function RecoveryCodesSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
+const compact = (n: number) =>
+  n >= 1_000_000
+    ? `${(n / 1_000_000).toFixed(1)}M`
+    : n >= 1_000
+      ? `${Math.round(n / 1_000)}k`
+      : `${n}`;
+
+/**
+ * Cloudflare's free tier caps the database per UTC day (it resets at 7 pm Central). The Worker
+ * counts what it uses, so this shows how close a day got, not just whether it failed.
+ */
+function UsageGroup() {
+  const usage = useUsage().data;
+  const today = usage?.days.find((d) => d.day === new Date().toISOString().slice(0, 10));
+  const read = today?.rowsRead ?? 0;
+  const written = today?.rowsWritten ?? 0;
+  const pct = (n: number, cap: number) => Math.round((n / cap) * 100);
+  const peak = (key: 'rowsRead' | 'rowsWritten') =>
+    usage ? Math.max(0, ...usage.days.map((d) => d[key])) : 0;
+  const line = (n: number, cap: number) => (
+    <span className={`tabular-nums ${n / cap >= 0.8 ? 'text-clay' : 'text-ink-muted'}`}>
+      {pct(n, cap)}% · {compact(n)} of {compact(cap)}
+    </span>
+  );
+  return (
+    <Group title="Database use (free daily limit)">
+      {!usage ? (
+        <GroupRow label="Today">
+          <Skeleton className="h-5 w-24" />
+        </GroupRow>
+      ) : (
+        <>
+          <GroupRow label="Reads today">{line(read, usage.limits.rowsRead)}</GroupRow>
+          <GroupRow label="Writes today">{line(written, usage.limits.rowsWritten)}</GroupRow>
+          <GroupRow label="Busiest day, last 14">
+            <span className="tabular-nums text-ink-muted">
+              {pct(peak('rowsRead'), usage.limits.rowsRead)}% reads ·{' '}
+              {pct(peak('rowsWritten'), usage.limits.rowsWritten)}% writes
+            </span>
+          </GroupRow>
+        </>
+      )}
+    </Group>
+  );
+}
+
 /** T46. The user can always walk away with their data (ARCHITECTURE §8). */
 function DataSection() {
   const backups = useBackupStatus().data;
-  const [busy, setBusy] = useState<'json' | 'csv' | null>(null);
+  const [busy, setBusy] = useState<'json' | 'csv' | 'backup' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const download = async (format: 'json' | 'csv') => {
+  const download = async (format: 'json' | 'csv' | 'backup') => {
     setBusy(format);
     setError(null);
     try {
@@ -1345,7 +1392,22 @@ function DataSection() {
         <GroupRow label="Last backup">
           <span className="text-ink-muted">{backupState ?? <Skeleton className="h-5 w-24" />}</span>
         </GroupRow>
+        {backups?.latest && (
+          <button
+            onClick={() => void download('backup')}
+            disabled={busy !== null}
+            className="flex min-h-13 w-full items-center justify-between px-4 py-3 text-left active:bg-sage-100 disabled:opacity-60"
+          >
+            <span className="block">Download latest backup</span>
+            {busy === 'backup' ? (
+              <span className="type-caption text-ink-muted">Preparing…</span>
+            ) : (
+              <Chevron />
+            )}
+          </button>
+        )}
       </Group>
+      <UsageGroup />
       <MonarchImport />
     </>
   );

@@ -13,3 +13,4 @@ export * from './sync';
 export * from './recurring';
 export * from './backup';
 export * from './monarchImport';
+export * from './usage';

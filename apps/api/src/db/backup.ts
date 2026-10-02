@@ -1,3 +1,4 @@
+import { pruneUsageStmt } from './usage';
 import type { UserId } from './util';
 
 /**
@@ -240,6 +241,7 @@ export async function pruneOperational(db: D1Database, now: Date): Promise<numbe
         "DELETE FROM audit_log WHERE created_at < ?1 AND action LIKE 'auth.%' /* system:backup */",
       )
       .bind(before(RETENTION.authAuditDays)),
+    pruneUsageStmt(db, now),
   ]);
   return results.reduce((n, r) => n + (r.meta.changes ?? 0), 0);
 }

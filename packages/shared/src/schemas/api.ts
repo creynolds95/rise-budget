@@ -340,6 +340,22 @@ export const CreateCategoryGroupBody = z.object({
 export const ExportQuery = z.object({ format: z.enum(['json', 'csv']).default('json') });
 export type ExportQuery = z.infer<typeof ExportQuery>;
 
+/** Cloudflare free-tier D1 allowances, per UTC day. */
+export const D1_DAILY_LIMITS = { rowsRead: 5_000_000, rowsWritten: 100_000 } as const;
+
+export const UsageDay = z.object({
+  day: z.string(), // YYYY-MM-DD, UTC
+  rowsRead: z.number().int(),
+  rowsWritten: z.number().int(),
+  requests: z.number().int(),
+});
+export const UsageStatus = z.object({
+  limits: z.object({ rowsRead: z.number().int(), rowsWritten: z.number().int() }),
+  /** Newest first, today included. Days with no activity are absent. */
+  days: z.array(UsageDay),
+});
+export type UsageStatus = z.infer<typeof UsageStatus>;
+
 export const BackupStatus = z.object({
   latest: z.object({ date: IsoDate, bytes: z.int().nonnegative() }).nullable(),
   count: z.int().nonnegative(),
