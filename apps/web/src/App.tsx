@@ -47,15 +47,15 @@ export function App() {
           <Route path="transactions" element={<Transactions />} />
           <Route path="budget" element={<Budget />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="review" element={<Review />} />
+          <Route path="recurring" element={<Recurring />} />
+          <Route path="accounts/:id" element={<AccountDetail />} />
+          <Route path="transactions/:id" element={<TransactionDetail />} />
+          <Route path="budget/:categoryId" element={<CategoryDetail />} />
+          <Route path="cash-to-payday" element={<CashToPayday />} />
+          <Route path="reports" element={<Navigate to="/settings/reports" replace />} />
+          <Route path="settings/:section" element={<SettingsSection />} />
         </Route>
-        <Route path="review" element={<Review />} />
-        <Route path="recurring" element={<Recurring />} />
-        <Route path="accounts/:id" element={<AccountDetail />} />
-        <Route path="transactions/:id" element={<TransactionDetail />} />
-        <Route path="budget/:categoryId" element={<CategoryDetail />} />
-        <Route path="cash-to-payday" element={<CashToPayday />} />
-        <Route path="reports" element={<Navigate to="/settings/reports" replace />} />
-        <Route path="settings/:section" element={<SettingsSection />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </LockGate>
