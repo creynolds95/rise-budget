@@ -28,6 +28,7 @@ const TABLES = [
   'idempotency',
   'period_aggregate',
   'surplus_suggestion',
+  'usage_day',
 ];
 
 const INDEXES = [

@@ -8,6 +8,7 @@ import type {
   Rule,
   SpendingReport,
   Transaction,
+  UsageStatus,
   User,
 } from '@rise/shared/schemas';
 import {
@@ -42,6 +43,14 @@ export const useBackupStatus = () =>
     queryKey: ['backups'],
     queryFn: () =>
       get<{ latest: { date: string; bytes: number } | null; count: number }>('/export/backups'),
+    staleTime: 60_000,
+  });
+
+/** The database meter in Settings: D1 rows read and written per UTC day. */
+export const useUsage = () =>
+  useQuery({
+    queryKey: ['usage'],
+    queryFn: () => get<UsageStatus>('/usage'),
     staleTime: 60_000,
   });
 

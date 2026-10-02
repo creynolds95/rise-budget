@@ -52,3 +52,16 @@ dataExport.get('/backups', async (c) => {
     }),
   );
 });
+
+/** The newest nightly backup, as the gzipped SQL file in R2, so the data can leave Cloudflare. */
+dataExport.get('/backups/latest', async (c) => {
+  const last = (await listBackups(c.env.BACKUPS)).at(-1);
+  const object = last && (await c.env.BACKUPS.get(`backups/${last.date}.sql.gz`));
+  if (!last || !object) throw new AppError(404, 'NOT_FOUND', 'No backup yet');
+  await writeAudit(c.get('userId'), c.env.DB, 'data.exported', { detail: { format: 'backup' } });
+  return c.body(object.body, 200, {
+    'content-type': 'application/gzip',
+    'content-disposition': `attachment; filename="rise-backup-${last.date}.sql.gz"`,
+    'cache-control': 'no-store',
+  });
+});
