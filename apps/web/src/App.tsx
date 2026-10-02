@@ -8,6 +8,8 @@ import { useLinkTransitions } from './lib/gestures';
 import { AccountDetail } from './routes/AccountDetail';
 import { Accounts } from './routes/Accounts';
 import { Budget } from './routes/Budget';
+import { FinancialHealth } from './routes/FinancialHealth';
+import { Retirement } from './routes/Retirement';
 import { CashToPayday } from './routes/CashToPayday';
 import { CategoryDetail } from './routes/CategoryDetail';
 import { Dashboard } from './routes/Dashboard';
@@ -53,6 +55,8 @@ export function App() {
           <Route path="transactions/:id" element={<TransactionDetail />} />
           <Route path="budget/:categoryId" element={<CategoryDetail />} />
           <Route path="cash-to-payday" element={<CashToPayday />} />
+          <Route path="financial-health" element={<FinancialHealth />} />
+          <Route path="financial-health/retirement" element={<Retirement />} />
           <Route path="reports" element={<Navigate to="/settings/reports" replace />} />
           <Route path="settings/:section" element={<SettingsSection />} />
         </Route>

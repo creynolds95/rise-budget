@@ -80,7 +80,9 @@ export function Shell() {
     t.path === '/' ? onDashboard : location.pathname.startsWith(t.path),
   );
   // Screens pushed from the Dashboard menu keep the Dashboard tab lit.
-  const fromDashboard = /^\/(review|recurring|cash-to-payday)\/?$/.test(location.pathname);
+  const fromDashboard = /^\/(review|recurring|cash-to-payday|financial-health)\/?$/.test(
+    location.pathname,
+  );
   const isActiveTab = (path: string) =>
     path === '/' ? onDashboard || fromDashboard : location.pathname.startsWith(path);
   // Pushed screens bring their own banner; the tab title bar is only for the tab roots.

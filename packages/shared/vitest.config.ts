@@ -13,6 +13,7 @@ export default defineConfig({
         'src/import/**/*.ts',
         'src/recurring/**/*.ts',
         'src/reports/**/*.ts',
+        'src/retirement/**/*.ts',
       ],
       exclude: [
         'src/**/*.test.ts',

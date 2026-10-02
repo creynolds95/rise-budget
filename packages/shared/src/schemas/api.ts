@@ -9,6 +9,7 @@ import {
   RuleMatchType,
   SpendShape,
 } from './enums';
+import { RetirementPlan } from './entities';
 
 export const ManualCadence = z.enum(['weekly', 'biweekly', 'monthly', 'semimonthly', 'annual']);
 
@@ -60,6 +61,7 @@ export const PatchSettingsBody = z.object({
   dismissedPayMerchants: z
     .array(z.object({ merchant: z.string(), displayName: z.string() }))
     .optional(),
+  retirement: RetirementPlan.nullable().optional(),
 });
 
 export const CreateAccountBody = z.object({

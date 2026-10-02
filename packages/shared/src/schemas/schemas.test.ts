@@ -11,6 +11,7 @@ import {
   PeriodId,
   RecurringSeries,
   User,
+  RetirementPlan,
 } from './index';
 
 describe('schemas', () => {
@@ -53,8 +54,16 @@ describe('schemas', () => {
       cushionCents: 50_000,
       cashAccountIds: [],
       dismissedPayMerchants: [],
+      retirement: null,
     });
     expect(u.timezone).toBe('America/Chicago');
+  });
+
+  it('a retirement plan defaults to conservative rates and no contributions', () => {
+    const plan = RetirementPlan.parse({ currentAge: 31, goalAge: 65, spendTargetCents: 500_000 });
+    expect(plan.realGrowthBps).toBe(400);
+    expect(plan.withdrawalBps).toBe(350);
+    expect(plan.contributions).toEqual([]);
   });
 
   it('error contract carries a stable code', () => {

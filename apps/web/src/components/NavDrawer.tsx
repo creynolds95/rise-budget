@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 
 const ITEMS: { label: string; to: string }[] = [
   { label: 'Surplus', to: '/cash-to-payday' },
+  { label: 'Financial health', to: '/financial-health' },
   { label: 'Review', to: '/review' },
   { label: 'Recurring', to: '/recurring' },
   { label: 'Reports', to: '/settings/reports?from=Dashboard|/' },
