@@ -95,13 +95,10 @@ export function Dashboard() {
         <Link
           to="/review"
           onClick={transitionClick(navigate, '/review')}
-          className="flex min-h-14 items-center justify-between gap-3 rounded-card border-l-4 border-sage-600 bg-sage-100 px-4 shadow-soft active:bg-sage-300"
+          className="flex min-h-14 items-center rounded-card border-l-4 border-sage-600 bg-sage-100 px-4 shadow-soft active:bg-sage-300"
         >
           <span className="type-body font-semibold">
             <span className="money">{queue.data?.count}</span> to review
-          </span>
-          <span className="rounded-full bg-sage-600 px-3 py-1 type-caption font-semibold text-surface">
-            Review
           </span>
         </Link>
       )}
