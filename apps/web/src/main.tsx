@@ -26,7 +26,9 @@ const queryClient = new QueryClient({
       staleTime: 120_000,
       // Kept as long as the persisted copy, or a cold start offline would find nothing.
       gcTime: CACHE_MAX_AGE,
-      retry: (n, e) => !(e instanceof ApiError && e.status > 0 && e.status < 500) && n < 2,
+      retry: (n, e) =>
+        !(e instanceof ApiError && ((e.status > 0 && e.status < 500) || e.code === 'DB_LIMIT')) &&
+        n < 2,
     },
   },
 });
