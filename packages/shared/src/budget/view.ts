@@ -72,14 +72,18 @@ export function buildPeriodView(input: PeriodViewInput): PeriodView {
   });
   const expense = categories.filter((c) => c.groupKind === 'expense');
   const income = categories.filter((c) => c.groupKind === 'income');
+  // The income line (what Paychecks is planned for) is the anticipated income; the stored
+  // period figure only stands in for a month with no income planned yet.
+  const plannedIncome = sumCents(income.map((c) => c.plannedCents));
+  const expectedIncomeCents = plannedIncome > 0 ? plannedIncome : input.expectedIncomeCents;
   return {
     periodId: input.periodId,
     pace: p,
     poolCents: pool({
-      expectedIncomeCents: input.expectedIncomeCents,
+      expectedIncomeCents,
       plannedCents: expense.map((c) => c.plannedCents),
     }),
-    expectedIncomeCents: input.expectedIncomeCents,
+    expectedIncomeCents,
     actualIncomeCents: -sumCents(income.map((c) => c.spentCents)),
     totals: {
       plannedCents: sumCents(expense.map((c) => c.plannedCents)),
