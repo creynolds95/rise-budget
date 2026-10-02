@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { refreshAggregateStmts } from '../src/db';
 import { call, signedInUser } from './helpers/http';
 
 describe('T41 dashboard spending report', () => {
@@ -35,9 +36,10 @@ describe('T41 dashboard spending report', () => {
     await txn('2026-09-02', -250_000, pay.id); // income is not spending
     await txn('2026-09-02', 40_000, xfer.id); // unbudgeted is not spending
     const dropped = await txn('2026-09-03', 9_999, food.id);
-    await env.DB.prepare("UPDATE txn SET review_state = 'dropped' WHERE id = ?1")
-      .bind(dropped.id)
-      .run();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE txn SET review_state = 'dropped' WHERE id = ?1").bind(dropped.id),
+      ...refreshAggregateStmts(u.userId, env.DB, '2026-09'),
+    ]);
 
     const r = await api('GET', '/reports/spending?month=2026-09');
     expect(r.status).toBe(200);

@@ -118,4 +118,31 @@ describe('T23 period aggregates', () => {
       ['2026-08', 1_000, 1],
     ]);
   });
+
+  it('follows a category when its budgeted flag flips, history included', async () => {
+    const u = await signedInUser();
+    const api = (method: string, path: string, body?: unknown) =>
+      call(method, path, { access: u.access, body });
+    const g = (await api('POST', '/category-groups', { name: 'G', kind: 'expense' })).json;
+    const c = (await api('POST', '/categories', { groupId: g.id, name: 'C' })).json;
+    const acct = (await api('POST', '/accounts', { name: 'Card', kind: 'credit' })).json;
+    for (const postedAt of ['2026-06-10', '2026-07-10']) {
+      await api('POST', '/transactions', {
+        accountId: acct.id,
+        postedAt,
+        amountCents: 1_000,
+        descriptor: 'X',
+        categoryId: c.id,
+      });
+    }
+    const rows = () => listAggregates(u.userId, env.DB, '2026-01', '2026-12');
+    expect(await rows()).toHaveLength(2);
+    await api('PATCH', `/categories/${c.id}`, { budgeted: false });
+    expect(await rows()).toHaveLength(0);
+    await api('PATCH', `/categories/${c.id}`, { budgeted: true });
+    expect((await rows()).map((x) => [x.periodId, x.spentCents])).toEqual([
+      ['2026-06', 1_000],
+      ['2026-07', 1_000],
+    ]);
+  });
 });

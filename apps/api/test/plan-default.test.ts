@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { refreshAggregateStmts } from '../src/db';
 import { describe, expect, it } from 'vitest';
 import { call, signedInUser } from './helpers/http';
 
@@ -42,6 +43,7 @@ async function spend(userId: string, categoryId: string, amountCents: number, da
         'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)',
       )
       .bind(crypto.randomUUID(), userId, txn, categoryId, amountCents, date.slice(0, 7)),
+    ...refreshAggregateStmts(userId, db, date.slice(0, 7)),
   ]);
 }
 
