@@ -67,6 +67,40 @@ const netflix = (extra: [string, string, number, string][] = []) =>
     },
   ]);
 
+describe('idle cron syncs skip recurring re-detection', () => {
+  it('only when nothing is new and a sync already ran today; manual syncs always run it', async () => {
+    const s = await setup();
+    const opts = { now: new Date('2026-08-20T20:00:00Z'), since: '2026-06-01' };
+    const mark = async () => {
+      await env.DB.prepare("UPDATE recurring_series SET updated_at = 'MARK' WHERE user_id = ?1")
+        .bind(s.userId)
+        .run();
+    };
+    const stamp = async () =>
+      (
+        await env.DB.prepare('SELECT updated_at FROM recurring_series WHERE user_id = ?1')
+          .bind(s.userId)
+          .first<{ updated_at: string }>()
+      )?.updated_at;
+
+    // The first run of the day has no earlier sync to lean on, so it always detects.
+    await runSync(env.DB, s.userId, netflix(), { ...opts, skipRecurringWhenIdle: true });
+    expect(await stamp()).not.toBe('MARK');
+
+    await mark();
+    await runSync(env.DB, s.userId, netflix(), { ...opts, skipRecurringWhenIdle: true });
+    expect(await stamp()).toBe('MARK'); // idle: skipped
+
+    await runSync(env.DB, s.userId, netflix(), opts); // manual
+    expect(await stamp()).not.toBe('MARK');
+
+    await mark();
+    const fresh = netflix([['h1', '2026-08-19', 777, 'HULU 877-8244']]);
+    await runSync(env.DB, s.userId, fresh, { ...opts, skipRecurringWhenIdle: true });
+    expect(await stamp()).not.toBe('MARK'); // new rows: detected
+  });
+});
+
 describe('T31 recurring detection', () => {
   it('sync detects a monthly series from 3 charges and predicts the next', async () => {
     const s = await setup();

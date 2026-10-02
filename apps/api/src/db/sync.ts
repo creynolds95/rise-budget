@@ -433,6 +433,23 @@ export async function startSyncRun(userId: UserId, db: D1Database): Promise<stri
   return id;
 }
 
+/** Whether a sync other than `exceptId` finished (ok or partial) since `sinceIso`. */
+export async function hadSyncRunSince(
+  userId: UserId,
+  db: D1Database,
+  sinceIso: string,
+  exceptId: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT 1 AS found FROM sync_run
+       WHERE user_id = ?1 AND started_at >= ?2 AND id != ?3 AND status IN ('ok', 'partial') LIMIT 1`,
+    )
+    .bind(userId, sinceIso, exceptId)
+    .first();
+  return row !== null;
+}
+
 export async function finishSyncRun(
   userId: UserId,
   db: D1Database,
