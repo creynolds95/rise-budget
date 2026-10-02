@@ -78,6 +78,12 @@ describe('D1 rows read', () => {
       '/review/count',
       '/review/queue',
       '/cash-to-payday',
+      `/reports/spending?month=${month}`,
+      `/reports/money-flow?month=${month}`,
+      `/reports/cash-flow?month=${month}`,
+      // The carry chain runs from Oct 2026 to the month asked: three years out must not cost
+      // a pass over three years of splits.
+      '/periods/2029-09',
     ];
     // Well under one pass over the history: a scan reads every transaction at least once.
     const budget = txns.length / 2;
