@@ -1,31 +1,30 @@
 import { projectCashFlow, type CashEvent, type CashProjection } from '@rise/shared/cash-projection';
-import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
-import {
-  detectSemimonthly,
-  detectSeries,
-  projectOccurrences,
-  type DetectedSeries,
-} from '@rise/shared/recurring';
-import { displayNamesFor, listManualRules, listOccurrences, type UserId } from '../db';
-import { LOOKBACK_DAYS } from './recurring';
+import type { Account, User } from '@rise/shared/schemas';
+import { projectOccurrences, type DetectedSeries } from '@rise/shared/recurring';
+import { displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
 
 /** How far ahead to project: through this many upcoming paychecks. */
 const PAYCHECK_HORIZON = 3;
 /** A safety cap on how many future occurrences of one bill we ever project. */
 const MAX_BILL_OCCURRENCES = 8;
 
+/** The accounts Surplus counts as cash. None chosen: every budgeted depository account. */
+export function cashAccountsOf(settings: User['settings'], accounts: readonly Account[]) {
+  const ids = settings.cashAccountIds;
+  return ids.length > 0
+    ? accounts.filter((a) => ids.includes(a.id))
+    : accounts.filter((a) => a.kind === 'depository' && a.includeInBudget);
+}
+
 export interface PaySchedule {
   merchant: string;
   displayName: string;
   series: DetectedSeries;
-  /** Hand-declared (tagged from a transaction or added from Surplus directly), never detected. */
-  isManual: boolean;
 }
 
 /** One paycheck or bill schedule, as the Surplus page lists and edits it. */
 export interface ScheduleRow {
-  /** The manual rule's id; null for a detected one, which is edited by taking it over. */
-  id: string | null;
+  id: string;
   merchant: string;
   displayName: string;
   kind: 'income' | 'expense';
@@ -33,22 +32,32 @@ export interface ScheduleRow {
   cadence: DetectedSeries['cadence'];
   anchorDays: [number, number] | null;
   nextExpectedDate: string;
-  isManual: boolean;
   /** Added by hand from Surplus, so its name is its own. */
   isHandAdded: boolean;
+}
+
+/** A schedule sync found in the cash accounts, waiting for the user to add or dismiss it. */
+export interface SuggestionRow {
+  merchant: string;
+  displayName: string;
+  accountId: string;
+  kind: 'income' | 'expense';
+  amountCents: number;
+  cadence: DetectedSeries['cadence'];
+  anchorDays: [number, number] | null;
+  nextExpectedDate: string;
 }
 
 export interface CashToPaydayResult extends CashProjection {
   paySchedules: PaySchedule[];
   schedules: ScheduleRow[];
+  suggestions: SuggestionRow[];
 }
 
 /**
- * The cash-to-payday projection (design: no autopay — a card payment is never one of these
- * events, only real cash in and out). Auto-detection runs live against fresh transactions
- * rather than the persisted `recurring_series` table, since that table doesn't carry the
- * semimonthly anchor days this needs. Manually-tagged "Recurring Cash Withdrawal" rules are
- * read from that same table (they're never re-detected) and always projected forward.
+ * The Surplus projection (design: no autopay — a card payment is never one of these events,
+ * only real cash in and out). Only schedules the user confirmed are projected; what sync
+ * detected in the cash accounts comes back as `suggestions` for review, never counted.
  */
 export async function buildCashToPaydayProjection(
   db: D1Database,
@@ -58,48 +67,33 @@ export async function buildCashToPaydayProjection(
   cushionCents: number,
   dismissedMerchants: readonly string[] = [],
 ): Promise<CashToPaydayResult> {
-  const from = dateFromDayNumber(dayNumber(today) - LOOKBACK_DAYS);
-  const [byMerchant, manualRules] = await Promise.all([
-    listOccurrences(userId, db, from),
+  const [manualRules, saved] = await Promise.all([
     listManualRules(userId, db),
+    listSuggestions(userId, db),
   ]);
-  const dismissed = new Set(dismissedMerchants);
-  const manualMerchants = new Set(manualRules.map((r) => r.merchant_normalized));
-  const detected: { merchant: string; series: DetectedSeries }[] = [];
-  for (const [merchant, occ] of byMerchant) {
-    // A merchant Caleb tagged "Recurring Cash Withdrawal" owns its own rule below — never
-    // let live auto-detection compete with it for the same merchant.
-    if (manualMerchants.has(merchant)) continue;
-    // Dismissed from the Surplus tool (e.g. an ex-employer's payroll) — never resurface it,
-    // even though the transactions behind it are still real history (SPEC's live-recompute
-    // detection would otherwise keep finding it every request).
-    if (dismissed.has(merchant)) continue;
-    // Semimonthly first — see the same note in lib/recurring.ts's refreshRecurring.
-    const series = detectSemimonthly(occ, today) ?? detectSeries(occ, today);
-    if (series && series.status === 'active') detected.push({ merchant, series });
-  }
+  // Re-checked here: an add or dismiss since the last sync takes effect at once.
+  const skip = new Set([...dismissedMerchants, ...manualRules.map((r) => r.merchant_normalized)]);
+  const pending = saved.filter((r) => !skip.has(r.merchant_normalized));
   // A manual rule projects even while flagged `broken` (unconfirmed) — Caleb still wants it
   // planned for; `broken` only ever surfaces as the Dashboard's "hasn't charged since" note.
-  for (const r of manualRules) {
-    detected.push({
-      merchant: r.merchant_normalized,
-      series: {
-        cadence: r.cadence as DetectedSeries['cadence'],
-        expectedAmountCents: r.expected_amount_cents,
-        lastDate: r.next_expected_date,
-        nextExpectedDate: r.next_expected_date,
-        status: 'active',
-        categoryId: null,
-        occurrences: 0,
-        anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
-      },
-    });
-  }
-  const displayNames = await displayNamesFor(
-    userId,
-    db,
-    detected.map((d) => d.merchant),
-  );
+  const confirmed = manualRules.map((r) => ({
+    rule: r,
+    merchant: r.merchant_normalized,
+    series: {
+      cadence: r.cadence as DetectedSeries['cadence'],
+      expectedAmountCents: r.expected_amount_cents,
+      lastDate: r.next_expected_date,
+      nextExpectedDate: r.next_expected_date,
+      status: 'active' as const,
+      categoryId: null,
+      occurrences: 0,
+      anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
+    },
+  }));
+  const displayNames = await displayNamesFor(userId, db, [
+    ...confirmed.map((d) => d.merchant),
+    ...pending.map((r) => r.merchant_normalized),
+  ]);
   // A hand-declared event (no real transaction behind it) has no merchant_meta row to look
   // its display name up from — its own label is the only name it has.
   for (const r of manualRules) {
@@ -107,8 +101,8 @@ export async function buildCashToPaydayProjection(
   }
 
   // Income transactions carry a negative amount_cents (SPEC §1.1): these are paychecks.
-  const paySchedules = detected.filter((d) => d.series.expectedAmountCents < 0);
-  const bills = detected.filter((d) => d.series.expectedAmountCents > 0);
+  const paySchedules = confirmed.filter((d) => d.series.expectedAmountCents < 0);
+  const bills = confirmed.filter((d) => d.series.expectedAmountCents > 0);
 
   const payEvents: CashEvent[] = paySchedules.flatMap(({ merchant, series }) =>
     projectOccurrences(series, PAYCHECK_HORIZON).map((o) => ({
@@ -133,30 +127,35 @@ export async function buildCashToPaydayProjection(
     ...payEvents,
     ...billEvents,
   ]);
-  const manualByMerchant = new Map(manualRules.map((r) => [r.merchant_normalized, r]));
-  const schedules: ScheduleRow[] = detected.map(({ merchant, series }) => {
-    const manual = manualByMerchant.get(merchant);
-    return {
-      id: manual?.id ?? null,
-      merchant,
-      displayName: displayNames.get(merchant) ?? merchant,
-      kind: series.expectedAmountCents < 0 ? 'income' : 'expense',
-      amountCents: Math.abs(series.expectedAmountCents),
-      cadence: series.cadence,
-      anchorDays: series.anchorDays,
-      nextExpectedDate: series.nextExpectedDate,
-      isManual: manual !== undefined,
-      isHandAdded: manual?.label != null,
-    };
-  });
+  const schedules: ScheduleRow[] = confirmed.map(({ rule, merchant, series }) => ({
+    id: rule.id,
+    merchant,
+    displayName: displayNames.get(merchant) ?? merchant,
+    kind: series.expectedAmountCents < 0 ? 'income' : 'expense',
+    amountCents: Math.abs(series.expectedAmountCents),
+    cadence: series.cadence,
+    anchorDays: series.anchorDays,
+    nextExpectedDate: series.nextExpectedDate,
+    isHandAdded: rule.label != null,
+  }));
+  const suggestions: SuggestionRow[] = pending.map((r) => ({
+    merchant: r.merchant_normalized,
+    displayName: displayNames.get(r.merchant_normalized) ?? r.merchant_normalized,
+    accountId: r.account_id,
+    kind: r.expected_amount_cents < 0 ? 'income' : 'expense',
+    amountCents: Math.abs(r.expected_amount_cents),
+    cadence: r.cadence as DetectedSeries['cadence'],
+    anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
+    nextExpectedDate: r.next_expected_date,
+  }));
   return {
     ...projection,
     schedules,
+    suggestions,
     paySchedules: paySchedules.map(({ merchant, series }) => ({
       merchant,
       displayName: displayNames.get(merchant) ?? merchant,
       series,
-      isManual: manualMerchants.has(merchant),
     })),
   };
 }

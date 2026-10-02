@@ -34,7 +34,7 @@ export function navigateWithTransition(
 
 /** True for routes that push a new screen, not a lateral tab switch (table.ts's depth-1/2). */
 export function isPushRoute(to: string): boolean {
-  const path = to.split('?')[0] ?? '';
+  const path = to.split(/[?#]/)[0] ?? '';
   return (
     /^\/(accounts|transactions|budget)\/[^/]+/.test(path) ||
     /^\/(review|cash-to-payday)\/?$/.test(path) ||

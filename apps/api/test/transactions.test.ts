@@ -312,7 +312,6 @@ describe('recurring cash withdrawal / paycheck tag (cash-to-payday tool)', () =>
     expect(projection.paySchedules).toContainEqual(
       expect.objectContaining({
         merchant: 'SOUTHWEST AIRLIN PAYROLLACH',
-        isManual: true,
         series: expect.objectContaining({
           cadence: 'semimonthly',
           anchorDays: [5, 20],
