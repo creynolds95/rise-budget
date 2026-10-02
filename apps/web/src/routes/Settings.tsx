@@ -158,8 +158,27 @@ export function Settings() {
       <p className="mt-6 type-caption text-ink-faint money">
         Built {shortDate(localToday(me?.timezone, new Date(__APP_VERSION__)))} · {__APP_COMMIT__}
       </p>
+      <InsetReadout />
     </div>
   );
+}
+
+/** Temporary: reads the phone's top inset and the title banner's real padding, to line the title up. */
+function InsetReadout() {
+  const [text, setText] = useState('');
+  useEffect(() => {
+    const probe = document.createElement('div');
+    probe.style.cssText =
+      'position:fixed;top:0;visibility:hidden;padding-top:env(safe-area-inset-top)';
+    document.body.append(probe);
+    const inset = getComputedStyle(probe).paddingTop;
+    probe.remove();
+    const bar = document.querySelector('.banner');
+    setText(
+      `inset ${inset} · banner pad ${bar ? getComputedStyle(bar).paddingTop : '?'} · banner ${bar?.getBoundingClientRect().height ?? '?'}px`,
+    );
+  }, []);
+  return <p className="type-caption text-ink-faint money">{text}</p>;
 }
 
 function Card({
