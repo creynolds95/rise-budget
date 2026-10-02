@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSwipeBack } from '../lib/gestures';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { BackLink } from '../components/BackLink';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { RuleOfferSheet } from '../components/RuleOfferSheet';
 import { TxnAmount } from '../components/TxnAmount';
@@ -235,10 +236,7 @@ export function Review() {
   return (
     <div className="mx-auto max-w-2xl pb-28">
       <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft">
-        <Link to="/" className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700">
-          <span aria-hidden>‹</span>
-          Dashboard
-        </Link>
+        <BackLink to="/" label="Dashboard" />
         <h1 className="type-body font-semibold">
           Review <span className="money text-ink-muted">{queue.data ? items.length : ''}</span>
         </h1>

@@ -45,7 +45,7 @@ describe('DetailPage (DESIGN-SYSTEM.md §5)', () => {
         />
       </MemoryRouter>,
     );
-    expect(getByRole('link').textContent).toBe('‹USAA Checking');
+    expect(getByRole('link', { name: 'Back to USAA Checking' })).toBeTruthy();
     expect(() =>
       render(
         <MemoryRouter>

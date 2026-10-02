@@ -1,4 +1,5 @@
 import { useTabRootTrap } from '../lib/gestures';
+import { BackLink } from './BackLink';
 import { NavDrawer } from './NavDrawer';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
@@ -158,6 +159,7 @@ export function Shell() {
           className={`gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between banner bg-banner text-banner-ink shadow-soft lg:hidden ${showTabHead ? '' : 'hidden!'}`}
         >
           <div className={`flex items-center gap-1 ${onDashboard ? '-ml-2' : ''}`}>
+            {location.pathname === '/settings' && <BackLink to="/" label="Dashboard" />}
             {onDashboard && (
               <button
                 type="button"

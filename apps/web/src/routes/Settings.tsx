@@ -10,6 +10,7 @@ import type {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { BackLink } from '../components/BackLink';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { CategoryEditSheet } from '../components/CategoryEditSheet';
@@ -195,7 +196,6 @@ function Card({
 export function SettingsSection() {
   const { section = '' } = useParams();
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const backTo = backFrom(params.get('from'), { label: 'Settings', to: '/settings' }).to;
   useSwipeBack(backTo);
   if (!(section in SECTIONS)) return <Navigate to="/settings" replace />;
@@ -204,14 +204,7 @@ export function SettingsSection() {
   return (
     <div className="mx-auto max-w-2xl pb-16">
       <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft">
-        <Link
-          to={back.to}
-          onClick={transitionClick(navigate, back.to, 'back')}
-          className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700"
-        >
-          <span aria-hidden>‹</span>
-          {back.label}
-        </Link>
+        <BackLink to={back.to} label={back.label} />
         <h1 className="type-body font-semibold">{SECTIONS[s]}</h1>
         <span id="settings-action" className="justify-self-end" />
       </header>
