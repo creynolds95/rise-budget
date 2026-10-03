@@ -15,7 +15,8 @@
     "./cash-projection": "./src/cash-projection/index.ts",
     "./reports": "./src/reports/index.ts",
     "./retirement": "./src/retirement/index.ts",
-    "./debt": "./src/debt/index.ts"
+    "./debt": "./src/debt/index.ts",
+    "./savings": "./src/savings/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

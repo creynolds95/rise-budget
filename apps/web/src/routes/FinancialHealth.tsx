@@ -7,6 +7,7 @@ import { formatCents } from '../lib/money';
 import { useAccounts, useMe, useToday } from '../lib/queries';
 import { groupView, planLoans } from '../lib/debt';
 import { monthName, periodOf } from '../lib/dates';
+import { goalView } from '../lib/savings';
 import { retirementView, totalMonthly } from '../lib/retirement';
 import { transitionClick } from '../lib/transition';
 
@@ -39,7 +40,17 @@ export function FinancialHealth() {
   const ready = me !== undefined && accounts !== undefined;
   let state: string | undefined;
   let debtState: string | undefined;
+  let savingsState: string | undefined;
   if (ready) {
+    const goals = me.settings.savings?.goals ?? [];
+    const fund = goals.find((g) => g.kind === 'emergency');
+    const fundView = fund ? goalView(fund, accounts, periodOf(today)) : null;
+    savingsState =
+      fundView?.covered != null
+        ? `${fundView.covered} months covered`
+        : goals.length > 0
+          ? `${goals.length} ${goals.length === 1 ? 'goal' : 'goals'}`
+          : 'Set up';
     const debt = me.settings.debt;
     const student = debt
       ? groupView(
@@ -76,6 +87,7 @@ export function FinancialHealth() {
       <ul className="gutter pt-4">
         <Tile to="/financial-health/retirement" title="Retirement" state={state} />
         <Tile to="/financial-health/debt" title="Debt" state={debtState} />
+        <Tile to="/financial-health/savings" title="Savings" state={savingsState} />
       </ul>
     </div>
   );
