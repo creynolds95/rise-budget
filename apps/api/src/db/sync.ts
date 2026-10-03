@@ -15,6 +15,7 @@ import { newId, nowIso, type UserId } from './util';
 
 export interface SyncedAccountRow {
   id: string;
+  source: string;
   kind: string;
   source_account_id: string;
   last_synced_at: string | null;
@@ -23,14 +24,16 @@ export interface SyncedAccountRow {
   created_at: string;
 }
 
+/** Synced accounts, plus ones converted to manual: sync must still recognise those and leave
+ *  them alone, or a bank that keeps reporting them would create a second copy. */
 export async function listSyncedAccounts(
   userId: UserId,
   db: D1Database,
 ): Promise<SyncedAccountRow[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, kind, source_account_id, last_synced_at, include_in_budget, archived_at, created_at FROM account
-       WHERE user_id = ?1 AND source = 'simplefin'`,
+      `SELECT id, source, kind, source_account_id, last_synced_at, include_in_budget, archived_at, created_at FROM account
+       WHERE user_id = ?1 AND (source = 'simplefin' OR (source = 'manual' AND source_account_id IS NOT NULL))`,
     )
     .bind(userId)
     .all<SyncedAccountRow>();

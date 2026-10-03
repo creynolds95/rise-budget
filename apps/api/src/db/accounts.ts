@@ -151,6 +151,17 @@ export async function archiveAccount(userId: UserId, db: D1Database, accountId: 
     .run();
 }
 
+/** Detaches a synced account from SimpleFIN. Its history stays; its balance is now entered by
+ *  hand. `source_account_id` stays so sync keeps recognising (and skipping) it. */
+export async function convertToManual(userId: UserId, db: D1Database, accountId: string) {
+  await db
+    .prepare(
+      "UPDATE account SET source = 'manual' WHERE user_id = ?1 AND id = ?2 AND source = 'simplefin'",
+    )
+    .bind(userId, accountId)
+    .run();
+}
+
 export async function countAccountTransactions(
   userId: UserId,
   db: D1Database,

@@ -127,6 +127,38 @@ describe('T27 SimpleFIN sync', () => {
     expect(splits?.n).toBe(rows.length);
   });
 
+  it('a synced account converted to manual stays put: sync adds no copy and writes nothing to it', async () => {
+    const t = await setup();
+    const bank = fake([{ id: 'sf-loan', name: 'CL0001', txns: [], balance: -100000 }]);
+    await runSync(env.DB, t.userId, bank, { now: at('2026-09-21T12:00:00Z') });
+    const acct = await env.DB.prepare(
+      "SELECT id FROM account WHERE user_id = ?1 AND source_account_id = 'sf-loan'",
+    )
+      .bind(t.userId)
+      .first<{ id: string }>();
+    const res = await t.api('POST', `/accounts/${acct?.id}/convert-to-manual`, {});
+    expect(res.status).toBe(200);
+    expect(res.json.source).toBe('manual');
+    expect((await t.api('POST', `/accounts/${acct?.id}/convert-to-manual`, {})).status).toBe(409);
+
+    await runSync(
+      env.DB,
+      t.userId,
+      fake([{ id: 'sf-loan', name: 'CL0001', txns: [], balance: -90000 }]),
+      {
+        now: at('2026-09-22T12:00:00Z'),
+      },
+    );
+    const rows = (
+      await env.DB.prepare(
+        "SELECT source, balance_cents FROM account WHERE user_id = ?1 AND source_account_id = 'sf-loan'",
+      )
+        .bind(t.userId)
+        .all<{ source: string; balance_cents: number }>()
+    ).results;
+    expect(rows).toEqual([{ source: 'manual', balance_cents: -100000 }]);
+  });
+
   it('#12 re-running over the same window inserts zero rows (edge 12)', async () => {
     const s = await setup();
     const src = mockSimpleFin(() => at('2026-09-24T15:00:00Z'));
@@ -465,6 +497,7 @@ describe('T27 SimpleFIN sync', () => {
       archived: string | null = null,
     ) => ({
       id: 'x',
+      source: 'simplefin',
       kind: 'depository',
       source_account_id: 'x',
       last_synced_at: last,

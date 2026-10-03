@@ -9,6 +9,7 @@ import {
 import { Hono } from 'hono';
 import {
   archiveAccount,
+  convertToManual,
   countAccountTransactions,
   createAccount,
   deleteAccount,
@@ -102,6 +103,17 @@ accounts.post('/:id/archive', async (c) => {
   if (a.source !== 'manual')
     throw new AppError(409, 'CONFLICT', 'Disconnect a synced account instead of closing it');
   await archiveAccount(userId, c.env.DB, id);
+  return c.json(withStaleness((await getAccount(userId, c.env.DB, id)) as Account, Date.now()));
+});
+
+/** Detaches a synced account from SimpleFIN so its balance is kept by hand (loans in Debt). */
+accounts.post('/:id/convert-to-manual', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  const a = await getAccount(userId, c.env.DB, id);
+  if (!a) throw notFound();
+  if (a.source !== 'simplefin') throw new AppError(409, 'CONFLICT', 'Already a manual account');
+  await convertToManual(userId, c.env.DB, id);
   return c.json(withStaleness((await getAccount(userId, c.env.DB, id)) as Account, Date.now()));
 });
 
