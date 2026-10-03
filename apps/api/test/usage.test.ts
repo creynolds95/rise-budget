@@ -1,5 +1,5 @@
 import { env, exports } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { runBackup } from '../src/backup/run';
 import { gunzip } from '../src/backup/sql';
 import { meterDb, type Tally } from '../src/lib/usage';
@@ -23,6 +23,24 @@ describe('D1 usage meter', () => {
     expect(await db.prepare('SELECT n FROM zz_meter WHERE n = 99').first()).toBeNull();
   });
 
+  it('logs a statement that reads too many rows, with its SQL, in a batch too', async () => {
+    const tally: Tally = { read: 0, written: 0 };
+    const db = meterDb(env.DB, tally, 3);
+    await db.prepare('CREATE TABLE IF NOT EXISTS zz_heavy (n INTEGER)').run();
+    await db.batch(
+      [1, 2, 3, 4, 5].map((n) => db.prepare('INSERT INTO zz_heavy (n) VALUES (?1)').bind(n)),
+    );
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await db.prepare('SELECT n FROM zz_heavy').all();
+    await db.batch([db.prepare('SELECT COUNT(*) FROM zz_heavy')]);
+    const logged = spy.mock.calls.map((c) => JSON.parse(c[0] as string) as { sql: string });
+    spy.mockRestore();
+    expect(logged.map((l) => l.sql)).toEqual([
+      'SELECT n FROM zz_heavy',
+      'SELECT COUNT(*) FROM zz_heavy',
+    ]);
+  });
+
   it('GET /usage reports today from the requests already made', async () => {
     const u = await signedInUser();
     await call('GET', '/accounts', { access: u.access });
@@ -33,6 +51,16 @@ describe('D1 usage meter', () => {
     expect(r.json.days[0].day).toBe(today);
     expect(r.json.days[0].rowsRead).toBeGreaterThan(0);
     expect(r.json.days[0].requests).toBeGreaterThan(0);
+  });
+
+  it('names the heaviest routes by pattern, not by URL', async () => {
+    const u = await signedInUser();
+    await call('GET', '/periods/2026-10', { access: u.access });
+    await call('GET', '/periods/2026-11', { access: u.access });
+    const r = await call('GET', '/usage', { access: u.access });
+    const row = r.json.routes.find((x: { route: string }) => x.route === 'GET /api/periods/:id');
+    expect(row?.requests).toBeGreaterThanOrEqual(2);
+    expect(row?.rowsRead).toBeGreaterThan(0);
   });
 });
 

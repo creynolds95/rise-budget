@@ -356,6 +356,10 @@ export const UsageStatus = z.object({
   limits: z.object({ rowsRead: z.number().int(), rowsWritten: z.number().int() }),
   /** Newest first, today included. Days with no activity are absent. */
   days: z.array(UsageDay),
+  /** Today's heaviest routes by rows read, most first. */
+  routes: z.array(
+    z.object({ route: z.string(), rowsRead: z.number().int(), requests: z.number().int() }),
+  ),
 });
 export type UsageStatus = z.infer<typeof UsageStatus>;
 

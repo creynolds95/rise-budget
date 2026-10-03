@@ -18,6 +18,7 @@ import { transitionClick } from '../lib/transition';
 import {
   useAccounts,
   useBackupStatus,
+  useUsage,
   useCashToPayday,
   useCategories,
   useMe,
@@ -61,6 +62,7 @@ export function Dashboard() {
   const txns = useTransactions({ sort: 'date_desc' });
   const syncStatus = useSyncStatus();
   const backups = useBackupStatus();
+  const usage = useUsage();
   const queue = useQuery({
     queryKey: ['queue-count'],
     queryFn: () => get<{ count: number }>('/review/count'),
@@ -105,6 +107,7 @@ export function Dashboard() {
         backups={backups.data}
         today={today}
         quiet={quietInstitutions(accounts.data ?? [])}
+        usage={usage.data}
         dismissible
       />
       {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}

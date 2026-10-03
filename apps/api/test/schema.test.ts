@@ -29,6 +29,7 @@ const TABLES = [
   'period_aggregate',
   'surplus_suggestion',
   'usage_day',
+  'usage_route',
 ];
 
 const INDEXES = [

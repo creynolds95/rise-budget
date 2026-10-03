@@ -1323,6 +1323,13 @@ function UsageGroup() {
         <>
           <GroupRow label="Reads today">{line(read, usage.limits.rowsRead)}</GroupRow>
           <GroupRow label="Writes today">{line(written, usage.limits.rowsWritten)}</GroupRow>
+          {usage.routes.map((r) => (
+            <GroupRow key={r.route} label={r.route}>
+              <span className="tabular-nums text-ink-muted">
+                {compact(r.rowsRead)} reads · {r.requests}×
+              </span>
+            </GroupRow>
+          ))}
           <GroupRow label="Busiest day, last 14">
             <span className="tabular-nums text-ink-muted">
               {pct(peak('rowsRead'), usage.limits.rowsRead)}% reads ·{' '}
