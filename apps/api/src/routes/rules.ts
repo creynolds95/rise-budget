@@ -35,6 +35,22 @@ rules.post('/', async (c) => {
   if (!v.ok) throw new AppError(400, 'BAD_REQUEST', v.message);
   if (!(await categoryIdsExist(userId, db, [b.categoryId])))
     throw new AppError(400, 'BAD_REQUEST', 'Unknown category');
+  // The same rule asked for twice is one rule; a different answer for the same match replaces
+  // the old one (the user just chose it), so the older rule can't quietly keep winning.
+  const same = (await listRules(userId, db)).filter(
+    (r) =>
+      r.matchField === b.matchField && r.matchType === b.matchType && r.matchValue === b.matchValue,
+  );
+  const twin = same.find((r) => r.categoryId === b.categoryId);
+  if (twin) return c.json(twin, 200);
+  for (const old of same) {
+    await deleteRule(userId, db, old.id);
+    await writeAudit(userId, db, 'rule.deleted', {
+      type: 'rule',
+      id: old.id,
+      detail: { ...old, replacedBy: b.categoryId },
+    });
+  }
   const rule = await insertRule(userId, db, b);
   await writeAudit(userId, db, 'rule.created', { type: 'rule', id: rule.id, detail: { ...b } });
   await refreshSuggestions(db, userId);

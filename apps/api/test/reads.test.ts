@@ -143,3 +143,45 @@ describe('D1 rows read for deletes', () => {
     expect(one, `delete read ${one} rows`).toBeLessThan(2_000);
   }, 60_000);
 });
+
+/**
+ * Making a rule re-guesses the review queue, and the one-off memory backfill reads the
+ * reviewed history once. Neither may cost a pass per row.
+ */
+describe('D1 rows read for rules and the memory backfill', () => {
+  const files = import.meta.glob('../migrations/0018_memory_from_history.sql', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  });
+
+  it('a new rule reads the queue, not the history; the backfill reads the history about once', async () => {
+    const s = await signedInUser();
+    await seedProdShape(s.userId, 'rul');
+    const cat = await env.DB.prepare('SELECT id FROM category WHERE user_id = ?1 LIMIT 1')
+      .bind(s.userId)
+      .first<{ id: string }>();
+    let status = 0;
+    const made = await rowsRead(async () => {
+      status = (
+        await call('POST', '/rules', {
+          access: s.access,
+          body: {
+            matchField: 'merchant',
+            matchType: 'equals',
+            matchValue: 'Benchmark Mortgage',
+            categoryId: cat?.id,
+          },
+        })
+      ).status;
+    });
+    expect(status).toBe(201);
+    expect(made, `rule creation read ${made} rows`).toBeLessThan(3_000);
+
+    const backfill = await rowsRead(async () => {
+      await env.DB.prepare(Object.values(files)[0] as string).run();
+    });
+    // One-off at deploy (about 13 rows per transaction, 2% of a day). A pass per row would be 55M.
+    expect(backfill, `backfill read ${backfill} rows`).toBeLessThan(150_000);
+  }, 60_000);
+});
