@@ -2,7 +2,7 @@ import type { RuleOffer, Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSwipeBack } from '../lib/gestures';
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { BackLink } from '../components/BackLink';
 import { CategoryPicker } from '../components/CategoryPicker';
@@ -17,13 +17,7 @@ import { usePendingChanges } from '../components/OfflineBar';
 import { shortDate } from '../lib/dates';
 import { useAccounts, useCategories, useInvalidateMoney } from '../lib/queries';
 import { transitionClick } from '../lib/transition';
-import {
-  currentCategoryId,
-  groupQueue,
-  transferOffer,
-  type QueueItem,
-  type QueueRow,
-} from '../lib/review';
+import { groupQueue, transferOffer, type QueueItem, type QueueRow } from '../lib/review';
 import type { PatchedTransaction } from '../lib/types';
 
 interface Queue {
@@ -66,15 +60,22 @@ export function Review() {
   const [toast, setToast] = useState<string | null>(null);
   const pending = useRef<Pending | null>(null);
   const [picking, setPicking] = useState<QueueItem | null>(null);
+  // What the user picked for a row, held until they confirm it: choosing never files.
+  const [chosen, setChosen] = useState<Map<string, { categoryId: string; always: boolean }>>(
+    new Map(),
+  );
   const [offer, setOffer] = useState<RuleOffer | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const account = (id: string) => accounts.find((a) => a.id === id);
   const catName = (id: string | null) => categories.find((c) => c.id === id)?.name ?? '';
   const catEmoji = (id: string | null) => categories.find((c) => c.id === id)?.emoji;
-  /** The suggestion when there is one worth offering, else what the row is filed under. */
+  /**
+   * The category a row would be filed under if confirmed: what the user picked, else a real
+   * suggestion. A row with neither stays unconfirmed — the catch-all it sits in is not a guess.
+   */
   const guessId = (t: QueueItem, band: 'confident' | 'guess' | 'none') =>
-    band !== 'none' && t.suggestedCategoryId ? t.suggestedCategoryId : currentCategoryId(t);
+    chosen.get(t.id)?.categoryId ?? (band !== 'none' ? t.suggestedCategoryId : null);
   const unhide = (ids: string[]) =>
     setHidden((h) => new Set([...h].filter((x) => !ids.includes(x))));
 
@@ -141,7 +142,15 @@ export function Review() {
         { label: `${name(t)} → ${catName(t.suggestedCategoryId)}` },
       );
     });
-  const file = (t: QueueItem, categoryId: string) =>
+  /** The rule the user asked for with "Always": created once the row is confirmed. */
+  const makeRule = (t: QueueItem, categoryId: string) =>
+    api('POST', '/rules', {
+      matchField: 'merchant',
+      matchType: 'equals',
+      matchValue: t.merchantNormalized,
+      categoryId,
+    });
+  const file = (t: QueueItem, categoryId: string, always = false) =>
     act([t.id], `${name(t)} → ${catName(categoryId)}`, async () => {
       const res = await api<PatchedTransaction>(
         'PATCH',
@@ -149,7 +158,8 @@ export function Review() {
         { categoryId, reviewState: 'reviewed' },
         { label: `${name(t)} → ${catName(categoryId)}` },
       );
-      if (res.ruleOffer) setOffer(res.ruleOffer);
+      if (always) await makeRule(t, categoryId);
+      else if (res.ruleOffer) setOffer(res.ruleOffer);
     });
   const markTransfer = (t: QueueItem) =>
     act([t.id], `${name(t)} → not spending`, async () => {
@@ -166,7 +176,11 @@ export function Review() {
         e.path.startsWith(`/transactions/${id}`) ||
         ((e.body as { ids?: string[] } | null)?.ids ?? []).includes(id),
     );
-  const items = (queue.data?.items ?? []).filter((t) => !hidden.has(t.id) && !queued(t.id));
+  const unfiled = (queue.data?.items ?? []).filter((t) => !queued(t.id));
+  // Filed rows stay on screen just long enough to collapse; everything else counts only
+  // what is still waiting.
+  const shownDays = groupQueue(unfiled);
+  const items = unfiled.filter((t) => !hidden.has(t.id));
   const days = groupQueue(items);
   const confirmPair = (row: Extract<QueueRow, { kind: 'transfer' }>) =>
     act([row.out.id, row.in.id], 'Transfer confirmed', async () => {
@@ -177,33 +191,48 @@ export function Review() {
       );
     });
 
-  /** Confirm one row's guess: accept the suggestion, or keep what it is filed under. */
+  /** Confirm one row: the user's pick, or the suggestion. Null when it has neither. */
   const confirm = (t: QueueItem, band: 'confident' | 'guess' | 'none') => {
     const id = guessId(t, band);
     if (!id) return null;
-    return id === t.suggestedCategoryId && band !== 'none' ? () => accept(t) : () => file(t, id);
+    const pick = chosen.get(t.id);
+    return pick || id !== t.suggestedCategoryId
+      ? () => file(t, id, pick?.always ?? false)
+      : () => accept(t);
   };
+  // Rows without a pick or a real suggestion stay put: nothing is filed to "Other" by default.
+  const confirmable = days.flatMap((d) =>
+    d.rows.flatMap((r) => (r.kind === 'txn' && guessId(r.t, r.band) ? [r] : [])),
+  );
+  const pairs = days.flatMap((d) => d.rows.flatMap((r) => (r.kind === 'transfer' ? [r] : [])));
+  const confirmCount = confirmable.length + pairs.length;
   const confirmAll = () => {
-    const rows = days.flatMap((d) => d.rows);
-    const pairs = rows.flatMap((r) => (r.kind === 'transfer' ? [r.out, r.in] : []));
-    const singles = rows.flatMap((r) => {
-      if (r.kind === 'transfer') return [];
-      const id = guessId(r.t, r.band);
-      return id ? [{ t: r.t, id }] : [];
-    });
-    const accepted = singles.filter((s) => s.id === s.t.suggestedCategoryId).map((s) => s.t.id);
-    const kept = singles.filter((s) => s.id !== s.t.suggestedCategoryId);
-    const n = pairs.length / 2 + singles.length;
-    act([...pairs.map((t) => t.id), ...singles.map((s) => s.t.id)], `${n} confirmed`, async () => {
-      await Promise.all([
-        accepted.length > 0 &&
-          api('POST', '/transactions/bulk-accept', { ids: accepted }, { label: `${n} confirmed` }),
-        ...kept.map((s) =>
-          api('PATCH', `/transactions/${s.t.id}`, { categoryId: s.id, reviewState: 'reviewed' }),
-        ),
-        ...pairs.map((t) => api('PATCH', `/transactions/${t.id}`, { reviewState: 'reviewed' })),
-      ]);
-    });
+    const picked = confirmable.filter((r) => chosen.has(r.t.id));
+    const accepted = confirmable.filter((r) => !chosen.has(r.t.id)).map((r) => r.t.id);
+    const label = `${confirmCount} confirmed`;
+    act(
+      [...confirmable.map((r) => r.t.id), ...pairs.flatMap((r) => [r.out.id, r.in.id])],
+      label,
+      async () => {
+        await Promise.all([
+          accepted.length > 0 &&
+            api('POST', '/transactions/bulk-accept', { ids: accepted }, { label }),
+          ...picked.map(async (r) => {
+            const pick = chosen.get(r.t.id) as { categoryId: string; always: boolean };
+            await api('PATCH', `/transactions/${r.t.id}`, {
+              categoryId: pick.categoryId,
+              reviewState: 'reviewed',
+            });
+            if (pick.always) await makeRule(r.t, pick.categoryId);
+          }),
+          ...pairs.flatMap((r) =>
+            [r.out, r.in].map((t) =>
+              api('PATCH', `/transactions/${t.id}`, { reviewState: 'reviewed' }),
+            ),
+          ),
+        ]);
+      },
+    );
   };
 
   // Desktop: the top row answers to the keyboard.
@@ -262,50 +291,58 @@ export function Review() {
         </div>
       )}
 
-      {days.map((day) => (
-        <section key={day.date} className="gutter pt-6">
-          <h2 className="type-label text-ink-muted">{shortDate(day.date)}</h2>
-          <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-            {day.rows.map((row) =>
-              row.kind === 'transfer' ? (
-                <TransferRow
-                  key={row.out.id}
-                  out={row.out}
-                  in={row.in}
-                  from={account(row.out.accountId)?.name ?? ''}
-                  to={account(row.in.accountId)?.name ?? ''}
-                  focused={row === first}
-                  onConfirm={() => confirmPair(row)}
-                  onUnlink={() =>
-                    act([], 'Unlinked', async () => {
-                      await api('DELETE', `/transactions/${row.out.id}/transfer-link`);
-                    })
-                  }
-                />
-              ) : (
-                <ReviewRow
-                  key={row.t.id}
-                  t={row.t}
-                  band={row.band}
-                  focused={row === first}
-                  account={account(row.t.accountId)?.name ?? ''}
-                  guess={catName(guessId(row.t, row.band))}
-                  emoji={catEmoji(guessId(row.t, row.band))}
-                  offer={transferOffer(row.t, account(row.t.accountId)?.kind)}
-                  onConfirm={confirm(row.t, row.band)}
-                  onTransfer={() => markTransfer(row.t)}
-                  onPick={() => setPicking(row.t)}
-                />
-              ),
-            )}
-          </ul>
-        </section>
+      {shownDays.map((day) => (
+        <Collapse
+          key={day.date}
+          open={day.rows.some((r) => !hidden.has(r.kind === 'transfer' ? r.out.id : r.t.id))}
+        >
+          <section className="gutter animate-fade-in pt-6">
+            <h2 className="type-label text-ink-muted">{shortDate(day.date)}</h2>
+            <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+              {day.rows.map((row) =>
+                row.kind === 'transfer' ? (
+                  <TransferRow
+                    key={row.out.id}
+                    gone={hidden.has(row.out.id)}
+                    out={row.out}
+                    in={row.in}
+                    from={account(row.out.accountId)?.name ?? ''}
+                    to={account(row.in.accountId)?.name ?? ''}
+                    focused={row === first}
+                    onConfirm={() => confirmPair(row)}
+                    onUnlink={() =>
+                      act([], 'Unlinked', async () => {
+                        await api('DELETE', `/transactions/${row.out.id}/transfer-link`);
+                      })
+                    }
+                  />
+                ) : (
+                  <ReviewRow
+                    key={row.t.id}
+                    t={row.t}
+                    gone={hidden.has(row.t.id)}
+                    band={chosen.has(row.t.id) ? 'confident' : row.band}
+                    always={chosen.get(row.t.id)?.always ?? false}
+                    focused={row === first}
+                    account={account(row.t.accountId)?.name ?? ''}
+                    guess={catName(guessId(row.t, row.band))}
+                    emoji={catEmoji(guessId(row.t, row.band))}
+                    offer={transferOffer(row.t, account(row.t.accountId)?.kind)}
+                    onConfirm={confirm(row.t, row.band)}
+                    onTransfer={() => markTransfer(row.t)}
+                    onPick={() => setPicking(row.t)}
+                  />
+                ),
+              )}
+            </ul>
+          </section>
+        </Collapse>
       ))}
 
-      {items.length > 0 && (
+      {confirmCount > 0 && (
         <section className="gutter pt-6">
           <Button className="w-full" onClick={confirmAll}>
-            Confirm all
+            Confirm all{confirmCount < items.length ? ` (${confirmCount})` : ''}
           </Button>
         </section>
       )}
@@ -339,7 +376,7 @@ export function Review() {
       {toast && (
         <div
           role="status"
-          className="fixed inset-x-0 bottom-[calc(max(16px,env(safe-area-inset-bottom))+72px)] z-30 lg:bottom-4 mx-auto flex w-[min(100%-32px,560px)] items-center justify-between gap-3 rounded-card bg-ink px-4 py-2 text-surface shadow-soft"
+          className="animate-fade-in fixed inset-x-0 bottom-[calc(max(16px,env(safe-area-inset-bottom))+72px)] z-30 lg:bottom-4 mx-auto flex w-[min(100%-32px,560px)] items-center justify-between gap-3 rounded-card bg-ink px-4 py-2 text-surface shadow-soft"
         >
           <span className="min-w-0 truncate">{toast}</span>
           <button onClick={undo} className="min-h-11 shrink-0 px-2 font-semibold text-sage-100">
@@ -351,12 +388,27 @@ export function Review() {
       <CategoryPicker
         open={picking !== null}
         onClose={() => setPicking(null)}
-        onPick={(id) => {
-          if (picking) file(picking, id);
+        always={picking ? { merchant: merchantName(picking) } : undefined}
+        onPick={(id, always) => {
+          // Picking only selects: the row waits for its ✓ or Confirm all.
+          if (picking) setChosen((m) => new Map(m).set(picking.id, { categoryId: id, always }));
           setPicking(null);
         }}
       />
       <RuleOfferSheet offer={offer} onClose={() => setOffer(null)} />
+    </div>
+  );
+}
+
+/** Height and opacity ease out together, so a filed row leaves instead of vanishing. */
+function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+        open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+      }`}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
     </div>
   );
 }
@@ -371,7 +423,7 @@ function ConfirmButton({ label, onClick }: { label: string; onClick: () => void 
       className="group flex size-11 shrink-0 items-center justify-center"
     >
       {/* A small mark; the button around it keeps a thumb-sized target. */}
-      <span className="flex size-7 items-center justify-center rounded-full border-[1.5px] border-sage-600 text-sage-700 group-active:bg-sage-600 group-active:text-surface">
+      <span className="flex size-7 items-center justify-center rounded-full border-[1.5px] border-sage-600 text-sage-700 transition-colors group-active:bg-sage-600 group-active:text-surface">
         <svg
           aria-hidden
           width="14"
@@ -393,7 +445,9 @@ const quietAction = 'min-h-11 shrink-0 px-2 text-sage-700';
 
 function ReviewRow({
   t,
+  gone,
   band,
+  always,
   focused,
   account,
   guess,
@@ -404,10 +458,14 @@ function ReviewRow({
   onPick,
 }: {
   t: QueueItem;
+  /** Filed: the row is collapsing away. */
+  gone: boolean;
   band: 'confident' | 'guess' | 'none';
+  /** The user asked for a rule when this row is confirmed. */
+  always: boolean;
   focused: boolean;
   account: string;
-  /** The suggestion when there is one, else the category it is filed under now. */
+  /** The category a confirm would file it under; empty when there is none to offer. */
   guess: string;
   emoji: string | null | undefined;
   offer: 'card_payment' | 'transfer' | null;
@@ -440,74 +498,86 @@ function ReviewRow({
   };
   return (
     <li
-      className={`touch-pan-y border-b border-hairline py-3 transition-transform last:border-b-0 md:border-l-2 md:pl-2 ${
-        focused ? 'md:border-l-sage-600' : 'md:border-l-transparent'
-      }`}
+      className="touch-pan-y transition-transform last:[&_.row]:border-b-0"
       style={{ transform: dx ? `translateX(${dx}px)` : undefined }}
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
       onPointerCancel={onUp}
     >
-      <Link
-        to={detailTo}
-        onClick={transitionClick(navigate, detailTo)}
-        className={`flex items-center justify-between gap-3 active:opacity-70 ${t.isPending ? 'italic' : ''}`}
-      >
-        <span className="min-w-0">
-          <span className="block truncate">
-            {emoji && (
-              <span aria-hidden className="mr-2 not-italic">
-                {emoji}
-              </span>
-            )}
-            {merchantName(t)}
-            {t.isPending && (
-              <span
-                title="Pending"
-                className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
-              >
-                P
-              </span>
-            )}
-          </span>
-          <span className="block truncate type-caption text-ink-faint not-italic">{account}</span>
-        </span>
-        <TxnAmount t={t} className="shrink-0" />
-      </Link>
-      <div className="mt-2 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={onPick}
-          aria-label={`Category: ${guess || 'none'}. Change`}
-          className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-input bg-canvas px-3 text-left active:bg-sage-100"
+      <Collapse open={!gone}>
+        <div
+          className={`row border-b border-hairline py-3 md:border-l-2 md:pl-2 ${
+            focused ? 'md:border-l-sage-600' : 'md:border-l-transparent'
+          }`}
         >
-          <span className={`truncate ${band === 'guess' ? 'text-gold-text' : ''}`}>
-            {guess ? `${guess}${band === 'guess' ? '?' : ''}` : 'Choose a category'}
-          </span>
-          <Chevron />
-        </button>
-        {offer && guess !== 'Transfer' && guess !== 'Credit Card Payment' && (
-          <button type="button" onClick={onTransfer} className={quietAction}>
-            {offer === 'card_payment' ? 'Card payment' : 'Transfer'}
-          </button>
-        )}
-        {amazon && (
           <Link
-            to={splitTo}
-            onClick={transitionClick(navigate, splitTo)}
-            className={`${quietAction} flex items-center`}
+            to={detailTo}
+            onClick={transitionClick(navigate, detailTo)}
+            className={`flex items-center justify-between gap-3 active:opacity-70 ${t.isPending ? 'italic' : ''}`}
           >
-            Split
+            <span className="min-w-0">
+              <span className="block truncate">
+                {emoji && (
+                  <span aria-hidden className="mr-2 not-italic">
+                    {emoji}
+                  </span>
+                )}
+                {merchantName(t)}
+                {t.isPending && (
+                  <span
+                    title="Pending"
+                    className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
+                  >
+                    P
+                  </span>
+                )}
+              </span>
+              <span className="block truncate type-caption text-ink-faint not-italic">
+                {account}
+              </span>
+            </span>
+            <TxnAmount t={t} className="shrink-0" />
           </Link>
-        )}
-        {onConfirm && <ConfirmButton label={`Confirm ${guess}`} onClick={onConfirm} />}
-      </div>
+          <div className="mt-2 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onPick}
+              aria-label={`Category: ${guess || 'none'}. Change`}
+              className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-input bg-canvas px-3 text-left active:bg-sage-100"
+            >
+              <span
+                className={`truncate ${band === 'guess' ? 'text-gold-text' : guess ? '' : 'text-ink-muted'}`}
+              >
+                {guess ? `${guess}${band === 'guess' ? '?' : ''}` : 'Choose a category'}
+                {always && <span className="ml-2 type-caption text-sage-700">Always</span>}
+              </span>
+              <Chevron />
+            </button>
+            {offer && guess !== 'Transfer' && guess !== 'Credit Card Payment' && (
+              <button type="button" onClick={onTransfer} className={quietAction}>
+                {offer === 'card_payment' ? 'Card payment' : 'Transfer'}
+              </button>
+            )}
+            {amazon && (
+              <Link
+                to={splitTo}
+                onClick={transitionClick(navigate, splitTo)}
+                className={`${quietAction} flex items-center`}
+              >
+                Split
+              </Link>
+            )}
+            {onConfirm && <ConfirmButton label={`Confirm ${guess}`} onClick={onConfirm} />}
+          </div>
+        </div>
+      </Collapse>
     </li>
   );
 }
 
 function TransferRow(p: {
+  gone: boolean;
   out: QueueItem;
   in: QueueItem;
   from: string;
@@ -517,24 +587,28 @@ function TransferRow(p: {
   onUnlink: () => void;
 }) {
   return (
-    <li
-      className={`border-b border-hairline py-3 last:border-b-0 md:border-l-2 md:pl-2 ${p.focused ? 'md:border-l-sage-600' : 'md:border-l-transparent'}`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="min-w-0">
-          <span className="block truncate">
-            {p.from} → {p.to}
-          </span>
-          <span className="block type-caption text-ink-faint">Transfer · not spending</span>
-        </span>
-        <MoneyText cents={p.out.amountCents} tone="muted" className="shrink-0" />
-      </div>
-      <div className="mt-2 flex items-center justify-end gap-1">
-        <button type="button" onClick={p.onUnlink} className={quietAction}>
-          Not a transfer
-        </button>
-        <ConfirmButton label="Confirm transfer" onClick={p.onConfirm} />
-      </div>
+    <li className="last:[&_.row]:border-b-0">
+      <Collapse open={!p.gone}>
+        <div
+          className={`row border-b border-hairline py-3 md:border-l-2 md:pl-2 ${p.focused ? 'md:border-l-sage-600' : 'md:border-l-transparent'}`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0">
+              <span className="block truncate">
+                {p.from} → {p.to}
+              </span>
+              <span className="block type-caption text-ink-faint">Transfer · not spending</span>
+            </span>
+            <MoneyText cents={p.out.amountCents} tone="muted" className="shrink-0" />
+          </div>
+          <div className="mt-2 flex items-center justify-end gap-1">
+            <button type="button" onClick={p.onUnlink} className={quietAction}>
+              Not a transfer
+            </button>
+            <ConfirmButton label="Confirm transfer" onClick={p.onConfirm} />
+          </div>
+        </div>
+      </Collapse>
     </li>
   );
 }
