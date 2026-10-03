@@ -82,7 +82,7 @@ export const SavingsGoal = z.object({
 });
 export type SavingsGoal = z.infer<typeof SavingsGoal>;
 
-export const SavingsPlan = z.object({ goals: z.array(SavingsGoal).default([]) });
+export const SavingsPlan = z.object({ goals: z.array(SavingsGoal).max(50).default([]) });
 export type SavingsPlan = z.infer<typeof SavingsPlan>;
 
 export const UserSettings = z.object({
