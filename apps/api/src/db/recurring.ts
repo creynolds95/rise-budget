@@ -243,7 +243,7 @@ export function upsertSeriesStmt(
   userId: UserId,
   db: D1Database,
   merchant: string,
-  s: DetectedSeries,
+  s: Omit<DetectedSeries, 'status'> & { status: 'active' | 'broken' | 'lapsed' },
 ): D1PreparedStatement {
   return db
     .prepare(
@@ -271,18 +271,43 @@ export function upsertSeriesStmt(
     );
 }
 
-/** A known series that stopped fitting and is past due by more than a week is broken. */
-export function markOverdueBrokenStmt(
+/**
+ * A detected series' status: recomputed by refresh (`active` / `broken` / `lapsed`), or the
+ * user's own call (`ended`, or `active` to track it again). Never touches a manual rule.
+ */
+export function setSeriesStatusStmt(
   userId: UserId,
   db: D1Database,
-  brokenBefore: string,
+  id: string,
+  status: 'active' | 'broken' | 'lapsed' | 'ended',
 ): D1PreparedStatement {
   return db
     .prepare(
-      `UPDATE recurring_series SET status = 'broken', updated_at = ?3
-       WHERE user_id = ?1 AND status = 'active' AND next_expected_date < ?2`,
+      `UPDATE recurring_series SET status = ?3, updated_at = ?4
+       WHERE user_id = ?1 AND id = ?2 AND source = 'detected'`,
     )
-    .bind(userId, brokenBefore, nowIso());
+    .bind(userId, id, status, nowIso());
+}
+
+/** What refresh needs to re-judge a detected series it no longer finds. Raw rows: no parse. */
+export async function listDetectedStatuses(userId: UserId, db: D1Database) {
+  const { results } = await db
+    .prepare(
+      `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date, status,
+         source
+       FROM recurring_series WHERE user_id = ?1`,
+    )
+    .bind(userId)
+    .all<{
+      id: string;
+      merchant_normalized: string;
+      cadence: DetectedSeries['cadence'];
+      expected_amount_cents: number;
+      next_expected_date: string | null;
+      status: string;
+      source: string;
+    }>();
+  return results;
 }
 
 interface SeriesRow {

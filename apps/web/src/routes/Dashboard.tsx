@@ -8,6 +8,7 @@ import { SummaryCard } from './Budget';
 import { SpendingSection } from '../components/SpendingSection';
 import { HealthNotes } from '../components/HealthNotes';
 import { quietInstitutions, StaleNotes } from '../components/StaleNotes';
+import { MissedRow, useMissed } from '../components/MissedCharges';
 import { TxnRow } from '../components/TxnRow';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow } from '../components/primitives/Rows';
@@ -57,6 +58,7 @@ export function Dashboard() {
   const last = usePeriod(addMonths(month, -1));
   const accounts = useAccounts();
   const recurring = useRecurring();
+  const broken = useMissed(recurring.data);
   const surplus = useCashToPayday();
   const categories = useCategories();
   const txns = useTransactions({ sort: 'date_desc' });
@@ -94,7 +96,6 @@ export function Dashboard() {
       s.nextExpectedDate.slice(0, 7) === month &&
       s.expectedAmountCents > 0,
   );
-  const broken = (recurring.data ?? []).filter((s) => s.status === 'broken');
   const catName = (id: string | null) => categories.data?.find((c) => c.id === id)?.name;
   const recentTxns = (txns.data?.pages[0]?.items ?? []).slice(0, RECENT_TXNS);
   const reviewCount = queue.data?.count ?? 0;
@@ -221,10 +222,7 @@ export function Dashboard() {
               </li>
             ))}
             {broken.map((s) => (
-              <li key={s.id} className="min-h-12 border-b border-hairline py-3 text-clay">
-                {merchantName(s)} hasn't charged since it was due{' '}
-                {shortDate(s.nextExpectedDate ?? '')}.
-              </li>
+              <MissedRow key={s.id} s={s} today={today} all={recurring.data ?? []} />
             ))}
           </ul>
         </section>

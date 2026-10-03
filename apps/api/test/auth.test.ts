@@ -308,6 +308,7 @@ describe('T16 auth middleware + error contract', () => {
       cushionCents: 50_000,
       cashAccountIds: [],
       dismissedPayMerchants: [],
+      dismissedMisses: [],
       retirement: null,
       debt: null,
       savings: null,

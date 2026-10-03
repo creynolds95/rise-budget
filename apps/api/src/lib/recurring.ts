@@ -1,9 +1,10 @@
 import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
 import {
   advanceManualRule,
-  BROKEN_AFTER_DAYS,
   detectSemimonthly,
   detectSeries,
+  latestByAccount,
+  missState,
   surplusSuggestions,
   typicalPostDay,
   type DetectedSeries,
@@ -14,9 +15,10 @@ import {
   listAccounts,
   listManualRules,
   listOccurrences,
+  listDetectedStatuses,
   manualRuleMerchants,
-  markOverdueBrokenStmt,
   replaceSuggestionsStmts,
+  setSeriesStatusStmt,
   setTypicalPostDayStmt,
   upsertSeriesStmt,
   type UserId,
@@ -32,13 +34,34 @@ export const LOOKBACK_DAYS = 3 * 366 + 8;
  */
 export async function refreshRecurring(db: D1Database, userId: UserId, today: string) {
   const from = dateFromDayNumber(dayNumber(today) - LOOKBACK_DAYS);
-  const [byMerchant, manual, manualMerchants, user, accounts] = await Promise.all([
+  const [byMerchant, manual, manualMerchants, user, accounts, existing] = await Promise.all([
     listOccurrences(userId, db, from),
     listManualRules(userId, db),
     manualRuleMerchants(userId, db),
     getUser(userId, db),
     listAccounts(userId, db),
+    listDetectedStatuses(userId, db),
   ]);
+  const latest = latestByAccount(byMerchant);
+  // A miss is only clay when it's knowable and unexplained (shared/recurring/miss.ts).
+  const stateOf = (
+    merchant: string,
+    cadence: DetectedSeries['cadence'],
+    due: string,
+    cents: number,
+  ) =>
+    missState(
+      {
+        merchant,
+        cadence,
+        nextExpectedDate: due,
+        expectedAmountCents: cents,
+        accountId: byMerchant.get(merchant)?.at(-1)?.accountId ?? null,
+      },
+      byMerchant,
+      latest,
+      today,
+    );
   const found: [string, DetectedSeries][] = [];
   for (const [merchant, occ] of byMerchant) {
     // A merchant Caleb has tagged "Recurring Cash Withdrawal" owns its own rule — never
@@ -83,10 +106,28 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
         today,
       )
     : [];
+  // A series that no longer fits keeps its last prediction; only its status moves on.
+  const detected = new Set(found.map(([merchant]) => merchant));
+  const stale = existing.flatMap((r) => {
+    if (r.source !== 'detected' || r.status === 'ended' || !r.next_expected_date) return [];
+    if (detected.has(r.merchant_normalized)) return [];
+    const next = stateOf(
+      r.merchant_normalized,
+      r.cadence,
+      r.next_expected_date,
+      r.expected_amount_cents,
+    );
+    return next === r.status ? [] : [setSeriesStatusStmt(userId, db, r.id, next)];
+  });
   await db.batch([
-    ...found.map(([merchant, s]) => upsertSeriesStmt(userId, db, merchant, s)),
+    ...found.map(([merchant, s]) =>
+      upsertSeriesStmt(userId, db, merchant, {
+        ...s,
+        status: stateOf(merchant, s.cadence, s.nextExpectedDate, s.expectedAmountCents),
+      }),
+    ),
     ...manualUpdates,
-    markOverdueBrokenStmt(userId, db, dateFromDayNumber(dayNumber(today) - BROKEN_AFTER_DAYS)),
+    ...stale,
     ...[...billDay].map(([categoryId, b]) => setTypicalPostDayStmt(userId, db, categoryId, b.day)),
     ...replaceSuggestionsStmts(userId, db, suggestions),
   ]);

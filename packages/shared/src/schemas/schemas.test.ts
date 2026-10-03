@@ -55,6 +55,7 @@ describe('schemas', () => {
       cushionCents: 50_000,
       cashAccountIds: [],
       dismissedPayMerchants: [],
+      dismissedMisses: [],
       retirement: null,
       debt: null,
       savings: null,
