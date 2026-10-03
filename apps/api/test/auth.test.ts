@@ -310,6 +310,7 @@ describe('T16 auth middleware + error contract', () => {
       dismissedPayMerchants: [],
       retirement: null,
       debt: null,
+      savings: null,
     });
   });
 

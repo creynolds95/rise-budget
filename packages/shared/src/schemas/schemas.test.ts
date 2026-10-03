@@ -57,6 +57,7 @@ describe('schemas', () => {
       dismissedPayMerchants: [],
       retirement: null,
       debt: null,
+      savings: null,
     });
     expect(u.timezone).toBe('America/Chicago');
   });

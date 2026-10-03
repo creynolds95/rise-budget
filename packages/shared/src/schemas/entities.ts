@@ -64,6 +64,27 @@ export const DebtPlan = z.object({
 });
 export type DebtPlan = z.infer<typeof DebtPlan>;
 
+/** One savings goal. Saved is the linked account's balance, or a hand-set share of it. */
+export const SavingsGoal = z.object({
+  id: Id,
+  name: z.string().min(1).max(60),
+  accountId: Id,
+  /** Used when kind is 'goal'; an emergency fund derives it from months × expenses. */
+  targetCents: Cents.min(0),
+  /** What goes in each month, for the projected date. A what-if, not a rule. */
+  monthlyCents: Cents.min(0),
+  /** Share of the account that counts toward this goal; null = the whole balance. */
+  savedCents: Cents.min(0).nullable().default(null),
+  kind: z.enum(['goal', 'emergency']).default('goal'),
+  /** Emergency fund only. */
+  months: z.int().min(1).max(36).default(6),
+  monthlyExpenseCents: Cents.min(0).default(0),
+});
+export type SavingsGoal = z.infer<typeof SavingsGoal>;
+
+export const SavingsPlan = z.object({ goals: z.array(SavingsGoal).default([]) });
+export type SavingsPlan = z.infer<typeof SavingsPlan>;
+
 export const UserSettings = z.object({
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
@@ -80,6 +101,7 @@ export const UserSettings = z.object({
     .default([]),
   retirement: RetirementPlan.nullable().default(null),
   debt: DebtPlan.nullable().default(null),
+  savings: SavingsPlan.nullable().default(null),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 
