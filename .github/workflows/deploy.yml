@@ -48,6 +48,29 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # Last look before the code goes live: production's planner, after any migration, on
+      # every statement CI's tests ran. Reads no rows; skipped (with a warning) when the daily
+      # D1 allowance is spent or there's no catalog (a manual run).
+      - uses: actions/download-artifact@v4
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        with:
+          name: query-catalog
+          path: ${{ runner.temp }}/catalog
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Query plans (production)
+        working-directory: apps/api
+        run: |
+          if [ -f "$RUNNER_TEMP/catalog/api-tests.log" ]; then
+            node --experimental-strip-types scripts/check-plans.ts "$RUNNER_TEMP/catalog/api-tests.log" --remote
+          else
+            echo "::warning::No query catalog from CI; production plans not checked."
+          fi
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
       - run: pnpm --filter @rise/api run deploy
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -169,7 +169,11 @@ export async function deleteAccount(userId: UserId, db: D1Database, accountId: s
     db
       .prepare('DELETE FROM balance_snapshot WHERE user_id = ?1 AND account_id = ?2')
       .bind(userId, accountId),
-    db.prepare('DELETE FROM account WHERE user_id = ?1 AND id = ?2').bind(userId, accountId),
+    db
+      .prepare(
+        'DELETE FROM account WHERE user_id = ?1 AND id = ?2 /* scan-ok: foreign-key check, rare delete */',
+      )
+      .bind(userId, accountId),
   ]);
 }
 
@@ -257,15 +261,23 @@ export function putSnapshotStmts(
 export async function listSnapshots(
   userId: UserId,
   db: D1Database,
-  opts: { accountId?: string; to?: string } = {},
+  opts: { accountId?: string; from?: string; to?: string } = {},
 ): Promise<SnapshotRow[]> {
+  // With `from`, each account's history starts at its last balance on or before that day:
+  // enough to hold or interpolate the first days, without reading years of daily snapshots.
+  // Driven per account so each read is a range on (account_id, as_of).
   const { results } = await db
     .prepare(
-      `SELECT account_id, as_of, balance_cents FROM balance_snapshot
-       WHERE user_id = ?1 AND (?2 IS NULL OR account_id = ?2) AND (?3 IS NULL OR as_of <= ?3)
-       ORDER BY account_id, as_of`,
+      `SELECT b.account_id, b.as_of, b.balance_cents FROM account a
+       JOIN balance_snapshot b ON b.account_id = a.id
+       WHERE a.user_id = ?1 AND b.user_id = ?1 AND (?2 IS NULL OR a.id = ?2)
+         AND b.as_of <= COALESCE(?3, '9999-12-31')
+         AND b.as_of >= COALESCE(
+           (SELECT MAX(p.as_of) FROM balance_snapshot p WHERE p.account_id = a.id AND p.as_of <= ?4),
+           ?4, '')
+       ORDER BY b.account_id, b.as_of`,
     )
-    .bind(userId, opts.accountId ?? null, opts.to ?? null)
+    .bind(userId, opts.accountId ?? null, opts.to ?? null, opts.from ?? null)
     .all<SnapshotRow>();
   return results;
 }
