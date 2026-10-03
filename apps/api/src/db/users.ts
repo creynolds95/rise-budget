@@ -66,3 +66,14 @@ export async function updateSettings(
     .run();
   return settings;
 }
+
+/** The settings write as a statement, to commit in one batch with the change it goes with. */
+export function updateSettingsStmt(
+  userId: UserId,
+  db: D1Database,
+  settings: UserSettings,
+): D1PreparedStatement {
+  return db
+    .prepare('UPDATE user SET settings_json = ?2 WHERE id = ?1 /* scoped:user.id */')
+    .bind(userId, JSON.stringify(settings));
+}

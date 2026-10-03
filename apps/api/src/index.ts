@@ -26,6 +26,7 @@ import { devices } from './routes/devices';
 import { findUserIdByEmail } from './db';
 import type { Env } from './env';
 import { BACKUP_CRON, runBackup } from './backup/run';
+import { applyLoanPayments } from './lib/loanPayments';
 import { runSync } from './sync/run';
 import { sourceFromEnv } from './sync/source';
 
@@ -104,6 +105,17 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
     const userId = await findUserIdByEmail(db, env.SIMPLEFIN_OWNER_EMAIL);
     if (!userId) return;
     const r = await runSync(db, userId, source);
+    if (r.status !== 'failed') {
+      // A loan-payment hiccup must not fail the sync; the Debt page still offers Apply by hand.
+      await applyLoanPayments(db, userId, new Date(event.scheduledTime)).catch((e: unknown) =>
+        log({
+          job,
+          ok: false,
+          step: 'loan-payments',
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+    }
     log({ job, ok: r.status !== 'failed', ms: Date.now() - started, status: r.status });
   } catch (e) {
     // Rethrown so the Cron Trigger is marked failed in Cloudflare too; the Dashboard flags a

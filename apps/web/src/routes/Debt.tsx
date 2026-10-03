@@ -350,6 +350,25 @@ export function Debt() {
       setError(e instanceof ApiError ? e.message : 'Could not update the balances.');
     }
   };
+  const lastAuto =
+    current.lastAuto && current.lastAuto.period >= addMonths(period, -1) ? current.lastAuto : null;
+  const undoAuto = async () => {
+    if (!lastAuto) return;
+    setError(null);
+    try {
+      for (const l of lastAuto.loans)
+        await api('POST', `/accounts/${l.accountId}/snapshots`, {
+          asOf: l.asOf,
+          balanceCents: -l.beforeCents,
+        });
+      // The month stays marked done, so the next sync doesn't apply it again.
+      await api('PATCH', '/me/settings', { debt: { ...current, lastAuto: null } });
+      await qc.invalidateQueries({ queryKey: ['me'] });
+      await invalidateMoney();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not undo.');
+    }
+  };
   const skip = async () => {
     const due = new Set(suggestions.map((s) => s.plan.accountId));
     await api('PATCH', '/me/settings', {
@@ -478,6 +497,35 @@ export function Debt() {
         }
         shape={
           <>
+            {lastAuto && (
+              <div className="mb-4 rounded-card bg-surface p-4 shadow-soft">
+                <p className="type-label font-semibold text-ink-muted">
+                  {monthName(lastAuto.period, false)} payments applied
+                </p>
+                <ul className="mt-2">
+                  {lastAuto.loans.map((l) => (
+                    <li
+                      key={l.accountId}
+                      className="flex items-baseline justify-between gap-3 py-1.5"
+                    >
+                      <span className="min-w-0 truncate">{nameOf(l.accountId)}</span>
+                      <span className="shrink-0 money text-ink-muted">
+                        {formatCents(l.beforeCents, { whole: true })} →{' '}
+                        <span className="text-ink">
+                          {formatCents(l.afterCents, { whole: true })}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {!suggestions.length && error && <p className="mt-2 text-clay">{error}</p>}
+                <div className="mt-3">
+                  <Button variant="quiet" onClick={() => void undoAuto()}>
+                    Undo
+                  </Button>
+                </div>
+              </div>
+            )}
             {suggestions.length > 0 && (
               <div className="mb-4 rounded-card bg-surface p-4 shadow-soft">
                 <p className="type-label font-semibold text-ink-muted">
@@ -541,6 +589,16 @@ export function Debt() {
                       { id: 'avalanche', label: 'Highest rate' },
                     ]}
                     onChange={(strategy) => edit({ strategy })}
+                  />
+                }
+              />
+              <EditRow
+                label="Apply payments when they post"
+                field={
+                  <Toggle
+                    label="Apply payments when they post"
+                    on={current.autoApply}
+                    onChange={(autoApply) => edit({ autoApply })}
                   />
                 }
               />
