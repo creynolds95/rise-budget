@@ -13,6 +13,7 @@ const { values } = parseArgs({
     remote: { type: 'boolean', default: false },
     sync: { type: 'boolean', default: false },
     errors: { type: 'boolean', default: false },
+    schema: { type: 'boolean', default: false },
   },
 });
 const scope = values.remote ? '--remote' : '--local';
@@ -114,6 +115,51 @@ if (values.errors) {
   console.log(JSON.stringify(bad.slice(0, 80), null, 1));
   if (rows.length && !bad.length)
     console.log('sample event keys:', Object.keys(events[0] as object));
+  process.exit(0);
+}
+
+if (values.schema) {
+  // Schema and planner state only (names, no data), so it's safe in a public run log.
+  console.log(
+    'indexes:',
+    JSON.stringify(
+      query(
+        `SELECT tbl_name, name FROM sqlite_master WHERE type = 'index' ORDER BY tbl_name, name`,
+      ),
+    ),
+  );
+  console.log('migrations:', JSON.stringify(query(`SELECT name FROM d1_migrations ORDER BY id`)));
+  try {
+    console.log('sqlite_stat1:', JSON.stringify(query(`SELECT tbl, idx, stat FROM sqlite_stat1`)));
+  } catch {
+    console.log('sqlite_stat1: none');
+  }
+  // The pre-#129 form, left to the planner, to see what production's SQLite picks for it.
+  console.log(
+    'split lookup plan, unpinned:',
+    JSON.stringify(
+      query(
+        `EXPLAIN QUERY PLAN SELECT s.id FROM json_each('["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z"]') j JOIN split s ON s.txn_id = j.value WHERE s.user_id = 'u' ORDER BY s.sort_order, s.id`,
+      ),
+    ),
+  );
+  console.log(
+    'split lookup plan:',
+    JSON.stringify(
+      query(
+        `EXPLAIN QUERY PLAN SELECT s.id FROM json_each('["a","b"]') j CROSS JOIN split s ON s.txn_id = j.value WHERE s.user_id = 'u'`,
+      ),
+    ),
+  );
+  console.log(
+    'row counts:',
+    JSON.stringify(
+      query(
+        `SELECT (SELECT COUNT(*) FROM txn) AS txn, (SELECT COUNT(*) FROM split) AS split,
+           (SELECT COUNT(*) FROM balance_snapshot) AS snapshots, (SELECT COUNT(*) FROM audit_log) AS audit`,
+      ),
+    ),
+  );
   process.exit(0);
 }
 
