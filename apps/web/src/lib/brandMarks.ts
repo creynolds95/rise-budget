@@ -43,3 +43,14 @@ export const BRAND_MARKS = {
 } as const;
 
 export type BrandMark = keyof typeof BRAND_MARKS;
+
+/** Colors for the badges drawn in components/DrawnMarks (institutions with no free mark). */
+export const DRAWN_COLORS = {
+  guidestoneRing: '#d6d6d6',
+  guidestoneDark: '#1f6b3a',
+  guidestoneMid: '#3d8b45',
+  guidestoneLight: '#8cc63f',
+  mohela: '#22553a',
+  empowerBlue: '#1b2d5b',
+  empowerRed: '#c8102e',
+} as const;

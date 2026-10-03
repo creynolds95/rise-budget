@@ -2,17 +2,19 @@
  * Badges drawn after institutions with no free vector mark, on a 36px circle. Each keeps the
  * institution's own colors, so they don't follow the theme.
  */
+import { DRAWN_COLORS as C } from '../lib/brandMarks';
+
 const svg = { width: 36, height: 36, viewBox: '0 0 36 36' };
 
 function GuideStone() {
   return (
     <svg {...svg}>
-      <circle cx="18" cy="18" r="17.5" fill="#fff" stroke="#d6d6d6" />
+      <circle cx="18" cy="18" r="17.5" fill="#fff" stroke={C.guidestoneRing} />
       <g transform="translate(18 18) scale(1.25) skewX(-28) translate(-18 -17.5)">
-        <rect x="9" y="12" width="10" height="4.5" rx="0.8" fill="#1f6b3a" />
-        <rect x="20.5" y="12" width="6" height="4.5" rx="0.8" fill="#8cc63f" />
-        <rect x="11" y="18" width="7" height="5" rx="0.8" fill="#3d8b45" />
-        <rect x="19.5" y="18" width="7.5" height="5" rx="0.8" fill="#1f6b3a" />
+        <rect x="9" y="12" width="10" height="4.5" rx="0.8" fill={C.guidestoneDark} />
+        <rect x="20.5" y="12" width="6" height="4.5" rx="0.8" fill={C.guidestoneLight} />
+        <rect x="11" y="18" width="7" height="5" rx="0.8" fill={C.guidestoneMid} />
+        <rect x="19.5" y="18" width="7.5" height="5" rx="0.8" fill={C.guidestoneDark} />
       </g>
     </svg>
   );
@@ -21,7 +23,7 @@ function GuideStone() {
 function Mohela() {
   return (
     <svg {...svg}>
-      <circle cx="18" cy="18" r="18" fill="#22553a" />
+      <circle cx="18" cy="18" r="18" fill={C.mohela} />
       <rect x="0" y="13" width="36" height="10" fill="#fff" />
       <text
         x="18"
@@ -31,7 +33,7 @@ function Mohela() {
         fontWeight="700"
         fontSize="7.4"
         letterSpacing="-0.1"
-        fill="#22553a"
+        fill={C.mohela}
       >
         MOHELA
       </text>
@@ -42,8 +44,8 @@ function Mohela() {
 function Empower() {
   return (
     <svg {...svg}>
-      <circle cx="18" cy="18" r="18" fill="#1b2d5b" />
-      <path d="M0 26h36v10H0z" fill="#c8102e" />
+      <circle cx="18" cy="18" r="18" fill={C.empowerBlue} />
+      <path d="M0 26h36v10H0z" fill={C.empowerRed} />
       <path d="M0 24.5h36V26H0z" fill="#fff" />
       <text
         x="18"
