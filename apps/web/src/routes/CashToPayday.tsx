@@ -173,7 +173,7 @@ function AddManualEventSheet({
       </label>
       <label className="mt-3 flex flex-col gap-1">
         <span className="type-caption text-ink-muted">Amount</span>
-        <MoneyField label="Amount" cents={amountCents} onCommit={setAmountCents} />
+        <MoneyField label="Amount" cents={amountCents} draft onCommit={setAmountCents} />
       </label>
       <ScheduleFields
         draft={draft}
@@ -337,7 +337,7 @@ function EditScheduleSheet({
       )}
       <label className="mt-3 flex flex-col gap-1">
         <span className="type-caption text-ink-muted">Amount</span>
-        <MoneyField label="Amount" cents={amountCents} onCommit={setAmountCents} />
+        <MoneyField label="Amount" cents={amountCents} draft onCommit={setAmountCents} />
       </label>
       <ScheduleFields
         draft={draft}
