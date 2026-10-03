@@ -1,9 +1,11 @@
-import { simulatePayoff, stepBalance, type Strategy } from '@rise/shared/debt';
+import { isDue, simulatePayoff, stepBalance, type Strategy } from '@rise/shared/debt';
 import type { Account, DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
-import { addMonths, periodOf } from './dates';
+import { addMonths } from './dates';
 
 export const DEFAULT_DEBT_PLAN: DebtPlan = {
   loans: [],
+  autoApply: true,
+  lastAuto: null,
   strategy: 'snowball',
   rollForward: true,
   extraCents: 0,
@@ -93,9 +95,6 @@ export interface PaymentSuggestion {
   afterCents: number;
 }
 
-const daysIn = (period: string): number =>
-  new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0)).getUTCDate();
-
 /**
  * Loans whose payment for this month is due and not yet in the balance. Manual accounts only:
  * a synced balance already comes from the bank. Nothing is applied until the user says so.
@@ -105,14 +104,11 @@ export function dueSuggestions(
   accounts: Pick<Account, 'id' | 'name' | 'source' | 'balanceCents' | 'archivedAt'>[],
   today: string,
 ): PaymentSuggestion[] {
-  const period = periodOf(today);
-  const day = Number(today.slice(8, 10));
   return plan.loans.flatMap((l) => {
     const a = accounts.find((x) => x.id === l.accountId);
     if (!a || a.archivedAt || a.source !== 'manual') return [];
     const owed = owedCents(a.balanceCents);
-    const due = Math.min(l.dueDay, daysIn(period)) <= day;
-    if (owed === 0 || !due || l.appliedThrough >= period || l.paymentCents === 0) return [];
+    if (!isDue({ ...l, owedCents: owed }, today)) return [];
     return [
       {
         plan: l,

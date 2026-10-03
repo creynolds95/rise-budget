@@ -51,8 +51,27 @@ export const DebtLoanPlan = z.object({
 });
 export type DebtLoanPlan = z.infer<typeof DebtLoanPlan>;
 
+/** What the last automatic apply did, so the Debt page can say so and undo it. */
+export const DebtAutoRun = z.object({
+  period: z.string().regex(/^\d{4}-\d{2}$/),
+  loans: z.array(
+    z.object({
+      accountId: Id,
+      beforeCents: Cents.min(0),
+      afterCents: Cents.min(0),
+      /** The day the balance was written; undo rewrites the same day. */
+      asOf: IsoDate,
+      prevApplied: z.string().regex(/^\d{4}-\d{2}$/),
+    }),
+  ),
+});
+export type DebtAutoRun = z.infer<typeof DebtAutoRun>;
+
 export const DebtPlan = z.object({
   loans: z.array(DebtLoanPlan).default([]),
+  /** Apply a month's payments on their own once the matching debit posts. */
+  autoApply: z.boolean().default(true),
+  lastAuto: DebtAutoRun.nullable().default(null),
   strategy: z.enum(['snowball', 'avalanche']).default('snowball'),
   /** A finished loan's payment moves on to the next loan. */
   rollForward: z.boolean().default(true),
