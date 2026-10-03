@@ -42,6 +42,16 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No migration changes since the last successful deploy ($last); skipping D1 migrate."
           fi
+      # A migration's plan on production's planner before it runs: a backfill that reads a table
+      # once per row would spend the day's allowance during the deploy itself.
+      - name: Migration plans (production)
+        if: steps.migrations.outputs.run == 'true'
+        working-directory: apps/api
+        run: node --experimental-strip-types scripts/check-plans.ts --migrations --remote
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
       # Migrations before the code that depends on them goes live.
       - if: steps.migrations.outputs.run == 'true'
         run: pnpm --filter @rise/api migrate:remote
