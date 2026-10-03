@@ -6,7 +6,10 @@ import { call, signedInUser } from './helpers/http';
 type U = Awaited<ReturnType<typeof signedInUser>>;
 const NOV_1 = new Date('2026-11-01T18:00:00Z');
 
-async function setup(u: U, opts: { autoApply?: boolean; debitCents?: number | null } = {}) {
+async function setup(
+  u: U,
+  opts: { autoApply?: boolean; debitCents?: number | null; merchant?: string } = {},
+) {
   const mk = async (name: string, kind: string) =>
     (await call('POST', '/accounts', { access: u.access, body: { name, kind } })).json.id as string;
   const checking = await mk('Checking', 'depository');
@@ -27,6 +30,7 @@ async function setup(u: U, opts: { autoApply?: boolean; debitCents?: number | nu
     dueDay: 1,
     group: 'student',
     appliedThrough: '2026-10',
+    merchant: opts.merchant ?? '',
   });
   await call('PATCH', '/me/settings', {
     access: u.access,
@@ -104,6 +108,22 @@ describe('automatic monthly loan balances', () => {
 
   it('does nothing without a debt plan', async () => {
     const u = await signedInUser();
+    expect(await applyLoanPayments(env.DB, u.userId, NOV_1)).toBe(0);
+  });
+
+  it('with a debit name set, any amount from that merchant applies the plan payments', async () => {
+    const u = await signedInUser();
+    const { loanA } = await setup(u, { merchant: 'MOHELA', debitCents: 12_345 });
+    expect(await applyLoanPayments(env.DB, u.userId, NOV_1)).toBe(2);
+    expect(await balance(u, loanA)).toBe(-(195_827 + 597 - 4_114));
+    const run = (await debt(u)).lastAuto;
+    expect(run.debitCents).toBe(12_345);
+    expect(run.plannedCents).toBe(7_928);
+  });
+
+  it('with a debit name set, a debit from another merchant applies nothing', async () => {
+    const u = await signedInUser();
+    await setup(u, { merchant: 'thecb', debitCents: 7_928 });
     expect(await applyLoanPayments(env.DB, u.userId, NOV_1)).toBe(0);
   });
 });

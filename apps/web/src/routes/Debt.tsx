@@ -88,10 +88,17 @@ function LoanSheet({
   const [apr, setApr] = useState(loan ? aprToText(loan.aprMilliPct) : '');
   const [payment, setPayment] = useState(loan?.paymentCents ?? 0);
   const [dueDay, setDueDay] = useState(String(loan?.dueDay ?? 1));
+  const [merchant, setMerchant] = useState(loan?.merchant ?? '');
   const aprMilli = aprFromText(apr);
   const due = Number(dueDay);
+  const name = merchant.trim();
   const valid =
-    accountId !== null && aprMilli !== null && Number.isInteger(due) && due >= 1 && due <= 31;
+    accountId !== null &&
+    aprMilli !== null &&
+    Number.isInteger(due) &&
+    due >= 1 &&
+    due <= 31 &&
+    (name === '' || name.length >= 3);
   return (
     <Sheet
       open={open}
@@ -108,6 +115,7 @@ function LoanSheet({
             aprMilliPct: aprMilli,
             paymentCents: payment,
             dueDay: due,
+            merchant: name.toLowerCase(),
             appliedThrough: loan?.appliedThrough ?? periodOf(today),
           });
           onClose();
@@ -168,6 +176,19 @@ function LoanSheet({
         <EditRow
           label="Monthly payment"
           field={<MoneyField label="Monthly payment" cents={payment} onCommit={setPayment} />}
+        />
+        <EditRow
+          label="Debit looks like"
+          field={
+            <input
+              aria-label="Debit looks like"
+              placeholder="e.g. mohela"
+              autoCapitalize="none"
+              value={merchant}
+              onChange={(e) => setMerchant(e.target.value)}
+              className="min-h-11 w-40 rounded-input border border-hairline bg-surface px-3 text-right outline-none focus:border-sage-600"
+            />
+          }
         />
         <EditRow
           label="Due day"
@@ -518,6 +539,12 @@ export function Debt() {
                     </li>
                   ))}
                 </ul>
+                {lastAuto.debitCents > 0 && lastAuto.debitCents !== lastAuto.plannedCents && (
+                  <p className="mt-2 type-caption text-ink-muted money">
+                    The debit was {formatCents(lastAuto.debitCents)}; your plan says{' '}
+                    {formatCents(lastAuto.plannedCents)}.
+                  </p>
+                )}
                 {!suggestions.length && error && <p className="mt-2 text-clay">{error}</p>}
                 <div className="mt-3">
                   <Button variant="quiet" onClick={() => void undoAuto()}>

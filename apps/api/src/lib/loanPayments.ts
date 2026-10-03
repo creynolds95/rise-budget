@@ -39,7 +39,7 @@ export async function applyLoanPayments(
   const earliest = due.map((l) => dueDateIn(period, l.dueDay)).sort()[0] as string;
   const from = dateFromDayNumber(dayNumber(earliest) - EARLY_DAYS);
   const outflows = await listOutflows(userId, db, from, today);
-  const applied = planAutoApply(loans, outflows, today);
+  const { applied, debitCents } = planAutoApply(loans, outflows, today);
   if (applied.length === 0) return 0;
   const byAccount = new Map(applied.map((a) => [a.accountId, a]));
   const debt = {
@@ -49,6 +49,10 @@ export async function applyLoanPayments(
     ),
     lastAuto: {
       period,
+      debitCents,
+      plannedCents: plan.loans
+        .filter((l) => byAccount.has(l.accountId))
+        .reduce((n, l) => n + l.paymentCents, 0),
       loans: applied.map((a) => ({
         accountId: a.accountId,
         beforeCents: a.beforeCents,

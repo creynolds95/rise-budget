@@ -17,6 +17,7 @@ const loan = (over: Partial<DebtLoanPlan> = {}): DebtLoanPlan => ({
   dueDay: 14,
   group: 'student',
   appliedThrough: '2026-09',
+  merchant: '',
   ...over,
 });
 const acct = (over: Record<string, unknown> = {}) => ({
