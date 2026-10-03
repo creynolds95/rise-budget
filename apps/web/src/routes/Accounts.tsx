@@ -4,6 +4,7 @@ import { useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
+import { AccountLogo } from '../components/AccountLogo';
 import { HealthNotes } from '../components/HealthNotes';
 import { quietInstitutions, quietWhenStale, StaleNotes, staleText } from '../components/StaleNotes';
 import { Button } from '../components/primitives/Button';
@@ -281,22 +282,25 @@ function AccountRow({
     <NavRow
       to={`/accounts/${a.id}`}
       label={
-        <span className="block min-w-0">
-          <span className="block truncate">
-            {a.name}
-            {a.mask && <span className="text-ink-faint"> ··{a.mask}</span>}
-          </span>
-          <span
-            className={`block truncate type-caption ${stale ? 'text-gold-text' : 'text-ink-faint'}`}
-          >
-            {stale
-              ? quietWhenStale(a) && a.lastSyncedAt
-                ? `Last synced ${shortDate(localToday(tz, new Date(a.lastSyncedAt)))}`
-                : 'Not up to date'
-              : a.source === 'manual'
-                ? 'Manual'
-                : (a.institutionName ?? 'Synced')}
-            {!a.includeInNetWorth && ' · not in net worth'}
+        <span className="flex min-w-0 items-center gap-3">
+          <AccountLogo account={a} />
+          <span className="block min-w-0">
+            <span className="block truncate">
+              {a.name}
+              {a.mask && <span className="text-ink-faint"> ··{a.mask}</span>}
+            </span>
+            <span
+              className={`block truncate type-caption ${stale ? 'text-gold-text' : 'text-ink-faint'}`}
+            >
+              {stale
+                ? quietWhenStale(a) && a.lastSyncedAt
+                  ? `Last synced ${shortDate(localToday(tz, new Date(a.lastSyncedAt)))}`
+                  : 'Not up to date'
+                : a.source === 'manual'
+                  ? 'Manual'
+                  : (a.institutionName ?? 'Synced')}
+              {!a.includeInNetWorth && ' · not in net worth'}
+            </span>
           </span>
         </span>
       }
