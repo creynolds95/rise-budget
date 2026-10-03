@@ -151,7 +151,6 @@ if (values.schema) {
       ),
     ),
   );
-  console.log('sqlite version:', JSON.stringify(query(`SELECT sqlite_version() AS v`)));
   console.log(
     'row counts:',
     JSON.stringify(
