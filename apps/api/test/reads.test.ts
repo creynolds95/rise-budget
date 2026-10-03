@@ -97,3 +97,16 @@ describe('D1 rows read', () => {
     }
   }, 60_000);
 });
+
+describe('split lookup plan', () => {
+  it('walks the id list and searches split by txn_id, never scanning split', async () => {
+    const { results } = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN SELECT s.id FROM json_each(?2) j CROSS JOIN split s INDEXED BY ix_split_txn ON s.txn_id = j.value WHERE s.user_id = ?1`,
+    )
+      .bind('u', '["a"]')
+      .all<{ detail: string }>();
+    const plan = results.map((r) => r.detail);
+    expect(plan[0]).toContain('SCAN j');
+    expect(plan.join('\n')).toContain('SEARCH s USING INDEX ix_split_txn');
+  });
+});

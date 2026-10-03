@@ -9,20 +9,18 @@ import { CategoryPicker } from '../components/CategoryPicker';
 import { RuleOfferSheet } from '../components/RuleOfferSheet';
 import { TxnAmount } from '../components/TxnAmount';
 import { Button } from '../components/primitives/Button';
+import { Chevron } from '../components/primitives/Rows';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get, isQueuedOffline } from '../lib/api';
 import { usePendingChanges } from '../components/OfflineBar';
 import { shortDate } from '../lib/dates';
-import { useAccounts, useCategories, useGroups, useInvalidateMoney } from '../lib/queries';
+import { useAccounts, useCategories, useInvalidateMoney } from '../lib/queries';
 import { transitionClick } from '../lib/transition';
 import {
-  chipsFor,
-  confidentCount,
   currentCategoryId,
   groupQueue,
   transferOffer,
-  type ChipContext,
   type QueueItem,
   type QueueRow,
 } from '../lib/review';
@@ -49,9 +47,9 @@ const UNDO_MS = 5000;
 const isAmazon = (m: string) => /AMAZON|AMZN/.test(m.toUpperCase());
 
 /**
- * T36 / SPEC §8. The daily screen: everything gets reviewed, so every row is one tap —
- * a pre-fill to accept, or the merchant's (or your) usual categories. Each action waits five
- * seconds behind an Undo before it is sent.
+ * T36 / SPEC §8. The daily screen: every row shows its best guess and one tap confirms it;
+ * tapping the guess picks another. Each action waits five seconds behind an Undo before it
+ * is sent.
  */
 export function Review() {
   const qc = useQueryClient();
@@ -64,7 +62,6 @@ export function Review() {
   });
   const accounts = useAccounts().data ?? [];
   const categories = useCategories().data ?? [];
-  const groups = useGroups().data ?? [];
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
   const pending = useRef<Pending | null>(null);
@@ -74,21 +71,10 @@ export function Review() {
 
   const account = (id: string) => accounts.find((a) => a.id === id);
   const catName = (id: string | null) => categories.find((c) => c.id === id)?.name ?? '';
-  const kindOf = new Map(groups.map((g) => [g.id, g.kind]));
-  const ctx: ChipContext = {
-    kinds: new Map(categories.map((c) => [c.id, kindOf.get(c.groupId) ?? 'expense'])),
-    ordered: categories.map((c) => c.id),
-    frequent: queue.data?.frequentCategoryIds ?? [],
-    quiet: new Set(categories.filter((c) => !c.budgeted || c.isCatchall).map((c) => c.id)),
-  };
-
-  // With "Transfer"/"Card payment" already offered, a transfer-like chip would say it twice.
-  const unbudgeted = new Set(categories.filter((c) => !c.budgeted).map((c) => c.id));
-  const offerCtx = (t: QueueItem): ChipContext =>
-    transferOffer(t, account(t.accountId)?.kind)
-      ? { ...ctx, kinds: new Map([...ctx.kinds].filter(([id]) => !unbudgeted.has(id))) }
-      : ctx;
-
+  const catEmoji = (id: string | null) => categories.find((c) => c.id === id)?.emoji;
+  /** The suggestion when there is one worth offering, else what the row is filed under. */
+  const guessId = (t: QueueItem, band: 'confident' | 'guess' | 'none') =>
+    band !== 'none' && t.suggestedCategoryId ? t.suggestedCategoryId : currentCategoryId(t);
   const unhide = (ids: string[]) =>
     setHidden((h) => new Set([...h].filter((x) => !ids.includes(x))));
 
@@ -182,17 +168,6 @@ export function Review() {
     );
   const items = (queue.data?.items ?? []).filter((t) => !hidden.has(t.id) && !queued(t.id));
   const days = groupQueue(items);
-  const confident = items.filter(
-    (t) => t.suggestedCategoryId && !t.isTransfer && t.suggestionConfidence >= 0.9,
-  );
-  const acceptAll = () =>
-    act(
-      confident.map((t) => t.id),
-      `${confident.length} confident ${confident.length === 1 ? 'match' : 'matches'} accepted`,
-      async () => {
-        await api('POST', '/transactions/bulk-accept', { ids: confident.map((t) => t.id) });
-      },
-    );
   const confirmPair = (row: Extract<QueueRow, { kind: 'transfer' }>) =>
     act([row.out.id, row.in.id], 'Transfer confirmed', async () => {
       await Promise.all(
@@ -201,6 +176,35 @@ export function Review() {
         ),
       );
     });
+
+  /** Confirm one row's guess: accept the suggestion, or keep what it is filed under. */
+  const confirm = (t: QueueItem, band: 'confident' | 'guess' | 'none') => {
+    const id = guessId(t, band);
+    if (!id) return null;
+    return id === t.suggestedCategoryId && band !== 'none' ? () => accept(t) : () => file(t, id);
+  };
+  const confirmAll = () => {
+    const rows = days.flatMap((d) => d.rows);
+    const pairs = rows.flatMap((r) => (r.kind === 'transfer' ? [r.out, r.in] : []));
+    const singles = rows.flatMap((r) => {
+      if (r.kind === 'transfer') return [];
+      const id = guessId(r.t, r.band);
+      return id ? [{ t: r.t, id }] : [];
+    });
+    const accepted = singles.filter((s) => s.id === s.t.suggestedCategoryId).map((s) => s.t.id);
+    const kept = singles.filter((s) => s.id !== s.t.suggestedCategoryId);
+    const n = pairs.length / 2 + singles.length;
+    act([...pairs.map((t) => t.id), ...singles.map((s) => s.t.id)], `${n} confirmed`, async () => {
+      await Promise.all([
+        accepted.length > 0 &&
+          api('POST', '/transactions/bulk-accept', { ids: accepted }, { label: `${n} confirmed` }),
+        ...kept.map((s) =>
+          api('PATCH', `/transactions/${s.t.id}`, { categoryId: s.id, reviewState: 'reviewed' }),
+        ),
+        ...pairs.map((t) => api('PATCH', `/transactions/${t.id}`, { reviewState: 'reviewed' })),
+      ]);
+    });
+  };
 
   // Desktop: the top row answers to the keyboard.
   const first = days[0]?.rows[0];
@@ -216,12 +220,8 @@ export function Review() {
         return;
       }
       const t = first.t;
-      const cur = currentCategoryId(t);
-      const chips = chipsFor({ ...t, categoryId: cur }, offerCtx(t), 2);
-      const n = Number(e.key);
-      if (n >= 1 && n <= chips.length) file(t, chips[n - 1] as string);
-      else if (e.key === 'Enter' && t.suggestedCategoryId && first.band !== 'none') accept(t);
-      else if (e.key === 'Enter' && cur) file(t, cur);
+      const ok = confirm(t, first.band);
+      if (e.key === 'Enter' && ok) ok();
       else if (e.key === 'o' || e.key === '/') setPicking(t);
       else if (e.key === 's')
         void nav(`/transactions/${t.id}?split=1&from=${encodeURIComponent(FROM)}`);
@@ -237,22 +237,13 @@ export function Review() {
     <div className="mx-auto max-w-2xl pb-28">
       <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft">
         <BackLink to="/" label="Dashboard" />
-        <h1 className="type-body font-semibold">
-          Review <span className="money text-ink-muted">{queue.data ? items.length : ''}</span>
-        </h1>
+        <h1 className="type-body font-semibold">Needs review</h1>
         <span />
       </header>
 
-      {confident.length > 0 && (
-        <section className="gutter pt-2 pb-2">
-          <Button className="w-full" onClick={acceptAll}>
-            Accept all confident ({confidentCount(items)})
-          </Button>
-        </section>
-      )}
       {error && <p className="gutter py-2 text-clay">{error}</p>}
       <p className="gutter hidden pt-2 type-caption text-ink-faint md:block">
-        Keys for the top row: 1–3 file · Enter accepts · O other · S split · T transfer · U undo
+        Keys for the top row: Enter confirms · O other · S split · T transfer · U undo
       </p>
 
       {!queue.data && (
@@ -272,12 +263,9 @@ export function Review() {
       )}
 
       {days.map((day) => (
-        <section key={day.date} className="pt-3">
-          <h2 className="gutter flex items-baseline justify-between border-b border-hairline pb-1 type-label text-ink-muted">
-            <span>{shortDate(day.date)}</span>
-            {day.totalCents > 0 && <MoneyText cents={day.totalCents} tone="muted" />}
-          </h2>
-          <ul>
+        <section key={day.date} className="gutter pt-6">
+          <h2 className="type-label text-ink-muted">{shortDate(day.date)}</h2>
+          <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
             {day.rows.map((row) =>
               row.kind === 'transfer' ? (
                 <TransferRow
@@ -301,23 +289,10 @@ export function Review() {
                   band={row.band}
                   focused={row === first}
                   account={account(row.t.accountId)?.name ?? ''}
-                  suggestion={catName(row.t.suggestedCategoryId)}
-                  current={catName(currentCategoryId(row.t))}
-                  chips={chipsFor(
-                    { ...row.t, categoryId: currentCategoryId(row.t) },
-                    offerCtx(row.t),
-                    2,
-                  ).map((id) => ({
-                    id,
-                    name: catName(id),
-                  }))}
+                  guess={catName(guessId(row.t, row.band))}
+                  emoji={catEmoji(guessId(row.t, row.band))}
                   offer={transferOffer(row.t, account(row.t.accountId)?.kind)}
-                  onAccept={() => accept(row.t)}
-                  onKeep={() => {
-                    const id = currentCategoryId(row.t);
-                    if (id) file(row.t, id);
-                  }}
-                  onFile={(id) => file(row.t, id)}
+                  onConfirm={confirm(row.t, row.band)}
                   onTransfer={() => markTransfer(row.t)}
                   onPick={() => setPicking(row.t)}
                 />
@@ -326,6 +301,14 @@ export function Review() {
           </ul>
         </section>
       ))}
+
+      {items.length > 0 && (
+        <section className="gutter pt-6">
+          <Button className="w-full" onClick={confirmAll}>
+            Confirm all
+          </Button>
+        </section>
+      )}
 
       {queue.data && queue.data.dropped.length > 0 && (
         <section className="gutter pt-10">
@@ -378,20 +361,45 @@ export function Review() {
   );
 }
 
-const chip = 'min-h-11 shrink-0 rounded-full px-3.5 whitespace-nowrap';
+/** The one confirm button every row ends on. */
+function ConfirmButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className="group flex size-11 shrink-0 items-center justify-center"
+    >
+      {/* A small mark; the button around it keeps a thumb-sized target. */}
+      <span className="flex size-7 items-center justify-center rounded-full border-[1.5px] border-sage-600 text-sage-700 group-active:bg-sage-600 group-active:text-surface">
+        <svg
+          aria-hidden
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          className="fill-none stroke-current"
+          strokeWidth="2.25"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 12.5 10 17.5 19 7" />
+        </svg>
+      </span>
+    </button>
+  );
+}
+
+const quietAction = 'min-h-11 shrink-0 px-2 text-sage-700';
 
 function ReviewRow({
   t,
   band,
   focused,
   account,
-  suggestion,
-  current,
-  chips,
+  guess,
+  emoji,
   offer,
-  onAccept,
-  onKeep,
-  onFile,
+  onConfirm,
   onTransfer,
   onPick,
 }: {
@@ -399,23 +407,20 @@ function ReviewRow({
   band: 'confident' | 'guess' | 'none';
   focused: boolean;
   account: string;
-  suggestion: string;
-  /** The category the row is filed under now (every row gets one on sync). */
-  current: string;
-  chips: { id: string; name: string }[];
+  /** The suggestion when there is one, else the category it is filed under now. */
+  guess: string;
+  emoji: string | null | undefined;
   offer: 'card_payment' | 'transfer' | null;
-  onAccept: () => void;
-  onKeep: () => void;
-  onFile: (categoryId: string) => void;
+  onConfirm: (() => void) | null;
   onTransfer: () => void;
   onPick: () => void;
 }) {
   const start = useRef<{ x: number; y: number } | null>(null);
   const [dx, setDx] = useState(0);
-  const prefilled = band !== 'none' && suggestion !== '';
   const amazon = isAmazon(t.merchantNormalized);
   const navigate = useNavigate();
   const detailTo = `/transactions/${t.id}?from=${encodeURIComponent(FROM)}`;
+  const splitTo = `/transactions/${t.id}?split=1&from=${encodeURIComponent(FROM)}`;
   const onDown = (e: PointerEvent) => {
     if (e.pointerType !== 'mouse') start.current = { x: e.clientX, y: e.clientY };
   };
@@ -427,15 +432,15 @@ function ReviewRow({
     setDx(Math.max(-120, Math.min(120, e.clientX - s.x)));
   };
   const onUp = () => {
-    // Swipe right accepts a pre-fill; swipe left opens the picker (SPEC §8).
-    if (dx > SWIPE_PX && prefilled) onAccept();
+    // Swipe right confirms the guess; swipe left opens the picker (SPEC §8).
+    if (dx > SWIPE_PX && onConfirm) onConfirm();
     else if (dx < -SWIPE_PX) onPick();
     start.current = null;
     setDx(0);
   };
   return (
     <li
-      className={`touch-pan-y border-b border-hairline py-2 transition-transform md:border-l-2 ${
+      className={`touch-pan-y border-b border-hairline py-3 transition-transform last:border-b-0 md:border-l-2 md:pl-2 ${
         focused ? 'md:border-l-sage-600' : 'md:border-l-transparent'
       }`}
       style={{ transform: dx ? `translateX(${dx}px)` : undefined }}
@@ -447,76 +452,56 @@ function ReviewRow({
       <Link
         to={detailTo}
         onClick={transitionClick(navigate, detailTo)}
-        className={`gutter flex items-baseline justify-between gap-3 ${t.isPending ? 'italic' : ''}`}
+        className={`flex items-center justify-between gap-3 active:opacity-70 ${t.isPending ? 'italic' : ''}`}
       >
-        <span className="flex min-w-0 items-baseline gap-2">
-          <span className="max-w-[75%] shrink-0 truncate">{merchantName(t)}</span>
-          {t.isPending && (
-            <span
-              title="Pending"
-              className="shrink-0 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
-            >
-              P
-            </span>
-          )}
-          <span className="min-w-0 truncate type-caption text-ink-faint not-italic">{account}</span>
+        <span className="min-w-0">
+          <span className="block truncate">
+            {emoji && (
+              <span aria-hidden className="mr-2 not-italic">
+                {emoji}
+              </span>
+            )}
+            {merchantName(t)}
+            {t.isPending && (
+              <span
+                title="Pending"
+                className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
+              >
+                P
+              </span>
+            )}
+          </span>
+          <span className="block truncate type-caption text-ink-faint not-italic">{account}</span>
         </span>
         <TxnAmount t={t} className="shrink-0" />
       </Link>
-      <div className="gutter mt-1 flex gap-2 overflow-x-auto [scrollbar-width:none]">
-        {prefilled && (
-          <button
-            onClick={onAccept}
-            aria-label={`Accept ${suggestion}${band === 'guess' ? ' (a guess)' : ''}`}
-            className={`${chip} font-medium ${
-              band === 'confident'
-                ? 'bg-sage-600 text-surface'
-                : 'border border-dashed border-gold bg-surface text-gold-text'
-            }`}
-          >
-            {band === 'confident' ? `✓ ${suggestion}` : `${suggestion}?`}
-          </button>
-        )}
-        {!prefilled && current && (
-          <button
-            onClick={onKeep}
-            aria-label={`Keep ${current}`}
-            className={`${chip} border border-sage-600 bg-surface font-medium text-sage-700`}
-          >
-            ✓ {current}
-          </button>
-        )}
-        {offer &&
-          !['Transfer', 'Credit Card Payment'].includes(prefilled ? suggestion : current) && (
-            <button
-              onClick={onTransfer}
-              className={`${chip} border border-hairline bg-surface text-ink-muted`}
-            >
-              {offer === 'card_payment' ? 'Card payment' : 'Transfer'}
-            </button>
-          )}
-        {chips.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => onFile(c.id)}
-            className={`${chip} border border-hairline bg-surface`}
-          >
-            {c.name}
-          </button>
-        ))}
-        <button onClick={onPick} className={`${chip} px-3 text-sage-700`}>
-          More…
-        </button>
-        <Link
-          to={`/transactions/${t.id}?split=1&from=${encodeURIComponent(FROM)}`}
-          onClick={transitionClick(
-            navigate,
-            `/transactions/${t.id}?split=1&from=${encodeURIComponent(FROM)}`,
-          )}
-          className={`${chip} flex items-center ${amazon ? 'bg-sage-100 font-medium text-sage-700' : 'px-3 text-ink-muted'}`}
+      <div className="mt-2 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onPick}
+          aria-label={`Category: ${guess || 'none'}. Change`}
+          className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-input bg-canvas px-3 text-left active:bg-sage-100"
         >
-          Split
-        </Link>
+          <span className={`truncate ${band === 'guess' ? 'text-gold-text' : ''}`}>
+            {guess ? `${guess}${band === 'guess' ? '?' : ''}` : 'Choose a category'}
+          </span>
+          <Chevron />
+        </button>
+        {offer && guess !== 'Transfer' && guess !== 'Credit Card Payment' && (
+          <button type="button" onClick={onTransfer} className={quietAction}>
+            {offer === 'card_payment' ? 'Card payment' : 'Transfer'}
+          </button>
+        )}
+        {amazon && (
+          <Link
+            to={splitTo}
+            onClick={transitionClick(navigate, splitTo)}
+            className={`${quietAction} flex items-center`}
+          >
+            Split
+          </Link>
+        )}
+        {onConfirm && <ConfirmButton label={`Confirm ${guess}`} onClick={onConfirm} />}
       </div>
     </li>
   );
@@ -533,24 +518,22 @@ function TransferRow(p: {
 }) {
   return (
     <li
-      className={`border-b border-hairline py-2 md:border-l-2 ${p.focused ? 'md:border-l-sage-600' : 'md:border-l-transparent'}`}
+      className={`border-b border-hairline py-3 last:border-b-0 md:border-l-2 md:pl-2 ${p.focused ? 'md:border-l-sage-600' : 'md:border-l-transparent'}`}
     >
-      <div className="gutter flex items-baseline justify-between gap-3">
-        <span className="flex min-w-0 items-baseline gap-2">
-          <span className="truncate">
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block truncate">
             {p.from} → {p.to}
           </span>
-          <span className="shrink-0 type-caption text-ink-faint">Transfer · not spending</span>
+          <span className="block type-caption text-ink-faint">Transfer · not spending</span>
         </span>
         <MoneyText cents={p.out.amountCents} tone="muted" className="shrink-0" />
       </div>
-      <div className="gutter mt-1 flex gap-2">
-        <button onClick={p.onConfirm} className={`${chip} bg-sage-600 font-medium text-surface`}>
-          ✓ Transfer
-        </button>
-        <button onClick={p.onUnlink} className={`${chip} px-3 text-sage-700`}>
+      <div className="mt-2 flex items-center justify-end gap-1">
+        <button type="button" onClick={p.onUnlink} className={quietAction}>
           Not a transfer
         </button>
+        <ConfirmButton label="Confirm transfer" onClick={p.onConfirm} />
       </div>
     </li>
   );
