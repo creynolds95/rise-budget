@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       migrate:
-        description: 'Run D1 migrations even if none changed in the last commit'
+        description: 'Run D1 migrations even if none changed since the last successful deploy'
         type: boolean
         default: false
   workflow_run:
@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -27,14 +27,20 @@ jobs:
       - run: pnpm --filter @rise/web build
       # Even listing applied migrations costs D1 reads, and fails outright once the free daily
       # cap is spent — which used to block releases that had no schema change at all. So only
-      # touch D1 when this commit adds or changes a migration (or a manual run asks to).
+      # touch D1 when a migration changed since the last deploy that went live (a failed deploy
+      # never counts, so a migration that missed its deploy is retried by the next one), or
+      # when a manual run asks for it.
       - id: migrations
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ inputs.migrate }}" = "true" ] || ! git diff --quiet HEAD~1 HEAD -- apps/api/migrations; then
+          last=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].head_sha // empty')
+          if [ "${{ inputs.migrate }}" = "true" ] || [ -z "$last" ] || ! git cat-file -e "$last^{commit}" 2>/dev/null \
+             || ! git diff --quiet "$last" HEAD -- apps/api/migrations; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No migration changes in this commit; skipping D1 migrate."
+            echo "No migration changes since the last successful deploy ($last); skipping D1 migrate."
           fi
       # Migrations before the code that depends on them goes live.
       - if: steps.migrations.outputs.run == 'true'
