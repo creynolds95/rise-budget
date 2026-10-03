@@ -269,6 +269,35 @@ export function putSnapshotStmts(
   ];
 }
 
+/** Removes one dated balance, then re-points the current balance at the newest one left.
+ *  The last remaining balance is never removed: an account always has a reported value. */
+export async function deleteSnapshot(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+  asOf: string,
+): Promise<boolean> {
+  const [del] = await db.batch([
+    db
+      .prepare(
+        `DELETE FROM balance_snapshot WHERE user_id = ?1 AND account_id = ?2 AND as_of = ?3
+         AND EXISTS (SELECT 1 FROM balance_snapshot o
+                     WHERE o.user_id = ?1 AND o.account_id = ?2 AND o.as_of <> ?3)`,
+      )
+      .bind(userId, accountId, asOf),
+    db
+      .prepare(
+        `UPDATE account SET balance_cents = COALESCE(
+           (SELECT b.balance_cents FROM balance_snapshot b
+            WHERE b.user_id = ?1 AND b.account_id = ?2 ORDER BY b.as_of DESC LIMIT 1),
+           balance_cents)
+         WHERE user_id = ?1 AND id = ?2`,
+      )
+      .bind(userId, accountId),
+  ]);
+  return (del?.meta.changes ?? 0) > 0;
+}
+
 export async function listSnapshots(
   userId: UserId,
   db: D1Database,
