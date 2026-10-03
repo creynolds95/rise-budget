@@ -116,7 +116,7 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
     });
     throw e;
   } finally {
-    await flushUsage(env.DB, tally, 0);
+    await flushUsage(env.DB, tally, 0, `cron ${job}`);
   }
 }
 

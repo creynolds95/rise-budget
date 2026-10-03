@@ -34,6 +34,16 @@ describe('D1 usage meter', () => {
     expect(r.json.days[0].rowsRead).toBeGreaterThan(0);
     expect(r.json.days[0].requests).toBeGreaterThan(0);
   });
+
+  it('names the heaviest routes by pattern, not by URL', async () => {
+    const u = await signedInUser();
+    await call('GET', '/periods/2026-10', { access: u.access });
+    await call('GET', '/periods/2026-11', { access: u.access });
+    const r = await call('GET', '/usage', { access: u.access });
+    const row = r.json.routes.find((x: { route: string }) => x.route === 'GET /api/periods/:id');
+    expect(row?.requests).toBeGreaterThanOrEqual(2);
+    expect(row?.rowsRead).toBeGreaterThan(0);
+  });
 });
 
 describe('latest backup download', () => {

@@ -62,10 +62,16 @@ export function meterDb(db: D1Database, tally: Tally): D1Database {
 }
 
 /** Writes a tally into today's row. Never throws: a meter must not break the thing it measures. */
-export async function flushUsage(db: D1Database, tally: Tally, requests: number, now = new Date()) {
+export async function flushUsage(
+  db: D1Database,
+  tally: Tally,
+  requests: number,
+  route?: string,
+  now = new Date(),
+) {
   if (tally.read === 0 && tally.written === 0) return;
   try {
-    await addUsage(db, now, tally.read, tally.written, requests);
+    await addUsage(db, now, tally.read, tally.written, requests, route);
   } catch {
     // The cap itself can make this fail; there is nothing useful left to do about it.
   }
@@ -77,7 +83,8 @@ export const meter: MiddlewareHandler<AppEnv> = async (c: Context<AppEnv>, next)
   const tally: Tally = { read: 0, written: 0 };
   c.env = { ...c.env, DB: meterDb(raw, tally) } satisfies Env;
   await next();
-  const flush = flushUsage(raw, tally, 1);
+  // The route pattern (/periods/:id), not the URL, so every month lands on one row.
+  const flush = flushUsage(raw, tally, 1, `${c.req.method} ${c.req.routePath}`);
   try {
     c.executionCtx.waitUntil(flush);
   } catch {
