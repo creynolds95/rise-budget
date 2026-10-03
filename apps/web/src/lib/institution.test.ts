@@ -46,10 +46,13 @@ describe('accountBadge', () => {
       source: 'manual',
       institutionName: null,
     });
-    expect(accountBadge(manual('Fed Loan 1-03'))).toMatchObject({ type: 'word', text: 'M' });
+    expect(accountBadge(manual('Fed Loan 1-03'))).toEqual({ type: 'drawn', mark: 'mohela' });
     expect(accountBadge(manual('CL0004'))).toMatchObject({ type: 'word', text: 'THECB' });
     expect(accountBadge(manual('Mortgage'))).toEqual({ type: 'glyph', icon: 'doc' });
-    expect(accountBadge(synced('GuideStone Financial Resources'))).toMatchObject({ text: 'GS' });
-    expect(accountBadge(synced('Empower Retirement'))).toMatchObject({ text: 'E' });
+    expect(accountBadge(synced('GuideStone Financial Resources'))).toEqual({
+      type: 'drawn',
+      mark: 'guidestone',
+    });
+    expect(accountBadge(synced('Empower Retirement'))).toEqual({ type: 'drawn', mark: 'empower' });
   });
 });

@@ -1,5 +1,6 @@
 import { BRAND_MARKS } from '../lib/brandMarks';
 import { accountBadge } from '../lib/institution';
+import { DRAWN_MARKS } from './DrawnMarks';
 import { Icon } from './primitives/Icon';
 
 /** The round 36px badge left of an account name: the bank's mark, else a quiet stand-in. */
@@ -13,6 +14,14 @@ export function AccountLogo({ account }: { account: Parameters<typeof accountBad
         <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff">
           <path d={m.path} />
         </svg>
+      </span>
+    );
+  }
+  if (b.type === 'drawn') {
+    const Mark = DRAWN_MARKS[b.mark];
+    return (
+      <span aria-hidden className={`${circle} overflow-hidden`}>
+        <Mark />
       </span>
     );
   }

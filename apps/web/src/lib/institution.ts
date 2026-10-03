@@ -5,6 +5,7 @@ import type { BrandMark } from './brandMarks';
 export type AccountBadge =
   | { type: 'brand'; mark: BrandMark }
   | { type: 'word'; text: string; color: string }
+  | { type: 'drawn'; mark: 'guidestone' | 'mohela' | 'empower' }
   | { type: 'initials'; text: string }
   | { type: 'glyph'; icon: 'bank' | 'card' | 'doc' | 'home' | 'wallet' };
 
@@ -23,11 +24,11 @@ const BRANDS: [RegExp, AccountBadge][] = [
   // No free vector mark for these two; their colors and a wordmark read close enough.
   [/\busaa\b/, { type: 'word', text: 'USAA', color: '#12395B' }],
   [/\bciti(bank)?\b/, { type: 'word', text: 'citi', color: '#056DAE' }],
-  [/\bguidestone\b/, { type: 'word', text: 'GS', color: '#00558C' }],
-  [/\bempower\b/, { type: 'word', text: 'E', color: '#1C2B4A' }],
+  [/\bguidestone\b/, { type: 'drawn', mark: 'guidestone' }],
+  [/\bempower\b/, { type: 'drawn', mark: 'empower' }],
   // Student loans: federal ones, and the Texas Higher Education Coordinating Board's
   // (synced under its full name, or kept by hand as "CL0001"-style accounts).
-  [/\b(fed|federal) loan\b/, { type: 'word', text: 'M', color: '#1A4480' }],
+  [/\b(fed|federal) loan\b|\bmohela\b/, { type: 'drawn', mark: 'mohela' }],
   [/\btexas higher education\b|^cl\d{4}\b/, { type: 'word', text: 'THECB', color: '#7A1F2B' }],
 ];
 
