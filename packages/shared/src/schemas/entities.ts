@@ -21,6 +21,21 @@ import {
 
 /** Entity shapes as the API speaks them (camelCase, booleans as booleans). */
 
+/** Retirement plan, all in today's dollars. One household age; contributions are entered by hand. */
+export const RetirementPlan = z.object({
+  currentAge: z.int().min(18).max(100),
+  goalAge: z.int().min(40).max(90),
+  /** Monthly spend wanted in retirement, in today's dollars. The needed balance is derived from it. */
+  spendTargetCents: Cents.min(0),
+  /** What goes in each month, per retirement account, match included. */
+  contributions: z.array(z.object({ accountId: Id, monthlyCents: Cents.min(0) })).default([]),
+  /** Real (after-inflation) growth, basis points. Conservative default. */
+  realGrowthBps: z.int().min(0).max(1000).default(400),
+  /** Safe-withdrawal rate, basis points. Conservative default. */
+  withdrawalBps: z.int().min(100).max(1000).default(350),
+});
+export type RetirementPlan = z.infer<typeof RetirementPlan>;
+
 export const UserSettings = z.object({
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
@@ -35,6 +50,7 @@ export const UserSettings = z.object({
   dismissedPayMerchants: z
     .array(z.object({ merchant: z.string(), displayName: z.string() }))
     .default([]),
+  retirement: RetirementPlan.nullable().default(null),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 
