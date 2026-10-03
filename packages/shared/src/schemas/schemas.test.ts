@@ -59,6 +59,7 @@ describe('schemas', () => {
       retirement: null,
       debt: null,
       savings: null,
+      follow: { rules: [], log: [] },
     });
     expect(u.timezone).toBe('America/Chicago');
   });

@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { listSyncRuns } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
+import { applyFollows } from '../lib/follow';
 import { applyLoanPayments } from '../lib/loanPayments';
 import { body } from '../lib/validate';
 import { runSync } from '../sync/run';
@@ -16,8 +17,10 @@ sync.post('/run', async (c) => {
   if (!source) throw new AppError(409, 'CONFLICT', 'SimpleFIN is not connected yet');
   const { since } = await body(c, RunSyncBody);
   const result = await runSync(c.env.DB, c.get('userId'), source, since ? { since } : {});
-  if (result.status !== 'failed')
+  if (result.status !== 'failed') {
     await applyLoanPayments(c.env.DB, c.get('userId')).catch(() => undefined);
+    await applyFollows(c.env.DB, c.get('userId')).catch(() => undefined);
+  }
   return c.json(result);
 });
 

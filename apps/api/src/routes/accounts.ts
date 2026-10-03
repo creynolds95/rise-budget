@@ -2,6 +2,7 @@ import { staleness } from '@rise/shared/budget';
 import {
   CreateAccountBody,
   CreateSnapshotBody,
+  FollowUndoBody,
   IsoDate,
   isLiabilityKind,
   PatchAccountBody,
@@ -24,6 +25,7 @@ import {
 } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
+import { undoFollow } from '../lib/follow';
 import { body } from '../lib/validate';
 
 export const accounts = new Hono<AppEnv>();
@@ -132,6 +134,14 @@ accounts.post('/:id/convert-to-manual', async (c) => {
   if (a.source !== 'simplefin') throw new AppError(409, 'CONFLICT', 'Already a manual account');
   await convertToManual(userId, c.env.DB, id);
   return c.json(withStaleness((await getAccount(userId, c.env.DB, id)) as Account, Date.now()));
+});
+
+/** Reverses what a follow rule did to this account for one transaction. */
+accounts.post('/:id/follow-undo', async (c) => {
+  const { txnId } = await body(c, FollowUndoBody);
+  const ok = await undoFollow(c.env.DB, c.get('userId'), c.req.param('id'), txnId);
+  if (!ok) throw new AppError(404, 'NOT_FOUND', 'Nothing to undo');
+  return c.json({ undone: true });
 });
 
 /** Erases a manual account and every balance it ever reported. Never for a synced account,

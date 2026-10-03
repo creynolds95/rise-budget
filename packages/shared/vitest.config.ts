@@ -16,6 +16,7 @@ export default defineConfig({
         'src/retirement/**/*.ts',
         'src/debt/**/*.ts',
         'src/savings/**/*.ts',
+        'src/follow/**/*.ts',
       ],
       exclude: [
         'src/**/*.test.ts',

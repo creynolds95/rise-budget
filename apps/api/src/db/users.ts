@@ -58,7 +58,11 @@ export async function updateSettings(
 ): Promise<UserSettings | null> {
   const user = await getUser(userId, db);
   if (!user) return null;
-  const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+  const defined: Record<string, unknown> = Object.fromEntries(
+    Object.entries(patch).filter(([, v]) => v !== undefined),
+  );
+  if (patch.follow)
+    defined['follow'] = { rules: patch.follow.rules, log: user.settings.follow.log };
   const settings = UserSettings.parse({ ...user.settings, ...defined });
   await db
     .prepare('UPDATE user SET settings_json = ?2 WHERE id = ?1 /* scoped:user.id */')

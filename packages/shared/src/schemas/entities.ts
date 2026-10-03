@@ -116,6 +116,39 @@ export type SavingsGoal = z.infer<typeof SavingsGoal>;
 export const SavingsPlan = z.object({ goals: z.array(SavingsGoal).max(50).default([]) });
 export type SavingsPlan = z.infer<typeof SavingsPlan>;
 
+/** Most log entries kept; far above what a 45-day window ever holds. */
+export const FOLLOW_LOG_MAX = 1000;
+
+/** A manual account whose balance follows matching rows in other accounts (Apple Savings). */
+export const FollowRule = z.object({
+  accountId: Id,
+  /** Text to find in the row's descriptor or merchant. */
+  match: z.string().trim().toLowerCase().min(3).max(60),
+  /** Only rows posted on or after this day are followed, so history never changes. */
+  since: IsoDate,
+});
+export type FollowRule = z.infer<typeof FollowRule>;
+
+/** What a rule did to a balance, kept so it can be undone and never applied twice. */
+export const FollowEntry = z.object({
+  txnId: Id,
+  accountId: Id,
+  deltaCents: z.int(),
+  /** The day the balance was written. */
+  asOf: IsoDate,
+  undone: z.boolean().default(false),
+});
+export type FollowEntry = z.infer<typeof FollowEntry>;
+
+export const FollowSettings = z.object({
+  rules: z.array(FollowRule).max(20).default([]),
+  /** Newest last. Entries older than the sync window are pruned by date (never by count,
+   * which could let a row drop out of the log while still inside the window and be
+   * followed twice); the cap only bounds the settings size. */
+  log: z.array(FollowEntry).max(FOLLOW_LOG_MAX).default([]),
+});
+export type FollowSettings = z.infer<typeof FollowSettings>;
+
 export const UserSettings = z.object({
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
@@ -139,6 +172,7 @@ export const UserSettings = z.object({
   retirement: RetirementPlan.nullable().default(null),
   debt: DebtPlan.nullable().default(null),
   savings: SavingsPlan.nullable().default(null),
+  follow: FollowSettings.default({ rules: [], log: [] }),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 
