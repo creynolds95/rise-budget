@@ -101,6 +101,17 @@ describe('idle cron syncs skip recurring re-detection', () => {
   });
 });
 
+/** The card keeps reporting (groceries on Sep 12), so a missed Netflix there is knowable. */
+const reportThrough = (userId: string, extra: [string, string, number, string][] = []) =>
+  runSync(
+    env.DB,
+    userId as never,
+    netflix([['k4', '2026-09-12', 3_100, 'KROGER #512'], ...extra]),
+    {
+      now: new Date('2026-09-14T20:00:00Z'),
+    },
+  );
+
 describe('T31 recurring detection', () => {
   it('sync detects a monthly series from 3 charges and predicts the next', async () => {
     const s = await setup();
@@ -147,6 +158,7 @@ describe('T31 recurring detection', () => {
       now: new Date('2026-08-20T20:00:00Z'),
       since: '2026-06-01',
     });
+    await reportThrough(s.userId);
     await refreshRecurring(env.DB, s.userId, '2026-09-14');
     expect((await s.api('GET', '/recurring')).json[0].status).toBe('active');
     await refreshRecurring(env.DB, s.userId, '2026-09-15');
@@ -174,11 +186,69 @@ describe('T31 recurring detection', () => {
         now: new Date('2026-08-21T20:00:00Z'),
       },
     );
+    await reportThrough(s.userId);
     await refreshRecurring(env.DB, s.userId, '2026-09-15');
     expect((await s.api('GET', '/recurring')).json[0]).toMatchObject({
       status: 'broken',
       nextExpectedDate: '2026-09-07',
     });
+  });
+
+  it("a miss on a card that hasn't reported past the due date isn't flagged (Apple Card)", async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, netflix(), {
+      now: new Date('2026-08-20T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('active');
+  });
+
+  it('a charge under a drifted name keeps the series quiet', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, netflix(), {
+      now: new Date('2026-08-20T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    await reportThrough(s.userId, [['np', '2026-09-08', 1_549, 'NETFLIX PREMIUM']]);
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    const netflixRow = (await s.api('GET', '/recurring')).json.find(
+      (r: { merchantNormalized: string }) => r.merchantNormalized === 'Netflix',
+    );
+    expect(netflixRow.status).toBe('active');
+  });
+
+  it('a series that missed two cycles lapses instead of nagging; a new charge revives it', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, netflix(), {
+      now: new Date('2026-08-20T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    await reportThrough(s.userId);
+    await refreshRecurring(env.DB, s.userId, '2026-10-15');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('broken');
+    await refreshRecurring(env.DB, s.userId, '2026-10-16');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('lapsed');
+  });
+
+  it('"It ended" sticks through refresh; "Track again" hands it back', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, netflix(), {
+      now: new Date('2026-08-20T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    await reportThrough(s.userId);
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    const [row] = (await s.api('GET', '/recurring')).json;
+    const path = `/recurring/${encodeURIComponent(row.id)}`;
+    expect((await s.api('PATCH', path, { status: 'ended' })).status).toBe(204);
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('ended');
+    expect((await s.api('PATCH', path, { status: 'active' })).status).toBe(204);
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('broken');
+    expect((await s.api('PATCH', '/recurring/nope', { status: 'ended' })).status).toBe(404);
+    expect((await s.api('PATCH', path, { status: 'broken' })).status).toBe(400);
   });
 
   it('refresh route re-detects on demand', async () => {

@@ -61,6 +61,10 @@ export const PatchSettingsBody = z.object({
   dismissedPayMerchants: z
     .array(z.object({ merchant: z.string(), displayName: z.string() }))
     .optional(),
+  dismissedMisses: z
+    .array(z.object({ seriesId: z.string(), dueDate: IsoDate }))
+    .max(200)
+    .optional(),
   retirement: RetirementPlan.nullable().optional(),
   debt: DebtPlan.nullable().optional(),
   savings: SavingsPlan.nullable().optional(),
@@ -498,3 +502,6 @@ export const MonarchFeedOverlap = z.object({
   to: z.string(),
 });
 export type MonarchFeedOverlap = z.infer<typeof MonarchFeedOverlap>;
+
+/** The user's call on a detected series: it ended (stop watching it) or track it again. */
+export const PatchSeriesBody = z.object({ status: z.enum(['ended', 'active']) });

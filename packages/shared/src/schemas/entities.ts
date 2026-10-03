@@ -99,6 +99,12 @@ export const UserSettings = z.object({
   dismissedPayMerchants: z
     .array(z.object({ merchant: z.string(), displayName: z.string() }))
     .default([]),
+  /** Missed-charge notes dismissed from the Dashboard, by series and the due date missed. A
+   * later miss of the same series is a new note. */
+  dismissedMisses: z
+    .array(z.object({ seriesId: z.string(), dueDate: IsoDate }))
+    .max(200)
+    .default([]),
   retirement: RetirementPlan.nullable().default(null),
   debt: DebtPlan.nullable().default(null),
   savings: SavingsPlan.nullable().default(null),
