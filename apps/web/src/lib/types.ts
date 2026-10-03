@@ -4,7 +4,7 @@
  */
 import type { PeriodView, Staleness } from '@rise/shared/budget';
 import type { NetWorthPoint } from '@rise/shared/networth';
-import type { Account, Period, RuleOffer, Transaction } from '@rise/shared/schemas';
+import type { Account, Period, Rule, RuleOffer, Transaction } from '@rise/shared/schemas';
 
 export type AccountWithStaleness = Account & { staleness: Staleness };
 
@@ -53,6 +53,8 @@ export interface MerchantView {
   displayName: string | null;
   suppressRuleOffer: boolean;
   topCategoryIds: string[];
+  /** The merchant-field rule that files this merchant, if any. */
+  rule: Rule | null;
 }
 
 /** One paycheck or bill schedule on the Surplus page. */
