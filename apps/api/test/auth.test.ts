@@ -312,6 +312,7 @@ describe('T16 auth middleware + error contract', () => {
       retirement: null,
       debt: null,
       savings: null,
+      follow: { rules: [], log: [] },
     });
   });
 
