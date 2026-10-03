@@ -160,9 +160,9 @@ export function Accounts() {
         return (
           <section key={kind} className="gutter mt-6">
             <div className="overflow-hidden rounded-card bg-surface shadow-soft">
-              <h2 className="flex items-baseline justify-between border-b border-hairline px-4 py-3 type-label font-bold text-ink">
-                <span>{label}</span>
-                <MoneyText cents={total} tone="muted" />
+              <h2 className="flex items-baseline justify-between gap-3 border-b border-hairline px-4 pt-4 pb-3.5 text-ink">
+                <span className="font-serif text-[22px] leading-7 tracking-[-0.01em]">{label}</span>
+                <MoneyText cents={total} className="text-lg font-semibold" />
               </h2>
               <div className="px-4">
                 {group.map((a) => (
