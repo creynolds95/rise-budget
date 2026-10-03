@@ -47,6 +47,8 @@ const INDEXES = [
   'ix_txn_user_date',
   // 0014
   'ix_surplus_suggestion_user',
+  // 0016
+  'ix_txn_pair',
 ];
 
 describe('migration 0001', () => {
