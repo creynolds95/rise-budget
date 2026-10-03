@@ -89,3 +89,9 @@ Total ≈ 5–6 working days for everything; the first four are about a day and 
 **Bad data after a bug**: Cloudflare D1 Time Travel keeps 7 days (`wrangler d1 time-travel restore rise --timestamp=…`); older: nightly gzip in R2 (`rise-backups`, 90 days), restore into an empty DB with `wrangler d1 execute <db> --remote --file=<dump.sql>`.
 
 **Never ship a migration that breaks the running code**, and never one that rewrites a whole table (writes cap): add columns/tables/indexes; backfill in a later release in chunks.
+
+## 5. Oct 3 2026: one query spent the day
+
+The split lookup behind every transaction list (`json_each(?) j JOIN split s`) read ~190k rows per call in production — every split once per transaction id — while tests showed ~100. Local SQLite and D1 picked different plans, so the read guard test couldn't see it. 26 Dashboard loads spent 5M rows. Fixes: the join order is pinned with `CROSS JOIN` (#129, #130); migration 0017 re-creates every index with `IF NOT EXISTS`; any statement reading ≥ 20k rows is logged with its SQL in Workers Logs (`heavyQuery`); Settings lists the day's heaviest routes; the Dashboard warns at 40% of either daily limit, naming the heaviest route; switching back to the app no longer refetches everything.
+
+**Lesson:** a passing local reads test is necessary, not sufficient. In production, check Cloudflare → D1 → rise → Metrics → *Top queries by rows read* after any change to a query with a JOIN.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SyncStatus } from '../lib/types';
-import { healthNotes } from './HealthNotes';
+import { healthNotes, usageNote } from './HealthNotes';
 import { quietInstitutions, quietWhenStale } from './StaleNotes';
 
 const run = (status: string, message?: string, account?: string): SyncStatus['runs'][number] => ({
@@ -93,5 +93,29 @@ describe('known-flaky loan feeds stay off the summary', () => {
         a('loan', 'Manual', { source: 'manual' }),
       ]),
     ).toEqual(['THECB']);
+  });
+});
+
+describe('usageNote', () => {
+  const usage = (
+    rowsRead: number,
+    routes = [{ route: 'GET /api/transactions', rowsRead, requests: 3 }],
+  ) => ({
+    limits: { rowsRead: 5_000_000, rowsWritten: 100_000 },
+    days: [{ day: '2026-10-03', rowsRead, rowsWritten: 10, requests: 3 }],
+    routes,
+  });
+  it('stays quiet on a normal day', () => {
+    expect(usageNote(usage(300_000), '2026-10-03')).toBeNull();
+    expect(usageNote(undefined, '2026-10-03')).toBeNull();
+    expect(usageNote(usage(4_000_000), '2026-10-02')).toBeNull();
+  });
+  it('names the share and the heaviest route once use is high', () => {
+    expect(usageNote(usage(2_600_000), '2026-10-03')?.text).toBe(
+      'Database use today is 52% of the free limit, mostly GET /api/transactions.',
+    );
+    expect(usageNote(usage(2_600_000, []), '2026-10-03')?.text).toBe(
+      'Database use today is 52% of the free limit.',
+    );
   });
 });
