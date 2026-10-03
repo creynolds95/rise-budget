@@ -175,7 +175,7 @@ function LoanSheet({
         />
         <EditRow
           label="Monthly payment"
-          field={<MoneyField label="Monthly payment" cents={payment} onCommit={setPayment} />}
+          field={<MoneyField label="Monthly payment" cents={payment} draft onCommit={setPayment} />}
         />
         <EditRow
           label="Debit looks like"

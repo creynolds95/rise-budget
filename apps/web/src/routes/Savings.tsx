@@ -135,18 +135,20 @@ function GoalSheet({
             />
             <EditRow
               label="Monthly expenses"
-              field={<MoneyField label="Monthly expenses" cents={expense} onCommit={setExpense} />}
+              field={
+                <MoneyField label="Monthly expenses" cents={expense} draft onCommit={setExpense} />
+              }
             />
           </>
         ) : (
           <EditRow
             label="Target"
-            field={<MoneyField label="Target" cents={target} onCommit={setTarget} />}
+            field={<MoneyField label="Target" cents={target} draft onCommit={setTarget} />}
           />
         )}
         <EditRow
           label="Per month"
-          field={<MoneyField label="Per month" cents={monthly} onCommit={setMonthly} />}
+          field={<MoneyField label="Per month" cents={monthly} draft onCommit={setMonthly} />}
         />
         <EditRow
           label="Whole account"
@@ -155,7 +157,9 @@ function GoalSheet({
         {!whole && (
           <EditRow
             label="Counts toward goal"
-            field={<MoneyField label="Counts toward goal" cents={share} onCommit={setShare} />}
+            field={
+              <MoneyField label="Counts toward goal" cents={share} draft onCommit={setShare} />
+            }
           />
         )}
       </div>

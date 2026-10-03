@@ -242,6 +242,7 @@ export function AccountDetail() {
                     <MoneyField
                       label={draftOwes ? 'Owed' : 'Balance'}
                       cents={d.balance}
+                      draft
                       onCommit={(v) => set({ balance: v })}
                     />
                   }
@@ -272,6 +273,7 @@ export function AccountDetail() {
                       <MoneyField
                         label="Monthly payment"
                         cents={d.expectedPaymentCents}
+                        draft
                         onCommit={(v) => set({ expectedPaymentCents: v })}
                       />
                     }
