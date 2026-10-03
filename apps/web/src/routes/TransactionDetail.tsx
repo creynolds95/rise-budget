@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { RuleOfferSheet } from '../components/RuleOfferSheet';
+import { RuleSheet } from '../components/RuleSheet';
 import { ScheduleFields } from '../components/ScheduleFields';
 import { TxnAmount } from '../components/TxnAmount';
 import { TxnRow } from '../components/TxnRow';
@@ -53,6 +54,7 @@ export function TransactionDetail() {
   const navigate = useNavigate();
   const [linking, setLinking] = useState(false);
   const [taggingWithdrawal, setTaggingWithdrawal] = useState(false);
+  const [ruling, setRuling] = useState(false);
   const [offer, setOffer] = useState<Parameters<typeof RuleOfferSheet>[0]['offer']>(null);
   const [error, setError] = useState<string | null>(null);
   const recurring = useRecurring();
@@ -207,6 +209,11 @@ export function TransactionDetail() {
                           },
                     ]
                   : []),
+                {
+                  label: merchant.data?.rule ? 'Edit rule' : 'Create rule',
+                  icon: 'filter' as const,
+                  onSelect: () => setRuling(true),
+                },
                 {
                   label: 'Delete transaction',
                   icon: 'trash' as const,
@@ -367,6 +374,25 @@ export function TransactionDetail() {
           income={income}
           onClose={() => setTaggingWithdrawal(false)}
           onSaved={refresh}
+        />
+      )}
+      {ruling && (
+        <RuleSheet
+          rule={merchant.data?.rule ?? null}
+          initial={{
+            matchField: 'merchant',
+            matchType: 'equals',
+            matchValue: t.merchantNormalized,
+            categoryId: t.splits.length === 1 ? (t.splits[0]?.categoryId ?? '') : '',
+          }}
+          onClose={() => setRuling(false)}
+          onSaved={() =>
+            Promise.all(
+              ['rules', 'review-queue', 'queue-count', 'merchant'].map((k) =>
+                qc.invalidateQueries({ queryKey: [k] }),
+              ),
+            )
+          }
         />
       )}
       <RuleOfferSheet offer={offer} onClose={() => setOffer(null)} />
