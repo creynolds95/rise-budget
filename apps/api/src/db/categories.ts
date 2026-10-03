@@ -550,11 +550,13 @@ export function archiveCategoryStmts(
     db.prepare('DELETE FROM rule WHERE user_id = ?1 AND category_id = ?2').bind(userId, id),
     // Learned suggestions must not point at a category the picker no longer shows.
     db
-      .prepare('DELETE FROM merchant_memory WHERE user_id = ?1 AND category_id = ?2')
+      .prepare(
+        'DELETE FROM merchant_memory WHERE user_id = ?1 AND category_id = ?2 /* scan-ok: category delete */',
+      )
       .bind(userId, id),
     db
       .prepare(
-        `UPDATE txn SET suggested_category_id = NULL, suggestion_confidence = 0
+        `UPDATE txn /* scan-ok: category delete */ SET suggested_category_id = NULL, suggestion_confidence = 0
          WHERE user_id = ?1 AND suggested_category_id = ?2`,
       )
       .bind(userId, id),

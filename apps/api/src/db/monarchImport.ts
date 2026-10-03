@@ -149,7 +149,7 @@ async function presentSourceIds(
 ): Promise<Set<string>> {
   const { results } = await db
     .prepare(
-      `SELECT source_id FROM txn WHERE user_id = ?1 AND source = 'csv'
+      `SELECT source_id FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */
          AND (?3 IS NULL OR import_batch_id = ?3)
          AND source_id IN (SELECT value FROM json_each(?2))`,
     )
@@ -291,7 +291,7 @@ export async function listMonarchBatches(
     .prepare(
       `SELECT import_batch_id AS batchId, COUNT(*) AS rows, MIN(posted_at) AS "from", MAX(posted_at) AS "to",
          MIN(created_at) AS importedAt
-       FROM txn WHERE user_id = ?1 AND source = 'csv' AND import_batch_id IS NOT NULL
+       FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */ AND import_batch_id IS NOT NULL
        GROUP BY import_batch_id ORDER BY MIN(created_at) DESC`,
     )
     .bind(userId)
@@ -309,13 +309,13 @@ export async function undoMonarchBatch(
     db
       .prepare(
         `SELECT DISTINCT s.period_id AS id FROM split s JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
-         WHERE t.user_id = ?1 AND t.source = 'csv' AND t.import_batch_id = ?2`,
+         WHERE t.user_id = ?1 AND t.source = 'csv' /* scan-ok: one-off Monarch import */ AND t.import_batch_id = ?2`,
       )
       .bind(userId, batchId)
       .all<{ id: string }>(),
     db
       .prepare(
-        `SELECT COUNT(*) AS n FROM txn WHERE user_id = ?1 AND source = 'csv' AND import_batch_id = ?2`,
+        `SELECT COUNT(*) AS n FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */ AND import_batch_id = ?2`,
       )
       .bind(userId, batchId)
       .first<{ n: number }>(),
@@ -324,11 +324,13 @@ export async function undoMonarchBatch(
     db
       .prepare(
         `DELETE FROM split WHERE user_id = ?1 AND txn_id IN
-           (SELECT id FROM txn WHERE user_id = ?1 AND source = 'csv' AND import_batch_id = ?2)`,
+           (SELECT id FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */ AND import_batch_id = ?2)`,
       )
       .bind(userId, batchId),
     db
-      .prepare(`DELETE FROM txn WHERE user_id = ?1 AND source = 'csv' AND import_batch_id = ?2`)
+      .prepare(
+        `DELETE FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */ AND import_batch_id = ?2`,
+      )
       .bind(userId, batchId),
     ...periods.flatMap((p) => refreshAggregateStmts(userId, db, p.id)),
   ]);
@@ -352,7 +354,7 @@ async function dropImported(
   where: string,
   binds: unknown[],
 ): Promise<D1PreparedStatement[]> {
-  const picked = `SELECT t.id FROM txn t WHERE t.user_id = ?1 AND t.source = 'csv'
+  const picked = `SELECT t.id FROM txn t WHERE t.user_id = ?1 AND t.source = 'csv' /* scan-ok: one-off Monarch import */
     AND t.import_batch_id IS NOT NULL AND ${where}`;
   const { results: periods } = await db
     .prepare(
@@ -383,7 +385,7 @@ export async function listMergeCandidates(
       `SELECT a.id, a.name, a.mask, a.archived_at, a.source,
          (SELECT COUNT(*) FROM txn t WHERE t.user_id = a.user_id AND t.account_id = a.id) AS rows,
          (SELECT COUNT(*) FROM txn t WHERE t.user_id = a.user_id AND t.account_id = a.id
-            AND t.source = 'csv' AND t.import_batch_id IS NOT NULL) AS imported
+            AND t.source = 'csv' /* scan-ok: one-off Monarch import */ AND t.import_batch_id IS NOT NULL) AS imported
        FROM account a WHERE a.user_id = ?1`,
     )
     .bind(userId)
@@ -459,7 +461,7 @@ export async function mergeHistoryAccount(
       .bind(userId, historyId),
     db
       .prepare(
-        `DELETE FROM account WHERE user_id = ?1 AND id = ?2
+        `DELETE FROM account WHERE user_id = ?1 AND id = ?2 /* scan-ok: one-off Monarch import */
            AND NOT EXISTS (SELECT 1 FROM txn WHERE user_id = ?1 AND account_id = ?2)`,
       )
       .bind(userId, historyId),
@@ -481,7 +483,7 @@ export async function listFeedOverlaps(
       `SELECT a.id AS accountId, a.name AS accountName, COUNT(*) AS rows,
          MIN(t.posted_at) AS "from", MAX(t.posted_at) AS "to"
        FROM txn t JOIN account a ON a.id = t.account_id AND a.user_id = t.user_id
-       WHERE t.user_id = ?1 AND t.source = 'csv' AND t.import_batch_id IS NOT NULL
+       WHERE t.user_id = ?1 AND t.source = 'csv' /* scan-ok: one-off Monarch import */ AND t.import_batch_id IS NOT NULL
          AND ${coveredByFeed('t.account_id', 't.posted_at')}
        GROUP BY a.id ORDER BY a.name`,
     )

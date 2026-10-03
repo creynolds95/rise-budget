@@ -19,6 +19,7 @@ declare global {
       RESTORE: D1Database;
       JWT_SECRET: string;
       TOTP_KEY: string;
+      QUERY_CATALOG: string;
       RP_ID: string;
       RP_ORIGIN: string;
       RP_NAME: string;

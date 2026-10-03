@@ -27,7 +27,7 @@ investments.get('/', async (c) => {
   const userId = c.get('userId');
   const all = await listAccountsForNetWorth(userId, c.env.DB);
   const accts = all.filter((a) => a.kind === 'investment' && !a.archivedAt && a.includeInNetWorth);
-  const snaps = await listSnapshots(userId, c.env.DB, { to });
+  const snaps = await listSnapshots(userId, c.env.DB, { from, to });
   const ids = new Set(accts.map((a) => a.id));
   const mine = snaps.filter((s) => ids.has(s.account_id));
   const first = mine.reduce<string | null>(
