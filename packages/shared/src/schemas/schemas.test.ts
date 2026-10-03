@@ -11,6 +11,7 @@ import {
   PeriodId,
   RecurringSeries,
   User,
+  DebtPlan,
   RetirementPlan,
 } from './index';
 
@@ -55,6 +56,7 @@ describe('schemas', () => {
       cashAccountIds: [],
       dismissedPayMerchants: [],
       retirement: null,
+      debt: null,
     });
     expect(u.timezone).toBe('America/Chicago');
   });
@@ -64,6 +66,16 @@ describe('schemas', () => {
     expect(plan.realGrowthBps).toBe(400);
     expect(plan.withdrawalBps).toBe(350);
     expect(plan.contributions).toEqual([]);
+  });
+
+  it('a debt plan defaults to snowball with freed payments carried forward', () => {
+    const plan = DebtPlan.parse({});
+    expect(plan.strategy).toBe('snowball');
+    expect(plan.rollForward).toBe(true);
+    expect(plan.loans).toEqual([]);
+    expect(plan.extraCents).toBe(0);
+    expect(plan.mortgageExtraCents).toBe(0);
+    expect(plan.homeValueAccountId).toBeNull();
   });
 
   it('error contract carries a stable code', () => {

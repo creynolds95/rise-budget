@@ -36,6 +36,34 @@ export const RetirementPlan = z.object({
 });
 export type RetirementPlan = z.infer<typeof RetirementPlan>;
 
+/** One account in the payoff plan. Manual and edited by hand; nothing here is guessed. */
+export const DebtLoanPlan = z.object({
+  accountId: Id,
+  /** Annual rate in thousandths of a percent: 5.875% is 5875. */
+  aprMilliPct: z.int().min(0).max(100_000),
+  paymentCents: Cents.min(0),
+  /** Day of the month the payment is due (clamped to short months). */
+  dueDay: z.int().min(1).max(31),
+  /** Student loans pool together; the mortgage never joins them. */
+  group: z.enum(['student', 'mortgage']),
+  /** The last month ("2026-10") whose payment is already in the account's balance. */
+  appliedThrough: z.string().regex(/^\d{4}-\d{2}$/),
+});
+export type DebtLoanPlan = z.infer<typeof DebtLoanPlan>;
+
+export const DebtPlan = z.object({
+  loans: z.array(DebtLoanPlan).default([]),
+  strategy: z.enum(['snowball', 'avalanche']).default('snowball'),
+  /** A finished loan's payment moves on to the next loan. */
+  rollForward: z.boolean().default(true),
+  /** Extra per month, split by strategy across the student loans only. */
+  extraCents: Cents.min(0).default(0),
+  mortgageExtraCents: Cents.min(0).default(0),
+  /** Manual account whose balance is the home's value, for equity. */
+  homeValueAccountId: Id.nullable().default(null),
+});
+export type DebtPlan = z.infer<typeof DebtPlan>;
+
 export const UserSettings = z.object({
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
@@ -51,6 +79,7 @@ export const UserSettings = z.object({
     .array(z.object({ merchant: z.string(), displayName: z.string() }))
     .default([]),
   retirement: RetirementPlan.nullable().default(null),
+  debt: DebtPlan.nullable().default(null),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 
