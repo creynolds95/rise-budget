@@ -372,7 +372,7 @@ function AddAccountSheet({ open, onClose }: { open: boolean; onClose: () => void
           <span className="type-label text-ink-muted">
             {owes ? 'Amount owed today' : 'Balance today'}
           </span>
-          <MoneyField label="Balance today" cents={balance} onCommit={setBalance} />
+          <MoneyField label="Balance today" cents={balance} draft onCommit={setBalance} />
         </label>
         {error && <p className="text-clay">{error}</p>}
         <Button type="submit" disabled={!name.trim()}>
