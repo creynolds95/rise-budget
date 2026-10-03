@@ -2,6 +2,7 @@ import { staleness } from '@rise/shared/budget';
 import {
   CreateAccountBody,
   CreateSnapshotBody,
+  IsoDate,
   isLiabilityKind,
   PatchAccountBody,
   type Account,
@@ -13,6 +14,7 @@ import {
   countAccountTransactions,
   createAccount,
   deleteAccount,
+  deleteSnapshot,
   flipAccountSign,
   getAccount,
   listAccounts,
@@ -92,6 +94,21 @@ accounts.post('/:id/snapshots', async (c) => {
   const b = await body(c, CreateSnapshotBody);
   await putSnapshot(userId, c.env.DB, id, { ...b, source: 'manual' });
   return c.json({ asOf: b.asOf, balanceCents: b.balanceCents }, 201);
+});
+
+/** Takes back a mistyped balance. Manual accounts only; the last balance always stays. */
+accounts.delete('/:id/snapshots/:asOf', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  const a = await getAccount(userId, c.env.DB, id);
+  if (!a) throw notFound();
+  if (a.source !== 'manual')
+    throw new AppError(409, 'CONFLICT', 'Synced accounts get balances from sync');
+  const asOf = IsoDate.safeParse(c.req.param('asOf'));
+  if (!asOf.success) throw new AppError(400, 'BAD_REQUEST', 'Date must be YYYY-MM-DD');
+  if (!(await deleteSnapshot(userId, c.env.DB, id, asOf.data)))
+    throw new AppError(409, 'CONFLICT', 'An account keeps at least one balance');
+  return c.json({ deleted: true });
 });
 
 /** Closes a manual account: it leaves the active list, but keeps its history in net worth. */
