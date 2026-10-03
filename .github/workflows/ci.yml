@@ -40,6 +40,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      # Migrations run once at deploy, outside the tests' catalog: a backfill gets the same check.
+      - name: Migration plans (production)
+        working-directory: apps/api
+        run: node --experimental-strip-types scripts/check-plans.ts --migrations --remote
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
       - uses: actions/upload-artifact@v4
         with:
           name: query-catalog
