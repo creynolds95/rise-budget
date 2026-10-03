@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { dueDateIn, isDue, planAutoApply, type AutoLoan, type AutoTxn } from './autoapply';
+import { dueDateIn, isDue, planAutoApply as plan, type AutoLoan, type AutoTxn } from './autoapply';
+
+const planAutoApply = (...a: Parameters<typeof plan>) => plan(...a).applied;
 import { stepBalance } from './payoff';
 
 const loan = (id: string, over: Partial<AutoLoan> = {}): AutoLoan => ({
@@ -9,6 +11,7 @@ const loan = (id: string, over: Partial<AutoLoan> = {}): AutoLoan => ({
   dueDay: 1,
   appliedThrough: '2026-10',
   owedCents: 195_827,
+  merchant: '',
   ...over,
 });
 const debit = (
@@ -21,6 +24,7 @@ const debit = (
   accountId,
   postedAt,
   amountCents,
+  text: 'mohela autopay',
 });
 
 describe('when a payment is due', () => {
@@ -119,5 +123,50 @@ describe('matching debits to loan payments', () => {
   it('an earlier debit is taken before a later one', () => {
     const txns = [debit('b', '2026-11-02', 4_114), debit('z', '2026-11-01', 4_114)];
     expect(planAutoApply([loan('a')], txns, '2026-11-02')[0]?.txnId).toBe('z');
+  });
+});
+
+describe('matching by the debit name instead of the amount', () => {
+  const named = (id: string, over: Partial<AutoLoan> = {}) =>
+    loan(id, { merchant: 'mohela', ...over });
+
+  it('any debit with that name applies the whole cluster at the plan’s payments, whatever the amount', () => {
+    const loans = [named('a'), named('b', { paymentCents: 3_814 })];
+    const r = plan(loans, [debit('t', '2026-11-01', 12_345)], '2026-11-01');
+    expect(r.applied.map((x) => [x.accountId, x.txnId, x.asOf])).toEqual([
+      ['a', 't', '2026-11-01'],
+      ['b', 't', '2026-11-01'],
+    ]);
+    expect(r.debitCents).toBe(12_345);
+  });
+
+  it('several debits with the name are all counted once; the earliest dates the balances', () => {
+    const txns = [debit('late', '2026-11-02', 1_000), debit('early', '2026-11-01', 2_000)];
+    const r = plan([named('a')], txns, '2026-11-02');
+    expect(r.applied[0]?.txnId).toBe('early');
+    expect(r.debitCents).toBe(3_000);
+  });
+
+  it('a debit from another merchant does not count, even at the exact amount', () => {
+    const other = { ...debit('t', '2026-11-01', 4_114), text: 'netflix' };
+    const r = plan([named('a')], [other], '2026-11-01');
+    expect(r.applied).toEqual([]);
+    expect(r.debitCents).toBe(0);
+  });
+
+  it('loans with a name and loans without one are matched separately on the same due day', () => {
+    const loans = [named('a'), loan('b', { paymentCents: 5_000 })];
+    const txns = [debit('n', '2026-11-01', 999), debit('exact', '2026-11-01', 5_000)];
+    const r = plan(loans, txns, '2026-11-01');
+    expect(r.applied.map((x) => [x.accountId, x.txnId])).toEqual([
+      ['b', 'exact'],
+      ['a', 'n'],
+    ]);
+    expect(r.debitCents).toBe(5_999);
+  });
+
+  it('reports what an amount-matched lump came to', () => {
+    const r = plan([loan('a')], [debit('t', '2026-11-01', 4_114)], '2026-11-01');
+    expect(r.debitCents).toBe(4_114);
   });
 });

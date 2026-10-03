@@ -48,12 +48,24 @@ export const DebtLoanPlan = z.object({
   group: z.enum(['student', 'mortgage']),
   /** The last month ("2026-10") whose payment is already in the account's balance. */
   appliedThrough: z.string().regex(/^\d{4}-\d{2}$/),
+  /** What the payment's debit looks like ("mohela"). Any matching debit applies the month,
+   * whatever the amount; empty falls back to matching the payment amount exactly. */
+  merchant: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(60)
+    .refine((m) => m === '' || m.length >= 3, 'At least 3 characters')
+    .default(''),
 });
 export type DebtLoanPlan = z.infer<typeof DebtLoanPlan>;
 
 /** What the last automatic apply did, so the Debt page can say so and undo it. */
 export const DebtAutoRun = z.object({
   period: z.string().regex(/^\d{4}-\d{2}$/),
+  /** What left checking, against what the plan said; shown when they differ. */
+  debitCents: Cents.min(0).default(0),
+  plannedCents: Cents.min(0).default(0),
   loans: z.array(
     z.object({
       accountId: Id,

@@ -559,6 +559,8 @@ export interface OutflowRow {
   accountId: string;
   postedAt: string;
   amountCents: number;
+  /** Lowercase description, normalized merchant and display name, for name matching. */
+  text: string;
 }
 
 /** Posted money out between two dates, newest first. A short window on the date index. */
@@ -570,16 +572,25 @@ export async function listOutflows(
 ): Promise<OutflowRow[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, account_id, posted_at, amount_cents FROM txn
+      `SELECT id, account_id, posted_at, amount_cents, descriptor_raw, merchant_normalized, merchant_display FROM txn
        WHERE user_id = ?1 AND posted_at >= ?2 AND posted_at <= ?3 AND amount_cents > 0 AND is_pending = 0
        ORDER BY posted_at DESC, id DESC LIMIT 500`,
     )
     .bind(userId, from, to)
-    .all<{ id: string; account_id: string; posted_at: string; amount_cents: number }>();
+    .all<{
+      id: string;
+      account_id: string;
+      posted_at: string;
+      amount_cents: number;
+      descriptor_raw: string;
+      merchant_normalized: string;
+      merchant_display: string | null;
+    }>();
   return results.map((r) => ({
     id: r.id,
     accountId: r.account_id,
     postedAt: r.posted_at,
     amountCents: r.amount_cents,
+    text: `${r.descriptor_raw} ${r.merchant_normalized} ${r.merchant_display ?? ''}`.toLowerCase(),
   }));
 }
