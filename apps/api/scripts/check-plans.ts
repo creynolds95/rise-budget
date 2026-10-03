@@ -42,8 +42,11 @@ const statements = [
   ...new Set(
     readFileSync(file, 'utf8')
       .split('\n')
-      .filter((l) => l.startsWith('QUERY_CATALOG '))
-      .map((l) => JSON.parse(l.slice('QUERY_CATALOG '.length)) as string),
+      // Anywhere in the line: a test reporter may prefix it.
+      .flatMap((l) => {
+        const m = /QUERY_CATALOG ("(?:[^"\\]|\\.)*")\s*$/.exec(l);
+        return m ? [JSON.parse(m[1] as string) as string] : [];
+      }),
   ),
 ]
   .filter((s) => /^\s*(WITH|SELECT|INSERT|UPDATE|DELETE|REPLACE)\b/i.test(s))

@@ -25,7 +25,8 @@ jobs:
           QUERY_CATALOG: '1'
         run: |
           set -o pipefail
-          pnpm exec vitest run --reporter=verbose --silent=false 2>&1 | tee "$RUNNER_TEMP/api-tests.log" | grep -v '^QUERY_CATALOG '
+          pnpm exec vitest run --reporter=verbose --silent=false 2>&1 | tee "$RUNNER_TEMP/api-tests.log" | grep -v 'QUERY_CATALOG '
+          echo "catalog: $(grep -c '^QUERY_CATALOG ' "$RUNNER_TEMP/api-tests.log") lines, $(grep '^QUERY_CATALOG ' "$RUNNER_TEMP/api-tests.log" | sort -u | wc -l) distinct, $(grep -c 'QUERY_CATALOG' "$RUNNER_TEMP/api-tests.log") anywhere"
       # Every statement's plan, on the local planner and then on production's own (they
       # differ: Oct 2026, a lookup that used an index locally scanned in production and spent
       # the 5M-row daily allowance). EXPLAIN reads no rows, so asking production is free.
