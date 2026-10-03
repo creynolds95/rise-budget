@@ -9,8 +9,8 @@
 INSERT INTO merchant_memory (user_id, merchant_normalized, category_id, count, last_used_at)
 SELECT /* scan-ok: one-off backfill at deploy */ t.user_id, t.merchant_normalized, s.category_id, COUNT(*), MAX(t.posted_at) || 'T00:00:00.000Z'
 FROM txn t
-JOIN split s ON s.txn_id = t.id AND s.user_id = t.user_id
-JOIN category c ON c.id = s.category_id AND c.user_id = t.user_id
+CROSS JOIN split s ON s.txn_id = t.id
+CROSS JOIN category c ON c.id = s.category_id AND c.user_id = t.user_id
 WHERE t.review_state = 'reviewed' AND t.is_transfer = 0 AND t.is_pending = 0
   AND t.merchant_normalized != '' AND c.is_catchall = 0
   AND (SELECT COUNT(*) FROM split x WHERE x.txn_id = t.id) = 1
