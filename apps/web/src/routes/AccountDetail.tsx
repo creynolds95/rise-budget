@@ -256,9 +256,74 @@ export function AccountDetail() {
               navigate('/accounts');
             }}
           />
+        ) : a.kind === 'loan' ? (
+          <ConvertToManual
+            id={id}
+            name={a.name}
+            onDone={async () => {
+              await invalidate();
+            }}
+          />
         ) : undefined
       }
     />
+  );
+}
+
+/** A synced loan the bank can't keep fresh: detach it so Debt tracks the balance by hand. */
+function ConvertToManual({
+  id,
+  name,
+  onDone,
+}: {
+  id: string;
+  name: string;
+  onDone: () => Promise<void>;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!asking) {
+    return (
+      <div className="-ml-4">
+        <Button variant="quiet" onClick={() => setAsking(true)}>
+          Convert to manual
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="w-full rounded-card bg-surface p-4 shadow-soft">
+      <p className="font-medium">Convert {name} to manual?</p>
+      <p className="mt-1 type-caption text-ink-muted">
+        It stops syncing from SimpleFIN and keeps its history. You set its balance yourself, and
+        Debt can then track it.
+      </p>
+      {error && <p className="mt-2 type-caption text-clay">{error}</p>}
+      <div className="mt-3 flex gap-2">
+        <Button
+          className="flex-1"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              await api('POST', `/accounts/${id}/convert-to-manual`, {});
+              await onDone();
+            } catch (e) {
+              setError(e instanceof ApiError ? e.message : 'Could not convert.');
+              setBusy(false);
+            }
+          }}
+        >
+          Convert
+        </Button>
+        <Button variant="quiet" className="flex-1" onClick={() => setAsking(false)}>
+          Keep syncing
+        </Button>
+      </div>
+    </div>
   );
 }
 

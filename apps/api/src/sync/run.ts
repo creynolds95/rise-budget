@@ -168,7 +168,11 @@ export async function runSync(
   ]);
   const tz = user?.timezone ?? 'America/Chicago';
   const today = localToday(tz, now);
-  const from = windowStart(known, today, opts.since);
+  const from = windowStart(
+    known.filter((a) => a.source === 'simplefin'),
+    today,
+    opts.since,
+  );
   // A day early in UTC so no local date in the window is missed; the planner dedupes.
   const startSec = (dayNumber(from) - 1) * 86_400;
 
@@ -194,6 +198,7 @@ export async function runSync(
       const acct: IncomingAccount = toIncomingAccount(sf, tz);
       const existing = known.find((a) => a.source_account_id === acct.sourceAccountId);
       if (existing?.archived_at) continue; // the user unlinked it
+      if (existing && existing.source !== 'simplefin') continue; // converted to manual
       const accountId = existing?.id ?? newId();
 
       const gone = existing ? await deletedSourceIds(userId, db, accountId) : new Set<string>();
