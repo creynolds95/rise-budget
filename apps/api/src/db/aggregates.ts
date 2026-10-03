@@ -43,7 +43,9 @@ export function refreshCategoryAggregateStmts(
 ): D1PreparedStatement[] {
   return [
     db
-      .prepare('DELETE FROM period_aggregate WHERE user_id = ?1 AND category_id = ?2')
+      .prepare(
+        'DELETE FROM period_aggregate WHERE user_id = ?1 AND category_id = ?2 /* scan-ok: budgeted flip */',
+      )
       .bind(userId, categoryId),
     db
       .prepare(
@@ -53,7 +55,7 @@ export function refreshCategoryAggregateStmts(
          JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
          JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
          WHERE s.user_id = ?1 AND s.category_id = ?2 AND c.budgeted = 1 AND t.review_state != 'dropped'
-         GROUP BY s.period_id`,
+         GROUP BY s.period_id /* scan-ok: budgeted flip rebuilds one category's history */`,
       )
       .bind(userId, categoryId),
   ];

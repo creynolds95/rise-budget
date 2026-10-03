@@ -115,12 +115,12 @@ const SORTS: Record<TxnSort, { order: string; after: string }> = {
     after: '(t.posted_at > ? OR (t.posted_at = ? AND t.id > ?))',
   },
   amount_desc: {
-    order: 'ABS(t.amount_cents) DESC, t.id DESC',
+    order: 'ABS(t.amount_cents) DESC, t.id DESC /* scan-ok: sorting by size reads every row */',
     after:
       '(ABS(t.amount_cents) < CAST(? AS INTEGER) OR (ABS(t.amount_cents) = CAST(? AS INTEGER) AND t.id < ?))',
   },
   amount_asc: {
-    order: 'ABS(t.amount_cents) ASC, t.id ASC',
+    order: 'ABS(t.amount_cents) ASC, t.id ASC /* scan-ok: sorting by size reads every row */',
     after:
       '(ABS(t.amount_cents) > CAST(? AS INTEGER) OR (ABS(t.amount_cents) = CAST(? AS INTEGER) AND t.id > ?))',
   },
