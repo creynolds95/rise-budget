@@ -116,6 +116,9 @@ export type SavingsGoal = z.infer<typeof SavingsGoal>;
 export const SavingsPlan = z.object({ goals: z.array(SavingsGoal).max(50).default([]) });
 export type SavingsPlan = z.infer<typeof SavingsPlan>;
 
+/** Most log entries kept; far above what a 45-day window ever holds. */
+export const FOLLOW_LOG_MAX = 1000;
+
 /** A manual account whose balance follows matching rows in other accounts (Apple Savings). */
 export const FollowRule = z.object({
   accountId: Id,
@@ -139,8 +142,10 @@ export type FollowEntry = z.infer<typeof FollowEntry>;
 
 export const FollowSettings = z.object({
   rules: z.array(FollowRule).max(20).default([]),
-  /** Newest last; trimmed to the last 100. */
-  log: z.array(FollowEntry).max(100).default([]),
+  /** Newest last. Entries older than the sync window are pruned by date (never by count,
+   * which could let a row drop out of the log while still inside the window and be
+   * followed twice); the cap only bounds the settings size. */
+  log: z.array(FollowEntry).max(FOLLOW_LOG_MAX).default([]),
 });
 export type FollowSettings = z.infer<typeof FollowSettings>;
 

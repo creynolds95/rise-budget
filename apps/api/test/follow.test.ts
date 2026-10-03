@@ -96,6 +96,29 @@ describe('follow transfers', () => {
     expect(await log(u)).toHaveLength(1);
   });
 
+  it('never follows a row twice, even with more than 100 matches in the window', async () => {
+    const u = await signedInUser();
+    const { checking, savings } = await setup(u);
+    for (let i = 0; i < 120; i++)
+      await txn(u, checking, '2026-10-08', 1_000, `APPLE GS SAVINGS TRANSFER ${i}`);
+    expect(await applyFollows(env.DB, u.userId, NOW)).toBe(120);
+    expect(await balance(u, savings)).toBe(500_000 + 120 * 1_000);
+    expect(await applyFollows(env.DB, u.userId, NOW)).toBe(0);
+    expect(await balance(u, savings)).toBe(500_000 + 120 * 1_000);
+    expect(await log(u)).toHaveLength(120);
+  });
+
+  it('prunes log entries once they are older than the window', async () => {
+    const u = await signedInUser();
+    const { checking } = await setup(u);
+    await txn(u, checking, '2026-10-08', 1_000, 'APPLE GS SAVINGS TRANSFER');
+    await applyFollows(env.DB, u.userId, NOW);
+    const later = new Date('2026-12-20T18:00:00Z');
+    await txn(u, checking, '2026-12-19', 2_000, 'APPLE GS SAVINGS TRANSFER');
+    expect(await applyFollows(env.DB, u.userId, later)).toBe(1);
+    expect(await log(u)).toHaveLength(1);
+  });
+
   it('skips a rule whose account is not a live manual asset account', async () => {
     const u = await signedInUser();
     const { checking, savings } = await setup(u);
