@@ -111,7 +111,13 @@ export function Dashboard() {
 
       {(reviewCount > 0 || surplusReviewCount > 0) && (
         <div className="flex flex-col gap-2">
-          {reviewCount > 0 && <ReviewRow to="/review" count={reviewCount} what="to review" />}
+          {reviewCount > 0 && (
+            <ReviewRow
+              to="/review"
+              count={reviewCount}
+              what={reviewCount === 1 ? 'transaction to review' : 'transactions to review'}
+            />
+          )}
           {surplusReviewCount > 0 && (
             <ReviewRow
               to="/cash-to-payday#review"
