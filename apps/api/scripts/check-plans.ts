@@ -9,9 +9,14 @@
  *
  *   QUERY_CATALOG=1 pnpm vitest run --reporter=verbose --silent=false > tests.log
  *   node --experimental-strip-types scripts/check-plans.ts tests.log [--remote]
+ *   node --experimental-strip-types scripts/check-plans.ts --migrations --remote
  *
- * A statement that reads a whole table on purpose (the backup, an export) says so in its SQL
- * with a `/* scan-ok: why *\/` or `/* system:backup *\/` comment.
+ * `--migrations` plans the statements of every migration production hasn't applied yet, so a
+ * backfill is checked before it runs (deploy migrates before the code check can see anything).
+ *
+ * A statement that reads a whole table on purpose (the backup, an export, a backfill) says so
+ * in its SQL with a `/* scan-ok: why *\/` or `/* system:backup *\/` comment. That excuses one
+ * pass, never a pass per row.
  */
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
@@ -20,10 +25,14 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     remote: { type: 'boolean', default: false },
+    migrations: { type: 'boolean', default: false },
   },
 });
 const file = positionals[0];
-if (!file) throw new Error('usage: check-plans.ts <test log with QUERY_CATALOG lines> [--remote]');
+if (!file && !values.migrations)
+  throw new Error('usage: check-plans.ts <test log with QUERY_CATALOG lines> [--remote]');
+if (values.migrations && !values.remote)
+  throw new Error('--migrations asks production which migrations are pending; add --remote');
 
 /** Tables that grow with history. Reading one of these whole is the bug this script hunts. */
 const GROWING = new Set([
@@ -38,9 +47,9 @@ const GROWING = new Set([
   'merchant_memory',
 ]);
 
-const statements = [
+const catalog = (): string[] => [
   ...new Set(
-    readFileSync(file, 'utf8')
+    readFileSync(file as string, 'utf8')
       .split('\n')
       // Anywhere in the line: a test reporter may prefix it.
       .flatMap((l) => {
@@ -48,9 +57,9 @@ const statements = [
         return m ? [JSON.parse(m[1] as string) as string] : [];
       }),
   ),
-]
-  .filter((s) => /^\s*(WITH|SELECT|INSERT|UPDATE|DELETE|REPLACE)\b/i.test(s))
-  .sort();
+];
+
+const plannable = (s: string) => /^\s*(WITH|SELECT|INSERT|UPDATE|DELETE|REPLACE)\b/i.test(s);
 
 /** Parameters become a literal: EXPLAIN plans without running, and D1 has nothing to bind. */
 const literal = (sql: string) => sql.replace(/\?\d*/g, "'p'");
@@ -60,8 +69,8 @@ type PlanRow = { id: number; parent: number; detail: string };
 const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
 const databaseId = process.env['D1_DATABASE_ID'] || /database_id\s*=\s*"([^"]+)"/.exec(toml)?.[1];
 
-/** Production through D1's HTTP API: one request plans a whole batch. */
-async function explainRemote(batch: string[]): Promise<PlanRow[][]> {
+/** Production through D1's HTTP API: one request runs a whole batch. */
+async function queryRemote<T>(sql: string): Promise<T[][]> {
   const account = process.env['CLOUDFLARE_ACCOUNT_ID'];
   const token = process.env['CLOUDFLARE_API_TOKEN'];
   if (!account || !token || !databaseId)
@@ -71,18 +80,45 @@ async function explainRemote(batch: string[]): Promise<PlanRow[][]> {
     {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        sql: batch.map((s) => `EXPLAIN QUERY PLAN ${literal(s)}`).join(';\n'),
-      }),
+      body: JSON.stringify({ sql }),
     },
   );
   const body = (await res.json()) as {
     success: boolean;
     errors?: { message: string }[];
-    result?: { results: PlanRow[] }[];
+    result?: { results: T[] }[];
   };
   if (!body.success) throw new Error(body.errors?.map((e) => e.message).join('; ') ?? 'failed');
   return (body.result ?? []).map((r) => r.results);
+}
+
+const explainRemote = (batch: string[]) =>
+  queryRemote<PlanRow>(batch.map((s) => `EXPLAIN QUERY PLAN ${literal(s)}`).join(';\n'));
+
+/** Statements of the migrations production hasn't applied, in order. */
+async function pendingMigrations(): Promise<string[]> {
+  let rows: { name: string }[];
+  try {
+    rows = (await queryRemote<{ name: string }>('SELECT name FROM d1_migrations'))[0] ?? [];
+  } catch (e) {
+    // A spent daily allowance fails this too; migrate would fail the same way, so warn only.
+    console.log(`::warning::Could not list production's migrations (${String(e)}); not checked.`);
+    process.exit(0);
+  }
+  const applied = new Set(rows.map((r) => r.name));
+  const { readdirSync } = await import('node:fs');
+  const dir = new URL('../migrations/', import.meta.url);
+  const pending = readdirSync(dir)
+    .filter((n) => n.endsWith('.sql') && !applied.has(n))
+    .sort();
+  console.log(`pending migrations: ${pending.join(', ') || 'none'}`);
+  return pending.flatMap((f) =>
+    readFileSync(new URL(f, dir), 'utf8')
+      .replace(/--.*$/gm, '')
+      .split(';')
+      .map((x) => x.trim())
+      .filter(plannable),
+  );
 }
 
 /** A fresh local D1 with every migration applied: the planner the tests run on. */
@@ -117,23 +153,42 @@ function aliases(sql: string): Map<string, string> {
 
 /** What's wrong with a plan, if anything: each finding names the table and why. */
 export function findings(sql: string, plan: PlanRow[]): string[] {
-  if (/\/\*\s*(scan-ok|system:backup)/.test(sql)) return [];
+  const excused = /\/\*\s*(scan-ok|system:backup)/.test(sql);
   const names = aliases(sql);
+  const byId = new Map(plan.map((p) => [p.id, p]));
+  const correlated = (p: PlanRow): boolean => {
+    for (let q = byId.get(p.parent); q; q = byId.get(q.parent))
+      if (/^CORRELATED /.test(q.detail)) return true;
+    return false;
+  };
+  const dml = /^\s*(DELETE|UPDATE)\b/i.test(sql);
   const out: string[] = [];
-  for (const { detail } of plan) {
+  // Loops that visit many rows, of any table: a lookup inside one of them runs once per row.
+  const many: PlanRow[] = [];
+  for (const row of plan) {
+    const { detail } = row;
     const scan = /^SCAN (\w+)(?! VIRTUAL TABLE)/.exec(detail);
     const userOnly = /^SEARCH (\w+) USING (?:COVERING )?INDEX \w+ \(user_id=\?\)$/.exec(detail);
     const hit = scan ?? userOnly;
     if (!hit) continue;
+    // An excused statement may read a table once, never once per row: a big loop after another
+    // loop of the same join, or inside a subquery run per row, multiplies (Oct 2026: 192k a call).
+    // (A DELETE or UPDATE lists its foreign-key checks beside its own loop; those aren't nested.)
+    const perRow =
+      (!(dml && row.parent === 0) && many.some((b) => b.parent === row.parent)) || correlated(row);
+    many.push(row);
     const table = names.get((hit[1] as string).toLowerCase()) ?? (hit[1] as string).toLowerCase();
     if (!GROWING.has(table)) continue;
+    if (excused && !perRow) continue;
     // Walking an ordered index under a LIMIT stops early; only a sort makes it read everything.
     // ("RIGHT PART OF ORDER BY" only sorts ties, so it still stops early.)
     const limited =
       /\bLIMIT\b/i.test(sql) &&
       !plan.some((p) => /TEMP B-TREE FOR (ORDER BY|GROUP BY|DISTINCT)/.test(p.detail));
     if (limited && plan[0]?.detail === detail) continue;
-    out.push(`${detail}  [${table}: ${scan ? 'full scan' : 'every row the user has'}]`);
+    out.push(
+      `${detail}  [${table}: ${perRow ? 'read once per row' : scan ? 'full scan' : 'every row the user has'}]`,
+    );
   }
   return out;
 }
@@ -148,6 +203,9 @@ if (
   console.log('::warning::No Cloudflare credentials here; production query plans not checked.');
   process.exit(0);
 }
+const statements = values.migrations
+  ? await pendingMigrations()
+  : catalog().filter(plannable).sort();
 const local = values.remote ? null : await localDb();
 const explain = async (batch: string[]): Promise<PlanRow[][]> =>
   local
