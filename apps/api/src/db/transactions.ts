@@ -72,10 +72,11 @@ export async function splitsFor(
   if (txnIds.length === 0) return out;
   const { results } = await db
     .prepare(
-      // Driven from the id list so each lookup uses the txn_id index; filtering on user_id
-      // first made SQLite walk every split the user has.
+      // Driven from the id list so each lookup uses the txn_id index. Both are pinned: left to
+      // itself, production's planner scanned every split the user has once per id (5M rows
+      // read in a day, Oct 2026), and filtering on user_id first does the same.
       `SELECT s.id, s.txn_id, s.category_id, s.amount_cents, s.period_id, s.sort_order
-       FROM json_each(?2) j JOIN split s ON s.txn_id = j.value
+       FROM json_each(?2) j CROSS JOIN split s INDEXED BY ix_split_txn ON s.txn_id = j.value
        WHERE s.user_id = ?1 ORDER BY s.sort_order, s.id`,
     )
     .bind(userId, JSON.stringify(txnIds))
