@@ -368,20 +368,23 @@ function ConfirmButton({ label, onClick }: { label: string; onClick: () => void 
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="flex size-11 shrink-0 items-center justify-center rounded-full bg-sage-600 text-surface active:brightness-95"
+      className="group flex size-11 shrink-0 items-center justify-center"
     >
-      <svg
-        aria-hidden
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        className="fill-none stroke-current"
-        strokeWidth="2.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M5 12.5 10 17.5 19 7" />
-      </svg>
+      {/* A small mark; the button around it keeps a thumb-sized target. */}
+      <span className="flex size-7 items-center justify-center rounded-full border-[1.5px] border-sage-600 text-sage-700 group-active:bg-sage-600 group-active:text-surface">
+        <svg
+          aria-hidden
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          className="fill-none stroke-current"
+          strokeWidth="2.25"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 12.5 10 17.5 19 7" />
+        </svg>
+      </span>
     </button>
   );
 }
