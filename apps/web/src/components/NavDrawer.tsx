@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
-const ITEMS: { label: string; to: string }[] = [
+/** The Dashboard menu. Desktop's sidebar lists the same items under the tabs. */
+export const MENU_ITEMS: { label: string; to: string }[] = [
   { label: 'Surplus', to: '/cash-to-payday' },
   { label: 'Financial health', to: '/financial-health' },
   { label: 'Review', to: '/review' },
@@ -69,7 +70,7 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
           Rise
         </span>
         <ul className="flex flex-col border-t border-hairline">
-          {ITEMS.map((i) => (
+          {MENU_ITEMS.map((i) => (
             <li key={i.to} className="border-b border-hairline">
               <Link
                 to={i.to}
