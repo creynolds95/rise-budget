@@ -24,7 +24,7 @@ export function AccountLogo({ account }: { account: Parameters<typeof accountBad
         style={{
           background: b.color,
           color: '#fff',
-          fontSize: b.text.length > 3 ? 10 : 13,
+          fontSize: b.text.length > 4 ? 8.5 : b.text.length > 3 ? 10 : b.text.length > 1 ? 13 : 16,
         }}
       >
         {b.text}
