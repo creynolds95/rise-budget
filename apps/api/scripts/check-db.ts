@@ -134,6 +134,15 @@ if (values.schema) {
   } catch {
     console.log('sqlite_stat1: none');
   }
+  // The pre-#129 form, left to the planner, to see what production's SQLite picks for it.
+  console.log(
+    'split lookup plan, unpinned:',
+    JSON.stringify(
+      query(
+        `EXPLAIN QUERY PLAN SELECT s.id FROM json_each('["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z"]') j JOIN split s ON s.txn_id = j.value WHERE s.user_id = 'u' ORDER BY s.sort_order, s.id`,
+      ),
+    ),
+  );
   console.log(
     'split lookup plan:',
     JSON.stringify(
@@ -142,6 +151,7 @@ if (values.schema) {
       ),
     ),
   );
+  console.log('sqlite version:', JSON.stringify(query(`SELECT sqlite_version() AS v`)));
   console.log(
     'row counts:',
     JSON.stringify(

@@ -6,27 +6,33 @@ import { env } from 'cloudflare:workers';
  */
 let total = 0;
 let installed = false;
+/** Rows read per statement text, for finding which query a budget breach came from. */
+export const bySql = new Map<string, number>();
 
 type Meta = { meta?: { rows_read?: number } };
-const tally = (r: Meta) => {
-  total += r.meta?.rows_read ?? 0;
+const tally = (r: Meta, sql = '?') => {
+  const n = r.meta?.rows_read ?? 0;
+  total += n;
+  bySql.set(sql, (bySql.get(sql) ?? 0) + n);
 };
 
-function wrap(st: D1PreparedStatement): D1PreparedStatement {
-  return new Proxy(st, {
+const sqlText = new WeakMap<object, string>();
+
+function wrap(st: D1PreparedStatement, sql: string): D1PreparedStatement {
+  const proxy = new Proxy(st, {
     get(t, p) {
-      if (p === 'bind') return (...v: unknown[]) => wrap(t.bind(...v));
+      if (p === 'bind') return (...v: unknown[]) => wrap(t.bind(...v), sql);
       if (p === 'all' || p === 'run') {
         return async () => {
           const r = await (p === 'all' ? t.all() : t.run());
-          tally(r);
+          tally(r, sql);
           return r;
         };
       }
       if (p === 'first') {
         return async (col?: string) => {
           const r = await t.all<Record<string, unknown>>();
-          tally(r);
+          tally(r, sql);
           const row = r.results[0] ?? null;
           return col ? (row?.[col] ?? null) : row;
         };
@@ -35,6 +41,8 @@ function wrap(st: D1PreparedStatement): D1PreparedStatement {
       return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
     },
   });
+  sqlText.set(proxy, sql);
+  return proxy;
 }
 
 function install() {
@@ -46,10 +54,10 @@ function install() {
   };
   const prepare = db.prepare.bind(db);
   const batch = db.batch.bind(db);
-  db.prepare = (sql) => wrap(prepare(sql));
+  db.prepare = (sql) => wrap(prepare(sql), sql);
   db.batch = async (s) => {
     const r = await batch(s);
-    r.forEach(tally);
+    r.forEach((x, i) => tally(x, sqlText.get(s[i] as object) ?? 'batch'));
     return r;
   };
 }
