@@ -101,7 +101,7 @@ describe('D1 rows read', () => {
 describe('split lookup plan', () => {
   it('walks the id list and searches split by txn_id, never scanning split', async () => {
     const { results } = await env.DB.prepare(
-      `EXPLAIN QUERY PLAN SELECT s.id FROM json_each(?2) j CROSS JOIN split s INDEXED BY ix_split_txn ON s.txn_id = j.value WHERE s.user_id = ?1`,
+      `EXPLAIN QUERY PLAN SELECT s.id FROM json_each(?2) j CROSS JOIN split s ON s.txn_id = j.value WHERE s.user_id = ?1`,
     )
       .bind('u', '["a"]')
       .all<{ detail: string }>();
