@@ -16,7 +16,8 @@
     "./reports": "./src/reports/index.ts",
     "./retirement": "./src/retirement/index.ts",
     "./debt": "./src/debt/index.ts",
-    "./savings": "./src/savings/index.ts"
+    "./savings": "./src/savings/index.ts",
+    "./follow": "./src/follow/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

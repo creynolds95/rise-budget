@@ -9,7 +9,7 @@ import {
   RuleMatchType,
   SpendShape,
 } from './enums';
-import { DebtPlan, RetirementPlan, SavingsPlan } from './entities';
+import { DebtPlan, FollowRule, RetirementPlan, SavingsPlan } from './entities';
 
 export const ManualCadence = z.enum(['weekly', 'biweekly', 'monthly', 'semimonthly', 'annual']);
 
@@ -68,7 +68,11 @@ export const PatchSettingsBody = z.object({
   retirement: RetirementPlan.nullable().optional(),
   debt: DebtPlan.nullable().optional(),
   savings: SavingsPlan.nullable().optional(),
+  /** Rules only: the log is the server's. */
+  follow: z.object({ rules: z.array(FollowRule).max(20) }).optional(),
 });
+
+export const FollowUndoBody = z.object({ txnId: Id });
 
 export const CreateAccountBody = z.object({
   name: z.string().min(1),

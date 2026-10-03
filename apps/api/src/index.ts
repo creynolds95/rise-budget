@@ -26,6 +26,7 @@ import { devices } from './routes/devices';
 import { findUserIdByEmail } from './db';
 import type { Env } from './env';
 import { BACKUP_CRON, runBackup } from './backup/run';
+import { applyFollows } from './lib/follow';
 import { applyLoanPayments } from './lib/loanPayments';
 import { runSync } from './sync/run';
 import { sourceFromEnv } from './sync/source';
@@ -112,6 +113,14 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
           job,
           ok: false,
           step: 'loan-payments',
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+      await applyFollows(db, userId, new Date(event.scheduledTime)).catch((e: unknown) =>
+        log({
+          job,
+          ok: false,
+          step: 'follow',
           error: e instanceof Error ? e.message : String(e),
         }),
       );

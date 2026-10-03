@@ -248,14 +248,17 @@ export function AccountDetail() {
       }}
       manage={
         manual ? (
-          <AccountManage
-            id={id}
-            name={a.name}
-            onDone={async () => {
-              await invalidate();
-              navigate('/accounts');
-            }}
-          />
+          <>
+            {!owes && a.kind !== 'loan' && <FollowCard id={id} today={today} />}
+            <AccountManage
+              id={id}
+              name={a.name}
+              onDone={async () => {
+                await invalidate();
+                navigate('/accounts');
+              }}
+            />
+          </>
         ) : a.kind === 'loan' ? (
           <ConvertToManual
             id={id}
@@ -267,6 +270,104 @@ export function AccountDetail() {
         ) : undefined
       }
     />
+  );
+}
+
+/** A manual account whose other side never arrives (Apple Savings): matching transfers in
+ *  other accounts move its balance. The rows themselves and the budget are never touched. */
+function FollowCard({ id, today }: { id: string; today: string }) {
+  const me = useMe().data;
+  const qc = useQueryClient();
+  const invalidate = useInvalidateMoney();
+  const rules = me?.settings.follow.rules ?? [];
+  const rule = rules.find((r) => r.accountId === id);
+  const [text, setText] = useState(rule?.match ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setText(rule?.match ?? ''), [rule?.match]);
+  if (!me) return null;
+  const clean = text.trim().toLowerCase();
+  const valid = clean.length >= 3;
+  const entries = me.settings.follow.log
+    .filter((e) => e.accountId === id && !e.undone)
+    .slice(-5)
+    .reverse();
+
+  const run = async (action: () => Promise<unknown>, fallback: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      await qc.invalidateQueries({ queryKey: ['me'] });
+      await invalidate();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : fallback);
+    }
+    setBusy(false);
+  };
+  const saveRules = (next: typeof rules) =>
+    run(() => api('PATCH', '/me/settings', { follow: { rules: next } }), 'Could not save.');
+  const others = rules.filter((r) => r.accountId !== id);
+
+  return (
+    <div className="w-full rounded-card bg-surface p-4 shadow-soft">
+      <EditRow
+        label="Follow transfers that look like"
+        field={
+          <input
+            aria-label="Transfer looks like"
+            placeholder="e.g. apple gs"
+            autoCapitalize="none"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            className="min-h-11 w-40 rounded-input border border-hairline bg-surface px-3 text-right outline-none focus:border-sage-600"
+          />
+        }
+      />
+      {error && <p className="mt-2 type-caption text-clay">{error}</p>}
+      <div className="mt-3 flex gap-2">
+        <Button
+          className="flex-1"
+          disabled={busy || !valid || clean === rule?.match}
+          onClick={() => saveRules([...others, { accountId: id, match: clean, since: today }])}
+        >
+          {rule ? 'Update' : 'Start following'}
+        </Button>
+        {rule && (
+          <Button
+            variant="quiet"
+            className="flex-1"
+            disabled={busy}
+            onClick={() => saveRules(others)}
+          >
+            Stop
+          </Button>
+        )}
+      </div>
+      {rule && (
+        <p className="mt-2 type-caption text-ink-muted">Following since {shortDate(rule.since)}.</p>
+      )}
+      {entries.map((e) => (
+        <div key={e.txnId} className="mt-2 flex items-center justify-between gap-3">
+          <span>
+            <MoneyText cents={e.deltaCents} />{' '}
+            <span className="text-ink-muted">{shortDate(e.asOf)}</span>
+          </span>
+          <Button
+            variant="quiet"
+            disabled={busy}
+            onClick={() =>
+              run(
+                () => api('POST', `/accounts/${id}/follow-undo`, { txnId: e.txnId }),
+                'Could not undo.',
+              )
+            }
+          >
+            Undo
+          </Button>
+        </div>
+      ))}
+    </div>
   );
 }
 
