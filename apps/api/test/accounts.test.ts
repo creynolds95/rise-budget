@@ -85,6 +85,56 @@ describe('T17 accounts & snapshots', () => {
     );
   });
 
+  it('removing a dated balance re-points the current balance; the last one stays', async () => {
+    const u = await signedInUser();
+    const acct = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'House', kind: 'other' },
+    });
+    const id = acct.json.id;
+    const snap = (asOf: string, balanceCents: number) =>
+      call('POST', `/accounts/${id}/snapshots`, { access: u.access, body: { asOf, balanceCents } });
+    const del = (asOf: string, access = u.access) =>
+      call('DELETE', `/accounts/${id}/snapshots/${asOf}`, { access });
+    const balance = async () =>
+      (await call('GET', `/accounts/${id}`, { access: u.access })).json.balanceCents;
+
+    await snap('2026-06-01', 29_000_000);
+    await snap('2026-09-01', 31_000_000); // a typo
+
+    // Another user can't touch it.
+    expect((await del('2026-09-01', (await signedInUser()).access)).status).toBe(404);
+    expect((await del('not-a-date')).status).toBe(400);
+
+    expect((await del('2026-09-01')).status).toBe(200);
+    expect(await balance()).toBe(29_000_000);
+    expect((await call('GET', `/accounts/${id}/snapshots`, { access: u.access })).json).toEqual([
+      { asOf: '2026-06-01', balanceCents: 29_000_000 },
+    ]);
+
+    // Removing an older entry leaves the current balance alone.
+    await snap('2026-09-02', 30_000_000);
+    await del('2026-06-01');
+    expect(await balance()).toBe(30_000_000);
+
+    // The only balance left can't be removed.
+    expect((await del('2026-09-02')).status).toBe(409);
+    expect(await balance()).toBe(30_000_000);
+  });
+
+  it('a synced account keeps its balances', async () => {
+    const u = await signedInUser();
+    const id = 'acct-synced-' + crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO account (id, user_id, source, source_account_id, name, kind, balance_cents, created_at)
+       VALUES (?1, ?2, 'simplefin', ?1, 'Checking', 'depository', 100, ?3)`,
+    )
+      .bind(id, u.userId, new Date().toISOString())
+      .run();
+    const r = await call('DELETE', `/accounts/${id}/snapshots/2026-09-01`, { access: u.access });
+    expect(r.status).toBe(409);
+  });
+
   it('flips the stored sign when kind crosses the liability boundary', async () => {
     const u = await signedInUser();
     const acct = await call('POST', '/accounts', {

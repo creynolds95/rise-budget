@@ -1,6 +1,6 @@
 import { useTabRootTrap } from '../lib/gestures';
 import { BackLink } from './BackLink';
-import { NavDrawer } from './NavDrawer';
+import { MENU_ITEMS, NavDrawer } from './NavDrawer';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
 import { Icon } from './primitives/Icon';
@@ -111,7 +111,7 @@ export function Shell() {
           matching `lg:pl-72` padding. The phone tab bar is deliberately NOT fixed: it is the
           last item of a full-height column and `sticky`, because iOS can leave a
           fixed-position bar stranded mid-screen after a long session. */}
-      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72 lg:flex-col lg:justify-between lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
+      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72 lg:flex-col lg:justify-between lg:gap-6 lg:overflow-y-auto lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
         <div className="flex flex-col gap-7">
           <span className="px-3 font-serif text-xl tracking-tight text-sage-700">Rise</span>
           <nav aria-label="Tabs" className="flex flex-col gap-0.5">
@@ -140,6 +140,22 @@ export function Shell() {
                   <path d={ICON[t.tab]} />
                 </svg>
                 {t.label}
+              </NavLink>
+            ))}
+          </nav>
+          {/* Everything the phone's Dashboard menu reaches; Settings sits at the foot. */}
+          <nav aria-label="Menu" className="flex flex-col gap-0.5 border-t border-hairline pt-5">
+            {MENU_ITEMS.filter((i) => i.to !== '/settings').map((i) => (
+              <NavLink
+                key={i.to}
+                to={i.to}
+                className={({ isActive }) =>
+                  `flex min-h-10 items-center rounded-card px-3 type-body ${
+                    isActive ? 'bg-sage-100 font-semibold text-sage-700' : 'text-ink-muted'
+                  }`
+                }
+              >
+                {i.label}
               </NavLink>
             ))}
           </nav>
