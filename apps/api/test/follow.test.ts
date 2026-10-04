@@ -106,7 +106,8 @@ describe('follow transfers', () => {
     expect(await applyFollows(env.DB, u.userId, NOW)).toBe(0);
     expect(await balance(u, savings)).toBe(500_000 + 120 * 1_000);
     expect(await log(u)).toHaveLength(120);
-  });
+    // 120 inserts one by one: about 5s on a CI runner, past vitest's default timeout.
+  }, 30_000);
 
   it('prunes log entries once they are older than the window', async () => {
     const u = await signedInUser();
