@@ -53,15 +53,25 @@ export function AccountLogo({ account }: { account: Parameters<typeof accountBad
 const badgeFontSize = (text: string) =>
   text.length > 4 ? 8.5 : text.length > 3 ? 10 : text.length > 1 ? 13 : 16;
 
-/** A badge the user designed: their letters and colors on the same 36px circle. */
+/** A badge the user designed: their letters and colors on the same 36px circle. Drawn as SVG
+ *  so the letters sit on the circle's optical center whatever the font's line box does. */
 export function CustomBadge({ text, bg, fg }: { text: string; bg: string; fg: string }) {
+  // Stepped down so three or four letters keep clear of the rim.
+  const size = [16, 16, 13, 11, 9][text.length] ?? 9;
   return (
-    <span
-      aria-hidden
-      className="flex size-9 shrink-0 items-center justify-center rounded-full font-bold tracking-tight ring-1 ring-hairline ring-inset"
-      style={{ background: bg, color: fg, fontSize: badgeFontSize(text) }}
-    >
-      {text}
-    </span>
+    <svg aria-hidden width="36" height="36" viewBox="0 0 36 36" className="shrink-0">
+      <circle cx="18" cy="18" r="17.5" fill={bg} className="stroke-hairline" />
+      <text
+        x="18"
+        // Baseline drops by half the cap height (~0.7em), so capitals center vertically.
+        y={18 + size * 0.36}
+        textAnchor="middle"
+        fontWeight="700"
+        fontSize={size}
+        fill={fg}
+      >
+        {text}
+      </text>
+    </svg>
   );
 }
