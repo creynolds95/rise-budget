@@ -7,7 +7,9 @@ import {
   dueSuggestions,
   groupView,
   owedCents,
+  payoffGap,
   planLoans,
+  type LoanRow,
 } from './debt';
 
 const loan = (over: Partial<DebtLoanPlan> = {}): DebtLoanPlan => ({
@@ -151,5 +153,42 @@ describe('plan loans', () => {
       { plan: p.loans[0], name: 'Loan A', owedCents: 1_000_000 },
     ]);
     expect(planLoans(p, accounts, 'mortgage').map((l) => l.owedCents)).toEqual([33_000_000]);
+  });
+});
+
+describe('mortgage payoff', () => {
+  const mortgage = (paymentCents: number) =>
+    groupView(
+      [
+        {
+          plan: loan({ group: 'mortgage', aprMilliPct: 5875, paymentCents }),
+          name: 'Mortgage',
+          owedCents: 33_064_962,
+        },
+      ],
+      { extraCents: 0, strategy: 'snowball', rollForward: true },
+      '2026-10',
+    ).rows[0] as LoanRow;
+
+  it('a 30-year P&I payment pays off in 360 months, matching the amortization formula', () => {
+    // 330,649.62 at 5.875% over 360 months: P·r / (1 − (1 + r)^−360) = $1,955.92
+    const r = mortgage(195_592);
+    expect(r.payoffPeriod).toBe('2056-10');
+    expect(payoffGap(r)).toBeNull();
+    expect(r.interestCents).toBe(161_881);
+  });
+
+  it('a payment under the interest has no date and says why', () => {
+    const r = mortgage(79_400);
+    expect(r.payoffPeriod).toBeNull();
+    expect(payoffGap(r)).toBe('too-low');
+  });
+
+  it('no payment asks for one', () => {
+    expect(payoffGap(mortgage(0))).toBe('no-payment');
+  });
+
+  it('a paid-off loan has no gap', () => {
+    expect(payoffGap({ done: true, payoffPeriod: null, plan: loan() })).toBeNull();
   });
 });

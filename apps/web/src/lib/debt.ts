@@ -1,4 +1,10 @@
-import { isDue, simulatePayoff, stepBalance, type Strategy } from '@rise/shared/debt';
+import {
+  isDue,
+  monthlyInterest,
+  simulatePayoff,
+  stepBalance,
+  type Strategy,
+} from '@rise/shared/debt';
 import type { Account, DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { addMonths } from './dates';
 
@@ -32,6 +38,8 @@ export interface LoanRow {
   /** "2031-04" when the loan finishes; null if it never does at this payment. */
   payoffPeriod: string | null;
   done: boolean;
+  /** This month's interest; a payment at or under it never pays the loan off. */
+  interestCents: number;
 }
 
 export interface GroupView {
@@ -76,6 +84,7 @@ export function groupView(
         owedCents: l.owedCents,
         payoffPeriod: month === null ? null : addMonths(period, month),
         done: l.owedCents === 0,
+        interestCents: monthlyInterest(l.owedCents, l.plan.aprMilliPct),
       };
     }),
     owedCents: loans.reduce((n, l) => n + l.owedCents, 0),
@@ -135,3 +144,9 @@ export function planLoans(
         : [];
     });
 }
+
+/** Why a loan has no payoff date, so the page says what to fix instead of going blank. */
+export const payoffGap = (
+  r: Pick<LoanRow, 'done' | 'payoffPeriod' | 'plan'>,
+): 'no-payment' | 'too-low' | null =>
+  r.done || r.payoffPeriod !== null ? null : r.plan.paymentCents === 0 ? 'no-payment' : 'too-low';
