@@ -1,12 +1,15 @@
 import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
 import {
   advanceManualRule,
+  cashMovements,
   detectSemimonthly,
+  firstUpcoming,
   detectSeries,
   latestByAccount,
   missState,
   surplusSuggestions,
   typicalPostDay,
+  type AccountOccurrence,
   type DetectedSeries,
 } from '@rise/shared/recurring';
 import {
@@ -34,7 +37,7 @@ export const LOOKBACK_DAYS = 3 * 366 + 8;
  */
 export async function refreshRecurring(db: D1Database, userId: UserId, today: string) {
   const from = dateFromDayNumber(dayNumber(today) - LOOKBACK_DAYS);
-  const [byMerchant, manual, manualMerchants, user, accounts, existing] = await Promise.all([
+  const [withTransfers, manual, manualMerchants, user, accounts, existing] = await Promise.all([
     listOccurrences(userId, db, from),
     listManualRules(userId, db),
     manualRuleMerchants(userId, db),
@@ -42,6 +45,12 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
     listAccounts(userId, db),
     listDetectedStatuses(userId, db),
   ]);
+  // Spending and income only: a transfer is never a bill, a paycheck, or a budget series.
+  const byMerchant = new Map<string, AccountOccurrence[]>();
+  for (const [merchant, occ] of withTransfers) {
+    const spent = occ.filter((o) => !o.isTransfer);
+    if (spent.length > 0) byMerchant.set(merchant, spent);
+  }
   const latest = latestByAccount(byMerchant);
   // A miss is only clay when it's knowable and unexplained (shared/recurring/miss.ts).
   const stateOf = (
@@ -83,29 +92,45 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
     if (!prev || size > prev.size) billDay.set(s.categoryId, { day, size });
   }
   const manualUpdates = manual.map((r) => {
-    const advanced = advanceManualRule(
-      {
-        cadence: r.cadence as DetectedSeries['cadence'],
-        anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
-        expectedAmountCents: r.expected_amount_cents,
-        nextExpectedDate: r.next_expected_date,
-      },
-      byMerchant.get(r.merchant_normalized) ?? [],
-      today,
-    );
+    const anchorDays = r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null;
+    const cadence = r.cadence as DetectedSeries['cadence'];
+    // Hand-added: no transaction will ever confirm it, so it simply moves on with the calendar.
+    const advanced =
+      r.label != null
+        ? {
+            nextExpectedDate: firstUpcoming(cadence, r.next_expected_date, anchorDays, today),
+            status: 'active' as const,
+          }
+        : advanceManualRule(
+            {
+              cadence,
+              anchorDays,
+              expectedAmountCents: r.expected_amount_cents,
+              nextExpectedDate: r.next_expected_date,
+            },
+            // Transfers included: a savings or loan transfer confirms its rule like a bill does.
+            withTransfers.get(r.merchant_normalized) ?? [],
+            today,
+          );
     return advanceManualRuleStmt(userId, db, r.id, advanced.nextExpectedDate, advanced.status);
   });
-  const suggestions = user
-    ? surplusSuggestions(
-        byMerchant,
-        new Set(cashAccountsOf(user.settings, accounts).map((a) => a.id)),
-        new Set([
-          ...manualMerchants,
-          ...user.settings.dismissedPayMerchants.map((d) => d.merchant),
-        ]),
-        today,
-      )
-    : [];
+  const cashIds = user ? new Set(cashAccountsOf(user.settings, accounts).map((a) => a.id)) : null;
+  const suggestions =
+    user && cashIds
+      ? surplusSuggestions(
+          cashMovements(
+            withTransfers,
+            cashIds,
+            new Set(accounts.filter((a) => a.kind === 'credit').map((a) => a.id)),
+          ),
+          cashIds,
+          new Set([
+            ...manualMerchants,
+            ...user.settings.dismissedPayMerchants.map((d) => d.merchant),
+          ]),
+          today,
+        )
+      : [];
   // A series that no longer fits keeps its last prediction; only its status moves on.
   const detected = new Set(found.map(([merchant]) => merchant));
   const stale = existing.flatMap((r) => {

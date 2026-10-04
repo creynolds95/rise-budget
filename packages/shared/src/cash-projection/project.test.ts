@@ -35,4 +35,15 @@ describe('cash-to-payday projection', () => {
     expect(p.points).toEqual([{ date: '2026-09-25', balanceCents: 100_000, label: 'Today' }]);
     expect(p.freeToMoveCents).toBe(80_000);
   });
+
+  it('on the same day, a bill comes out before the paycheck lands', () => {
+    const events: CashEvent[] = [
+      { date: '2026-10-01', cashDeltaCents: 250_000, label: 'Payday' },
+      { date: '2026-10-01', cashDeltaCents: -180_000, label: 'Mortgage' },
+    ];
+    const p = projectCashFlow(100_000, '2026-09-25', 0, events);
+    expect(p.points.map((x) => x.label)).toEqual(['Today', 'Mortgage', 'Payday']);
+    expect(p.lowestPoint).toEqual({ date: '2026-10-01', balanceCents: -80_000, label: 'Mortgage' });
+    expect(p.freeToMoveCents).toBe(-80_000);
+  });
 });
