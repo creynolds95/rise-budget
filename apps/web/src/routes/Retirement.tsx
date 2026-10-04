@@ -4,9 +4,11 @@ import type { RetirementPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { Chart } from '../components/primitives/Chart';
+import { IconButton } from '../components/primitives/Icon';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow, StaticRow } from '../components/primitives/Rows';
+import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { api } from '../lib/api';
 import { formatCents } from '../lib/money';
@@ -72,6 +74,7 @@ export function Retirement() {
   // The slider opens at the goal age every visit; moving it is a view, not a setting.
   const [age, setAge] = useState<number | null>(null);
   const shownAge = Math.min(AGE_MAX, Math.max(AGE_MIN, age ?? plan?.goalAge ?? 65));
+  const [managing, setManaging] = useState(false);
 
   const header = {
     back: { label: 'Financial health', to: '/financial-health' },
@@ -117,73 +120,86 @@ export function Retirement() {
     });
 
   return (
-    <DetailPage
-      header={header}
-      identity={{
-        label: `Monthly spending at ${shownAge}`,
-        hero: <MoneyText cents={v.incomeCents} whole />,
-        context:
-          v.pctOfGoal === null ? undefined : (
-            <span className="money">
-              {v.pctOfGoal}% of your {formatCents(plan.spendTargetCents, { whole: true })} goal
-            </span>
+    <>
+      <DetailPage
+        header={{
+          ...header,
+          action: (
+            <IconButton icon="more" label="Retirement settings" onClick={() => setManaging(true)} />
           ),
-      }}
-      shape={
-        <>
-          <input
-            type="range"
-            aria-label="Retirement age"
-            min={AGE_MIN}
-            max={AGE_MAX}
-            step={1}
-            value={shownAge}
-            onChange={(e) => setAge(Number(e.target.value))}
-            className="w-full accent-sage-600"
-          />
-          <div className="flex justify-between type-caption text-ink-muted money">
-            <span>{AGE_MIN}</span>
-            <span>Age {shownAge}</span>
-            <span>{AGE_MAX}</span>
-          </div>
-          {v.series.length > 1 && (
-            <div className="mt-4">
-              <Chart
-                kind="line"
-                label="Projected retirement balance"
-                points={v.series.map((p) => ({
-                  cents: p.balanceCents,
-                  inferred: false,
-                  label: `Age ${p.age}`,
-                }))}
-              />
-            </div>
-          )}
-        </>
-      }
-      facts={
-        <>
-          <StaticRow label="Today" value={<MoneyText cents={start} whole />} />
-          <StaticRow label={`At ${shownAge}`} value={<MoneyText cents={v.balanceCents} whole />} />
-          {v.neededCents !== null && (
-            <StaticRow label="Needed for goal" value={<MoneyText cents={v.neededCents} whole />} />
-          )}
-          {v.gapMonthlyCents !== null && (
-            <StaticRow
-              label={v.gapMonthlyCents === 0 ? 'Gap to goal' : 'Add per month to reach goal'}
-              value={
-                v.gapMonthlyCents === 0 ? (
-                  <span className="text-sage-700">On track</span>
-                ) : (
-                  <MoneyText cents={v.gapMonthlyCents} whole />
-                )
-              }
+        }}
+        identity={{
+          label: `Monthly spending at ${shownAge}`,
+          hero: <MoneyText cents={v.incomeCents} whole />,
+          context:
+            v.pctOfGoal === null ? undefined : (
+              <span className="money">
+                {v.pctOfGoal}% of your {formatCents(plan.spendTargetCents, { whole: true })} goal
+              </span>
+            ),
+        }}
+        shape={
+          <>
+            <input
+              type="range"
+              aria-label="Retirement age"
+              min={AGE_MIN}
+              max={AGE_MAX}
+              step={1}
+              value={shownAge}
+              onChange={(e) => setAge(Number(e.target.value))}
+              className="w-full accent-sage-600"
             />
-          )}
-        </>
-      }
-      manage={
-        <>
+            <div className="flex justify-between type-caption text-ink-muted money">
+              <span>{AGE_MIN}</span>
+              <span>Age {shownAge}</span>
+              <span>{AGE_MAX}</span>
+            </div>
+            {v.series.length > 1 && (
+              <div className="mt-4">
+                <Chart
+                  kind="line"
+                  label="Projected retirement balance"
+                  points={v.series.map((p) => ({
+                    cents: p.balanceCents,
+                    inferred: false,
+                    label: `Age ${p.age}`,
+                  }))}
+                />
+              </div>
+            )}
+          </>
+        }
+        facts={
+          <>
+            <StaticRow label="Today" value={<MoneyText cents={start} whole />} />
+            <StaticRow
+              label={`At ${shownAge}`}
+              value={<MoneyText cents={v.balanceCents} whole />}
+            />
+            {v.neededCents !== null && (
+              <StaticRow
+                label="Needed for goal"
+                value={<MoneyText cents={v.neededCents} whole />}
+              />
+            )}
+            {v.gapMonthlyCents !== null && (
+              <StaticRow
+                label={v.gapMonthlyCents === 0 ? 'Gap to goal' : 'Add per month to reach goal'}
+                value={
+                  v.gapMonthlyCents === 0 ? (
+                    <span className="text-sage-700">On track</span>
+                  ) : (
+                    <MoneyText cents={v.gapMonthlyCents} whole />
+                  )
+                }
+              />
+            )}
+          </>
+        }
+      />
+      <Sheet open={managing} title="Retirement settings" onClose={() => setManaging(false)}>
+        <div className="overflow-hidden rounded-card bg-surface px-4">
           <EditRow
             label="Your age"
             field={
@@ -251,8 +267,8 @@ export function Retirement() {
               />
             }
           />
-        </>
-      }
-    />
+        </div>
+      </Sheet>
+    </>
   );
 }
