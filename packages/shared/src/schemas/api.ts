@@ -9,7 +9,7 @@ import {
   RuleMatchType,
   SpendShape,
 } from './enums';
-import { DebtPlan, FollowRule, RetirementPlan, SavingsPlan } from './entities';
+import { AccountBadgeStyle, DebtPlan, FollowRule, RetirementPlan, SavingsPlan } from './entities';
 
 export const ManualCadence = z.enum(['weekly', 'biweekly', 'monthly', 'semimonthly', 'annual']);
 
@@ -94,6 +94,8 @@ export const PatchAccountBody = z.object({
   expectedPaymentCents: Cents.nullable().optional(),
   paymentDay: z.int().min(1).max(31).nullable().optional(),
   syncCadenceHours: z.int().positive().nullable().optional(),
+  /** null puts back the automatic badge. */
+  badge: AccountBadgeStyle.nullable().optional(),
 });
 export type PatchAccountBody = z.infer<typeof PatchAccountBody>;
 

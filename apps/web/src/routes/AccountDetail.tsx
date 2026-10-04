@@ -1,8 +1,10 @@
 import { netWorthSeries } from '@rise/shared/networth';
-import { isLiabilityKind, type AccountKind } from '@rise/shared/schemas';
+import { isLiabilityKind, type AccountBadgeStyle, type AccountKind } from '@rise/shared/schemas';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { AccountLogo } from '../components/AccountLogo';
+import { BadgeEditorSheet } from '../components/BadgeEditorSheet';
 import { staleText } from '../components/StaleNotes';
 import { TxnRow } from '../components/TxnRow';
 import { DetailPage } from '../components/detail/DetailPage';
@@ -16,6 +18,7 @@ import { EditRow, NavRow, StaticRow } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
 import { rangeStart, type Range } from '../lib/chart';
+import { accountBadge, canCustomizeBadge, defaultBadge } from '../lib/institution';
 import { localToday, longDate, shortDate } from '../lib/dates';
 import { useAccounts, useInvalidateMoney, useMe, useToday, useTransactions } from '../lib/queries';
 
@@ -35,6 +38,7 @@ interface Draft {
   syncCadenceHours: number;
   includeInBudget: boolean;
   includeInNetWorth: boolean;
+  badge: AccountBadgeStyle | null;
 }
 
 const HISTORY_PREVIEW = 6;
@@ -53,6 +57,7 @@ export function AccountDetail() {
   const [error, setError] = useState<string | null>(null);
   const [edits, setEdits] = useState<Partial<Draft>>({});
   const [saving, setSaving] = useState(false);
+  const [badgeOpen, setBadgeOpen] = useState(false);
   const snaps = useQuery({
     queryKey: ['snapshots', id],
     queryFn: () => get<Snap[]>(`/accounts/${id}/snapshots`),
@@ -95,6 +100,7 @@ export function AccountDetail() {
     syncCadenceHours: a.syncCadenceHours ?? 24,
     includeInBudget: a.includeInBudget,
     includeInNetWorth: a.includeInNetWorth,
+    badge: a.badge ?? null,
   };
   const d: Draft = { ...base, ...edits };
   const set = (patch: Partial<Draft>) => setEdits((e) => ({ ...e, ...patch }));
@@ -110,6 +116,7 @@ export function AccountDetail() {
   if (d.includeInBudget !== base.includeInBudget) patchBody.includeInBudget = d.includeInBudget;
   if (d.includeInNetWorth !== base.includeInNetWorth)
     patchBody.includeInNetWorth = d.includeInNetWorth;
+  if (JSON.stringify(d.badge) !== JSON.stringify(base.badge)) patchBody.badge = d.badge;
   const dirty = balanceChanged || Object.keys(patchBody).length > 0;
   const invalid = (manual && !d.name.trim()) || d.asOf > today;
 
@@ -336,6 +343,36 @@ export function AccountDetail() {
                     onChange={(v) => set({ includeInNetWorth: v })}
                   />
                 }
+              />
+              {canCustomizeBadge(a) && (
+                <EditRow
+                  label="Icon"
+                  field={
+                    <button
+                      type="button"
+                      aria-label="Change icon"
+                      className="flex min-h-11 items-center gap-2 text-sage-700"
+                      onClick={() => setBadgeOpen(true)}
+                    >
+                      <AccountLogo account={{ ...a, badge: d.badge }} />
+                      <Icon name="pencil" size={16} />
+                    </button>
+                  }
+                />
+              )}
+              <BadgeEditorSheet
+                open={badgeOpen}
+                initial={d.badge ?? defaultBadge(autoInitials(a))}
+                canReset={d.badge !== null}
+                onDone={(badge) => {
+                  set({ badge });
+                  setBadgeOpen(false);
+                }}
+                onReset={() => {
+                  set({ badge: null });
+                  setBadgeOpen(false);
+                }}
+                onClose={() => setBadgeOpen(false)}
               />
               {a.institutionName && <StaticRow label="Institution" value={a.institutionName} />}
               <StaticRow label="Source" value={manual ? 'Manual' : 'SimpleFIN'} />
@@ -742,4 +779,10 @@ function AccountManage({
       </Button>
     </div>
   );
+}
+
+/** The letters Rise would show on its own, as the editor's starting point. */
+function autoInitials(a: Parameters<typeof accountBadge>[0]): string | null {
+  const auto = accountBadge({ ...a, badge: null });
+  return auto.type === 'initials' ? auto.text : null;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountBadge } from './institution';
+import { accountBadge, canCustomizeBadge } from './institution';
 
 const synced = (institutionName: string | null, kind = 'credit' as const) => ({
   name: 'X',
@@ -9,6 +9,20 @@ const synced = (institutionName: string | null, kind = 'credit' as const) => ({
 });
 
 describe('accountBadge', () => {
+  it('uses a custom badge only where Rise has no logo for the bank', () => {
+    const badge = { text: 'CU', bg: '#1a4d2e', fg: '#ffffff' };
+    expect(accountBadge({ ...synced('Ally'), badge })).toEqual({ type: 'custom', ...badge });
+    expect(accountBadge({ ...synced('Nelnet', 'loan' as never), badge })).toMatchObject({
+      type: 'custom',
+    });
+    expect(accountBadge({ ...synced('Chase Bank'), badge })).toEqual({
+      type: 'brand',
+      mark: 'chase',
+    });
+    expect(canCustomizeBadge(synced('Ally'))).toBe(true);
+    expect(canCustomizeBadge(synced('Chase Bank'))).toBe(false);
+  });
+
   it('matches known banks by institution name', () => {
     expect(accountBadge(synced('Chase Bank'))).toEqual({ type: 'brand', mark: 'chase' });
     expect(accountBadge(synced('Apple Card'))).toEqual({ type: 'brand', mark: 'apple' });

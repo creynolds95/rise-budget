@@ -24,6 +24,9 @@ interface AccountRow {
   last_synced_at: string | null;
   archived_at: string | null;
   created_at: string;
+  badge_text: string | null;
+  badge_bg: string | null;
+  badge_fg: string | null;
 }
 
 const toAccount = (r: AccountRow): Account =>
@@ -45,6 +48,10 @@ const toAccount = (r: AccountRow): Account =>
     lastSyncedAt: r.last_synced_at,
     archivedAt: r.archived_at,
     createdAt: r.created_at,
+    badge:
+      r.badge_text && r.badge_bg && r.badge_fg
+        ? { text: r.badge_text, bg: r.badge_bg, fg: r.badge_fg }
+        : null,
   });
 
 export async function listAccounts(userId: UserId, db: D1Database): Promise<Account[]> {
@@ -190,7 +197,7 @@ export async function deleteAccount(userId: UserId, db: D1Database, accountId: s
 
 export type AccountPatch = PatchAccountBody;
 
-const PATCH_COLUMNS: Record<keyof AccountPatch, string> = {
+const PATCH_COLUMNS: Record<Exclude<keyof AccountPatch, 'badge'>, string> = {
   name: 'name',
   kind: 'kind',
   institutionName: 'institution_name',
@@ -207,7 +214,9 @@ export async function updateAccount(
   id: string,
   patch: AccountPatch,
 ): Promise<Account | null> {
-  const entries = (Object.keys(PATCH_COLUMNS) as (keyof AccountPatch)[])
+  const entries: (readonly [string, unknown])[] = (
+    Object.keys(PATCH_COLUMNS) as (keyof typeof PATCH_COLUMNS)[]
+  )
     .filter((k) => patch[k] !== undefined)
     .map(
       (k) =>
@@ -216,6 +225,14 @@ export async function updateAccount(
           typeof patch[k] === 'boolean' ? bool(patch[k] as boolean) : patch[k],
         ] as const,
     );
+  // The badge's three columns move together; null clears all three.
+  if (patch.badge !== undefined) {
+    entries.push(
+      ['badge_text', patch.badge?.text ?? null],
+      ['badge_bg', patch.badge?.bg.toLowerCase() ?? null],
+      ['badge_fg', patch.badge?.fg.toLowerCase() ?? null],
+    );
+  }
   if (entries.length > 0) {
     const sets = entries.map(([col], i) => `${col} = ?${i + 3}`).join(', ');
     await db

@@ -186,6 +186,14 @@ export const User = z.object({
 });
 export type User = z.infer<typeof User>;
 
+/** A badge the user chose for an account Rise has no logo for. Colors are #rrggbb. */
+export const AccountBadgeStyle = z.object({
+  text: z.string().trim().min(1).max(4),
+  bg: z.string().regex(/^#[0-9a-f]{6}$/i),
+  fg: z.string().regex(/^#[0-9a-f]{6}$/i),
+});
+export type AccountBadgeStyle = z.infer<typeof AccountBadgeStyle>;
+
 export const Account = z.object({
   id: Id,
   name: z.string().min(1),
@@ -204,6 +212,7 @@ export const Account = z.object({
   lastSyncedAt: IsoDateTime.nullable(),
   archivedAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
+  badge: AccountBadgeStyle.nullable().default(null),
 });
 export type Account = z.infer<typeof Account>;
 
