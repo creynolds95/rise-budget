@@ -86,7 +86,25 @@ function Inner({
         : `${ids.length} of ${total}`;
 
   return (
-    <Sheet open title={TITLES[page]} onClose={onClose}>
+    <Sheet
+      open
+      title={TITLES[page]}
+      onClose={onClose}
+      footer={
+        <div className="flex gap-3">
+          <Button
+            variant="quiet"
+            className="flex-1 border border-hairline bg-surface"
+            onClick={() => setF({ ...EMPTY, q: f.q })}
+          >
+            Clear all
+          </Button>
+          <Button className="flex-1" onClick={() => onApply(f)}>
+            Apply
+          </Button>
+        </div>
+      }
+    >
       {page !== 'root' && (
         <button
           onClick={() => setPage('root')}
@@ -238,19 +256,6 @@ function Inner({
           ))}
         </Group>
       )}
-
-      <div className="sticky bottom-0 -mx-4 mt-6 flex gap-3 bg-canvas px-4 pt-2 md:-mx-6 md:px-6">
-        <Button
-          variant="quiet"
-          className="flex-1 border border-hairline bg-surface"
-          onClick={() => setF({ ...EMPTY, q: f.q })}
-        >
-          Clear all
-        </Button>
-        <Button className="flex-1" onClick={() => onApply(f)}>
-          Apply
-        </Button>
-      </div>
     </Sheet>
   );
 }

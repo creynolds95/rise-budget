@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
+import { lockScroll } from '../lib/scrollLock';
 
 /** The Dashboard menu. Desktop's sidebar lists the same items under the tabs. */
 export const MENU_ITEMS: { label: string; to: string }[] = [
@@ -37,7 +38,11 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const unlock = lockScroll();
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      unlock();
+    };
   }, [open, onClose]);
   const startX = useRef<number | null>(null);
   if (!mounted) return null;
