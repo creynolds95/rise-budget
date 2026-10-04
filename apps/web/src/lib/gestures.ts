@@ -86,7 +86,16 @@ export function useLinkTransitions() {
       const to = internalPath(a);
       if (!to) return;
       const here = window.location.pathname;
-      const direction = isPushRoute(to) ? 'forward' : isPushRoute(here) ? 'back' : null;
+      // A back link says so: going back to a deeper screen (Categories → Budget settings) is
+      // still a pop, though its target is a push route.
+      const direction =
+        a.dataset['transition'] === 'back'
+          ? 'back'
+          : isPushRoute(to)
+            ? 'forward'
+            : isPushRoute(here)
+              ? 'back'
+              : null;
       if (!direction) return;
       e.preventDefault();
       navigateWithTransition(navigate, to, direction);
