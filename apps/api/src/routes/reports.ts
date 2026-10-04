@@ -39,15 +39,15 @@ reports.get('/spending', async (c) => {
   return c.json(body);
 });
 
-/** T-Sankey: where a month's money came from and where it went. */
+/** T-Sankey: where a month's (or a range of months') money came from and where it went. */
 reports.get('/money-flow', async (c) => {
   const q = MoneyFlowReportQuery.safeParse(c.req.query());
   if (!q.success) throw new AppError(400, 'BAD_REQUEST', 'month is required (YYYY-MM)');
-  const { month } = q.data;
+  const { month, from = month } = q.data;
   const userId = c.get('userId');
   const db = c.env.DB;
   const [aggregates, categories, groups] = await Promise.all([
-    listAggregates(userId, db, month, month),
+    listAggregates(userId, db, from, month),
     listCategories(userId, db),
     listGroups(userId, db),
   ]);

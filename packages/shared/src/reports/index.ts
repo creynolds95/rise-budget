@@ -108,7 +108,17 @@ export interface MoneyFlow {
  * to budgeted categories and excludes dropped transactions (same rule as the rest of
  * reporting, `aggregates.ts`).
  */
-export function buildMoneyFlow(categories: readonly MoneyFlowCategoryInput[]): MoneyFlow {
+export function buildMoneyFlow(rows: readonly MoneyFlowCategoryInput[]): MoneyFlow {
+  // A range of months repeats each category once per month; one flow per category.
+  const merged = new Map<string, MoneyFlowCategoryInput>();
+  for (const r of rows) {
+    const prev = merged.get(r.categoryId);
+    merged.set(
+      r.categoryId,
+      prev ? { ...prev, spentCents: sumCents([prev.spentCents, r.spentCents]) } : r,
+    );
+  }
+  const categories = [...merged.values()];
   const nodes = new Map<string, MoneyFlowNode>();
   const addNode = (id: string, name: string) => {
     if (!nodes.has(id)) nodes.set(id, { id, name });

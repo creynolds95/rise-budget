@@ -118,11 +118,14 @@ export const useSpendingReport = (month: string) =>
     staleTime: SLOW,
   });
 
-/** The Budget tab's "money flow" screen: income → expense groups → categories. */
-export const useMoneyFlow = (month: string) =>
+/** Money flow: income → expense groups → categories, for `month` or `from` through `month`. */
+export const useMoneyFlow = (month: string, from = month) =>
   useQuery({
-    queryKey: ['reports', 'money-flow', month],
-    queryFn: () => get<MoneyFlowReport>(`/reports/money-flow?month=${month}`),
+    queryKey: ['reports', 'money-flow', month, from],
+    queryFn: () =>
+      get<MoneyFlowReport>(
+        `/reports/money-flow?month=${month}${from === month ? '' : `&from=${from}`}`,
+      ),
     placeholderData: keepPreviousData,
     staleTime: SLOW,
   });
