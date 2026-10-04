@@ -174,11 +174,11 @@
 
 /*
  * Motion: sheets rise, menus pop. Screens, sheets and the menu share one clock and one curve
- * (mirrored in lib/motion.ts), an even ease-out that glides rather than snapping. Nothing
+ * (mirrored in lib/motion.ts), an ease-in-out that starts from rest and settles, like iOS. Nothing
  * moves for people who asked it not to.
  */
 :root {
-  --motion-ease: cubic-bezier(0.25, 0.8, 0.25, 1);
+  --motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --motion-in: 500ms;
   --motion-out: 400ms;
 }
