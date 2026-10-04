@@ -180,6 +180,7 @@
   --animate-fade-out: fade-out 220ms ease-in forwards;
   --animate-fade-in: fade-in 200ms ease-out;
   --animate-pop-in: pop-in 140ms ease-out;
+  --animate-indeterminate: indeterminate 1.2s ease-in-out infinite;
 }
 @keyframes sheet-in {
   from {
@@ -205,6 +206,14 @@
 @keyframes fade-in {
   from {
     opacity: 0;
+  }
+}
+@keyframes indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
   }
 }
 @keyframes pop-in {

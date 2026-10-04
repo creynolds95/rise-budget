@@ -80,7 +80,7 @@ export function Accounts() {
       ]);
     },
     onError: (e) =>
-      showFloater({ text: e instanceof ApiError ? e.message : 'Sync failed.', tone: 'warn' }),
+      showFloater({ text: e instanceof ApiError ? e.message : 'Sync failed', tone: 'warn' }),
   });
 
   const headerButtons = (

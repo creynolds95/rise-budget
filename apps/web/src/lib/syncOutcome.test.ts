@@ -72,15 +72,15 @@ describe('manual sync outcome', () => {
 
 describe('refresh note', () => {
   it('says up to date, leaving connection problems to the health notes', () => {
-    expect(syncNote(r())).toEqual({ text: 'Accounts up to date.', tone: 'ok' });
+    expect(syncNote(r())).toEqual({ text: 'Accounts up to date', tone: 'ok' });
     expect(
       syncNote(r({ status: 'partial', rowsUpdated: 2, errors: [{ message: 'Auth required' }] })),
-    ).toEqual({ text: 'Accounts up to date.', tone: 'ok' });
+    ).toEqual({ text: 'Accounts up to date', tone: 'ok' });
   });
 
   it('counts new transactions, and flags a failed sync', () => {
-    expect(syncNote(r({ rowsInserted: 1 })).text).toBe('1 new transaction.');
-    expect(syncNote(r({ rowsInserted: 3 })).text).toBe('3 new transactions.');
-    expect(syncNote(r({ status: 'failed' }))).toEqual({ text: 'Sync failed.', tone: 'warn' });
+    expect(syncNote(r({ rowsInserted: 1 })).text).toBe('1 new transaction');
+    expect(syncNote(r({ rowsInserted: 3 })).text).toBe('3 new transactions');
+    expect(syncNote(r({ status: 'failed' }))).toEqual({ text: 'Sync failed', tone: 'warn' });
   });
 });
