@@ -37,7 +37,11 @@ export function upcomingOccurrences(
   };
   const late = dayNumber(today) - dayNumber(series.nextExpectedDate);
   const owed =
-    waitsForCharge && series.expectedAmountCents > 0 && late < CYCLE_DAYS[series.cadence];
+    waitsForCharge &&
+    series.expectedAmountCents > 0 &&
+    late < CYCLE_DAYS[series.cadence] &&
+    // A next cycle landing today means a whole cycle has passed: that date is the one owed.
+    rolled.nextExpectedDate > today;
   if (!owed) return projectOccurrences(rolled, count);
   return [
     { date: today, amountCents: series.expectedAmountCents },

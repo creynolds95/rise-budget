@@ -63,4 +63,13 @@ describe('upcomingOccurrences', () => {
     const s = series({ nextExpectedDate: '2026-01-31' });
     expect(dates(s, '2026-03-05', false)).toEqual(['2026-03-31', '2026-04-30', '2026-05-31']);
   });
+
+  it('a late bill whose next cycle lands today counts once, not twice', () => {
+    const s = series({ expectedAmountCents: 5_000, nextExpectedDate: '2027-01-30' });
+    expect(upcomingOccurrences(s, '2027-02-28', 3, true)).toEqual([
+      { date: '2027-02-28', amountCents: 5_000 },
+      { date: '2027-03-30', amountCents: 5_000 },
+      { date: '2027-04-30', amountCents: 5_000 },
+    ]);
+  });
 });
