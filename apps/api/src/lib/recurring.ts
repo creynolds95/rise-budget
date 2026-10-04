@@ -112,7 +112,14 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
             withTransfers.get(r.merchant_normalized) ?? [],
             today,
           );
-    return advanceManualRuleStmt(userId, db, r.id, advanced.nextExpectedDate, advanced.status);
+    return advanceManualRuleStmt(
+      userId,
+      db,
+      r.id,
+      advanced.nextExpectedDate,
+      advanced.status,
+      'anchorDays' in advanced ? advanced.anchorDays : null,
+    );
   });
   const cashIds = user ? new Set(cashAccountsOf(user.settings, accounts).map((a) => a.id)) : null;
   const suggestions =

@@ -392,7 +392,12 @@ export function advanceManualRule(
   rule: ManualRule,
   occurrences: readonly Occurrence[],
   today: string,
-): { nextExpectedDate: string; status: 'active' | 'broken' } {
+): {
+  nextExpectedDate: string;
+  status: 'active' | 'broken';
+  /** The days it keeps to: a monthly or yearly rule saved without them keeps its first day. */
+  anchorDays: [number, number] | null;
+} {
   const early = EARLY_MATCH_DAYS[rule.cadence];
   const anchorDay = rule.anchorDays?.[0] ?? parts(rule.nextExpectedDate).d;
   const confirming = occurrences
@@ -400,17 +405,27 @@ export function advanceManualRule(
     .filter((o) => steadyAmounts([o.amountCents, rule.expectedAmountCents]))
     .filter((o) => dayNumber(o.date) >= dayNumber(rule.nextExpectedDate) - early)
     .sort((a, b) => a.date.localeCompare(b.date));
+  const step = (d: string) =>
+    rule.cadence === 'semimonthly'
+      ? nextSemimonthlyDate(d, rule.anchorDays as [number, number])
+      : nextDate(rule.cadence, d, anchorDay);
   let next = rule.nextExpectedDate;
   for (const o of confirming) {
     if (dayNumber(o.date) < dayNumber(next) - early) continue;
-    // The charge pays the cycle due on `next`, early or late, so the following cycle is counted
-    // from that due date: a paycheck on Friday the 2nd for Monday the 5th moves on to the 20th,
-    // and a bill due Friday that posts Monday stays due on Fridays.
-    next =
-      rule.cadence === 'semimonthly'
-        ? nextSemimonthlyDate(next, rule.anchorDays as [number, number])
-        : nextDate(rule.cadence, next, anchorDay);
+    // Each charge pays one due date: the cycle whose window [due - early, next due - early)
+    // holds it. A skipped cycle (a free month) is passed over, so the schedule never trails
+    // behind a charge that already posted.
+    while (dayNumber(o.date) >= dayNumber(step(next)) - early) next = step(next);
+    // Then the following cycle is counted from that due date, early or late: a paycheck on
+    // Friday the 2nd for Monday the 5th moves on to the 20th, and a bill due Friday that posts
+    // Monday stays due on Fridays.
+    next = step(next);
   }
   const status = dayNumber(today) - dayNumber(next) > MISSED_AFTER_DAYS ? 'broken' : 'active';
-  return { nextExpectedDate: next, status };
+  const pinned =
+    rule.anchorDays ??
+    (rule.cadence === 'monthly' || rule.cadence === 'annual'
+      ? ([anchorDay, anchorDay] as [number, number])
+      : null);
+  return { nextExpectedDate: next, status, anchorDays: pinned };
 }
