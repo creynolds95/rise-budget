@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
+import { MOTION_EASE, MOTION_IN_MS, MOTION_OUT_MS } from '../lib/motion';
 import { lockScroll } from '../lib/scrollLock';
 
 /** The menu on every tab. Desktop's sidebar lists the same items under the tabs. */
@@ -15,8 +16,6 @@ export const MENU_ITEMS: { label: string; to: string }[] = [
   { label: 'Settings', to: '/settings' },
 ];
 
-const SLIDE_MS = 220;
-
 /**
  * The menu behind the three-line button: slides in from the left, closes by tapping the
  * dimmed page, swiping it back left, or choosing something.
@@ -31,7 +30,7 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
       return () => cancelAnimationFrame(raf);
     }
     setShown(false);
-    const t = window.setTimeout(() => setMounted(false), SLIDE_MS);
+    const t = window.setTimeout(() => setMounted(false), MOTION_OUT_MS);
     return () => window.clearTimeout(t);
   }, [open]);
   useEffect(() => {
@@ -46,6 +45,10 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
   }, [open, onClose]);
   const startX = useRef<number | null>(null);
   if (!mounted) return null;
+  const motion = {
+    transitionDuration: `${shown ? MOTION_IN_MS : MOTION_OUT_MS}ms`,
+    transitionTimingFunction: MOTION_EASE,
+  };
   return (
     <div
       className="fixed inset-0 z-50 lg:hidden"
@@ -60,15 +63,15 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
         aria-hidden
         onClick={onClose}
         className="absolute inset-0 bg-black/40 transition-opacity"
-        style={{ opacity: shown ? 1 : 0, transitionDuration: `${SLIDE_MS}ms` }}
+        style={{ opacity: shown ? 1 : 0, ...motion }}
       />
       <nav
         aria-label="Menu"
         data-no-swipe
-        className="absolute inset-y-0 left-0 flex w-[78%] max-w-xs flex-col border-r border-hairline bg-surface pt-[max(12px,env(safe-area-inset-top))] pb-[env(safe-area-inset-bottom)] shadow-2xl transition-transform ease-out"
+        className="absolute inset-y-0 left-0 flex w-[78%] max-w-xs flex-col border-r border-hairline bg-surface pt-[max(12px,env(safe-area-inset-top))] pb-[env(safe-area-inset-bottom)] shadow-2xl transition-transform"
         style={{
           transform: shown ? 'translateX(0)' : 'translateX(-100%)',
-          transitionDuration: `${SLIDE_MS}ms`,
+          ...motion,
         }}
       >
         <span className="gutter pt-4 pb-5 font-serif text-4xl tracking-tight text-sage-700">
