@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type TouchEvent } from 'react';
+import { lockScroll } from '../../lib/scrollLock';
 
 /**
  * iOS Safari doesn't shrink `dvh` for the keyboard until it's fully open, so a sheet sized
@@ -100,6 +101,7 @@ export function Sheet({
   action,
   back,
   children,
+  footer,
   fullScreen = false,
 }: {
   open: boolean;
@@ -109,6 +111,8 @@ export function Sheet({
   /** A page inside the sheet: the left slot goes back instead of cancelling. */
   back?: { label: string; onClick: () => void } | undefined;
   children: ReactNode;
+  /** Pinned under the scrolling content, flush with the bottom edge (Clear all · Apply). */
+  footer?: ReactNode;
   /**
    * A full page instead of a bottom sheet (Monarch's amount editor): nothing under the fold
    * is load-bearing once you're editing, so the keyboard is free to cover it — no viewport
@@ -124,12 +128,11 @@ export function Sheet({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    // The page underneath must not scroll while a sheet is up (iOS rubber-banding).
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // The page underneath must not scroll while a sheet is up.
+    const unlock = lockScroll();
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = overflow;
+      unlock();
     };
   }, [open, onClose]);
   if (!mounted) return null;
@@ -176,6 +179,13 @@ export function Sheet({
     </div>
   );
 
+  const bottomPad = footer ? 'pb-4' : 'pb-[max(20px,env(safe-area-inset-bottom))]';
+  const footerBar = footer && (
+    <div className="gutter shrink-0 border-t border-hairline bg-canvas pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+      {footer}
+    </div>
+  );
+
   if (fullScreen) {
     return (
       <div
@@ -186,9 +196,10 @@ export function Sheet({
         className={`${closing ? 'animate-sheet-out' : 'animate-sheet-up'} fixed inset-0 z-40 flex flex-col bg-canvas pt-[env(safe-area-inset-top)]`}
       >
         <div {...handlers}>{header}</div>
-        <div className="gutter flex-1 overflow-y-auto pt-2 pb-[max(20px,env(safe-area-inset-bottom))]">
+        <div className={`gutter flex-1 overflow-y-auto overscroll-contain pt-2 ${bottomPad}`}>
           {children}
         </div>
+        {footerBar}
       </div>
     );
   }
@@ -197,7 +208,7 @@ export function Sheet({
       <button
         aria-label="Close"
         tabIndex={-1}
-        className={`${closing ? 'animate-fade-out' : 'animate-fade-in'} absolute inset-0 bg-ink/25`}
+        className={`${closing ? 'animate-fade-out' : 'animate-fade-in'} absolute inset-0 touch-none bg-ink/25`}
         onClick={onClose}
       />
       <div
@@ -212,9 +223,10 @@ export function Sheet({
           <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-hairline" />
           {header}
         </div>
-        <div className="gutter overflow-y-auto pt-2 pb-[max(20px,env(safe-area-inset-bottom))]">
+        <div className={`gutter min-h-0 overflow-y-auto overscroll-contain pt-2 ${bottomPad}`}>
           {children}
         </div>
+        {footerBar}
       </div>
     </div>
   );
