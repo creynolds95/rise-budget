@@ -1,4 +1,12 @@
-import { detectSemimonthly, detectSeries, type DetectedSeries, type Occurrence } from './detect';
+import { dayNumber } from '../networth';
+import {
+  detectSemimonthly,
+  detectSeries,
+  INTERVAL_TOLERANCE_DAYS,
+  steadyAmounts,
+  type DetectedSeries,
+  type Occurrence,
+} from './detect';
 
 export interface AccountOccurrence extends Occurrence {
   accountId: string;
@@ -69,4 +77,28 @@ export function surplusSuggestions(
     out.push({ merchant, accountId, series });
   }
   return out;
+}
+
+/** What a schedule already in Surplus looks like, for matching a suggestion against it. */
+export interface ScheduleShape {
+  expectedAmountCents: number;
+  /** Its next date, from today on. */
+  nextDate: string;
+}
+
+/**
+ * A suggestion that is already in Surplus under another name: a hand-added "Mortgage" and the
+ * mortgage debit sync found. Same direction, the same amount within 5%, due within a few days
+ * of each other. Adding it again would count the money twice, so it isn't offered.
+ */
+export function alreadyScheduled(
+  s: { expectedAmountCents: number; nextExpectedDate: string },
+  schedules: readonly ScheduleShape[],
+): boolean {
+  return schedules.some(
+    (r) =>
+      Math.sign(r.expectedAmountCents) === Math.sign(s.expectedAmountCents) &&
+      steadyAmounts([r.expectedAmountCents, s.expectedAmountCents]) &&
+      Math.abs(dayNumber(r.nextDate) - dayNumber(s.nextExpectedDate)) <= INTERVAL_TOLERANCE_DAYS,
+  );
 }

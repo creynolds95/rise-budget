@@ -1,6 +1,6 @@
 import { projectCashFlow, type CashEvent, type CashProjection } from '@rise/shared/cash-projection';
 import type { Account, User } from '@rise/shared/schemas';
-import { upcomingOccurrences, type DetectedSeries } from '@rise/shared/recurring';
+import { alreadyScheduled, upcomingOccurrences, type DetectedSeries } from '@rise/shared/recurring';
 import { displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
 
 /** How far ahead to project: through this many upcoming paychecks. */
@@ -73,7 +73,7 @@ export async function buildCashToPaydayProjection(
   ]);
   // Re-checked here: an add or dismiss since the last sync takes effect at once.
   const skip = new Set([...dismissedMerchants, ...manualRules.map((r) => r.merchant_normalized)]);
-  const pending = saved.filter((r) => !skip.has(r.merchant_normalized));
+  const unseen = saved.filter((r) => !skip.has(r.merchant_normalized));
   // A manual rule projects even while flagged `broken` (unconfirmed) — Caleb still wants it
   // planned for; `broken` only ever surfaces as the Dashboard's "hasn't charged since" note.
   const confirmed = manualRules.map((r) => ({
@@ -90,6 +90,19 @@ export async function buildCashToPaydayProjection(
       anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
     },
   }));
+  // A schedule already in Surplus under another name (hand-added) isn't offered again.
+  const inSurplus = confirmed.map(({ rule, series }) => ({
+    expectedAmountCents: series.expectedAmountCents,
+    nextDate:
+      upcomingOccurrences(series, today, 1, rule.label == null)[0]?.date ?? series.nextExpectedDate,
+  }));
+  const pending = unseen.filter(
+    (r) =>
+      !alreadyScheduled(
+        { expectedAmountCents: r.expected_amount_cents, nextExpectedDate: r.next_expected_date },
+        inSurplus,
+      ),
+  );
   const displayNames = await displayNamesFor(userId, db, [
     ...confirmed.map((d) => d.merchant),
     ...pending.map((r) => r.merchant_normalized),
