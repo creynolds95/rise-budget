@@ -388,10 +388,13 @@ export function advanceManualRule(
   let next = rule.nextExpectedDate;
   for (const o of confirming) {
     if (dayNumber(o.date) < dayNumber(next) - INTERVAL_TOLERANCE_DAYS) continue;
+    // An early charge (a paycheck on Friday the 2nd for Monday the 5th) pays the cycle due on
+    // `next`, so the following cycle is counted from `next`, never from the charge's own day.
+    const paid = o.date > next ? o.date : next;
     next =
       rule.cadence === 'semimonthly'
-        ? nextSemimonthlyDate(o.date, rule.anchorDays as [number, number])
-        : nextDate(rule.cadence, o.date, rule.anchorDays?.[0] ?? parts(o.date).d);
+        ? nextSemimonthlyDate(paid, rule.anchorDays as [number, number])
+        : nextDate(rule.cadence, paid, rule.anchorDays?.[0] ?? parts(paid).d);
   }
   const status = dayNumber(today) - dayNumber(next) > MISSED_AFTER_DAYS ? 'broken' : 'active';
   return { nextExpectedDate: next, status };

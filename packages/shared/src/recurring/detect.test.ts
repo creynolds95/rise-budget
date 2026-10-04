@@ -359,6 +359,26 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
     });
   });
 
+  it('a paycheck that lands early moves on to the next payday, not back to the one it paid', () => {
+    // Caleb, 2026-10-04: paid Friday Oct 2 for Monday Oct 5; Surplus still expected it on the 5th.
+    const occ: Occurrence[] = [{ date: '2026-10-02', amountCents: -289_039, categoryId: null }];
+    const r = rule({
+      cadence: 'semimonthly',
+      anchorDays: [5, 20],
+      nextExpectedDate: '2026-10-05',
+      expectedAmountCents: -289_038,
+    });
+    expect(advanceManualRule(r, occ, '2026-10-03')).toEqual({
+      nextExpectedDate: '2026-10-20',
+      status: 'active',
+    });
+  });
+
+  it('an early monthly charge keeps the scheduled day', () => {
+    const occ: Occurrence[] = [{ date: '2026-09-29', amountCents: 106_054, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-09-30').nextExpectedDate).toBe('2026-11-01');
+  });
+
   it('advances a semimonthly manual rule from its confirming charge', () => {
     const occ: Occurrence[] = [{ date: '2026-10-05', amountCents: 1_000, categoryId: null }];
     const r = rule({
