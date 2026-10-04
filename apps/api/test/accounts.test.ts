@@ -33,6 +33,40 @@ describe('T17 accounts & snapshots', () => {
     });
   });
 
+  it('sets and clears a custom badge; the three parts move together', async () => {
+    const u = await signedInUser();
+    const created = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'Credit union', kind: 'depository' },
+    });
+    expect(created.json.badge).toBeNull();
+    const id = created.json.id;
+
+    const set = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { text: 'CU', bg: '#1A4D2E', fg: '#FFFFFF' } },
+    });
+    expect(set.json.badge).toEqual({ text: 'CU', bg: '#1a4d2e', fg: '#ffffff' });
+
+    const renamed = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { name: 'My credit union' },
+    });
+    expect(renamed.json.badge).toEqual({ text: 'CU', bg: '#1a4d2e', fg: '#ffffff' });
+
+    const bad = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { text: 'TOOLONG', bg: 'red', fg: '#fff' } },
+    });
+    expect(bad.status).toBe(400);
+
+    const cleared = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: null },
+    });
+    expect(cleared.json.badge).toBeNull();
+  });
+
   it("returns 404 for another user's account", async () => {
     const a = await signedInUser();
     const b = await signedInUser();

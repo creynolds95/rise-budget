@@ -25,16 +25,15 @@ export function AccountLogo({ account }: { account: Parameters<typeof accountBad
       </span>
     );
   }
+  if (b.type === 'custom') {
+    return <CustomBadge text={b.text} bg={b.bg} fg={b.fg} />;
+  }
   if (b.type === 'word') {
     return (
       <span
         aria-hidden
         className={`${circle} font-bold tracking-tight`}
-        style={{
-          background: b.color,
-          color: '#fff',
-          fontSize: b.text.length > 4 ? 8.5 : b.text.length > 3 ? 10 : b.text.length > 1 ? 13 : 16,
-        }}
+        style={{ background: b.color, color: '#fff', fontSize: badgeFontSize(b.text) }}
       >
         {b.text}
       </span>
@@ -47,6 +46,22 @@ export function AccountLogo({ account }: { account: Parameters<typeof accountBad
       ) : (
         <Icon name={b.icon} size={18} />
       )}
+    </span>
+  );
+}
+
+const badgeFontSize = (text: string) =>
+  text.length > 4 ? 8.5 : text.length > 3 ? 10 : text.length > 1 ? 13 : 16;
+
+/** A badge the user designed: their letters and colors on the same 36px circle. */
+export function CustomBadge({ text, bg, fg }: { text: string; bg: string; fg: string }) {
+  return (
+    <span
+      aria-hidden
+      className="flex size-9 shrink-0 items-center justify-center rounded-full font-bold tracking-tight ring-1 ring-hairline ring-inset"
+      style={{ background: bg, color: fg, fontSize: badgeFontSize(text) }}
+    >
+      {text}
     </span>
   );
 }

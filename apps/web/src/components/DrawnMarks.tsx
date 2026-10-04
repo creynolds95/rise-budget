@@ -42,21 +42,28 @@ function Mohela() {
 }
 
 function Empower() {
+  // White disc, three waving flag stripes (red, red, navy) over the EMPOWER wordmark.
+  const wave = (y: number) => `M9.5 ${y}c2.6-2 5.2-2 8.5 0s5.9 2 8.5 0`;
   return (
     <svg {...svg}>
-      <circle cx="18" cy="18" r="18" fill={C.empowerBlue} />
-      <path d="M0 26h36v10H0z" fill={C.empowerRed} />
-      <path d="M0 24.5h36V26H0z" fill="#fff" />
+      <circle cx="18" cy="18" r="17.5" fill="#fff" stroke={C.guidestoneRing} />
+      <g fill="none" strokeLinecap="round">
+        <path d={wave(12.2)} stroke={C.empowerRed} strokeWidth="1.9" />
+        <path d={wave(15)} stroke={C.empowerRed} strokeWidth="1.3" />
+        <path d={wave(17.6)} stroke={C.empowerBlue} strokeWidth="1.9" />
+      </g>
       <text
         x="18"
-        y="21"
+        y="25.6"
         textAnchor="middle"
-        fontFamily="system-ui, sans-serif"
-        fontWeight="800"
-        fontSize="15"
-        fill="#fff"
+        fontFamily="system-ui, -apple-system, 'Helvetica Neue', sans-serif"
+        fontWeight="700"
+        fontSize="5.4"
+        textLength="22"
+        lengthAdjust="spacingAndGlyphs"
+        fill={C.empowerBlue}
       >
-        E
+        EMPOWER
       </text>
     </svg>
   );
