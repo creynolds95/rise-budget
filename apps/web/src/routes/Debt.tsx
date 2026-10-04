@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { monthlyInterest } from '@rise/shared/debt';
 import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
@@ -18,6 +19,7 @@ import {
   dueSuggestions,
   groupView,
   owedCents,
+  payoffGap,
   planLoans,
   type GroupView,
 } from '../lib/debt';
@@ -68,6 +70,7 @@ function LoanSheet({
   onClose,
   loan,
   accountName,
+  owed,
   candidates,
   today,
   onSave,
@@ -78,6 +81,8 @@ function LoanSheet({
   /** The loan being edited; null when adding. */
   loan: DebtLoanPlan | null;
   accountName: string | null;
+  /** What the edited loan owes; adding reads it from the picked candidate. */
+  owed: number;
   candidates: { id: string; name: string; owedCents: number }[];
   today: string;
   onSave: (l: DebtLoanPlan) => void;
@@ -92,6 +97,8 @@ function LoanSheet({
   const aprMilli = aprFromText(apr);
   const due = Number(dueDay);
   const name = merchant.trim();
+  const owedNow = loan ? owed : (candidates.find((c) => c.id === accountId)?.owedCents ?? 0);
+  const interest = aprMilli === null ? 0 : monthlyInterest(owedNow, aprMilli);
   const valid =
     accountId !== null &&
     aprMilli !== null &&
@@ -177,6 +184,12 @@ function LoanSheet({
           label="Monthly payment"
           field={<MoneyField label="Monthly payment" cents={payment} draft onCommit={setPayment} />}
         />
+        {interest > 0 && payment <= interest && (
+          <p className="pb-3 type-caption text-clay money">
+            Interest alone is {formatCents(interest)}/mo. Enter principal + interest, without
+            escrow.
+          </p>
+        )}
         <EditRow
           label="Debit looks like"
           field={
@@ -268,8 +281,22 @@ function HomeValueSheet({
   );
 }
 
-const payoffText = (done: boolean, period: string | null): string =>
-  done ? 'Paid off' : period === null ? 'Set payment' : monthName(period);
+const payoffText = (r: GroupView['rows'][number]): string =>
+  r.done
+    ? 'Paid off'
+    : r.payoffPeriod !== null
+      ? monthName(r.payoffPeriod)
+      : payoffGap(r) === 'no-payment'
+        ? 'Set payment'
+        : 'Never';
+
+/** In place of a blank payoff date: what to fix. */
+const gapNote = (r: GroupView['rows'][number]) =>
+  payoffGap(r) === 'too-low' ? (
+    <span className="block type-caption text-clay money">
+      Doesn't cover {formatCents(r.interestCents)}/mo interest. Tap to enter principal + interest.
+    </span>
+  ) : null;
 
 /** Up to ~48 evenly spaced points, always ending at the last month. */
 function chartPoints(view: GroupView, period: string) {
@@ -411,6 +438,7 @@ export function Debt() {
         onClose={() => setAdding(false)}
         loan={null}
         accountName={null}
+        owed={0}
         candidates={candidates}
         today={today}
         onSave={upsert}
@@ -422,6 +450,7 @@ export function Debt() {
         onClose={() => setEditOpen(false)}
         loan={editing}
         accountName={editing ? nameOf(editing.accountId) : null}
+        owed={owedCents(accounts.find((a) => a.id === editing?.accountId)?.balanceCents ?? 0)}
         candidates={[]}
         today={today}
         onSave={upsert}
@@ -468,10 +497,9 @@ export function Debt() {
           {r.done ? '' : ' · '}
           {aprToText(r.plan.aprMilliPct)}% · {formatCents(r.plan.paymentCents)}/mo
         </span>
+        {gapNote(r)}
       </span>
-      <span className={`shrink-0 money ${r.done ? 'text-ink-faint' : ''}`}>
-        {payoffText(r.done, r.payoffPeriod)}
-      </span>
+      <span className={`shrink-0 money ${r.done ? 'text-ink-faint' : ''}`}>{payoffText(r)}</span>
     </button>
   );
   const savings = (v: GroupView) =>
@@ -664,10 +692,9 @@ export function Debt() {
                             <MoneyText cents={mortgageRow.owedCents} tone="muted" />
                             {` · ${aprToText(mortgageRow.plan.aprMilliPct)}% · ${formatCents(mortgageRow.plan.paymentCents)}/mo`}
                           </span>
+                          {gapNote(mortgageRow)}
                         </span>
-                        <span className="shrink-0 money">
-                          {payoffText(mortgageRow.done, mortgageRow.payoffPeriod)}
-                        </span>
+                        <span className="shrink-0 money">{payoffText(mortgageRow)}</span>
                       </button>
                       <EditRow
                         label="Extra per month"
