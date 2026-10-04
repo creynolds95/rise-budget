@@ -392,7 +392,10 @@ export const SpendingReport = z.object({
 });
 export type SpendingReport = z.infer<typeof SpendingReport>;
 
-export const MoneyFlowReportQuery = z.object({ month: PeriodId });
+/** `from` widens the flow to every month from `from` through `month`. */
+export const MoneyFlowReportQuery = z
+  .object({ month: PeriodId, from: PeriodId.optional() })
+  .refine((q) => q.from === undefined || q.from <= q.month);
 
 /** Money-flow (Sankey) diagram: income → expense groups → categories, plus what's left over. */
 export const MoneyFlowReport = z.object({
