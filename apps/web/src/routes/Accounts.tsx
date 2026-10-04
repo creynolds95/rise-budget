@@ -1,6 +1,6 @@
 import { isLiabilityKind, type AccountKind } from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, type MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
@@ -18,7 +18,7 @@ import { ApiError, api } from '../lib/api';
 import { allowsPercentChange, rangeStart, type Range } from '../lib/chart';
 import { daysBetween, localToday, shortDate } from '../lib/dates';
 import { useHeaderActions } from '../lib/headerActions';
-import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncOutcome';
+import { syncNote, type SyncRunResult } from '../lib/syncOutcome';
 import { navigateWithTransition } from '../lib/transition';
 import {
   useAccounts,
@@ -29,6 +29,9 @@ import {
   useToday,
 } from '../lib/queries';
 import type { AccountWithStaleness } from '../lib/types';
+
+/** How long the refresh outcome stays up. */
+const NOTE_MS = 3000;
 
 export const KIND_GROUPS: { kind: AccountKind; label: string }[] = [
   { kind: 'depository', label: 'Cash' },
@@ -71,6 +74,24 @@ export function Accounts() {
       ]),
   });
 
+  // The outcome shows briefly, then gets out of the way; a failure stays until the next try.
+  const [note, setNote] = useState<ReturnType<typeof syncNote> | null>(null);
+  useEffect(() => {
+    if (refresh.isPending) return setNote(null);
+    if (refresh.isError) {
+      return setNote({
+        text: refresh.error instanceof ApiError ? refresh.error.message : 'Sync failed.',
+        tone: 'warn',
+      });
+    }
+    if (!refresh.data) return;
+    const n = syncNote(refresh.data);
+    setNote(n);
+    if (n.tone === 'warn') return;
+    const t = window.setTimeout(() => setNote(null), NOTE_MS);
+    return () => window.clearTimeout(t);
+  }, [refresh.isPending, refresh.isError, refresh.error, refresh.data]);
+
   const headerButtons = (
     <>
       <Menu
@@ -104,33 +125,15 @@ export function Accounts() {
       </header>
       {refresh.isPending && (
         <p role="status" className="gutter type-caption text-ink-muted">
-          Asking your banks for anything new…
+          Refreshing…
         </p>
       )}
-      {refresh.isSuccess &&
-        (() => {
-          const o = syncOutcome(
-            refresh.data,
-            banksLastReported(live.filter((a) => a.source === 'simplefin')),
-            tz,
-          );
-          return (
-            <p
-              role="status"
-              className={`gutter type-caption ${o.tone === 'warn' ? 'text-clay' : 'text-ink-muted'}`}
-            >
-              {o.text}
-            </p>
-          );
-        })()}
-      {refresh.isError && (
-        <p role="alert" className="gutter type-caption text-clay">
-          {refresh.error instanceof ApiError ? refresh.error.message : 'Refresh failed.'}
-        </p>
-      )}
-      {refresh.isSuccess && (
-        <p role="status" className="gutter type-caption text-ink-muted">
-          Up to date as of just now.
+      {note && (
+        <p
+          role="status"
+          className={`gutter type-caption ${note.tone === 'warn' ? 'text-clay' : 'text-ink-muted'}`}
+        >
+          {note.text}
         </p>
       )}
       <section className="gutter pt-4">
