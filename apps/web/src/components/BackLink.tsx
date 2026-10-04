@@ -12,6 +12,7 @@ export function BackLink({ to, label }: { to: string; label: string }) {
     <Link
       to={to}
       aria-label={`Back to ${label}`}
+      data-transition="back"
       onClick={transitionClick(navigate, to, 'back')}
       className="-ml-2 flex size-11 items-center justify-center justify-self-start rounded-full text-ink active:bg-sage-100"
     >

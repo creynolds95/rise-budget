@@ -34,6 +34,7 @@ import { ApiError, api, downloadExport } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncOutcome';
 import { localToday, shortDate } from '../lib/dates';
+import { isStale, RUNNING, updateApp, useLatestBuild } from '../lib/version';
 import {
   useAccounts,
   useBackupStatus,
@@ -155,9 +156,45 @@ export function Settings() {
         Sign out
       </Button>
       {/* Which build is running, so a deploy that never went out is visible (C20). */}
-      <p className="mt-6 type-caption text-ink-faint money">
-        Built {shortDate(localToday(me?.timezone, new Date(__APP_VERSION__)))} · {__APP_COMMIT__}
+      <AppVersion timeZone={me?.timezone} />
+    </div>
+  );
+}
+
+function AppVersion({ timeZone }: { timeZone: string | undefined }) {
+  const latest = useLatestBuild();
+  const [updating, setUpdating] = useState(false);
+  const built = new Date(RUNNING.version).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(timeZone ? { timeZone } : {}),
+  });
+  const stale = latest !== null && isStale(RUNNING, latest);
+  return (
+    <div className="mt-6 flex min-h-11 items-center justify-between gap-4">
+      <p className="type-caption text-ink-muted money">
+        Version {RUNNING.commit} · {built}
+        <br />
+        {stale ? (
+          <span className="text-ink">Update available</span>
+        ) : (
+          latest && <span className="text-ink-faint">Latest</span>
+        )}
       </p>
+      {stale && (
+        <Button
+          className="shrink-0"
+          disabled={updating}
+          onClick={() => {
+            setUpdating(true);
+            void updateApp();
+          }}
+        >
+          {updating ? 'Updating…' : 'Update'}
+        </Button>
+      )}
     </div>
   );
 }
