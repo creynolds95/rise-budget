@@ -328,7 +328,7 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
     expect(advanceManualRule(rule(), occ, '2026-10-04').status).toBe('broken');
   });
 
-  it('a charge more than 4 days before the due date is too early to confirm it', () => {
+  it('a charge more than a week before a monthly due date is too early to confirm it', () => {
     const occ: Occurrence[] = [{ date: '2026-09-20', amountCents: 106_054, categoryId: null }];
     expect(advanceManualRule(rule(), occ, '2026-10-04').status).toBe('broken');
   });
@@ -372,6 +372,23 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
       nextExpectedDate: '2026-10-20',
       status: 'active',
     });
+  });
+
+  it('a bill paid up to a week early pays that month', () => {
+    const occ: Occurrence[] = [{ date: '2026-09-24', amountCents: 106_054, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-09-25')).toEqual({
+      nextExpectedDate: '2026-11-01',
+      status: 'active',
+    });
+  });
+
+  it('a weekly charge only matches up to 3 days early, never the week before', () => {
+    const r = rule({ cadence: 'weekly', nextExpectedDate: '2026-10-08' });
+    const at = (date: string) =>
+      advanceManualRule(r, [{ date, amountCents: 106_054, categoryId: null }], '2026-10-06')
+        .nextExpectedDate;
+    expect(at('2026-10-05')).toBe('2026-10-15');
+    expect(at('2026-10-04')).toBe('2026-10-08');
   });
 
   it('an early monthly charge keeps the scheduled day', () => {

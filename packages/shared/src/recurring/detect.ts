@@ -375,19 +375,33 @@ export function nextScheduled(
  * — same status a detected series uses, so the existing "hasn't charged since..." banner
  * covers this too.
  */
+/**
+ * How early a charge can land and still pay a declared schedule's next due date: a paycheck the
+ * Friday before a holiday Monday, a bill paid ahead. Under half a cycle, so it can never be
+ * mistaken for the previous cycle's charge.
+ */
+export const EARLY_MATCH_DAYS: Record<Cadence, number> = {
+  weekly: 3,
+  biweekly: 6,
+  semimonthly: 6,
+  monthly: 7,
+  annual: 14,
+};
+
 export function advanceManualRule(
   rule: ManualRule,
   occurrences: readonly Occurrence[],
   today: string,
 ): { nextExpectedDate: string; status: 'active' | 'broken' } {
+  const early = EARLY_MATCH_DAYS[rule.cadence];
   const confirming = occurrences
     .filter((o) => Math.sign(o.amountCents) === Math.sign(rule.expectedAmountCents))
     .filter((o) => steadyAmounts([o.amountCents, rule.expectedAmountCents]))
-    .filter((o) => dayNumber(o.date) >= dayNumber(rule.nextExpectedDate) - INTERVAL_TOLERANCE_DAYS)
+    .filter((o) => dayNumber(o.date) >= dayNumber(rule.nextExpectedDate) - early)
     .sort((a, b) => a.date.localeCompare(b.date));
   let next = rule.nextExpectedDate;
   for (const o of confirming) {
-    if (dayNumber(o.date) < dayNumber(next) - INTERVAL_TOLERANCE_DAYS) continue;
+    if (dayNumber(o.date) < dayNumber(next) - early) continue;
     // An early charge (a paycheck on Friday the 2nd for Monday the 5th) pays the cycle due on
     // `next`, so the following cycle is counted from `next`, never from the charge's own day.
     const paid = o.date > next ? o.date : next;
