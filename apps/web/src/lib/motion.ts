@@ -5,6 +5,6 @@
  */
 export const MOTION_EASE = 'cubic-bezier(0.25, 0.8, 0.25, 1)';
 /** Something arriving: a pushed screen, a sheet rising, the menu sliding in. */
-export const MOTION_IN_MS = 400;
+export const MOTION_IN_MS = 500;
 /** Something leaving: a sheet dropping, the menu closing, a backdrop fading. */
-export const MOTION_OUT_MS = 280;
+export const MOTION_OUT_MS = 400;
