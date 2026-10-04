@@ -186,12 +186,35 @@ export const User = z.object({
 });
 export type User = z.infer<typeof User>;
 
-/** A badge the user chose for an account Rise has no logo for. Colors are #rrggbb. */
-export const AccountBadgeStyle = z.object({
-  text: z.string().trim().min(1).max(4),
-  bg: z.string().regex(/^#[0-9a-f]{6}$/i),
-  fg: z.string().regex(/^#[0-9a-f]{6}$/i),
-});
+/** Outline symbols a user can pick for an account Rise has no logo for. Each name is also an
+ *  icon in the web app's Icon set (the editor renders them, so a missing one fails typecheck). */
+export const BADGE_ICONS = [
+  'home',
+  'building',
+  'car',
+  'bank',
+  'card',
+  'wallet',
+  'coins',
+  'chart',
+  'briefcase',
+  'cap',
+  'shield',
+  'doc',
+] as const;
+export const AccountBadgeIcon = z.enum(BADGE_ICONS);
+export type AccountBadgeIcon = z.infer<typeof AccountBadgeIcon>;
+
+/** A badge the user chose for an account Rise has no logo for: a symbol, or their own letters
+ *  on a color (#rrggbb). */
+export const AccountBadgeStyle = z.union([
+  z.object({ icon: AccountBadgeIcon }),
+  z.object({
+    text: z.string().trim().min(1).max(4),
+    bg: z.string().regex(/^#[0-9a-f]{6}$/i),
+    fg: z.string().regex(/^#[0-9a-f]{6}$/i),
+  }),
+]);
 export type AccountBadgeStyle = z.infer<typeof AccountBadgeStyle>;
 
 export const Account = z.object({

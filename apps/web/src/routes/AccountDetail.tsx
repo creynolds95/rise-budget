@@ -18,7 +18,7 @@ import { EditRow, NavRow, StaticRow } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
 import { rangeStart, type Range } from '../lib/chart';
-import { accountBadge, canCustomizeBadge, defaultBadge } from '../lib/institution';
+import { accountBadge, canCustomizeBadge } from '../lib/institution';
 import { localToday, longDate, shortDate } from '../lib/dates';
 import { useAccounts, useInvalidateMoney, useMe, useToday, useTransactions } from '../lib/queries';
 
@@ -362,8 +362,8 @@ export function AccountDetail() {
               )}
               <BadgeEditorSheet
                 open={badgeOpen}
-                initial={d.badge ?? defaultBadge(autoInitials(a))}
-                canReset={d.badge !== null}
+                initial={d.badge}
+                initials={autoInitials(a)}
                 onDone={(badge) => {
                   set({ badge });
                   setBadgeOpen(false);

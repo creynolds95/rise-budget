@@ -1,5 +1,6 @@
 import {
   Account,
+  AccountBadgeIcon,
   type AccountKind,
   type AccountSource,
   type PatchAccountBody,
@@ -24,9 +25,21 @@ interface AccountRow {
   last_synced_at: string | null;
   archived_at: string | null;
   created_at: string;
+  badge_icon: string | null;
   badge_text: string | null;
   badge_bg: string | null;
   badge_fg: string | null;
+}
+
+/** A symbol, or letters + colors; a symbol since retired from the list falls back to automatic. */
+function toBadge(r: AccountRow) {
+  if (r.badge_icon) {
+    const icon = AccountBadgeIcon.safeParse(r.badge_icon);
+    return icon.success ? { icon: icon.data } : null;
+  }
+  return r.badge_text && r.badge_bg && r.badge_fg
+    ? { text: r.badge_text, bg: r.badge_bg, fg: r.badge_fg }
+    : null;
 }
 
 const toAccount = (r: AccountRow): Account =>
@@ -48,10 +61,7 @@ const toAccount = (r: AccountRow): Account =>
     lastSyncedAt: r.last_synced_at,
     archivedAt: r.archived_at,
     createdAt: r.created_at,
-    badge:
-      r.badge_text && r.badge_bg && r.badge_fg
-        ? { text: r.badge_text, bg: r.badge_bg, fg: r.badge_fg }
-        : null,
+    badge: toBadge(r),
   });
 
 export async function listAccounts(userId: UserId, db: D1Database): Promise<Account[]> {
@@ -225,12 +235,14 @@ export async function updateAccount(
           typeof patch[k] === 'boolean' ? bool(patch[k] as boolean) : patch[k],
         ] as const,
     );
-  // The badge's three columns move together; null clears all three.
+  // The badge's columns move together; a symbol and letters never coexist, and null clears all.
   if (patch.badge !== undefined) {
+    const b = patch.badge;
     entries.push(
-      ['badge_text', patch.badge?.text ?? null],
-      ['badge_bg', patch.badge?.bg.toLowerCase() ?? null],
-      ['badge_fg', patch.badge?.fg.toLowerCase() ?? null],
+      ['badge_icon', b && 'icon' in b ? b.icon : null],
+      ['badge_text', b && 'text' in b ? b.text : null],
+      ['badge_bg', b && 'bg' in b ? b.bg.toLowerCase() : null],
+      ['badge_fg', b && 'fg' in b ? b.fg.toLowerCase() : null],
     );
   }
   if (entries.length > 0) {

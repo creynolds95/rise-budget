@@ -19,6 +19,14 @@ describe('accountBadge', () => {
       type: 'brand',
       mark: 'chase',
     });
+    expect(accountBadge({ ...synced('Ally'), badge: { icon: 'home' } })).toEqual({
+      type: 'glyph',
+      icon: 'home',
+    });
+    expect(accountBadge({ ...synced('Chase Bank'), badge: { icon: 'home' } })).toEqual({
+      type: 'brand',
+      mark: 'chase',
+    });
     expect(canCustomizeBadge(synced('Ally'))).toBe(true);
     expect(canCustomizeBadge(synced('Chase Bank'))).toBe(false);
   });

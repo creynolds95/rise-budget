@@ -1,4 +1,4 @@
-import type { AccountBadgeStyle, AccountKind } from '@rise/shared/schemas';
+import type { AccountBadgeIcon, AccountBadgeStyle, AccountKind } from '@rise/shared/schemas';
 import type { BrandMark } from './brandMarks';
 
 /** What sits in the round badge left of an account's name. */
@@ -8,7 +8,7 @@ export type AccountBadge =
   | { type: 'drawn'; mark: 'guidestone' | 'mohela' | 'empower' }
   | { type: 'initials'; text: string }
   | { type: 'custom'; text: string; bg: string; fg: string }
-  | { type: 'glyph'; icon: 'bank' | 'card' | 'doc' | 'home' | 'wallet' };
+  | { type: 'glyph'; icon: AccountBadgeIcon };
 
 // Order matters: the first pattern that matches wins. Word boundaries keep "citi" off
 // "Citizens" and "chase" off "purchase".
@@ -33,7 +33,7 @@ const BRANDS: [RegExp, AccountBadge][] = [
   [/\btexas higher education\b|^cl\d{4}\b/, { type: 'word', text: 'THECB', color: '#7A1F2B' }],
 ];
 
-const KIND_GLYPH: Record<AccountKind, Extract<AccountBadge, { type: 'glyph' }>['icon']> = {
+const KIND_GLYPH: Record<AccountKind, AccountBadgeIcon> = {
   depository: 'bank',
   credit: 'card',
   loan: 'doc',
@@ -63,7 +63,10 @@ export const canCustomizeBadge = (a: BadgeInput) => knownMark(a) === null;
 export function accountBadge(a: BadgeInput): AccountBadge {
   const known = knownMark(a);
   if (known) return known;
-  if (a.badge) return { type: 'custom', ...a.badge };
+  if (a.badge)
+    return 'icon' in a.badge
+      ? { type: 'glyph', icon: a.badge.icon }
+      : { type: 'custom', ...a.badge };
   if (a.source !== 'manual' && a.kind !== 'loan' && a.institutionName) {
     const [w1 = '', w2 = ''] = a.institutionName
       .replace(/[^A-Za-z0-9 ]/g, '')
@@ -90,9 +93,9 @@ export const BADGE_BACKGROUNDS = [
 ] as const;
 export const BADGE_TEXT_COLORS = ['#ffffff', '#111111', '#1b2d5b', '#c8102e'] as const;
 
-/** Where the editor starts: the automatic initials, white on navy. */
-export const defaultBadge = (initials: string | null): AccountBadgeStyle => ({
+/** Where the letters editor starts: the automatic initials, white on navy. */
+export const defaultLetters = (initials: string | null) => ({
   text: initials ?? '',
-  bg: BADGE_BACKGROUNDS[0],
-  fg: BADGE_TEXT_COLORS[0],
+  bg: BADGE_BACKGROUNDS[0] as string,
+  fg: BADGE_TEXT_COLORS[0] as string,
 });

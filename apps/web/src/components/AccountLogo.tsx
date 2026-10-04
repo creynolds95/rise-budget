@@ -1,3 +1,4 @@
+import type { AccountBadgeIcon } from '@rise/shared/schemas';
 import { BRAND_MARKS } from '../lib/brandMarks';
 import { accountBadge } from '../lib/institution';
 import { DRAWN_MARKS } from './DrawnMarks';
@@ -39,13 +40,24 @@ export function AccountLogo({ account }: { account: Parameters<typeof accountBad
       </span>
     );
   }
-  return (
-    <span aria-hidden className={`${circle} bg-sage-100 text-sage-700`}>
-      {b.type === 'initials' ? (
+  if (b.type === 'initials') {
+    return (
+      <span aria-hidden className={`${circle} bg-sage-100 text-sage-700`}>
         <span className="text-[13px] font-semibold">{b.text}</span>
-      ) : (
-        <Icon name={b.icon} size={18} />
-      )}
+      </span>
+    );
+  }
+  return <SymbolBadge icon={b.icon} />;
+}
+
+/** An outline symbol on the quiet circle; an empty one while nothing is picked yet. */
+export function SymbolBadge({ icon }: { icon: AccountBadgeIcon | null }) {
+  return (
+    <span
+      aria-hidden
+      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700"
+    >
+      {icon && <Icon name={icon} size={20} />}
     </span>
   );
 }
