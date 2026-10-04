@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type TouchEvent } from 'react';
+import { MOTION_EASE, MOTION_OUT_MS } from '../../lib/motion';
 import { lockScroll } from '../../lib/scrollLock';
 
 /**
@@ -30,8 +31,6 @@ function useVisibleViewportHeight(active: boolean) {
   return height;
 }
 
-const EXIT_MS = 220;
-
 /**
  * Keeps a sheet mounted while it slides back out, so closing is as visible as opening.
  * `closing` is true for the exit animation; `mounted` is false once it's done.
@@ -43,7 +42,7 @@ function useExit(open: boolean) {
       setMounted(true);
       return;
     }
-    const t = window.setTimeout(() => setMounted(false), EXIT_MS);
+    const t = window.setTimeout(() => setMounted(false), MOTION_OUT_MS);
     return () => window.clearTimeout(t);
   }, [open]);
   return { mounted: open || mounted, closing: !open };
@@ -59,9 +58,7 @@ function useDragDown(onClose: () => void) {
   const move = (dy: number, animate: boolean) => {
     const el = panel.current;
     if (!el) return;
-    el.style.transition = animate
-      ? `transform ${EXIT_MS}ms cubic-bezier(0.2, 0.9, 0.3, 1)`
-      : 'none';
+    el.style.transition = animate ? `transform ${MOTION_OUT_MS}ms ${MOTION_EASE}` : 'none';
     el.style.transform = dy ? `translateY(${dy}px)` : '';
   };
   const handlers = {

@@ -172,13 +172,22 @@
   }
 }
 
-/* Motion: sheets rise, menus pop. Nothing moves for people who asked it not to. */
+/*
+ * Motion: sheets rise, menus pop. Screens, sheets and the menu share one clock and one curve
+ * (mirrored in lib/motion.ts), an even ease-out that glides rather than snapping. Nothing
+ * moves for people who asked it not to.
+ */
+:root {
+  --motion-ease: cubic-bezier(0.25, 0.8, 0.25, 1);
+  --motion-in: 400ms;
+  --motion-out: 280ms;
+}
 @theme {
   --animate-sheet-in: sheet-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1);
-  --animate-sheet-up: sheet-up 300ms cubic-bezier(0.32, 0.72, 0, 1);
-  --animate-sheet-out: sheet-out 220ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  --animate-fade-out: fade-out 220ms ease-in forwards;
-  --animate-fade-in: fade-in 200ms ease-out;
+  --animate-sheet-up: sheet-up var(--motion-in) var(--motion-ease);
+  --animate-sheet-out: sheet-out var(--motion-out) var(--motion-ease) forwards;
+  --animate-fade-out: fade-out var(--motion-out) ease-out forwards;
+  --animate-fade-in: fade-in var(--motion-in) ease-out;
   --animate-pop-in: pop-in 140ms ease-out;
   --animate-indeterminate: indeterminate 1.2s ease-in-out infinite;
 }
@@ -252,8 +261,8 @@
 ::view-transition-old(root),
 ::view-transition-new(root) {
   mix-blend-mode: normal;
-  animation-duration: 320ms;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  animation-duration: var(--motion-in);
+  animation-timing-function: var(--motion-ease);
   animation-fill-mode: both;
 }
 html[data-page-transition='forward']::view-transition-old(root) {
