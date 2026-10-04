@@ -81,6 +81,8 @@ export interface SuggestionRow {
   cadence: string;
   anchorDays: [number, number] | null;
   nextExpectedDate: string;
+  /** A hand-added schedule this looks like: adding it may count the same money twice. */
+  likelySameAs: string | null;
 }
 
 export interface CashToPaydayResponse {

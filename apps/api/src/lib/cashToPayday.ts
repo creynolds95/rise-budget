@@ -1,6 +1,6 @@
 import { projectCashFlow, type CashEvent, type CashProjection } from '@rise/shared/cash-projection';
 import type { Account, User } from '@rise/shared/schemas';
-import { upcomingOccurrences, type DetectedSeries } from '@rise/shared/recurring';
+import { likelySameAs, upcomingOccurrences, type DetectedSeries } from '@rise/shared/recurring';
 import { displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
 
 /** How far ahead to project: through this many upcoming paychecks. */
@@ -46,6 +46,8 @@ export interface SuggestionRow {
   cadence: DetectedSeries['cadence'];
   anchorDays: [number, number] | null;
   nextExpectedDate: string;
+  /** The hand-added schedule this looks like, so adding it may count it twice. */
+  likelySameAs: string | null;
 }
 
 export interface CashToPaydayResult extends CashProjection {
@@ -145,6 +147,14 @@ export async function buildCashToPaydayProjection(
         : series.nextExpectedDate,
     isHandAdded: rule.label != null,
   }));
+  // Hand-added schedules only: a tagged one already hides its own merchant's suggestion.
+  const handAdded = schedules
+    .filter((r) => r.isHandAdded)
+    .map((r) => ({
+      name: r.displayName,
+      expectedAmountCents: r.kind === 'income' ? -r.amountCents : r.amountCents,
+      nextDate: r.nextExpectedDate,
+    }));
   const suggestions: SuggestionRow[] = pending.map((r) => ({
     merchant: r.merchant_normalized,
     displayName: displayNames.get(r.merchant_normalized) ?? r.merchant_normalized,
@@ -154,6 +164,10 @@ export async function buildCashToPaydayProjection(
     cadence: r.cadence as DetectedSeries['cadence'],
     anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
     nextExpectedDate: r.next_expected_date,
+    likelySameAs: likelySameAs(
+      { expectedAmountCents: r.expected_amount_cents, nextExpectedDate: r.next_expected_date },
+      handAdded,
+    ),
   }));
   return {
     ...projection,

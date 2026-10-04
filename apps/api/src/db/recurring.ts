@@ -225,13 +225,23 @@ export function advanceManualRuleStmt(
   id: string,
   nextExpectedDate: string,
   status: 'active' | 'broken',
+  anchorDays: [number, number] | null = null,
 ): D1PreparedStatement {
+  // A rule saved without its days keeps the ones it was first due on (never re-anchored).
   return db
     .prepare(
-      `UPDATE recurring_series SET next_expected_date = ?3, status = ?4, updated_at = ?5
+      `UPDATE recurring_series SET next_expected_date = ?3, status = ?4, updated_at = ?5,
+         anchor_days = COALESCE(anchor_days, ?6)
        WHERE user_id = ?1 AND id = ?2`,
     )
-    .bind(userId, id, nextExpectedDate, status, nowIso());
+    .bind(
+      userId,
+      id,
+      nextExpectedDate,
+      status,
+      nowIso(),
+      anchorDays ? JSON.stringify(anchorDays) : null,
+    );
 }
 
 /** Untag: delete the manual rule (never a detected one — the route checks `source` first). */

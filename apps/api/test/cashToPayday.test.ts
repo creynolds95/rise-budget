@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
-import { linkTransferStmts, upsertManualRuleStmt } from '../src/db';
+import { linkTransferStmts, upsertManualEventStmt, upsertManualRuleStmt } from '../src/db';
 import { buildCashToPaydayProjection } from '../src/lib/cashToPayday';
 import { refreshRecurring } from '../src/lib/recurring';
 import { centsToDecimal } from '../src/sync/mock';
@@ -510,5 +510,35 @@ describe('Surplus never drops a schedule whose date has passed', () => {
       .first<{ next_expected_date: string; status: string }>();
     expect(row?.status).toBe('active');
     expect(row?.next_expected_date).toBe('2026-10-15');
+  });
+});
+
+describe('a suggestion already in Surplus under another name', () => {
+  it('a suggestion that looks like a hand-added mortgage says so, and still shows', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, feed(), {
+      now: new Date('2026-09-10T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    const names = async () =>
+      (await buildCashToPaydayProjection(env.DB, s.userId, '2026-09-10', 0, 0)).suggestions.map(
+        (r) => [r.merchant, r.likelySameAs],
+      );
+    expect(await names()).toContainEqual(['MORTGAGE SERVICING', null]);
+    await env.DB.batch([
+      upsertManualEventStmt(
+        s.userId,
+        env.DB,
+        'hand1',
+        'Mortgage',
+        'monthly',
+        180_000,
+        '2026-09-27',
+      ),
+    ]);
+    expect(await names()).toEqual([
+      ['ACME CORP PAYROLL', null],
+      ['MORTGAGE SERVICING', 'Mortgage'],
+    ]);
   });
 });

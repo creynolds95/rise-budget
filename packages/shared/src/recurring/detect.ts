@@ -375,24 +375,57 @@ export function nextScheduled(
  * — same status a detected series uses, so the existing "hasn't charged since..." banner
  * covers this too.
  */
+/**
+ * How early a charge can land and still pay a declared schedule's next due date: a paycheck the
+ * Friday before a holiday Monday, a bill paid ahead. Under half a cycle, so it can never be
+ * mistaken for the previous cycle's charge.
+ */
+export const EARLY_MATCH_DAYS: Record<Cadence, number> = {
+  weekly: 3,
+  biweekly: 6,
+  semimonthly: 6,
+  monthly: 7,
+  annual: 14,
+};
+
 export function advanceManualRule(
   rule: ManualRule,
   occurrences: readonly Occurrence[],
   today: string,
-): { nextExpectedDate: string; status: 'active' | 'broken' } {
+): {
+  nextExpectedDate: string;
+  status: 'active' | 'broken';
+  /** The days it keeps to: a monthly or yearly rule saved without them keeps its first day. */
+  anchorDays: [number, number] | null;
+} {
+  const early = EARLY_MATCH_DAYS[rule.cadence];
+  const anchorDay = rule.anchorDays?.[0] ?? parts(rule.nextExpectedDate).d;
   const confirming = occurrences
     .filter((o) => Math.sign(o.amountCents) === Math.sign(rule.expectedAmountCents))
     .filter((o) => steadyAmounts([o.amountCents, rule.expectedAmountCents]))
-    .filter((o) => dayNumber(o.date) >= dayNumber(rule.nextExpectedDate) - INTERVAL_TOLERANCE_DAYS)
+    .filter((o) => dayNumber(o.date) >= dayNumber(rule.nextExpectedDate) - early)
     .sort((a, b) => a.date.localeCompare(b.date));
+  const step = (d: string) =>
+    rule.cadence === 'semimonthly'
+      ? nextSemimonthlyDate(d, rule.anchorDays as [number, number])
+      : nextDate(rule.cadence, d, anchorDay);
   let next = rule.nextExpectedDate;
   for (const o of confirming) {
-    if (dayNumber(o.date) < dayNumber(next) - INTERVAL_TOLERANCE_DAYS) continue;
-    next =
-      rule.cadence === 'semimonthly'
-        ? nextSemimonthlyDate(o.date, rule.anchorDays as [number, number])
-        : nextDate(rule.cadence, o.date, rule.anchorDays?.[0] ?? parts(o.date).d);
+    if (dayNumber(o.date) < dayNumber(next) - early) continue;
+    // Each charge pays one due date: the cycle whose window [due - early, next due - early)
+    // holds it. A skipped cycle (a free month) is passed over, so the schedule never trails
+    // behind a charge that already posted.
+    while (dayNumber(o.date) >= dayNumber(step(next)) - early) next = step(next);
+    // Then the following cycle is counted from that due date, early or late: a paycheck on
+    // Friday the 2nd for Monday the 5th moves on to the 20th, and a bill due Friday that posts
+    // Monday stays due on Fridays.
+    next = step(next);
   }
   const status = dayNumber(today) - dayNumber(next) > MISSED_AFTER_DAYS ? 'broken' : 'active';
-  return { nextExpectedDate: next, status };
+  const pinned =
+    rule.anchorDays ??
+    (rule.cadence === 'monthly' || rule.cadence === 'annual'
+      ? ([anchorDay, anchorDay] as [number, number])
+      : null);
+  return { nextExpectedDate: next, status, anchorDays: pinned };
 }

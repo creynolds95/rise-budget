@@ -1,4 +1,12 @@
-import { detectSemimonthly, detectSeries, type DetectedSeries, type Occurrence } from './detect';
+import { dayNumber } from '../networth';
+import {
+  detectSemimonthly,
+  detectSeries,
+  INTERVAL_TOLERANCE_DAYS,
+  steadyAmounts,
+  type DetectedSeries,
+  type Occurrence,
+} from './detect';
 
 export interface AccountOccurrence extends Occurrence {
   accountId: string;
@@ -69,4 +77,31 @@ export function surplusSuggestions(
     out.push({ merchant, accountId, series });
   }
   return out;
+}
+
+/** A hand-added Surplus schedule, for matching a suggestion against it. */
+export interface ScheduleShape {
+  name: string;
+  expectedAmountCents: number;
+  /** Its next date, from today on. */
+  nextDate: string;
+}
+
+/**
+ * The hand-added schedule a suggestion looks like (a hand-added "Mortgage" and the mortgage
+ * debit sync found): same direction, the same amount within 5%, due within a few days. Only a
+ * likeness, never proof (two paychecks can match), so the suggestion is still shown, named as a
+ * likely duplicate, and the user decides.
+ */
+export function likelySameAs(
+  s: { expectedAmountCents: number; nextExpectedDate: string },
+  schedules: readonly ScheduleShape[],
+): string | null {
+  const match = schedules.find(
+    (r) =>
+      Math.sign(r.expectedAmountCents) === Math.sign(s.expectedAmountCents) &&
+      steadyAmounts([r.expectedAmountCents, s.expectedAmountCents]) &&
+      Math.abs(dayNumber(r.nextDate) - dayNumber(s.nextExpectedDate)) <= INTERVAL_TOLERANCE_DAYS,
+  );
+  return match?.name ?? null;
 }

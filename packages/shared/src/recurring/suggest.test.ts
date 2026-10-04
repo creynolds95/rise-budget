@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cashMovements, surplusSuggestions, type AccountOccurrence } from './suggest';
+import { cashMovements, surplusSuggestions, likelySameAs, type AccountOccurrence } from './suggest';
 
 const o = (date: string, amountCents: number, accountId = 'chk'): AccountOccurrence => ({
   date,
@@ -130,5 +130,23 @@ describe('cashMovements', () => {
       '2026-09-20',
     );
     expect(out.map((x) => x.merchant)).toEqual(['USAA FUNDS TRANSFER']);
+  });
+});
+
+describe('likelySameAs', () => {
+  const mortgage = [{ name: 'Mortgage', expectedAmountCents: 245_000, nextDate: '2026-11-01' }];
+
+  it('names a hand-added schedule with the same amount around the same day', () => {
+    expect(
+      likelySameAs({ expectedAmountCents: 245_000, nextExpectedDate: '2026-11-02' }, mortgage),
+    ).toBe('Mortgage');
+  });
+
+  it('a different amount, day or direction is its own schedule', () => {
+    const at = (cents: number, date: string) =>
+      likelySameAs({ expectedAmountCents: cents, nextExpectedDate: date }, mortgage);
+    expect(at(106_054, '2026-11-01')).toBeNull();
+    expect(at(245_000, '2026-11-14')).toBeNull();
+    expect(at(-245_000, '2026-11-01')).toBeNull();
   });
 });
