@@ -1,6 +1,6 @@
 import { isLiabilityKind, type AccountKind } from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
@@ -18,6 +18,7 @@ import { ApiError, api } from '../lib/api';
 import { allowsPercentChange, rangeStart, type Range } from '../lib/chart';
 import { daysBetween, localToday, shortDate } from '../lib/dates';
 import { useHeaderActions } from '../lib/headerActions';
+import { showFloater } from '../lib/floater';
 import { syncNote, type SyncRunResult } from '../lib/syncOutcome';
 import { navigateWithTransition } from '../lib/transition';
 import {
@@ -63,34 +64,24 @@ export function Accounts() {
 
   const syncStatus = useSyncStatus();
   const syncMode = syncStatus.data?.mode;
+  // The sync floats above the tab bar: "Syncing banks…", then a short result that fades.
+  // These run even if the user leaves Accounts mid-sync. A failure stays until tapped.
   const refresh = useMutation({
     mutationFn: () => api<SyncRunResult>('POST', '/sync/run', {}),
-    onSuccess: () =>
-      Promise.all([
+    onMutate: () => showFloater({ text: 'Syncing banks…', busy: true }),
+    onSuccess: (r) => {
+      const n = syncNote(r);
+      showFloater({ ...n, ttlMs: n.tone === 'warn' ? undefined : NOTE_MS });
+      return Promise.all([
         invalidate(),
         ...['sync', 'review-queue', 'queue-count'].map((k) =>
           qc.invalidateQueries({ queryKey: [k] }),
         ),
-      ]),
+      ]);
+    },
+    onError: (e) =>
+      showFloater({ text: e instanceof ApiError ? e.message : 'Sync failed', tone: 'warn' }),
   });
-
-  // The outcome shows briefly, then gets out of the way; a failure stays until the next try.
-  const [note, setNote] = useState<ReturnType<typeof syncNote> | null>(null);
-  useEffect(() => {
-    if (refresh.isPending) return setNote(null);
-    if (refresh.isError) {
-      return setNote({
-        text: refresh.error instanceof ApiError ? refresh.error.message : 'Sync failed.',
-        tone: 'warn',
-      });
-    }
-    if (!refresh.data) return;
-    const n = syncNote(refresh.data);
-    setNote(n);
-    if (n.tone === 'warn') return;
-    const t = window.setTimeout(() => setNote(null), NOTE_MS);
-    return () => window.clearTimeout(t);
-  }, [refresh.isPending, refresh.isError, refresh.error, refresh.data]);
 
   const headerButtons = (
     <>
@@ -123,19 +114,6 @@ export function Accounts() {
         <h1 className="type-page">Accounts</h1>
         <div className="-mr-2 flex items-center">{headerButtons}</div>
       </header>
-      {refresh.isPending && (
-        <p role="status" className="gutter type-caption text-ink-muted">
-          Refreshing…
-        </p>
-      )}
-      {note && (
-        <p
-          role="status"
-          className={`gutter type-caption ${note.tone === 'warn' ? 'text-clay' : 'text-ink-muted'}`}
-        >
-          {note.text}
-        </p>
-      )}
       <section className="gutter pt-4">
         <NetWorthSection />
       </section>

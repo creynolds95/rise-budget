@@ -1,5 +1,6 @@
 import { useTabRootTrap } from '../lib/gestures';
 import { BackLink } from './BackLink';
+import { Floater } from './Floater';
 import { MENU_ITEMS, NavDrawer } from './NavDrawer';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
@@ -206,6 +207,8 @@ export function Shell() {
         aria-label="Tabs"
         className="sticky bottom-0 z-20 border-t border-hairline bg-canvas pb-[env(safe-area-inset-bottom)] lg:hidden"
       >
+        {/* Rides the sticky tab bar rather than being `fixed`, for the same iOS reason. */}
+        <Floater className="absolute inset-x-0 bottom-full mb-3" />
         <ul className="mx-auto grid max-w-2xl grid-cols-4">
           {TABS.map((t) => (
             <li key={t.tab}>
@@ -247,6 +250,7 @@ export function Shell() {
           ))}
         </ul>
       </nav>
+      <Floater className="fixed inset-x-0 bottom-6 z-30 hidden lg:flex lg:pl-72" />
     </div>
   );
 }

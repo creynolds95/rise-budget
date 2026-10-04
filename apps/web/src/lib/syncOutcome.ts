@@ -53,8 +53,8 @@ export function banksLastReported(accounts: { lastSyncedAt: string | null }[]): 
  * Connection problems are left to the persistent health notes, so they're said once.
  */
 export function syncNote(r: SyncRunResult): { text: string; tone: 'ok' | 'warn' } {
-  if (r.status === 'failed') return { text: 'Sync failed.', tone: 'warn' };
+  if (r.status === 'failed') return { text: 'Sync failed', tone: 'warn' };
   return r.rowsInserted > 0
-    ? { text: `${plural(r.rowsInserted, 'new transaction')}.`, tone: 'ok' }
-    : { text: 'Accounts up to date.', tone: 'ok' };
+    ? { text: plural(r.rowsInserted, 'new transaction'), tone: 'ok' }
+    : { text: 'Accounts up to date', tone: 'ok' };
 }
