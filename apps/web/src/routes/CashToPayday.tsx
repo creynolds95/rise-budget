@@ -270,6 +270,11 @@ function SuggestionList({
                 {r.accountName} · {describeSchedule(r.cadence, r.anchorDays)} · next{' '}
                 {shortDate(r.nextExpectedDate)}
               </span>
+              {r.likelySameAs && (
+                <span className="block type-caption text-gold-text">
+                  Looks like {r.likelySameAs}, already in Surplus
+                </span>
+              )}
             </span>
             <MoneyText cents={r.amountCents} tone={r.kind === 'income' ? 'in' : 'ink'} />
           </div>

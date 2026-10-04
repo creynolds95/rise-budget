@@ -394,6 +394,7 @@ export function advanceManualRule(
   today: string,
 ): { nextExpectedDate: string; status: 'active' | 'broken' } {
   const early = EARLY_MATCH_DAYS[rule.cadence];
+  const anchorDay = rule.anchorDays?.[0] ?? parts(rule.nextExpectedDate).d;
   const confirming = occurrences
     .filter((o) => Math.sign(o.amountCents) === Math.sign(rule.expectedAmountCents))
     .filter((o) => steadyAmounts([o.amountCents, rule.expectedAmountCents]))
@@ -402,13 +403,13 @@ export function advanceManualRule(
   let next = rule.nextExpectedDate;
   for (const o of confirming) {
     if (dayNumber(o.date) < dayNumber(next) - early) continue;
-    // An early charge (a paycheck on Friday the 2nd for Monday the 5th) pays the cycle due on
-    // `next`, so the following cycle is counted from `next`, never from the charge's own day.
-    const paid = o.date > next ? o.date : next;
+    // The charge pays the cycle due on `next`, early or late, so the following cycle is counted
+    // from that due date: a paycheck on Friday the 2nd for Monday the 5th moves on to the 20th,
+    // and a bill due Friday that posts Monday stays due on Fridays.
     next =
       rule.cadence === 'semimonthly'
-        ? nextSemimonthlyDate(paid, rule.anchorDays as [number, number])
-        : nextDate(rule.cadence, paid, rule.anchorDays?.[0] ?? parts(paid).d);
+        ? nextSemimonthlyDate(next, rule.anchorDays as [number, number])
+        : nextDate(rule.cadence, next, anchorDay);
   }
   const status = dayNumber(today) - dayNumber(next) > MISSED_AFTER_DAYS ? 'broken' : 'active';
   return { nextExpectedDate: next, status };

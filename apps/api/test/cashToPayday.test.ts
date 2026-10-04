@@ -514,7 +514,7 @@ describe('Surplus never drops a schedule whose date has passed', () => {
 });
 
 describe('a suggestion already in Surplus under another name', () => {
-  it('a hand-added mortgage hides the mortgage debit sync found', async () => {
+  it('a suggestion that looks like a hand-added mortgage says so, and still shows', async () => {
     const s = await setup();
     await runSync(env.DB, s.userId, feed(), {
       now: new Date('2026-09-10T20:00:00Z'),
@@ -522,9 +522,9 @@ describe('a suggestion already in Surplus under another name', () => {
     });
     const names = async () =>
       (await buildCashToPaydayProjection(env.DB, s.userId, '2026-09-10', 0, 0)).suggestions.map(
-        (r) => r.merchant,
+        (r) => [r.merchant, r.likelySameAs],
       );
-    expect(await names()).toContain('MORTGAGE SERVICING');
+    expect(await names()).toContainEqual(['MORTGAGE SERVICING', null]);
     await env.DB.batch([
       upsertManualEventStmt(
         s.userId,
@@ -536,6 +536,9 @@ describe('a suggestion already in Surplus under another name', () => {
         '2026-09-27',
       ),
     ]);
-    expect(await names()).toEqual(['ACME CORP PAYROLL']);
+    expect(await names()).toEqual([
+      ['ACME CORP PAYROLL', null],
+      ['MORTGAGE SERVICING', 'Mortgage'],
+    ]);
   });
 });

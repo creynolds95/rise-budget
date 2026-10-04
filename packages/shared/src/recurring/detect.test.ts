@@ -338,8 +338,9 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
       { date: '2026-10-01', amountCents: 106_054, categoryId: null },
       { date: '2026-11-02', amountCents: 106_054, categoryId: null },
     ];
+    // The late Nov 2 charge paid the Nov 1 due date; December stays on the 1st.
     expect(advanceManualRule(rule(), occ, '2026-11-03')).toEqual({
-      nextExpectedDate: '2026-12-02',
+      nextExpectedDate: '2026-12-01',
       status: 'active',
     });
   });
@@ -389,6 +390,13 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
         .nextExpectedDate;
     expect(at('2026-10-05')).toBe('2026-10-15');
     expect(at('2026-10-04')).toBe('2026-10-08');
+  });
+
+  it('a bill that posts late keeps its due day', () => {
+    // Due Friday Oct 2, posted Monday Oct 5: November's is still due the 2nd, not the 5th.
+    const occ: Occurrence[] = [{ date: '2026-10-05', amountCents: 106_054, categoryId: null }];
+    const r = rule({ nextExpectedDate: '2026-10-02' });
+    expect(advanceManualRule(r, occ, '2026-10-06').nextExpectedDate).toBe('2026-11-02');
   });
 
   it('an early monthly charge keeps the scheduled day', () => {

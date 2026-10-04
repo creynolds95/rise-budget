@@ -79,26 +79,29 @@ export function surplusSuggestions(
   return out;
 }
 
-/** What a schedule already in Surplus looks like, for matching a suggestion against it. */
+/** A hand-added Surplus schedule, for matching a suggestion against it. */
 export interface ScheduleShape {
+  name: string;
   expectedAmountCents: number;
   /** Its next date, from today on. */
   nextDate: string;
 }
 
 /**
- * A suggestion that is already in Surplus under another name: a hand-added "Mortgage" and the
- * mortgage debit sync found. Same direction, the same amount within 5%, due within a few days
- * of each other. Adding it again would count the money twice, so it isn't offered.
+ * The hand-added schedule a suggestion looks like (a hand-added "Mortgage" and the mortgage
+ * debit sync found): same direction, the same amount within 5%, due within a few days. Only a
+ * likeness, never proof (two paychecks can match), so the suggestion is still shown, named as a
+ * likely duplicate, and the user decides.
  */
-export function alreadyScheduled(
+export function likelySameAs(
   s: { expectedAmountCents: number; nextExpectedDate: string },
   schedules: readonly ScheduleShape[],
-): boolean {
-  return schedules.some(
+): string | null {
+  const match = schedules.find(
     (r) =>
       Math.sign(r.expectedAmountCents) === Math.sign(s.expectedAmountCents) &&
       steadyAmounts([r.expectedAmountCents, s.expectedAmountCents]) &&
       Math.abs(dayNumber(r.nextDate) - dayNumber(s.nextExpectedDate)) <= INTERVAL_TOLERANCE_DAYS,
   );
+  return match?.name ?? null;
 }
