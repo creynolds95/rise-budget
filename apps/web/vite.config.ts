@@ -7,13 +7,27 @@ import { defineConfig } from 'vitest/config';
 const env =
   (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
 
+const build = {
+  version: new Date().toISOString(),
+  commit: env['GITHUB_SHA']?.slice(0, 7) ?? 'local',
+};
+
 export default defineConfig({
   define: {
     // Each build busts the persisted cache, so old data shapes never meet new code.
-    __APP_VERSION__: JSON.stringify(new Date().toISOString()),
-    __APP_COMMIT__: JSON.stringify(env['GITHUB_SHA']?.slice(0, 7) ?? 'local'),
+    __APP_VERSION__: JSON.stringify(build.version),
+    __APP_COMMIT__: JSON.stringify(build.commit),
   },
   plugins: [
+    // The deployed build's identity, outside the service worker's precache, so Settings can
+    // tell a stale installed app from the latest deploy.
+    {
+      name: 'rise-version-file',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify(build) });
+      },
+    },
     react(),
     tailwindcss(),
     // ARCHITECTURE §7. The service worker precaches the app shell only. API reads are
