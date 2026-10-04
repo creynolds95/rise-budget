@@ -60,6 +60,25 @@ describe('T17 accounts & snapshots', () => {
     });
     expect(bad.status).toBe(400);
 
+    const symbol = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { icon: 'home' } },
+    });
+    expect(symbol.json.badge).toEqual({ icon: 'home' });
+
+    const backToLetters = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { text: 'CU', bg: '#1A4D2E', fg: '#FFFFFF' } },
+    });
+    expect(backToLetters.json.badge).toEqual({ text: 'CU', bg: '#1a4d2e', fg: '#ffffff' });
+
+    const unknownSymbol = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { icon: 'rocket' } },
+    });
+    expect(unknownSymbol.status).toBe(400);
+
+    await call('PATCH', `/accounts/${id}`, { access: u.access, body: { badge: { icon: 'car' } } });
     const cleared = await call('PATCH', `/accounts/${id}`, {
       access: u.access,
       body: { badge: null },
