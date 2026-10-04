@@ -15,16 +15,19 @@ export async function listOccurrences(
 ): Promise<Map<string, AccountOccurrence[]>> {
   // H1: every occurrence always has a split now (a guess or the catch-all), so a category
   // only counts here once the user has actually reviewed it — otherwise every merchant would
-  // "establish" whatever its unconfirmed guess happened to be.
+  // "establish" whatever its unconfirmed guess happened to be. Transfers come back too, with
+  // their other leg's account: a transfer out to savings or a loan is real cash for Surplus.
   const { results } = await db
     .prepare(
-      `SELECT t.merchant_normalized, t.account_id, t.posted_at, t.amount_cents,
+      `SELECT t.merchant_normalized, t.account_id, t.posted_at, t.amount_cents, t.is_transfer,
          CASE WHEN t.review_state = 'reviewed' THEN
            (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(s.category_id) END FROM split s
              WHERE s.user_id = ?1 AND s.txn_id = t.id)
-         END AS category_id
+         END AS category_id,
+         (SELECT p.account_id FROM txn p WHERE p.id = t.transfer_pair_id AND p.user_id = ?1)
+           AS pair_account_id
        FROM txn t
-       WHERE t.user_id = ?1 AND t.posted_at >= ?2 AND t.is_transfer = 0 AND t.is_pending = 0
+       WHERE t.user_id = ?1 AND t.posted_at >= ?2 AND t.is_pending = 0
          AND t.review_state != 'dropped'
        ORDER BY t.posted_at`,
     )
@@ -34,7 +37,9 @@ export async function listOccurrences(
       account_id: string;
       posted_at: string;
       amount_cents: number;
+      is_transfer: number;
       category_id: string | null;
+      pair_account_id: string | null;
     }>();
   const out = new Map<string, AccountOccurrence[]>();
   for (const r of results) {
@@ -43,6 +48,8 @@ export async function listOccurrences(
       amountCents: r.amount_cents,
       categoryId: r.category_id,
       accountId: r.account_id,
+      isTransfer: r.is_transfer === 1,
+      pairAccountId: r.pair_account_id,
     };
     out.set(r.merchant_normalized, [...(out.get(r.merchant_normalized) ?? []), o]);
   }

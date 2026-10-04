@@ -1,6 +1,6 @@
 import { projectCashFlow, type CashEvent, type CashProjection } from '@rise/shared/cash-projection';
 import type { Account, User } from '@rise/shared/schemas';
-import { projectOccurrences, type DetectedSeries } from '@rise/shared/recurring';
+import { upcomingOccurrences, type DetectedSeries } from '@rise/shared/recurring';
 import { displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
 
 /** How far ahead to project: through this many upcoming paychecks. */
@@ -104,8 +104,11 @@ export async function buildCashToPaydayProjection(
   const paySchedules = confirmed.filter((d) => d.series.expectedAmountCents < 0);
   const bills = confirmed.filter((d) => d.series.expectedAmountCents > 0);
 
-  const payEvents: CashEvent[] = paySchedules.flatMap(({ merchant, series }) =>
-    projectOccurrences(series, PAYCHECK_HORIZON).map((o) => ({
+  // A hand-added schedule has no charge to wait for; a tagged one waits for its real one.
+  const upcoming = (rule: { label: string | null }, series: DetectedSeries, count: number) =>
+    upcomingOccurrences(series, today, count, rule.label == null);
+  const payEvents: CashEvent[] = paySchedules.flatMap(({ rule, merchant, series }) =>
+    upcoming(rule, series, PAYCHECK_HORIZON).map((o) => ({
       date: o.date,
       cashDeltaCents: -o.amountCents,
       label: displayNames.get(merchant) ?? merchant,
@@ -113,8 +116,8 @@ export async function buildCashToPaydayProjection(
   );
   const horizonEnd = payEvents.reduce((max, e) => (e.date > max ? e.date : max), today);
 
-  const billEvents: CashEvent[] = bills.flatMap(({ merchant, series }) =>
-    projectOccurrences(series, MAX_BILL_OCCURRENCES)
+  const billEvents: CashEvent[] = bills.flatMap(({ rule, merchant, series }) =>
+    upcoming(rule, series, MAX_BILL_OCCURRENCES)
       .filter((o) => o.date <= horizonEnd)
       .map((o) => ({
         date: o.date,
@@ -135,7 +138,11 @@ export async function buildCashToPaydayProjection(
     amountCents: Math.abs(series.expectedAmountCents),
     cadence: series.cadence,
     anchorDays: series.anchorDays,
-    nextExpectedDate: series.nextExpectedDate,
+    // A hand-added date that has passed already happened; show the one coming up.
+    nextExpectedDate:
+      rule.label != null
+        ? (upcoming(rule, series, 1)[0]?.date ?? series.nextExpectedDate)
+        : series.nextExpectedDate,
     isHandAdded: rule.label != null,
   }));
   const suggestions: SuggestionRow[] = pending.map((r) => ({

@@ -2,6 +2,40 @@ import { detectSemimonthly, detectSeries, type DetectedSeries, type Occurrence }
 
 export interface AccountOccurrence extends Occurrence {
   accountId: string;
+  /** Linked or marked as a transfer between the user's own accounts. */
+  isTransfer?: boolean;
+  /** The other leg's account, when the transfer is linked. */
+  pairAccountId?: string | null;
+}
+
+/**
+ * What really moves cash in or out of the cash accounts, by merchant. Pure.
+ *
+ * Spending and income count, and so does a transfer out to savings, a loan or the mortgage:
+ * that money leaves checking as surely as a bill. Two transfers never count: a card payment
+ * (no autopay, so paying a card is never projected) and a move between two cash accounts,
+ * which nets to nothing. A transfer whose other leg hasn't been linked counts; if it is a
+ * card payment its amount varies, so it rarely forms a schedule, and Dismiss handles it.
+ */
+export function cashMovements(
+  byMerchant: ReadonlyMap<string, readonly AccountOccurrence[]>,
+  cashAccountIds: ReadonlySet<string>,
+  cardAccountIds: ReadonlySet<string>,
+): Map<string, AccountOccurrence[]> {
+  const out = new Map<string, AccountOccurrence[]>();
+  for (const [merchant, all] of byMerchant) {
+    const occ = all.filter(
+      (o) =>
+        cashAccountIds.has(o.accountId) &&
+        !(
+          o.isTransfer &&
+          o.pairAccountId &&
+          (cashAccountIds.has(o.pairAccountId) || cardAccountIds.has(o.pairAccountId))
+        ),
+    );
+    if (occ.length > 0) out.set(merchant, occ);
+  }
+  return out;
 }
 
 export interface SurplusSuggestion {
