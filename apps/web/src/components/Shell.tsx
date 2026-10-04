@@ -47,9 +47,11 @@ export function Shell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = () => setMenuOpen(false);
   const onDashboard = location.pathname === '/';
-  // The menu lives on the Dashboard only. Sliding right from the left side opens it there.
+  const onTabRoot = isTabRoot(location.pathname);
+  // The menu sits on all four tabs. Sliding right from the left side opens it there; pushed
+  // screens keep that gesture for going back.
   useEffect(() => {
-    if (!onDashboard) return;
+    if (!onTabRoot) return;
     let start: { x: number; y: number } | null = null;
     const onStart = (e: TouchEvent) => {
       const t = e.touches[0];
@@ -76,7 +78,7 @@ export function Shell() {
       document.removeEventListener('touchstart', onStart);
       document.removeEventListener('touchend', onEnd);
     };
-  }, [onDashboard]);
+  }, [onTabRoot]);
   const currentTab = TABS.find((t) =>
     t.path === '/' ? onDashboard : location.pathname.startsWith(t.path),
   );
@@ -87,7 +89,7 @@ export function Shell() {
   const isActiveTab = (path: string) =>
     path === '/' ? onDashboard || fromDashboard : location.pathname.startsWith(path);
   // Pushed screens bring their own banner; the tab title bar is only for the tab roots.
-  const showTabHead = isTabRoot(location.pathname) || location.pathname === '/settings';
+  const showTabHead = onTabRoot || location.pathname === '/settings';
   // Screens that pin something under the tab title (the Transactions search) need its height.
   const head = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -144,7 +146,7 @@ export function Shell() {
               </NavLink>
             ))}
           </nav>
-          {/* Everything the phone's Dashboard menu reaches; Settings sits at the foot. */}
+          {/* Everything the phone's menu reaches; Settings sits at the foot. */}
           <nav aria-label="Menu" className="flex flex-col gap-0.5 border-t border-hairline pt-5">
             {MENU_ITEMS.filter((i) => i.to !== '/settings').map((i) => (
               <NavLink
@@ -177,9 +179,9 @@ export function Shell() {
           ref={head}
           className={`gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between banner bg-banner text-banner-ink shadow-soft lg:hidden ${showTabHead ? '' : 'hidden!'}`}
         >
-          <div className={`flex items-center gap-1 ${onDashboard ? '-ml-2' : ''}`}>
+          <div className={`flex items-center gap-1 ${onTabRoot ? '-ml-2' : ''}`}>
             {location.pathname === '/settings' && <BackLink to="/" label="Dashboard" />}
-            {onDashboard && (
+            {onTabRoot && (
               <button
                 type="button"
                 aria-label="Menu"

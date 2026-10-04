@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { lockScroll } from '../lib/scrollLock';
 
-/** The Dashboard menu. Desktop's sidebar lists the same items under the tabs. */
+/** The menu on every tab. Desktop's sidebar lists the same items under the tabs. */
 export const MENU_ITEMS: { label: string; to: string }[] = [
   { label: 'Surplus', to: '/cash-to-payday' },
   { label: 'Financial health', to: '/financial-health' },
