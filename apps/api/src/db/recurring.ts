@@ -1,4 +1,9 @@
-import type { AccountOccurrence, DetectedSeries, SurplusSuggestion } from '@rise/shared/recurring';
+import type {
+  AccountOccurrence,
+  AmountChange,
+  DetectedSeries,
+  SurplusSuggestion,
+} from '@rise/shared/recurring';
 import { RecurringSeries } from '@rise/shared/schemas';
 import { nowIso, type UserId } from './util';
 
@@ -69,7 +74,7 @@ export async function manualRuleMerchants(userId: UserId, db: D1Database): Promi
   return new Set(results.map((r) => r.merchant_normalized));
 }
 
-interface ManualRuleRow {
+export interface ManualRuleRow {
   id: string;
   merchant_normalized: string;
   cadence: string;
@@ -77,14 +82,22 @@ interface ManualRuleRow {
   next_expected_date: string;
   anchor_days: string | null;
   label: string | null;
+  next_amount_cents: number | null;
+  amount_changes_on: string | null;
 }
+
+/** A rule's pending amount change, if any (both columns set together). */
+export const changeOf = (r: ManualRuleRow): AmountChange | null =>
+  r.next_amount_cents != null && r.amount_changes_on != null
+    ? { amountCents: r.next_amount_cents, on: r.amount_changes_on }
+    : null;
 
 /** Every manual rule (Caleb's "Recurring Cash Withdrawal" tag), for `refreshRecurring`. */
 export async function listManualRules(userId: UserId, db: D1Database): Promise<ManualRuleRow[]> {
   const { results } = await db
     .prepare(
       `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
-         anchor_days, label
+         anchor_days, label, next_amount_cents, amount_changes_on
        FROM recurring_series WHERE user_id = ?1 AND source = 'manual'`,
     )
     .bind(userId)
@@ -137,13 +150,15 @@ export function updateManualRuleStmt(
     nextExpectedDate: string;
     anchorDays: [number, number] | null;
     label?: string | undefined;
+    change: AmountChange | null;
   },
 ): D1PreparedStatement {
   return db
     .prepare(
       `UPDATE recurring_series SET cadence = ?3, expected_amount_cents = ?4,
          next_expected_date = ?5, anchor_days = ?6, status = 'active', updated_at = ?7,
-         label = CASE WHEN label IS NULL THEN NULL ELSE COALESCE(?8, label) END
+         label = CASE WHEN label IS NULL THEN NULL ELSE COALESCE(?8, label) END,
+         next_amount_cents = ?9, amount_changes_on = ?10
        WHERE user_id = ?1 AND id = ?2 AND source = 'manual'`,
     )
     .bind(
@@ -155,6 +170,8 @@ export function updateManualRuleStmt(
       v.anchorDays ? JSON.stringify(v.anchorDays) : null,
       nowIso(),
       v.label ?? null,
+      v.change?.amountCents ?? null,
+      v.change?.on ?? null,
     );
 }
 
@@ -176,7 +193,7 @@ export async function listManualEvents(userId: UserId, db: D1Database): Promise<
   const { results } = await db
     .prepare(
       `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
-         anchor_days, label
+         anchor_days, label, next_amount_cents, amount_changes_on
        FROM recurring_series WHERE user_id = ?1 AND source = 'manual' AND label IS NOT NULL
        ORDER BY next_expected_date`,
     )
@@ -228,10 +245,15 @@ export function advanceManualRuleStmt(
   anchorDays: [number, number] | null = null,
 ): D1PreparedStatement {
   // A rule saved without its days keeps the ones it was first due on (never re-anchored).
+  // Once every date still ahead is on or after a pending amount change, it becomes the amount.
   return db
     .prepare(
       `UPDATE recurring_series SET next_expected_date = ?3, status = ?4, updated_at = ?5,
-         anchor_days = COALESCE(anchor_days, ?6)
+         anchor_days = COALESCE(anchor_days, ?6),
+         expected_amount_cents = CASE WHEN ?3 >= amount_changes_on
+           THEN next_amount_cents ELSE expected_amount_cents END,
+         next_amount_cents = CASE WHEN ?3 >= amount_changes_on THEN NULL ELSE next_amount_cents END,
+         amount_changes_on = CASE WHEN ?3 >= amount_changes_on THEN NULL ELSE amount_changes_on END
        WHERE user_id = ?1 AND id = ?2`,
     )
     .bind(

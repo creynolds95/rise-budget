@@ -1,7 +1,13 @@
 import { projectCashFlow, type CashEvent, type CashProjection } from '@rise/shared/cash-projection';
 import type { Account, User } from '@rise/shared/schemas';
-import { likelySameAs, upcomingOccurrences, type DetectedSeries } from '@rise/shared/recurring';
-import { displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
+import {
+  likelySameAs,
+  upcomingOccurrences,
+  withAmountChange,
+  type AmountChange,
+  type DetectedSeries,
+} from '@rise/shared/recurring';
+import { changeOf, displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
 
 /** How far ahead to project: through this many upcoming paychecks. */
 const PAYCHECK_HORIZON = 3;
@@ -34,6 +40,8 @@ export interface ScheduleRow {
   nextExpectedDate: string;
   /** Added by hand from Surplus, so its name is its own. */
   isHandAdded: boolean;
+  /** A new amount from a date on, unsigned like `amountCents`. */
+  change: AmountChange | null;
 }
 
 /** A schedule sync found in the cash accounts, waiting for the user to add or dismiss it. */
@@ -107,8 +115,8 @@ export async function buildCashToPaydayProjection(
   const bills = confirmed.filter((d) => d.series.expectedAmountCents > 0);
 
   // A hand-added schedule has no charge to wait for; a tagged one waits for its real one.
-  const upcoming = (rule: { label: string | null }, series: DetectedSeries, count: number) =>
-    upcomingOccurrences(series, today, count, rule.label == null);
+  const upcoming = (rule: (typeof manualRules)[number], series: DetectedSeries, count: number) =>
+    withAmountChange(upcomingOccurrences(series, today, count, rule.label == null), changeOf(rule));
   const payEvents: CashEvent[] = paySchedules.flatMap(({ rule, merchant, series }) =>
     upcoming(rule, series, PAYCHECK_HORIZON).map((o) => ({
       date: o.date,
@@ -146,6 +154,9 @@ export async function buildCashToPaydayProjection(
         ? (upcoming(rule, series, 1)[0]?.date ?? series.nextExpectedDate)
         : series.nextExpectedDate,
     isHandAdded: rule.label != null,
+    change: rule.amount_changes_on
+      ? { amountCents: Math.abs(rule.next_amount_cents ?? 0), on: rule.amount_changes_on }
+      : null,
   }));
   // Hand-added schedules only: a tagged one already hides its own merchant's suggestion.
   const handAdded = schedules

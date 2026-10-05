@@ -1,6 +1,7 @@
 import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
 import {
   advanceManualRule,
+  amountOn,
   cashMovements,
   detectSemimonthly,
   firstUpcoming,
@@ -14,6 +15,7 @@ import {
 } from '@rise/shared/recurring';
 import {
   advanceManualRuleStmt,
+  changeOf,
   getUser,
   listAccounts,
   listManualRules,
@@ -105,7 +107,12 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
             {
               cadence,
               anchorDays,
-              expectedAmountCents: r.expected_amount_cents,
+              // A paycheck due after a pending change is matched against its new amount.
+              expectedAmountCents: amountOn(
+                r.expected_amount_cents,
+                changeOf(r),
+                r.next_expected_date,
+              ),
               nextExpectedDate: r.next_expected_date,
             },
             // Transfers included: a savings or loan transfer confirms its rule like a bill does.
