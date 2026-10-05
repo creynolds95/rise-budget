@@ -1,14 +1,14 @@
 import type { ViewCategory } from '@rise/shared/budget';
 import type { Category } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { get } from '../lib/api';
 import { addMonths, monthName } from '../lib/dates';
 import { centsToInput, formatCents, parseMoney } from '../lib/money';
 import { planStats, upToDollar, type MonthSpend } from '../lib/plan';
 import { useMe } from '../lib/queries';
 import { MoneyText } from './primitives/MoneyText';
-import { Sheet } from './primitives/Sheet';
+import { Sheet, useSheetKeyboard } from './primitives/Sheet';
 import { Toggle } from './primitives/Toggle';
 
 export interface PlanEdit {
@@ -59,11 +59,6 @@ function Editor({
   const [hint, setHint] = useState(false);
   const [future, setFuture] = useState(me?.settings.planChangesApplyToFuture ?? false);
   const [busy, setBusy] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    input.current?.focus();
-    input.current?.select();
-  }, []);
 
   const history = useQuery({
     queryKey: ['category-history', category.id, 13],
@@ -159,7 +154,7 @@ function Editor({
               {mode === 'add' ? '+$' : mode === 'remove' ? '−$' : '$'}
             </span>
             <input
-              ref={input}
+              data-sheet-focus
               inputMode="decimal"
               enterKeyHint="done"
               aria-invalid={!valid}
@@ -270,7 +265,8 @@ function SpendBars({
   onPick: (cents: number) => void;
 }) {
   const max = Math.max(1, planCents, ...bars.map((b) => b.spentCents));
-  const H = 112;
+  // Shorter with the keypad up, so the apply-to-future toggle still fits above it.
+  const H = useSheetKeyboard() ? 48 : 112;
   const line = Math.round((planCents / max) * H);
   return (
     <figure className="mt-6 rounded-card bg-surface p-4 shadow-soft">

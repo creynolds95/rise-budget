@@ -1,5 +1,16 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type TouchEvent } from 'react';
-import { MOTION_EASE, MOTION_OUT_MS } from '../../lib/motion';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+  type TouchEvent,
+} from 'react';
+import { MOTION_EASE, MOTION_IN_MS, MOTION_OUT_MS } from '../../lib/motion';
 import { lockScroll } from '../../lib/scrollLock';
 
 /**
@@ -11,13 +22,23 @@ import { lockScroll } from '../../lib/scrollLock';
  * `resize`/`scroll` events on `visualViewport` when the keyboard opens, so a short poll while
  * the sheet is up is the fallback that actually catches the change.
  */
-function useVisibleViewportHeight(active: boolean) {
-  const [height, setHeight] = useState<number | null>(null);
+function useVisibleViewport(active: boolean) {
+  const [view, setView] = useState<{ height: number; top: number; keyboard: boolean } | null>(null);
   useEffect(() => {
     if (!active) return;
     const vv = window.visualViewport;
     if (!vv) return;
-    const update = () => setHeight(vv.height);
+    const update = () => {
+      const height = Math.round(vv.height);
+      const top = Math.round(vv.offsetTop);
+      // The layout viewport doesn't shrink for the keyboard in an installed PWA; the visual one does.
+      const keyboard = window.innerHeight - vv.height > 150;
+      setView((v) =>
+        v && v.height === height && v.top === top && v.keyboard === keyboard
+          ? v
+          : { height, top, keyboard },
+      );
+    };
     update();
     vv.addEventListener('resize', update);
     vv.addEventListener('scroll', update);
@@ -28,7 +49,76 @@ function useVisibleViewportHeight(active: boolean) {
       window.clearInterval(poll);
     };
   }, [active]);
-  return height;
+  return view;
+}
+
+/** True while the on-screen keyboard covers part of the sheet, so its content can tighten up. */
+const KeyboardContext = createContext(false);
+export const useSheetKeyboard = () => useContext(KeyboardContext);
+
+/**
+ * Opens the keyboard with the sheet, for a field marked `data-sheet-focus`. Focusing that field
+ * straight away doesn't work on iOS: it's still translated below the screen by the rise
+ * animation, so iOS scrolls the whole page down to reach it and the sheet then appears to drop
+ * in from the top while the keyboard comes up from the bottom. Instead a stand-in field that's
+ * already on screen takes focus inside the tap (which is what lets the keyboard open at all),
+ * and focus moves to the real field once the sheet has landed. iOS keeps the keyboard up across
+ * that hand-off. Anything typed in the meantime is carried over.
+ */
+function useFocusOnLand(open: boolean) {
+  const panel = useRef<HTMLDivElement>(null);
+  const proxy = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const target = panel.current?.querySelector<HTMLInputElement>('[data-sheet-focus]');
+    const stand = proxy.current;
+    if (!target || !stand) return;
+    stand.inputMode = target.inputMode;
+    stand.disabled = false;
+    stand.value = '';
+    stand.focus({ preventScroll: true });
+    let done = false;
+    const land = () => {
+      if (done) return;
+      done = true;
+      // Leave focus alone if the person has already moved it somewhere else.
+      if (document.activeElement === stand) {
+        if (stand.value) {
+          // React tracks a controlled input's value, so set it the way typing would.
+          const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+          set?.call(target, stand.value);
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          target.focus({ preventScroll: true });
+        } else {
+          target.focus({ preventScroll: true });
+          target.select();
+        }
+      }
+      stand.value = '';
+      // Out of the keyboard's previous/next order once its job is done.
+      stand.disabled = true;
+    };
+    const el = panel.current;
+    const onEnd = (e: AnimationEvent) => e.target === el && land();
+    el?.addEventListener('animationend', onEnd);
+    // Fallback in case the animation never reports finishing.
+    const t = window.setTimeout(land, MOTION_IN_MS + 100);
+    return () => {
+      el?.removeEventListener('animationend', onEnd);
+      window.clearTimeout(t);
+    };
+  }, [open]);
+  const standIn = (
+    <input
+      ref={proxy}
+      aria-hidden
+      tabIndex={-1}
+      disabled
+      // On screen (so iOS has nothing to scroll to) but invisible; 16px so iOS doesn't zoom.
+      className="pointer-events-none fixed top-0 left-0 z-50 h-px w-px text-[16px] opacity-0"
+    />
+  );
+  return { panel, standIn };
 }
 
 /**
@@ -52,8 +142,7 @@ function useExit(open: boolean) {
  * Pull a sheet down by its header to dismiss it: it follows the finger, and lets go past a
  * third of its height or on a quick flick.
  */
-function useDragDown(onClose: () => void) {
-  const panel = useRef<HTMLDivElement>(null);
+function useDragDown(onClose: () => void, panel: RefObject<HTMLDivElement | null>) {
   const drag = useRef<{ y: number; t: number; dy: number } | null>(null);
   const move = (dy: number, animate: boolean) => {
     const el = panel.current;
@@ -82,7 +171,7 @@ function useDragDown(onClose: () => void) {
       else move(0, true);
     },
   };
-  return { panel, handlers };
+  return { handlers };
 }
 
 /**
@@ -111,16 +200,16 @@ export function Sheet({
   /** Pinned under the scrolling content, flush with the bottom edge (Clear all · Apply). */
   footer?: ReactNode;
   /**
-   * A full page instead of a bottom sheet (Monarch's amount editor): nothing under the fold
-   * is load-bearing once you're editing, so the keyboard is free to cover it — no viewport
-   * math needed, unlike a bottom sheet that has to keep its content reachable above it.
+   * A full page instead of a bottom sheet (Monarch's amount editor). It's sized to what's
+   * visible above the keyboard, so anything pinned to its bottom stays reachable while typing.
    */
   fullScreen?: boolean;
 }) {
   const id = useId();
   const { mounted, closing } = useExit(open);
-  const viewportHeight = useVisibleViewportHeight(open && !fullScreen);
-  const { panel, handlers } = useDragDown(onClose);
+  const view = useVisibleViewport(open);
+  const { panel, standIn } = useFocusOnLand(open);
+  const { handlers } = useDragDown(onClose, panel);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -183,48 +272,58 @@ export function Sheet({
     </div>
   );
 
+  const keyboard = view?.keyboard ?? false;
   if (fullScreen) {
     return (
-      <div
-        ref={panel}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={id}
-        className={`${closing ? 'animate-sheet-out' : 'animate-sheet-up'} fixed inset-0 z-40 flex flex-col bg-canvas pt-[env(safe-area-inset-top)]`}
-      >
-        <div {...handlers}>{header}</div>
-        <div className={`gutter flex-1 overflow-y-auto overscroll-contain pt-2 ${bottomPad}`}>
-          {children}
+      <KeyboardContext.Provider value={keyboard}>
+        {standIn}
+        <div
+          ref={panel}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={id}
+          style={keyboard && view ? { top: view.top, height: view.height } : undefined}
+          className={`${closing ? 'animate-sheet-out' : 'animate-sheet-up'} fixed inset-0 z-40 flex flex-col bg-canvas pt-[env(safe-area-inset-top)]`}
+        >
+          <div {...handlers}>{header}</div>
+          <div
+            className={`gutter min-h-0 flex-1 overflow-y-auto overscroll-contain pt-2 ${keyboard ? 'pb-0' : bottomPad}`}
+          >
+            {children}
+          </div>
+          {footerBar}
         </div>
-        {footerBar}
-      </div>
+      </KeyboardContext.Provider>
     );
   }
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center md:items-center">
-      <button
-        aria-label="Close"
-        tabIndex={-1}
-        className={`${closing ? 'animate-fade-out' : 'animate-fade-in'} absolute inset-0 touch-none bg-ink/25`}
-        onClick={onClose}
-      />
-      <div
-        ref={panel}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={id}
-        style={viewportHeight ? { maxHeight: `${viewportHeight * 0.92}px` } : undefined}
-        className={`${closing ? 'animate-sheet-out' : 'animate-sheet-up'} relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] bg-canvas shadow-soft md:max-w-lg md:rounded-[20px]`}
-      >
-        <div {...handlers}>
-          <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-hairline" />
-          {header}
+    <KeyboardContext.Provider value={keyboard}>
+      {standIn}
+      <div className="fixed inset-0 z-40 flex items-end justify-center md:items-center">
+        <button
+          aria-label="Close"
+          tabIndex={-1}
+          className={`${closing ? 'animate-fade-out' : 'animate-fade-in'} absolute inset-0 touch-none bg-ink/25`}
+          onClick={onClose}
+        />
+        <div
+          ref={panel}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={id}
+          style={view ? { maxHeight: `${view.height * 0.92}px` } : undefined}
+          className={`${closing ? 'animate-sheet-out' : 'animate-sheet-up'} relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] bg-canvas shadow-soft md:max-w-lg md:rounded-[20px]`}
+        >
+          <div {...handlers}>
+            <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-hairline" />
+            {header}
+          </div>
+          <div className={`gutter min-h-0 overflow-y-auto overscroll-contain pt-2 ${bottomPad}`}>
+            {children}
+          </div>
+          {footerBar}
         </div>
-        <div className={`gutter min-h-0 overflow-y-auto overscroll-contain pt-2 ${bottomPad}`}>
-          {children}
-        </div>
-        {footerBar}
       </div>
-    </div>
+    </KeyboardContext.Provider>
   );
 }
