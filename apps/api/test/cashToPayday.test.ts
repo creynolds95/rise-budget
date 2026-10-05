@@ -513,6 +513,82 @@ describe('Surplus never drops a schedule whose date has passed', () => {
   });
 });
 
+describe('a paycheck that changes from a date on (Caleb, 2026-10-05: 401k from Nov 5)', () => {
+  it('projects the old amount before the date, the new one from it, then folds it in', async () => {
+    const s = await setup();
+    const { id } = (
+      await s.api('POST', '/cash-to-payday/manual-events', {
+        label: 'Payroll',
+        kind: 'income',
+        amountCents: 207_000,
+        cadence: 'semimonthly',
+        anchorDate: '2026-10-05',
+        anchorDays: [5, 20],
+      })
+    ).json;
+    const put = await s.api('PUT', '/cash-to-payday/schedules', {
+      id,
+      kind: 'income',
+      amountCents: 207_000,
+      cadence: 'semimonthly',
+      anchorDate: '2026-10-05',
+      anchorDays: [5, 20],
+      label: 'Payroll',
+      change: { amountCents: 170_025, on: '2026-11-05' },
+    });
+    expect(put.status).toBe(200);
+
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-04', 0, 0);
+    expect(p.points.slice(1).map((x) => [x.date, x.balanceCents])).toEqual([
+      ['2026-10-05', 207_000],
+      ['2026-10-20', 414_000],
+      ['2026-11-05', 584_025],
+    ]);
+    expect(p.schedules[0]).toEqual(
+      expect.objectContaining({
+        amountCents: 207_000,
+        change: { amountCents: 170_025, on: '2026-11-05' },
+      }),
+    );
+
+    // Once every date ahead is past the change, it simply is the amount.
+    await refreshRecurring(env.DB, s.userId, '2026-10-19');
+    let row = await env.DB.prepare(
+      'SELECT expected_amount_cents AS a, amount_changes_on AS on_ FROM recurring_series WHERE user_id = ?1',
+    )
+      .bind(s.userId)
+      .first<{ a: number; on_: string | null }>();
+    expect(row).toEqual({ a: -207_000, on_: '2026-11-05' });
+    await refreshRecurring(env.DB, s.userId, '2026-10-21');
+    row = await env.DB.prepare(
+      'SELECT expected_amount_cents AS a, amount_changes_on AS on_ FROM recurring_series WHERE user_id = ?1',
+    )
+      .bind(s.userId)
+      .first<{ a: number; on_: string | null }>();
+    expect(row).toEqual({ a: -170_025, on_: null });
+  });
+
+  it('saving without a change clears one', async () => {
+    const s = await setup();
+    const body = {
+      kind: 'expense',
+      amountCents: 50_000,
+      cadence: 'monthly',
+      anchorDate: '2026-10-10',
+      label: 'Daycare',
+    };
+    const { id } = (await s.api('POST', '/cash-to-payday/manual-events', body)).json;
+    await s.api('PUT', '/cash-to-payday/schedules', {
+      ...body,
+      id,
+      change: { amountCents: 60_000, on: '2026-12-10' },
+    });
+    await s.api('PUT', '/cash-to-payday/schedules', { ...body, id });
+    const { schedules } = (await s.api('GET', '/cash-to-payday')).json;
+    expect(schedules[0].change).toBeNull();
+  });
+});
+
 describe('a suggestion already in Surplus under another name', () => {
   it('a suggestion that looks like a hand-added mortgage says so, and still shows', async () => {
     const s = await setup();

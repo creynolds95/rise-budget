@@ -69,6 +69,8 @@ export interface ScheduleRow {
   anchorDays: [number, number] | null;
   nextExpectedDate: string;
   isHandAdded: boolean;
+  /** A new amount from a date on; always null on a suggestion. */
+  change?: { amountCents: number; on: string } | null;
 }
 
 /** A schedule sync found in a cash account, waiting to be added or dismissed. */

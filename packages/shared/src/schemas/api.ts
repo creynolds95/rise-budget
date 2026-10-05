@@ -185,6 +185,8 @@ export const ScheduleBody = z
     anchorDays: AnchorDays.optional(),
     /** Only a hand-added schedule has a name of its own to change. */
     label: z.string().trim().min(1).max(60).optional(),
+    /** A new amount from a date on (unsigned, same kind); null clears it. Saved rules only. */
+    change: z.object({ amountCents: Cents.positive(), on: IsoDate }).nullable().default(null),
   })
   .refine((b) => b.cadence !== 'semimonthly' || b.anchorDays, {
     message: 'anchorDays is required for a semimonthly cadence',

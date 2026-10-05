@@ -238,6 +238,11 @@ function ScheduleList({
             <span className="block type-caption text-ink-faint">
               {describeSchedule(r.cadence, r.anchorDays)} · next {shortDate(r.nextExpectedDate)}
             </span>
+            {r.change && (
+              <span className="block type-caption text-ink-faint">
+                <MoneyText cents={r.change.amountCents} /> from {shortDate(r.change.on)}
+              </span>
+            )}
           </span>
           <span className="flex shrink-0 items-center gap-2">
             <MoneyText cents={r.amountCents} tone={kind === 'income' ? 'in' : 'ink'} />
@@ -312,6 +317,10 @@ function EditScheduleSheet({
   const [draft, setDraft] = useState<ScheduleDraft>(() =>
     draftFrom(row.cadence, row.anchorDays, row.nextExpectedDate),
   );
+  const [changing, setChanging] = useState(row.change != null);
+  const [changeCents, setChangeCents] = useState(row.change?.amountCents ?? row.amountCents);
+  const [changeOn, setChangeOn] = useState(row.change?.on ?? row.nextExpectedDate);
+  const changeInvalid = changing && (changeCents <= 0 || !changeOn);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const run = async (fn: () => Promise<unknown>) => {
@@ -344,6 +353,30 @@ function EditScheduleSheet({
         <span className="type-caption text-ink-muted">Amount</span>
         <MoneyField label="Amount" cents={amountCents} draft onCommit={setAmountCents} />
       </label>
+      {row.id && (
+        <div className="mt-3 flex min-h-11 items-center justify-between gap-4">
+          <span>Amount changes</span>
+          <Toggle label="Amount changes" on={changing} onChange={setChanging} />
+        </div>
+      )}
+      {row.id && changing && (
+        <div className="mt-1 flex gap-3">
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="type-caption text-ink-muted">Starting</span>
+            <input
+              type="date"
+              aria-label="Starting"
+              value={changeOn}
+              onChange={(e) => setChangeOn(e.target.value)}
+              className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
+            />
+          </label>
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="type-caption text-ink-muted">New amount</span>
+            <MoneyField label="New amount" cents={changeCents} draft onCommit={setChangeCents} />
+          </label>
+        </div>
+      )}
       <ScheduleFields
         draft={draft}
         onChange={setDraft}
@@ -352,7 +385,7 @@ function EditScheduleSheet({
       {error && <p className="mt-2 text-clay">{error}</p>}
       <Button
         className="mt-4 w-full"
-        disabled={saving || amountCents <= 0 || (row.isHandAdded && !label.trim())}
+        disabled={saving || amountCents <= 0 || changeInvalid || (row.isHandAdded && !label.trim())}
         onClick={() =>
           void run(() =>
             api('PUT', '/cash-to-payday/schedules', {
@@ -361,6 +394,9 @@ function EditScheduleSheet({
               amountCents,
               ...schedulePayload(draft),
               ...(row.isHandAdded ? { label: label.trim() } : {}),
+              ...(row.id
+                ? { change: changing ? { amountCents: changeCents, on: changeOn } : null }
+                : {}),
             }),
           )
         }

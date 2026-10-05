@@ -124,6 +124,10 @@ cashToPayday.put('/schedules', async (c) => {
         nextExpectedDate,
         anchorDays,
         label: b.label,
+        change: b.change && {
+          amountCents: b.kind === 'income' ? -b.change.amountCents : b.change.amountCents,
+          on: b.change.on,
+        },
       }),
     ]);
     if (result[0]?.meta.rows_written === 0)
