@@ -51,7 +51,9 @@ export function DetailPage(p: DetailPageProps) {
         </section>
       )}
       {p.shape && (
-        <section data-zone="shape" className="gutter pb-6">
+        // Without an identity zone above it, the shape needs its own room under the sticky
+        // header, or the tallest bar meets the banner.
+        <section data-zone="shape" className={`gutter pb-6 ${p.identity ? '' : 'pt-6'}`}>
           {p.shape}
         </section>
       )}

@@ -27,6 +27,19 @@ export function formatCents(cents: number, opts: FormatOptions = {}): string {
 }
 
 /**
+ * A budget balance (left, over, rolled over) in whole dollars. Plans are whole dollars but
+ * bills carry cents, so a $2,750 plan against a $2,749.98 bill leaves $0.02: that reads as $0.
+ * An overspend never rounds away, though: over by 40¢ shows the cents rather than $0.
+ */
+export function formatBalance(cents: number, opts: Omit<FormatOptions, 'whole'> = {}): string {
+  const hidesDebt = cents < 0 && cents > -50;
+  return formatCents(cents, { ...opts, whole: !hidesDebt });
+}
+
+/** The balance as a budget screen shows it, so a 2¢ remainder styles as settled, not left. */
+export const balanceIsZero = (cents: number) => cents >= 0 && cents < 50;
+
+/**
  * What a person typed → cents, or null if it isn't an amount. Accepts "$1,234.5", "12",
  * ".5", "-3.20", and a leading U+2212. More than two decimals is rejected, not rounded.
  */

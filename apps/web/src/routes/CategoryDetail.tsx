@@ -127,6 +127,7 @@ function CategoryDetailBody({
             <ValueRow label={isIncome ? `Left to earn in ${name}` : `Left in ${name}`}>
               <MoneyText
                 cents={remainingCents}
+                balance
                 tone={remainingCents < 0 && !isIncome ? 'over' : 'ink'}
               />
             </ValueRow>
@@ -134,6 +135,7 @@ function CategoryDetailBody({
               <ValueRow label="Rolled over from last month">
                 <MoneyText
                   cents={row.carriedInCents}
+                  balance
                   tone={row.carriedInCents < 0 ? 'over' : 'ink'}
                 />
               </ValueRow>
@@ -155,7 +157,7 @@ function CategoryDetailBody({
               label="Planned"
               {...(open ? { onClick: () => plan.open(cat, row, period.data?.poolCents ?? 0) } : {})}
             >
-              <MoneyText cents={row.plannedCents} />
+              <MoneyText cents={row.plannedCents} whole={row.plannedCents % 100 === 0} />
             </ValueRow>
             <ValueRow label={isIncome ? 'Earned' : 'Total amount'}>
               <MoneyText cents={earnedCents} />

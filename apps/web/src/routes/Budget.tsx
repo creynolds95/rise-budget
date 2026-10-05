@@ -17,7 +17,7 @@ import { ApiError, api, get } from '../lib/api';
 import { addMonths, monthName, shortDate } from '../lib/dates';
 import { useHeaderActions } from '../lib/headerActions';
 import { useIsDesktop } from '../lib/media';
-import { formatCents } from '../lib/money';
+import { balanceIsZero, formatBalance, formatCents } from '../lib/money';
 import { transitionClick } from '../lib/transition';
 
 import { useCategories, useGroups, useInvalidateMoney, usePeriod, useToday } from '../lib/queries';
@@ -563,16 +563,14 @@ function BudgetRow({
         <span
           aria-label={`${over ? 'Over' : 'Remaining'}: ${formatCents(Math.abs(remainingCents))}`}
           className={`flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-full px-2 text-sm font-semibold ${
-            remainingCents === 0
+            balanceIsZero(remainingCents)
               ? 'bg-sage-100 text-ink-muted'
               : over
                 ? 'bg-clay-100 text-clay'
                 : 'bg-sage-100 text-sage-700'
           }`}
         >
-          <span className="money">
-            {formatCents(Math.abs(remainingCents), { whole: remainingCents % 100 === 0 })}
-          </span>
+          <span className="money">{formatBalance(remainingCents, { sign: 'never' })}</span>
         </span>
       </div>
       <Link to={to} onClick={open} tabIndex={-1} aria-hidden className="block pb-3">
