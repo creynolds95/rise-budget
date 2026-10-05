@@ -62,7 +62,6 @@ function Editor({
   const [fresh, setFresh] = useState(true);
   // Add and Remove adjust the current plan by what you type; neither is the default.
   const [mode, setMode] = useState<'set' | 'add' | 'remove'>('set');
-  const [hint, setHint] = useState(false);
   const [future, setFuture] = useState(me?.settings.planChangesApplyToFuture ?? false);
   const [busy, setBusy] = useState(false);
 
@@ -150,25 +149,9 @@ function Editor({
               <span className="min-w-0 text-[17px]">
                 Apply {valid ? formatCents(cents, { whole: cents % 100 === 0 }) : ''} to all future
                 months
-                <button
-                  type="button"
-                  aria-label="What does this do?"
-                  aria-expanded={hint}
-                  onClick={() => setHint(!hint)}
-                  className="ml-2 inline-flex size-5 translate-y-1 items-center justify-center rounded-full border border-ink-faint text-[11px] text-ink-faint"
-                >
-                  i
-                </button>
               </span>
               <Toggle label="Apply to all future months" on={future} onChange={setFuture} />
             </div>
-            {hint && (
-              <p className="pb-3 type-caption text-ink-muted">
-                {future
-                  ? `${monthName(addMonths(month, 1), false)} onward plans this too. Months before stay as they are.`
-                  : `Only ${monthShort} changes.`}
-              </p>
-            )}
           </div>
           <Keypad onPress={press} />
         </>
