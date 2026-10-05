@@ -7,6 +7,8 @@
 let locks = 0;
 let saved: { y: number; style: string; path: string } | null = null;
 
+export const isScrollLocked = () => locks > 0;
+
 export function lockScroll(): () => void {
   if (locks++ === 0) {
     const body = document.body;
