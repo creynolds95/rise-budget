@@ -110,8 +110,9 @@ export function TransactionDetail() {
   const withdrawalRule = recurring.data?.find(
     (s) => s.source === 'manual' && s.merchantNormalized === t.merchantNormalized,
   );
+  // Only the cash accounts carry the row: anywhere else Surplus never counts anything.
   const inSurplus =
-    surplus.data && (!t.transferPairId || pair.data)
+    surplus.data?.cashAccounts.some((a) => a.id === t.accountId) && (!t.transferPairId || pair.data)
       ? surplusMatch(
           {
             merchant: t.merchantNormalized,
