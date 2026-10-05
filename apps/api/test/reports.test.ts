@@ -60,6 +60,51 @@ describe('T41 dashboard spending report', () => {
     });
   });
 
+  it('never counts the Transfers group: card payments made or moved there stay out', async () => {
+    const u = await signedInUser();
+    const api = (method: string, path: string, body?: unknown) =>
+      call(method, path, { access: u.access, body });
+    const life = (await api('POST', '/category-groups', { name: 'Life', kind: 'expense' })).json;
+    const xfers = (await api('POST', '/category-groups', { name: 'Transfers', kind: 'expense' }))
+      .json;
+    const food = (await api('POST', '/categories', { groupId: life.id, name: 'Food' })).json;
+    // Created in Transfers asking to count: refused.
+    const ccp = (
+      await api('POST', '/categories', {
+        groupId: xfers.id,
+        name: 'Credit Card Payment',
+        budgeted: true,
+      })
+    ).json;
+    expect(ccp.budgeted).toBe(false);
+    // Created as spending, with history, then dragged into Transfers: its history leaves.
+    const moved = (await api('POST', '/categories', { groupId: life.id, name: 'Venmo out' })).json;
+    expect(moved.budgeted).toBe(true);
+    const card = (await api('POST', '/accounts', { name: 'Card', kind: 'credit' })).json;
+    const txn = (postedAt: string, amountCents: number, categoryId: string) =>
+      api('POST', '/transactions', {
+        accountId: card.id,
+        postedAt,
+        amountCents,
+        descriptor: 'X',
+        categoryId,
+      });
+    await txn('2026-09-01', 1_000, food.id);
+    await txn('2026-09-02', 50_000, ccp.id);
+    await txn('2026-09-03', 20_000, moved.id);
+    const patched = (await api('PATCH', `/categories/${moved.id}`, { groupId: xfers.id })).json;
+    expect(patched.budgeted).toBe(false);
+    // Asking to count while in Transfers is refused too.
+    const again = (await api('PATCH', `/categories/${moved.id}`, { budgeted: true })).json;
+    expect(again.budgeted).toBe(false);
+
+    const r = await api('GET', '/reports/spending?month=2026-09');
+    expect(r.json.days).toEqual([{ date: '2026-09-01', cents: 1_000 }]);
+    expect(r.json.months.at(-1)).toEqual({ periodId: '2026-09', cents: 1_000 });
+    const period = await api('GET', '/periods/2026-09');
+    expect(period.json.totals.spentCents).toBe(1_000);
+  });
+
   it('rejects a missing or malformed month', async () => {
     const u = await signedInUser();
     expect((await call('GET', '/reports/spending', { access: u.access })).status).toBe(400);
