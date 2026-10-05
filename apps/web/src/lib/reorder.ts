@@ -30,3 +30,15 @@ export function dropIndex(
   }
   return to;
 }
+
+/**
+ * How far to scroll this frame while a row is held at `y`. Inside `zone` pixels of the visible
+ * band's top or bottom edge the page scrolls toward that edge, faster the closer the finger
+ * gets (up to `max` px a frame, past the edge included). Anywhere else, zero.
+ */
+export function edgeScroll(y: number, top: number, bottom: number, zone = 72, max = 16): number {
+  const ramp = (depth: number) => Math.round(Math.min(1, depth / zone) ** 2 * max);
+  if (y < top + zone) return -ramp(top + zone - y);
+  if (y > bottom - zone) return ramp(y - (bottom - zone));
+  return 0;
+}

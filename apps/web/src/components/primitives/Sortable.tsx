@@ -1,5 +1,29 @@
-import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
-import { dropIndex, moveItem } from '../../lib/reorder';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
+import { dropIndex, edgeScroll, moveItem } from '../../lib/reorder';
+
+/**
+ * The part of the screen the list shows through: below the sticky title bar, above the tab
+ * bar. Holding a row near either edge scrolls the page.
+ */
+function visibleBand(): { top: number; bottom: number } {
+  let top = 0;
+  for (const el of document.querySelectorAll<HTMLElement>('.banner')) {
+    const r = el.getBoundingClientRect();
+    if (r.height > 0 && r.top <= 1) top = Math.max(top, r.bottom);
+  }
+  let bottom = window.visualViewport?.height ?? window.innerHeight;
+  const tabs = document.querySelector<HTMLElement>('nav[aria-label="Tabs"]');
+  const r = tabs?.getBoundingClientRect();
+  if (r && r.height > 0 && r.top < bottom) bottom = r.top;
+  return { top, bottom };
+}
 
 /** What a row spreads on its grip: the only part of it that starts a drag. */
 export interface GripProps {
@@ -13,7 +37,8 @@ export interface GripProps {
 /**
  * A list whose rows can be picked up by their grip and dropped somewhere else. The row under
  * the finger follows it; the rows it passes slide out of the way; letting go reports the new
- * order of ids. Touch-first: the grip opts out of scrolling, nothing else does.
+ * order of ids. Touch-first: the grip opts out of scrolling, nothing else does. Holding a row
+ * near the top or bottom of the screen scrolls the page under it.
  */
 export function Sortable<T extends { id: string }>({
   items,
@@ -27,8 +52,41 @@ export function Sortable<T extends { id: string }>({
   className?: string;
 }) {
   const rows = useRef(new Map<string, HTMLElement>());
-  const start = useRef<{ id: string; y: number; tops: number[]; heights: number[] } | null>(null);
+  const start = useRef<{
+    id: string;
+    y: number;
+    scroll: number;
+    tops: number[];
+    heights: number[];
+  } | null>(null);
+  const finger = useRef(0);
+  const frame = useRef(0);
   const [drag, setDrag] = useState<{ id: string; dy: number; to: number } | null>(null);
+
+  // Where the held row sits: the finger's travel plus however far the page has scrolled under it.
+  const follow = () => {
+    const s = start.current;
+    if (!s) return;
+    const from = items.findIndex((i) => i.id === s.id);
+    const dy = finger.current - s.y + window.scrollY - s.scroll;
+    setDrag({ id: s.id, dy, to: dropIndex(s.tops, s.heights, from, dy) });
+  };
+  const followRef = useRef(follow);
+  followRef.current = follow;
+
+  // While a row is held near the top or bottom edge, keep scrolling the page that way.
+  const tick = () => {
+    if (!start.current) return;
+    const { top, bottom } = visibleBand();
+    const step = edgeScroll(finger.current, top, bottom);
+    if (step) {
+      const before = window.scrollY;
+      window.scrollBy(0, step);
+      if (window.scrollY !== before) followRef.current();
+    }
+    frame.current = requestAnimationFrame(tick);
+  };
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   const grip = (id: string): GripProps => ({
     style: { touchAction: 'none', cursor: 'grab' },
@@ -38,17 +96,19 @@ export function Sortable<T extends { id: string }>({
       start.current = {
         id,
         y: e.clientY,
+        scroll: window.scrollY,
         tops: els.map((el) => el?.offsetTop ?? 0),
         heights: els.map((el) => el?.offsetHeight ?? 0),
       };
+      finger.current = e.clientY;
       setDrag({ id, dy: 0, to: items.findIndex((i) => i.id === id) });
+      cancelAnimationFrame(frame.current);
+      frame.current = requestAnimationFrame(tick);
     },
     onPointerMove: (e) => {
-      const s = start.current;
-      if (!s) return;
-      const from = items.findIndex((i) => i.id === s.id);
-      const dy = e.clientY - s.y;
-      setDrag({ id: s.id, dy, to: dropIndex(s.tops, s.heights, from, dy) });
+      if (!start.current) return;
+      finger.current = e.clientY;
+      follow();
     },
     onPointerUp: () => finish(true),
     onPointerCancel: () => finish(false),
@@ -57,6 +117,7 @@ export function Sortable<T extends { id: string }>({
   const finish = (commit: boolean) => {
     const s = start.current;
     start.current = null;
+    cancelAnimationFrame(frame.current);
     const d = drag;
     setDrag(null);
     if (!s || !d || !commit) return;
