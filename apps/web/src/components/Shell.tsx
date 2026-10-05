@@ -7,6 +7,7 @@ import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-rou
 import { Icon } from './primitives/Icon';
 import { HeaderActionsContext } from '../lib/headerActions';
 import { useMe } from '../lib/queries';
+import { useScrollMemory } from '../lib/scrollMemory';
 import { isTabRoot } from '../lib/transition';
 import { TABS, type Tab } from '../routes/table';
 
@@ -44,6 +45,7 @@ export function Shell() {
   const [actions, setActions] = useState<ReactNode>(null);
   const location = useLocation();
   useTabRootTrap(location.pathname);
+  useScrollMemory();
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = () => setMenuOpen(false);
   const onDashboard = location.pathname === '/';

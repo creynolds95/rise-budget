@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react';
 import { flushSync } from 'react-dom';
 import type { NavigateFunction } from 'react-router';
+import { markBack } from './scrollMemory';
 
 const supportsViewTransitions = () =>
   typeof document !== 'undefined' && 'startViewTransition' in document;
@@ -21,6 +22,7 @@ export function navigateWithTransition(
   // Going back replaces the screen being left, so the way back never piles up history entries
   // that a later swipe would walk through again.
   const go = () => navigate(to, direction === 'back' ? { replace: true } : undefined);
+  if (direction === 'back') markBack(to);
   if (!supportsViewTransitions() || prefersReducedMotion()) {
     go();
     return;
