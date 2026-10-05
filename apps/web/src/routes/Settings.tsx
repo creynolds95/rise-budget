@@ -588,7 +588,7 @@ function CategoriesSection() {
               value={renaming.name}
               onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
               required
-              autoFocus
+              data-sheet-focus
             />
             <Button type="submit" disabled={!renaming.name.trim()}>
               Save
