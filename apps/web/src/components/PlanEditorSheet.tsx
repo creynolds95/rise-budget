@@ -116,7 +116,7 @@ function Editor({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (keys.current.leaving || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (/^[0-9.]$/.test(e.key)) keys.current.press(e.key as Key);
+      if (/^[0-9]$/.test(e.key)) keys.current.press(e.key as Key);
       else if (e.key === 'Backspace') keys.current.press('back');
       else if (e.key === 'Enter') void keys.current.save();
       else return;
@@ -261,7 +261,7 @@ function Editor({
   );
 }
 
-const KEYS: Key[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back'];
+const KEYS: (Key | null)[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', null, '0', 'back'];
 
 /**
  * The app's own number pad. A native field can't open iOS's keypad without the
@@ -270,37 +270,41 @@ const KEYS: Key[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'bac
 function Keypad({ onPress }: { onPress: (k: Key) => void }) {
   return (
     <div className="grid grid-cols-3 gap-1.5 bg-hairline px-1.5 pt-1.5 pb-[max(6px,env(safe-area-inset-bottom))]">
-      {KEYS.map((k) => (
-        <button
-          key={k}
-          type="button"
-          onClick={() => onPress(k)}
-          aria-label={k === 'back' ? 'Delete' : k === '.' ? 'Decimal point' : k}
-          className={`flex h-12 items-center justify-center rounded-[8px] text-[25px] text-ink select-none ${
-            k === '.' || k === 'back'
-              ? 'active:bg-surface'
-              : 'bg-surface shadow-[0_1px_0_rgba(0,0,0,0.18)] active:bg-hairline'
-          }`}
-        >
-          {k === 'back' ? (
-            <svg
-              aria-hidden
-              width="26"
-              height="20"
-              viewBox="0 0 26 20"
-              className="fill-none stroke-current"
-              strokeWidth="1.75"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            >
-              <path d="M8 2h15a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H8l-6-8z" />
-              <path d="M12 7l6 6M18 7l-6 6" />
-            </svg>
-          ) : (
-            k
-          )}
-        </button>
-      ))}
+      {KEYS.map((k) =>
+        k === null ? (
+          <span key="blank" />
+        ) : (
+          <button
+            key={k}
+            type="button"
+            onClick={() => onPress(k)}
+            aria-label={k === 'back' ? 'Delete' : k}
+            className={`flex h-12 items-center justify-center rounded-[8px] text-[25px] text-ink select-none ${
+              k === 'back'
+                ? 'active:bg-surface'
+                : 'bg-surface shadow-[0_1px_0_rgba(0,0,0,0.18)] active:bg-hairline'
+            }`}
+          >
+            {k === 'back' ? (
+              <svg
+                aria-hidden
+                width="26"
+                height="20"
+                viewBox="0 0 26 20"
+                className="fill-none stroke-current"
+                strokeWidth="1.75"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              >
+                <path d="M8 2h15a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H8l-6-8z" />
+                <path d="M12 7l6 6M18 7l-6 6" />
+              </svg>
+            ) : (
+              k
+            )}
+          </button>
+        ),
+      )}
     </div>
   );
 }
