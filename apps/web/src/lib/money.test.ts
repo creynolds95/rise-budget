@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { MINUS, centsToInput, formatCents, parseMoney } from './money';
+import {
+  MINUS,
+  centsToInput,
+  formatCents,
+  parseMoney,
+  formatBalance,
+  balanceIsZero,
+} from './money';
 
 describe('formatCents', () => {
   it('formats integer cents with grouping and a true minus', () => {
@@ -42,5 +49,22 @@ describe('parseMoney', () => {
 
   it('round-trips through the edit string', () => {
     for (const c of [0, 5, 25_000, -9_350, 123_456]) expect(parseMoney(centsToInput(c))).toBe(c);
+  });
+});
+
+describe('formatBalance', () => {
+  it('rounds a bill’s leftover cents away', () => {
+    expect(formatBalance(275000 - 274998)).toBe('$0');
+    expect(formatBalance(9389)).toBe('$94');
+    expect(formatBalance(9349)).toBe('$93');
+    expect(balanceIsZero(2)).toBe(true);
+    expect(balanceIsZero(50)).toBe(false);
+  });
+  it('never rounds an overspend to nothing', () => {
+    expect(formatBalance(-40)).toBe('−$0.40');
+    expect(formatBalance(-40, { sign: 'never' })).toBe('$0.40');
+    expect(formatBalance(-140)).toBe('−$1');
+    expect(formatBalance(-50)).toBe('−$1');
+    expect(balanceIsZero(-1)).toBe(false);
   });
 });
