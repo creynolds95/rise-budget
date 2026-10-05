@@ -190,6 +190,12 @@
   --animate-fade-in: fade-in var(--motion-in) ease-out;
   --animate-pop-in: pop-in 140ms ease-out;
   --animate-indeterminate: indeterminate 1.2s ease-in-out infinite;
+  --animate-caret: caret 1s steps(1) infinite;
+}
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
 }
 @keyframes sheet-in {
   from {

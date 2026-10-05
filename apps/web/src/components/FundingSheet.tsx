@@ -4,7 +4,7 @@ import { formatCents } from '../lib/money';
 import { Button } from './primitives/Button';
 import { MoneyField } from './primitives/MoneyField';
 import { MoneyText } from './primitives/MoneyText';
-import { Sheet } from './primitives/Sheet';
+import { Leaving, Sheet } from './primitives/Sheet';
 
 export interface FundingRequest {
   categoryId: string;
@@ -32,13 +32,22 @@ export function draftFunding(r: FundingRequest): Map<string, number> {
  * T38 / SPEC §2.6: raising a plan past the pool needs the money to come from somewhere.
  * Sources are ranked by slack and pre-filled; nothing moves until the user confirms.
  */
-export function FundingSheet({
+export function FundingSheet(props: {
+  request: FundingRequest | null;
+  categories: Category[];
+  onConfirm: (funding: { fromCategoryId: string; amountCents: number }[]) => Promise<void>;
+  onClose: () => void;
+}) {
+  return <Leaving>{props.request && <Funding {...props} request={props.request} />}</Leaving>;
+}
+
+function Funding({
   request,
   categories,
   onConfirm,
   onClose,
 }: {
-  request: FundingRequest | null;
+  request: FundingRequest;
   categories: Category[];
   onConfirm: (funding: { fromCategoryId: string; amountCents: number }[]) => Promise<void>;
   onClose: () => void;
@@ -46,9 +55,8 @@ export function FundingSheet({
   const [amounts, setAmounts] = useState<Map<string, number>>(new Map());
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (request) setAmounts(draftFunding(request));
+    setAmounts(draftFunding(request));
   }, [request]);
-  if (!request) return null;
   const name = (id: string) => categories.find((c) => c.id === id)?.name ?? 'Category';
   const covered = [...amounts.values()].reduce((n, v) => n + v, 0);
   const short = request.shortfallCents - covered;

@@ -52,10 +52,6 @@ function useVisibleViewport(active: boolean) {
   return view;
 }
 
-/** True while the on-screen keyboard covers part of the sheet, so its content can tighten up. */
-const KeyboardContext = createContext(false);
-export const useSheetKeyboard = () => useContext(KeyboardContext);
-
 /**
  * Opens the keyboard with the sheet, for a field marked `data-sheet-focus`. Focusing that field
  * straight away doesn't work on iOS: it's still translated below the screen by the rise
@@ -119,6 +115,36 @@ function useFocusOnLand(open: boolean) {
     />
   );
   return { panel, standIn };
+}
+
+/** True while a sheet's caller has let go of it and it is sliding out (see `Leaving`). */
+const LeavingContext = createContext(false);
+export const useLeaving = () => useContext(LeavingContext);
+
+/**
+ * For a sheet that's rendered only while there's something to show (`{editing && <Sheet open
+ * …/>}`): when that turns false, the last sheet stays on screen long enough to slide back down
+ * instead of vanishing.
+ */
+export function Leaving({ children }: { children: ReactNode }) {
+  const present = Boolean(children);
+  const last = useRef<ReactNode>(children);
+  if (present) last.current = children;
+  const [gone, setGone] = useState(!present);
+  useEffect(() => {
+    if (present) {
+      setGone(false);
+      return;
+    }
+    const t = window.setTimeout(() => setGone(true), MOTION_OUT_MS);
+    return () => window.clearTimeout(t);
+  }, [present]);
+  if (!present && gone) return null;
+  return (
+    <LeavingContext.Provider value={!present}>
+      {present ? children : last.current}
+    </LeavingContext.Provider>
+  );
 }
 
 /**
@@ -188,6 +214,7 @@ export function Sheet({
   back,
   children,
   footer,
+  dock,
   fullScreen = false,
 }: {
   open: boolean;
@@ -199,6 +226,8 @@ export function Sheet({
   children: ReactNode;
   /** Pinned under the scrolling content, flush with the bottom edge (Clear all · Apply). */
   footer?: ReactNode;
+  /** Full-screen only: pinned under the content edge to edge, with no padding (a keypad). */
+  dock?: ReactNode;
   /**
    * A full page instead of a bottom sheet (Monarch's amount editor). It's sized to what's
    * visible above the keyboard, so anything pinned to its bottom stays reachable while typing.
@@ -206,6 +235,8 @@ export function Sheet({
   fullScreen?: boolean;
 }) {
   const id = useId();
+  const leaving = useLeaving();
+  open = open && !leaving;
   const { mounted, closing } = useExit(open);
   const view = useVisibleViewport(open);
   const { panel, standIn } = useFocusOnLand(open);
@@ -265,7 +296,7 @@ export function Sheet({
     </div>
   );
 
-  const bottomPad = footer ? 'pb-4' : 'pb-[max(20px,env(safe-area-inset-bottom))]';
+  const bottomPad = footer || dock ? 'pb-4' : 'pb-[max(20px,env(safe-area-inset-bottom))]';
   const footerBar = footer && (
     <div className="gutter shrink-0 border-t border-hairline bg-canvas pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
       {footer}
@@ -275,7 +306,7 @@ export function Sheet({
   const keyboard = view?.keyboard ?? false;
   if (fullScreen) {
     return (
-      <KeyboardContext.Provider value={keyboard}>
+      <>
         {standIn}
         <div
           ref={panel}
@@ -292,12 +323,13 @@ export function Sheet({
             {children}
           </div>
           {footerBar}
+          {dock}
         </div>
-      </KeyboardContext.Provider>
+      </>
     );
   }
   return (
-    <KeyboardContext.Provider value={keyboard}>
+    <>
       {standIn}
       <div className="fixed inset-0 z-40 flex items-end justify-center md:items-center">
         <button
@@ -324,6 +356,6 @@ export function Sheet({
           {footerBar}
         </div>
       </div>
-    </KeyboardContext.Provider>
+    </>
   );
 }

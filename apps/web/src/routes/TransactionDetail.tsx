@@ -17,7 +17,7 @@ import { MoneyText } from '../components/primitives/MoneyText';
 import { Menu } from '../components/primitives/Menu';
 import { ValueRow } from '../components/primitives/Rows';
 import { navigateWithTransition } from '../lib/transition';
-import { Sheet } from '../components/primitives/Sheet';
+import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
 import { daysBetween, longDate, shortDate } from '../lib/dates';
@@ -402,16 +402,18 @@ export function TransactionDetail() {
           void fileAs(c);
         }}
       />
-      {splitting && (
-        <SplitSheet
-          t={t}
-          onClose={() => setSplitting(false)}
-          onSaved={async () => {
-            setSplitting(false);
-            await refresh();
-          }}
-        />
-      )}
+      <Leaving>
+        {splitting && (
+          <SplitSheet
+            t={t}
+            onClose={() => setSplitting(false)}
+            onSaved={async () => {
+              setSplitting(false);
+              await refresh();
+            }}
+          />
+        )}
+      </Leaving>
       <RenameSheet
         open={renaming}
         merchant={t.merchantNormalized}
@@ -419,34 +421,42 @@ export function TransactionDetail() {
         onClose={() => setRenaming(false)}
         onSaved={refresh}
       />
-      {linking && <LinkTransferSheet t={t} onClose={() => setLinking(false)} onLinked={refresh} />}
-      {taggingWithdrawal && (
-        <RecurringWithdrawalSheet
-          t={t}
-          income={income}
-          onClose={() => setTaggingWithdrawal(false)}
-          onSaved={refresh}
-        />
-      )}
-      {ruling && (
-        <RuleSheet
-          rule={merchant.data?.rule ?? null}
-          initial={{
-            matchField: 'merchant',
-            matchType: 'equals',
-            matchValue: t.merchantNormalized,
-            categoryId: t.splits.length === 1 ? (t.splits[0]?.categoryId ?? '') : '',
-          }}
-          onClose={() => setRuling(false)}
-          onSaved={() =>
-            Promise.all(
-              ['rules', 'review-queue', 'queue-count', 'merchant'].map((k) =>
-                qc.invalidateQueries({ queryKey: [k] }),
-              ),
-            )
-          }
-        />
-      )}
+      <Leaving>
+        {linking && (
+          <LinkTransferSheet t={t} onClose={() => setLinking(false)} onLinked={refresh} />
+        )}
+      </Leaving>
+      <Leaving>
+        {taggingWithdrawal && (
+          <RecurringWithdrawalSheet
+            t={t}
+            income={income}
+            onClose={() => setTaggingWithdrawal(false)}
+            onSaved={refresh}
+          />
+        )}
+      </Leaving>
+      <Leaving>
+        {ruling && (
+          <RuleSheet
+            rule={merchant.data?.rule ?? null}
+            initial={{
+              matchField: 'merchant',
+              matchType: 'equals',
+              matchValue: t.merchantNormalized,
+              categoryId: t.splits.length === 1 ? (t.splits[0]?.categoryId ?? '') : '',
+            }}
+            onClose={() => setRuling(false)}
+            onSaved={() =>
+              Promise.all(
+                ['rules', 'review-queue', 'queue-count', 'merchant'].map((k) =>
+                  qc.invalidateQueries({ queryKey: [k] }),
+                ),
+              )
+            }
+          />
+        )}
+      </Leaving>
       <RuleOfferSheet offer={offer} onClose={() => setOffer(null)} />
     </>
   );

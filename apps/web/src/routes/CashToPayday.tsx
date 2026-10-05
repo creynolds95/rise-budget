@@ -7,7 +7,7 @@ import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Chevron, EditRow } from '../components/primitives/Rows';
-import { Sheet } from '../components/primitives/Sheet';
+import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { Toggle } from '../components/primitives/Toggle';
 import { ApiError, api } from '../lib/api';
@@ -630,26 +630,30 @@ export function CashToPayday() {
           },
         ]}
       />
-      {editing && (
-        <EditScheduleSheet
-          row={editing}
-          onClose={() => setEditing(null)}
-          onSaved={refresh}
-          onDismiss={() => {
-            dismiss(editing);
-            setEditing(null);
-          }}
-        />
-      )}
-      {addingKind && (
-        <AddManualEventSheet
-          kind={addingKind}
-          onClose={() => setAddingKind(null)}
-          onSaved={async () => {
-            await refresh();
-          }}
-        />
-      )}
+      <Leaving>
+        {editing && (
+          <EditScheduleSheet
+            row={editing}
+            onClose={() => setEditing(null)}
+            onSaved={refresh}
+            onDismiss={() => {
+              dismiss(editing);
+              setEditing(null);
+            }}
+          />
+        )}
+      </Leaving>
+      <Leaving>
+        {addingKind && (
+          <AddManualEventSheet
+            kind={addingKind}
+            onClose={() => setAddingKind(null)}
+            onSaved={async () => {
+              await refresh();
+            }}
+          />
+        )}
+      </Leaving>
     </>
   );
 }
