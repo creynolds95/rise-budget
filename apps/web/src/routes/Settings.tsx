@@ -1,3 +1,4 @@
+import { isTransfersGroup } from '@rise/shared/categorize';
 import type {
   AppLock,
   Category,
@@ -355,7 +356,7 @@ function CategoriesSection() {
   const q = query.trim().toLowerCase();
   // Transfers (account moves, card payments) is its own group, apart from expenses.
   const groupTab = (g: CategoryGroup): 'income' | 'expense' | 'transfer' =>
-    g.kind === 'income' ? 'income' : g.name.toLowerCase() === 'transfers' ? 'transfer' : 'expense';
+    g.kind === 'income' ? 'income' : isTransfersGroup(g.name) ? 'transfer' : 'expense';
   const matches = (c: Category, g: CategoryGroup) =>
     !q || g.name.toLowerCase().includes(q) || c.name.toLowerCase().includes(q);
   const shownGroups = groups.filter((g) => {
