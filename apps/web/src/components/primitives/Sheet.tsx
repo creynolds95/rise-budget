@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -51,10 +49,6 @@ function useVisibleViewport(active: boolean) {
   }, [active]);
   return view;
 }
-
-/** True while the on-screen keyboard covers part of the sheet, so its content can tighten up. */
-const KeyboardContext = createContext(false);
-export const useSheetKeyboard = () => useContext(KeyboardContext);
 
 /**
  * Opens the keyboard with the sheet, for a field marked `data-sheet-focus`. Focusing that field
@@ -188,6 +182,7 @@ export function Sheet({
   back,
   children,
   footer,
+  dock,
   fullScreen = false,
 }: {
   open: boolean;
@@ -199,6 +194,8 @@ export function Sheet({
   children: ReactNode;
   /** Pinned under the scrolling content, flush with the bottom edge (Clear all · Apply). */
   footer?: ReactNode;
+  /** Full-screen only: pinned under the content edge to edge, with no padding (a keypad). */
+  dock?: ReactNode;
   /**
    * A full page instead of a bottom sheet (Monarch's amount editor). It's sized to what's
    * visible above the keyboard, so anything pinned to its bottom stays reachable while typing.
@@ -265,7 +262,7 @@ export function Sheet({
     </div>
   );
 
-  const bottomPad = footer ? 'pb-4' : 'pb-[max(20px,env(safe-area-inset-bottom))]';
+  const bottomPad = footer || dock ? 'pb-4' : 'pb-[max(20px,env(safe-area-inset-bottom))]';
   const footerBar = footer && (
     <div className="gutter shrink-0 border-t border-hairline bg-canvas pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
       {footer}
@@ -275,7 +272,7 @@ export function Sheet({
   const keyboard = view?.keyboard ?? false;
   if (fullScreen) {
     return (
-      <KeyboardContext.Provider value={keyboard}>
+      <>
         {standIn}
         <div
           ref={panel}
@@ -292,12 +289,13 @@ export function Sheet({
             {children}
           </div>
           {footerBar}
+          {dock}
         </div>
-      </KeyboardContext.Provider>
+      </>
     );
   }
   return (
-    <KeyboardContext.Provider value={keyboard}>
+    <>
       {standIn}
       <div className="fixed inset-0 z-40 flex items-end justify-center md:items-center">
         <button
@@ -324,6 +322,6 @@ export function Sheet({
           {footerBar}
         </div>
       </div>
-    </KeyboardContext.Provider>
+    </>
   );
 }
