@@ -7,7 +7,7 @@ WHERE category_id IN (
   SELECT c.id FROM category c
   JOIN category_group g ON g.id = c.group_id AND g.user_id = c.user_id
   WHERE LOWER(TRIM(g.name)) = 'transfers'
-);
+) /* scan-ok: one-off, period_aggregate is months x categories */;
 UPDATE category SET budgeted = 0
 WHERE budgeted = 1 AND group_id IN (
   SELECT id FROM category_group WHERE LOWER(TRIM(name)) = 'transfers'
