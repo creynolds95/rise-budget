@@ -7,7 +7,7 @@ import { useInvalidateMoney, useRules } from '../lib/queries';
 import { Button } from './primitives/Button';
 import { Group, GroupRow } from './primitives/Group';
 import { Icon } from './primitives/Icon';
-import { Sheet } from './primitives/Sheet';
+import { Leaving, Sheet } from './primitives/Sheet';
 import { Toggle } from './primitives/Toggle';
 
 const EMOJI: { char: string; keywords: string }[] = [
@@ -94,15 +94,18 @@ export function CategoryEditSheet({
   onClose: () => void;
   onDeleted?: () => void;
 }) {
-  if (!category) return null;
   return (
-    <Editor
-      key={category.id}
-      category={category}
-      groups={groups}
-      onClose={onClose}
-      onDeleted={onDeleted}
-    />
+    <Leaving>
+      {category && (
+        <Editor
+          key={category.id}
+          category={category}
+          groups={groups}
+          onClose={onClose}
+          onDeleted={onDeleted}
+        />
+      )}
+    </Leaving>
   );
 }
 

@@ -24,7 +24,7 @@ import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
 import { Icon, IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
-import { Sheet } from '../components/primitives/Sheet';
+import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Sortable } from '../components/primitives/Sortable';
 import { Investments } from './Investments';
 import { MonarchImport } from './MonarchImport';
@@ -707,13 +707,15 @@ function RulesSection() {
       <Button variant="quiet" className="-ml-4 mt-4" onClick={() => setEditing('new')}>
         Add a rule
       </Button>
-      {editing && (
-        <RuleSheet
-          rule={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={refresh}
-        />
-      )}
+      <Leaving>
+        {editing && (
+          <RuleSheet
+            rule={editing === 'new' ? null : editing}
+            onClose={() => setEditing(null)}
+            onSaved={refresh}
+          />
+        )}
+      </Leaving>
     </>
   );
 }
@@ -972,8 +974,10 @@ function SecuritySection() {
           <Chevron />
         </button>
       </Group>
-      {totpSheet && <TotpSetupSheet onClose={() => setTotpSheet(false)} />}
-      {recoverySheet && <RecoveryCodesSheet onClose={() => setRecoverySheet(false)} />}
+      <Leaving>{totpSheet && <TotpSetupSheet onClose={() => setTotpSheet(false)} />}</Leaving>
+      <Leaving>
+        {recoverySheet && <RecoveryCodesSheet onClose={() => setRecoverySheet(false)} />}
+      </Leaving>
       <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
         Sign out
       </Button>

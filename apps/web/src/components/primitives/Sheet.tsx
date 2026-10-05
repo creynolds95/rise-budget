@@ -1,4 +1,6 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -115,6 +117,36 @@ function useFocusOnLand(open: boolean) {
   return { panel, standIn };
 }
 
+/** True while a sheet's caller has let go of it and it is sliding out (see `Leaving`). */
+const LeavingContext = createContext(false);
+export const useLeaving = () => useContext(LeavingContext);
+
+/**
+ * For a sheet that's rendered only while there's something to show (`{editing && <Sheet open
+ * …/>}`): when that turns false, the last sheet stays on screen long enough to slide back down
+ * instead of vanishing.
+ */
+export function Leaving({ children }: { children: ReactNode }) {
+  const present = Boolean(children);
+  const last = useRef<ReactNode>(children);
+  if (present) last.current = children;
+  const [gone, setGone] = useState(!present);
+  useEffect(() => {
+    if (present) {
+      setGone(false);
+      return;
+    }
+    const t = window.setTimeout(() => setGone(true), MOTION_OUT_MS);
+    return () => window.clearTimeout(t);
+  }, [present]);
+  if (!present && gone) return null;
+  return (
+    <LeavingContext.Provider value={!present}>
+      {present ? children : last.current}
+    </LeavingContext.Provider>
+  );
+}
+
 /**
  * Keeps a sheet mounted while it slides back out, so closing is as visible as opening.
  * `closing` is true for the exit animation; `mounted` is false once it's done.
@@ -203,6 +235,8 @@ export function Sheet({
   fullScreen?: boolean;
 }) {
   const id = useId();
+  const leaving = useLeaving();
+  open = open && !leaving;
   const { mounted, closing } = useExit(open);
   const view = useVisibleViewport(open);
   const { panel, standIn } = useFocusOnLand(open);

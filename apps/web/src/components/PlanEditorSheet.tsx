@@ -9,7 +9,7 @@ import { centsToInput, formatCents, parseMoney } from '../lib/money';
 import { planStats, upToDollar, type MonthSpend } from '../lib/plan';
 import { useMe } from '../lib/queries';
 import { MoneyText } from './primitives/MoneyText';
-import { Sheet } from './primitives/Sheet';
+import { Leaving, Sheet, useLeaving } from './primitives/Sheet';
 import { Toggle } from './primitives/Toggle';
 
 export interface PlanEdit {
@@ -32,14 +32,17 @@ export function PlanEditorSheet({
   onClose: () => void;
   onSave: (plannedCents: number, applyToFuture: boolean) => Promise<void>;
 }) {
-  if (!edit) return null;
   return (
-    <Editor
-      key={`${edit.month}:${edit.category.id}`}
-      edit={edit}
-      onClose={onClose}
-      onSave={onSave}
-    />
+    <Leaving>
+      {edit && (
+        <Editor
+          key={`${edit.month}:${edit.category.id}`}
+          edit={edit}
+          onClose={onClose}
+          onSave={onSave}
+        />
+      )}
+    </Leaving>
   );
 }
 
@@ -106,12 +109,13 @@ function Editor({
       setBusy(false);
     }
   };
-  // A hardware keyboard types into the amount too.
-  const keys = useRef({ press, save });
-  keys.current = { press, save };
+  // A hardware keyboard types into the amount too, until the sheet starts closing.
+  const leaving = useLeaving();
+  const keys = useRef({ press, save, leaving });
+  keys.current = { press, save, leaving };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (keys.current.leaving || e.metaKey || e.ctrlKey || e.altKey) return;
       if (/^[0-9.]$/.test(e.key)) keys.current.press(e.key as Key);
       else if (e.key === 'Backspace') keys.current.press('back');
       else if (e.key === 'Enter') void keys.current.save();

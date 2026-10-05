@@ -14,7 +14,7 @@ import { Button } from './primitives/Button';
 import { Group, RadioRow } from './primitives/Group';
 import { Icon } from './primitives/Icon';
 import { Chevron } from './primitives/Rows';
-import { Sheet } from './primitives/Sheet';
+import { Leaving, Sheet } from './primitives/Sheet';
 
 type Page = 'root' | 'accounts' | 'categories' | 'amount' | 'review';
 
@@ -39,16 +39,19 @@ export function FilterSheet({
   onApply: (f: Filters) => void;
   onClose: () => void;
 }) {
-  if (!open) return null;
   return (
-    <Inner
-      value={value}
-      accounts={accounts}
-      categories={categories}
-      groups={groups}
-      onApply={onApply}
-      onClose={onClose}
-    />
+    <Leaving>
+      {open && (
+        <Inner
+          value={value}
+          accounts={accounts}
+          categories={categories}
+          groups={groups}
+          onApply={onApply}
+          onClose={onClose}
+        />
+      )}
+    </Leaving>
   );
 }
 

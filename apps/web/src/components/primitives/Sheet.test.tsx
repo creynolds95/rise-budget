@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Sheet } from './Sheet';
+import { Leaving, Sheet } from './Sheet';
 
 afterEach(() => {
   cleanup();
@@ -47,5 +47,30 @@ describe('Sheet focus on open', () => {
     const field = screen.getByLabelText('Amount');
     expect(document.activeElement).toBe(field);
     expect(field).toHaveProperty('value', '50');
+  });
+});
+
+describe('Leaving', () => {
+  function Host({ show }: { show: boolean }) {
+    return (
+      <Leaving>
+        {show && (
+          <Sheet open title="Edit" onClose={() => {}}>
+            body
+          </Sheet>
+        )}
+      </Leaving>
+    );
+  }
+  it('keeps a dropped sheet on screen while it slides out, then removes it', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<Host show />);
+    rerender(<Host show={false} />);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toContain('animate-sheet-out');
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
