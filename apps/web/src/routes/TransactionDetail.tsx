@@ -1,3 +1,4 @@
+import { surplusMatch, type Cadence } from '@rise/shared/recurring';
 import type { Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -24,6 +25,7 @@ import { formatCents } from '../lib/money';
 import { backFrom } from '../lib/nav';
 import {
   useAccounts,
+  useCashToPayday,
   useCategories,
   useInvalidateMoney,
   usePatchTransaction,
@@ -77,6 +79,13 @@ export function TransactionDetail() {
     enabled: !!t,
   });
   const same = useTransactions({ q: t?.merchantNormalized ?? '' });
+  const surplus = useCashToPayday();
+  // A transfer's other leg says whether it is a card payment, which Surplus never counts.
+  const pair = useQuery({
+    queryKey: ['txn', t?.transferPairId],
+    queryFn: () => get<Transaction>(`/transactions/${t?.transferPairId}`),
+    enabled: !!t?.transferPairId,
+  });
 
   if (!t) {
     return (
@@ -101,6 +110,31 @@ export function TransactionDetail() {
   const withdrawalRule = recurring.data?.find(
     (s) => s.source === 'manual' && s.merchantNormalized === t.merchantNormalized,
   );
+  const inSurplus =
+    surplus.data && (!t.transferPairId || pair.data)
+      ? surplusMatch(
+          {
+            merchant: t.merchantNormalized,
+            amountCents: t.amountCents,
+            date: t.postedAt,
+            accountId: t.accountId,
+            isTransfer: t.isTransfer,
+            pairAccountId: pair.data?.accountId ?? null,
+          },
+          surplus.data.schedules.map((s) => ({
+            merchant: s.merchant,
+            name: s.displayName,
+            amountCents: s.kind === 'income' ? -s.amountCents : s.amountCents,
+            cadence: s.cadence as Cadence,
+            anchorDays: s.anchorDays,
+            nextExpectedDate: s.nextExpectedDate,
+            isHandAdded: s.isHandAdded,
+          })),
+          new Map(surplus.data.suggestions.map((s) => [s.merchant, s.displayName])),
+          new Set(surplus.data.cashAccounts.map((a) => a.id)),
+          new Set(accounts.filter((a) => a.kind === 'credit').map((a) => a.id)),
+        )
+      : null;
   const refresh = async () => {
     await invalidate();
     await Promise.all(
@@ -297,6 +331,23 @@ export function TransactionDetail() {
                 className="absolute inset-0 size-full cursor-pointer opacity-0"
               />
             </label>
+            {inSurplus &&
+              (inSurplus.state === 'untracked' ? (
+                <ValueRow label="Surplus" muted>
+                  Not tracked
+                </ValueRow>
+              ) : (
+                <ValueRow
+                  label="Surplus"
+                  onClick={() => navigateWithTransition(navigate, '/cash-to-payday', 'forward')}
+                >
+                  {inSurplus.state === 'tracked'
+                    ? inSurplus.name
+                    : inSurplus.state === 'likely'
+                      ? `Likely ${inSurplus.name}`
+                      : 'Suggested, not added'}
+                </ValueRow>
+              ))}
             <div className="flex min-h-12 items-center justify-between gap-4 py-3">
               <span className="shrink-0 text-ink-muted">Notes</span>
               <NotesField value={t.notes} onCommit={(notes) => void save({ id, notes })} />
