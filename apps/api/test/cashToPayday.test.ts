@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { linkTransferStmts, upsertManualEventStmt, upsertManualRuleStmt } from '../src/db';
 import { buildCashToPaydayProjection } from '../src/lib/cashToPayday';
 import { refreshRecurring } from '../src/lib/recurring';
@@ -7,6 +7,14 @@ import { centsToDecimal } from '../src/sync/mock';
 import { runSync } from '../src/sync/run';
 import type { SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
+
+// Routes read the wall clock for "today"; pin it so results don't drift with the calendar.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-04T18:00:00Z') });
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const sec = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10), 18) / 1000;
 
