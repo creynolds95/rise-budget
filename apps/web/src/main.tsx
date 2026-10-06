@@ -9,6 +9,7 @@ import { App } from './App';
 import { ApiError, onAuthChange } from './lib/api';
 import { AuthProvider } from './lib/auth';
 import { installEdgeGuard, installNoZoom } from './lib/gestures';
+import { installKeyboardAvoidance } from './lib/keyboard';
 import './styles.css';
 
 /**
@@ -44,6 +45,7 @@ const persister = createAsyncStoragePersister({
 
 installNoZoom();
 installEdgeGuard();
+installKeyboardAvoidance();
 
 // Signing out takes this device's copy of the data with it.
 onAuthChange((signedIn) => {
