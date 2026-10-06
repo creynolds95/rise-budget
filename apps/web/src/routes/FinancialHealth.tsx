@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { HomeEquitySheet } from '../components/HomeEquity';
 import { BackLink } from '../components/BackLink';
 import { Chevron } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
@@ -8,6 +10,7 @@ import { useAccounts, useMe, useToday } from '../lib/queries';
 import { groupView, planLoans } from '../lib/debt';
 import { monthName, periodOf } from '../lib/dates';
 import { goalView } from '../lib/savings';
+import { equityCents } from '../lib/homeEquity';
 import { retirementView, totalMonthly } from '../lib/retirement';
 import { transitionClick } from '../lib/transition';
 
@@ -37,10 +40,12 @@ export function FinancialHealth() {
   const accounts = useAccounts().data;
   const plan = me?.settings.retirement ?? null;
   const today = useToday();
+  const [homeOpen, setHomeOpen] = useState(false);
   const ready = me !== undefined && accounts !== undefined;
   let state: string | undefined;
   let debtState: string | undefined;
   let savingsState: string | undefined;
+  let homeState: string | undefined;
   if (ready) {
     const goals = me.settings.savings?.goals ?? [];
     const fund = goals.find((g) => g.kind === 'emergency');
@@ -51,6 +56,12 @@ export function FinancialHealth() {
         : goals.length > 0
           ? `${goals.length} ${goals.length === 1 ? 'goal' : 'goals'}`
           : 'Set up';
+    const home = me.settings.home;
+    const mortgage = accounts.find((a) => a.id === home?.mortgageAccountId);
+    homeState =
+      home && mortgage
+        ? formatCents(equityCents(home.valueCents, mortgage.balanceCents), { whole: true })
+        : 'Set up';
     const debt = me.settings.debt;
     const student = debt
       ? groupView(
@@ -88,7 +99,21 @@ export function FinancialHealth() {
         <Tile to="/financial-health/retirement" title="Retirement" state={state} />
         <Tile to="/financial-health/debt" title="Debt" state={debtState} />
         <Tile to="/financial-health/savings" title="Savings" state={savingsState} />
+        <li className="border-b border-hairline">
+          <button
+            type="button"
+            onClick={() => setHomeOpen(true)}
+            className="grid min-h-16 w-full grid-cols-[6.5rem_1fr_auto] items-center gap-x-4 py-3.5 text-left active:bg-sage-100 sm:grid-cols-[9rem_1fr_auto]"
+          >
+            <span className="type-label text-ink-muted">Home equity</span>
+            <span className="min-w-0 font-medium money">
+              {homeState ?? <Skeleton className="h-5 w-24" />}
+            </span>
+            <Chevron />
+          </button>
+        </li>
       </ul>
+      {homeOpen && <HomeEquitySheet open onClose={() => setHomeOpen(false)} />}
     </div>
   );
 }

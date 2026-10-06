@@ -6,6 +6,7 @@ import { NetWorthSection } from './Accounts';
 import { surplusTone } from '../lib/surplus';
 import { SummaryCard } from './Budget';
 import { SpendingSection } from '../components/SpendingSection';
+import { HomeEquityTile } from '../components/HomeEquity';
 import { HealthNotes } from '../components/HealthNotes';
 import { quietInstitutions, StaleNotes } from '../components/StaleNotes';
 import { MissedRow, useMissed } from '../components/MissedCharges';
@@ -201,6 +202,8 @@ export function Dashboard() {
       <section className="mt-10">
         <NetWorthSection to="/accounts" />
       </section>
+
+      <HomeEquityTile />
 
       {(upcoming.length > 0 || broken.length > 0) && (
         <section className="mt-10">

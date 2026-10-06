@@ -116,6 +116,13 @@ export type SavingsGoal = z.infer<typeof SavingsGoal>;
 export const SavingsPlan = z.object({ goals: z.array(SavingsGoal).max(50).default([]) });
 export type SavingsPlan = z.infer<typeof SavingsPlan>;
 
+/** Home equity: what the home is worth (entered by hand) and which loan account is its mortgage. */
+export const HomeEquity = z.object({
+  valueCents: Cents.min(0),
+  mortgageAccountId: Id,
+});
+export type HomeEquity = z.infer<typeof HomeEquity>;
+
 /** Most log entries kept; far above what a 45-day window ever holds. */
 export const FOLLOW_LOG_MAX = 1000;
 
@@ -172,6 +179,7 @@ export const UserSettings = z.object({
   retirement: RetirementPlan.nullable().default(null),
   debt: DebtPlan.nullable().default(null),
   savings: SavingsPlan.nullable().default(null),
+  home: HomeEquity.nullable().default(null),
   follow: FollowSettings.default({ rules: [], log: [] }),
 });
 export type UserSettings = z.infer<typeof UserSettings>;

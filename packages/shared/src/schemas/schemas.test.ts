@@ -59,6 +59,7 @@ describe('schemas', () => {
       retirement: null,
       debt: null,
       savings: null,
+      home: null,
       follow: { rules: [], log: [] },
     });
     expect(u.timezone).toBe('America/Chicago');
@@ -131,5 +132,14 @@ describe('schemas', () => {
     expect(
       ScheduleBody.safeParse({ ...base, merchant: 'acme', anchorDays: [15, 31] }).success,
     ).toBe(true);
+  });
+});
+
+describe('home equity setting', () => {
+  it('patches in and out, and rejects a negative value', () => {
+    const home = { valueCents: 50_000_000, mortgageAccountId: 'acct1' };
+    expect(PatchSettingsBody.parse({ home }).home).toEqual(home);
+    expect(PatchSettingsBody.parse({ home: null }).home).toBeNull();
+    expect(PatchSettingsBody.safeParse({ home: { ...home, valueCents: -1 } }).success).toBe(false);
   });
 });
