@@ -85,11 +85,15 @@ export function Budget() {
       <div
         className={`mx-auto max-w-2xl pb-16 ${selected ? 'hidden lg:block lg:mx-0 lg:max-w-[560px] lg:flex-shrink-0' : ''}`}
       >
-        <MonthSwitcher
-          month={month}
-          today={today}
-          onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
-        />
+        {/* Month and balance stay in view while the lists scroll. */}
+        <div className="sticky top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px))] z-[5] bg-canvas pb-2">
+          <MonthSwitcher
+            month={month}
+            today={today}
+            onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
+          />
+          <LeftToBudget poolCents={p.poolCents} />
+        </div>
 
         <div className="gutter -mr-2 mt-2 flex items-center justify-end">
           <Link
@@ -101,8 +105,6 @@ export function Budget() {
             <Icon name="more" />
           </Link>
         </div>
-
-        <LeftToBudget poolCents={p.poolCents} />
 
         <section className="gutter mt-4">
           <h2 className="type-title">Summary</h2>
