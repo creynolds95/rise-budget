@@ -17,6 +17,9 @@ export function lockScroll(): () => void {
     Object.assign(body.style, {
       position: 'fixed',
       top: `-${y}px`,
+      // `top` shifts the box up by y; without this its 100dvh min-height ends y short of the
+      // screen bottom, lifting the sticky tab bar by the scroll offset.
+      minHeight: `calc(100dvh + ${y}px)`,
       left: '0',
       right: '0',
       width: '100%',
