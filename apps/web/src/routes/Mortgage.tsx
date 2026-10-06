@@ -499,6 +499,7 @@ export function Mortgage() {
                     kind="lines"
                     label="Balance, principal paid and interest paid over the life of the loan"
                     slots={lines.balance.length}
+                    scrubLabels={lines.months.map((m) => labelAt(m))}
                     xLabels={[labelAt(0), labelAt(Math.round(lastMonth / 2)), labelAt(lastMonth)]}
                     lines={[
                       { label: 'Balance', values: lines.balance, color: series[0] },

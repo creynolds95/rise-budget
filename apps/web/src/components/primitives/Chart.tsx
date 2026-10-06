@@ -23,7 +23,14 @@ export function Chart(
   props: (
     | { kind: 'line'; points: LinePoint[] }
     | { kind: 'bar'; bars: Bar[] }
-    | { kind: 'lines'; lines: Line[]; slots: number; xLabels: string[] }
+    | {
+        kind: 'lines';
+        lines: Line[];
+        slots: number;
+        xLabels: string[];
+        /** One label per slot; with it, touching and dragging reads every line at that slot. */
+        scrubLabels?: string[];
+      }
   ) & { label: string; range?: Range; onRange?: (r: Range) => void },
 ) {
   const zeroAt = props.kind === 'line' ? zeroY(props.points, H) : null;
@@ -34,6 +41,20 @@ export function Chart(
     const r = e.currentTarget.getBoundingClientRect();
     setActive(nearestIndex((e.clientX - r.left) / Math.max(1, r.width), linePoints.length));
   };
+  const multi = props.kind === 'lines' && props.scrubLabels ? props : null;
+  const multiPaths = multi
+    ? sharedScalePaths(
+        multi.lines.map((l) => l.values),
+        multi.slots,
+        W,
+        H,
+      )
+    : [];
+  const scrubMulti = (e: PointerEvent<HTMLDivElement>) => {
+    if (!multi) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    setActive(nearestIndex((e.clientX - r.left) / Math.max(1, r.width), multi.slots));
+  };
   const hit = active !== null ? linePoints[active] : undefined;
   const at = active !== null ? xy[active] : undefined;
   return (
@@ -41,19 +62,31 @@ export function Chart(
       {/* Touch and drag along a line chart to read the balance on that date. */}
       <div
         className="relative select-none"
-        {...(props.kind === 'line' && linePoints.length > 0
+        {...(multi
           ? {
               style: { touchAction: 'pan-y' },
               onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
                 if (e.pointerType !== 'mouse') e.currentTarget.setPointerCapture(e.pointerId);
-                scrub(e);
+                scrubMulti(e);
               },
-              onPointerMove: scrub,
+              onPointerMove: scrubMulti,
               onPointerUp: () => setActive(null),
               onPointerCancel: () => setActive(null),
               onPointerLeave: () => setActive(null),
             }
-          : {})}
+          : props.kind === 'line' && linePoints.length > 0
+            ? {
+                style: { touchAction: 'pan-y' },
+                onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
+                  if (e.pointerType !== 'mouse') e.currentTarget.setPointerCapture(e.pointerId);
+                  scrub(e);
+                },
+                onPointerMove: scrub,
+                onPointerUp: () => setActive(null),
+                onPointerCancel: () => setActive(null),
+                onPointerLeave: () => setActive(null),
+              }
+            : {})}
       >
         <svg
           viewBox={`0 0 ${W} ${H}`}
@@ -124,6 +157,47 @@ export function Chart(
             >
               {hit.label ? `${hit.label} · ` : ''}
               {formatCents(hit.cents)}
+            </span>
+          </>
+        )}
+        {multi && active !== null && multiPaths[0]?.points[active] && (
+          <>
+            <span
+              aria-hidden
+              className="pointer-events-none absolute top-0 h-full w-px bg-ink-faint"
+              style={{
+                left: `${((multiPaths[0].points[active] as [number, number])[0] / W) * 100}%`,
+              }}
+            />
+            {multiPaths.map((p, i) => {
+              const pt = p.points[active] as [number, number];
+              return (
+                <span
+                  key={multi.lines[i]?.label}
+                  aria-hidden
+                  className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface"
+                  style={{
+                    left: `${(pt[0] / W) * 100}%`,
+                    top: `${(pt[1] / H) * 100}%`,
+                    background: multi.lines[i]?.color,
+                  }}
+                />
+              );
+            })}
+            <span
+              aria-live="polite"
+              className="pointer-events-none absolute -top-1 z-10 whitespace-nowrap rounded-input bg-ink px-2 py-1 type-caption text-surface money"
+              style={{
+                left: `${Math.min(75, Math.max(25, ((multiPaths[0].points[active] as [number, number])[0] / W) * 100))}%`,
+                transform: 'translate(-50%, -100%)',
+              }}
+            >
+              <span className="block font-medium">{multi.scrubLabels?.[active]}</span>
+              {multi.lines.map((l) => (
+                <span key={l.label} className="block">
+                  {l.label} · {formatCents(l.values[active] ?? 0, { whole: true })}
+                </span>
+              ))}
             </span>
           </>
         )}
