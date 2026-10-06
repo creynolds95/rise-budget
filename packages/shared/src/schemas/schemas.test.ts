@@ -56,6 +56,7 @@ describe('schemas', () => {
       cashAccountIds: [],
       dismissedPayMerchants: [],
       dismissedMisses: [],
+      dashboard: null,
       retirement: null,
       debt: null,
       savings: null,
@@ -68,6 +69,7 @@ describe('schemas', () => {
     const plan = RetirementPlan.parse({ currentAge: 31, goalAge: 65, spendTargetCents: 500_000 });
     expect(plan.realGrowthBps).toBe(400);
     expect(plan.withdrawalBps).toBe(350);
+    expect(plan.volatilityBps).toBe(1500);
     expect(plan.contributions).toEqual([]);
   });
 
@@ -78,6 +80,8 @@ describe('schemas', () => {
     expect(plan.loans).toEqual([]);
     expect(plan.extraCents).toBe(0);
     expect(plan.mortgageExtraCents).toBe(0);
+    expect(plan.mortgageLumps).toEqual([]);
+    expect(plan.mortgageTermMonths).toBe(360);
     expect(plan.homeValueAccountId).toBeNull();
   });
 

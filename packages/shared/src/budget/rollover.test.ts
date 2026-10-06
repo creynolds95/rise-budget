@@ -59,6 +59,20 @@ describe('rollChain', () => {
     ]);
   });
 
+  it('a month that has not ended carries nothing forward', () => {
+    // Viewing from November: October has ended and rolls; November is still running, so
+    // December starts with October's carry (10700) plus its own adjustment, not November's.
+    expect(rollChain(months, '2026-11')).toEqual([
+      { periodId: '2026-10', carriedIn: new Map([['eat', 700]]) },
+      { periodId: '2026-11', carriedIn: new Map([['eat', 10700]]) },
+      { periodId: '2026-12', carriedIn: new Map([['eat', 20700]]) },
+    ]);
+    // Still in October: nothing has ended, so later months carry only their adjustments.
+    expect(rollChain(months, '2026-10').map((r) => r.carriedIn.get('eat'))).toEqual([
+      700, 0, 10000,
+    ]);
+  });
+
   it('is empty for no months and rejects a gap', () => {
     expect(rollChain([])).toEqual([]);
     expect(() => rollChain(months.filter((_, i) => i !== 1))).toThrow(RangeError);

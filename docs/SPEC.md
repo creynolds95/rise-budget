@@ -126,29 +126,20 @@ to confirm and no banner.
 
 ### 2.6 Reallocation
 
-The signature interaction. When the user raises `planned` on a category:
+The signature interaction. When the user changes `planned` on a category:
 
 ```
 delta = new_planned - old_planned
 if delta <= 0:
-    apply directly; if policy allows, the freed money returns to the pool
-elif delta <= pool(P):
-    apply directly, funded from the pool
+    apply directly; the freed money returns to the pool
 else:
-    REQUIRE a funding source before committing
+    apply directly; any funding the user names comes from those categories,
+    the rest from the pool, even past zero
 ```
 
-When a source is required, the app presents candidate categories ranked by **slack**:
-
-```
-slack(c) = remaining(c) - projected_remaining_spend(c)
-
-projected_remaining_spend(c) =
-    if c.spend_shape == fixed:  0 if the bill has posted this period, else planned - spent
-    else:                        available(c) * (1 - pace_fraction)
-```
-
-Rank descending by slack; exclude categories with `slack <= 0`; exclude the target.
+Planning past income is allowed (Caleb, 2026-10-06). Nothing is blocked: the pool goes
+negative and the Budget tab's bar reads "Over budget" on a solid clay fill until plans come
+back under income.
 
 Every applied reallocation writes a `reallocation` row: `from_category_id` (nullable = pool),
 `to_category_id` (nullable = pool), `amount_cents`, `note`, `created_at`. The month's
@@ -579,7 +570,7 @@ The PWA must be readable offline — the user checks it at arbitrary times.
 | 5 | Transaction posts into a past month | That month's spending and every later month's carry read the new numbers; nothing to confirm |
 | 6 | Rollover policy changed | Applies across the whole chain from October 2026 |
 | 7 | Overspent category | Carries only if it is marked to roll; otherwise it resets next month |
-| 8 | Reallocation exceeding pool | Funding source required before commit |
+| 8 | Reallocation exceeding pool | Commits; pool goes negative and the month shows "Over budget" |
 | 9 | Fixed-shape category on day 1 | Pace does not report "overspent" |
 | 10 | Monthly-cadence account 20 days since sync | **Not** marked stale — within its expected cadence |
 | 10b | Monthly-cadence account 45 days since sync | Marked stale with reason; no estimate of missing spend |

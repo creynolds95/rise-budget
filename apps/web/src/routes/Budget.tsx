@@ -35,7 +35,7 @@ export function Budget() {
   const invalidate = useInvalidateMoney();
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const plan = usePlanFlow(month, categories.data ?? []);
+  const plan = usePlanFlow(month);
   const isDesktop = useIsDesktop();
   const selected = params.get('category');
 
@@ -85,20 +85,17 @@ export function Budget() {
       <div
         className={`mx-auto max-w-2xl pb-16 ${selected ? 'hidden lg:block lg:mx-0 lg:max-w-[560px] lg:flex-shrink-0' : ''}`}
       >
-        <MonthSwitcher
-          month={month}
-          today={today}
-          onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
-        />
+        {/* Month and balance stay in view while the lists scroll. */}
+        <div className="sticky top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px))] z-[5] bg-canvas pb-1.5">
+          <MonthSwitcher
+            month={month}
+            today={today}
+            onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
+          />
+          <LeftToBudget poolCents={p.poolCents} />
+        </div>
 
         <div className="gutter -mr-2 mt-2 flex items-center justify-end">
-          <Link
-            to={`/settings/reports${month === today.slice(0, 7) ? '' : `?m=${month}`}`}
-            aria-label="Reports"
-            className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-          >
-            <Icon name="flow" />
-          </Link>
           <Link
             to={settingsHref}
             onClick={transitionClick(navigate, settingsHref)}
@@ -108,8 +105,6 @@ export function Budget() {
             <Icon name="more" />
           </Link>
         </div>
-
-        <LeftToBudget poolCents={p.poolCents} />
 
         <section className="gutter mt-4">
           <h2 className="type-title">Summary</h2>
@@ -341,19 +336,19 @@ function MonthSwitcher({
   // H6/A9: plan up to 12 months ahead of the current month.
   const furthest = addMonths(current, 12);
   return (
-    <nav aria-label="Month" className="gutter pt-4">
-      <div className="flex items-center justify-between rounded-card bg-surface p-1.5 shadow-soft ring-1 ring-hairline">
+    <nav aria-label="Month" className="gutter pt-1">
+      <div className="flex items-center justify-between rounded-card bg-surface p-1 shadow-soft ring-1 ring-hairline">
         <button
-          className="min-h-11 rounded-button bg-sage-100 px-4 text-sage-700 active:opacity-70"
+          className="min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70"
           onClick={() => onChange(addMonths(month, -1))}
         >
           ‹ {monthName(addMonths(month, -1), false).slice(0, 3)}
         </button>
-        <h1 className="type-title">
+        <h1 className="font-serif text-lg">
           {monthName(month, month.slice(0, 4) !== current.slice(0, 4))}
         </h1>
         <button
-          className="min-h-11 rounded-button bg-sage-100 px-4 text-sage-700 active:opacity-70 disabled:opacity-30"
+          className="min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70 disabled:opacity-30"
           disabled={month >= furthest}
           onClick={() => onChange(addMonths(month, 1))}
         >
@@ -598,14 +593,14 @@ function LeftToBudget({ poolCents }: { poolCents: number }) {
   const over = poolCents < 0;
   return (
     <div
-      className={`gutter mt-2 flex items-center justify-between rounded-card px-4 py-3 ${over ? 'bg-clay-100' : poolCents > 0 ? 'bg-sage-100' : 'bg-surface shadow-soft'}`}
+      className={`gutter mt-1.5 flex items-center justify-between rounded-card px-4 py-1.5 text-sm ${over ? 'bg-clay text-surface' : poolCents > 0 ? 'bg-sage-100' : 'bg-surface shadow-soft'}`}
       role="status"
     >
       <span className="font-medium">{over ? 'Over budget' : 'Left to budget'}</span>
       <MoneyText
         cents={Math.abs(poolCents)}
-        tone={over ? 'over' : poolCents > 0 ? 'in' : 'ink'}
-        className="text-lg font-semibold"
+        tone={over ? 'onClay' : poolCents > 0 ? 'in' : 'ink'}
+        className="text-base font-semibold"
       />
     </div>
   );

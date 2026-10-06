@@ -4,7 +4,7 @@
  * Rates are basis points (400 = 4.00%).
  */
 
-const monthlyStep = (balanceCents: number, realGrowthBps: number): number =>
+export const monthlyStep = (balanceCents: number, realGrowthBps: number): number =>
   balanceCents + Math.round((balanceCents * realGrowthBps) / 120_000);
 
 export function projectBalance(

@@ -37,6 +37,8 @@ const BUDGETS: [path: string, rows: number][] = [
   ['/transactions', 500],
   ['/transactions?account=ACCT', 500],
   ['/transactions?reviewState=needs_review', 300],
+  ['/transactions?notAccount=ACCT', 500],
+  ['/transactions?notCategory=CAT', 500],
   ['/transactions?from=2026-09-01&to=2026-09-30', 500],
   ['/transactions?q=MERCHANT%2012', 3_000],
   ['/transactions?direction=in', 3_500],

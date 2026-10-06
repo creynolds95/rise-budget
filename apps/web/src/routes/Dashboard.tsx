@@ -1,6 +1,8 @@
 import type { RecurringSeries } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { DashboardTile } from '@rise/shared/schemas';
 import { Link, useNavigate } from 'react-router';
 import { NetWorthSection } from './Accounts';
 import { surplusTone } from '../lib/surplus';
@@ -13,6 +15,18 @@ import { TxnRow } from '../components/TxnRow';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
+import { Icon } from '../components/primitives/Icon';
+import { CustomizeDashboard } from '../components/CustomizeDashboard';
+import {
+  DebtTile,
+  InvestmentsTile,
+  MortgageScheduleTile,
+  MortgageYearTile,
+  RetirementTile,
+  SavingsTile,
+} from '../components/DashboardTiles';
+import { tileOrder } from '../lib/dashboard';
+import { useHeaderActions } from '../lib/headerActions';
 import { get } from '../lib/api';
 import { addMonths, shortDate } from '../lib/dates';
 import { transitionClick } from '../lib/transition';
@@ -65,6 +79,17 @@ export function Dashboard() {
   const syncStatus = useSyncStatus();
   const backups = useBackupStatus();
   const usage = useUsage();
+  const [customizing, setCustomizing] = useState(false);
+  useHeaderActions(
+    <button
+      type="button"
+      aria-label="Customize dashboard"
+      onClick={() => setCustomizing(true)}
+      className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
+    >
+      <Icon name="sliders" />
+    </button>,
+  );
   const queue = useQuery({
     queryKey: ['queue-count'],
     queryFn: () => get<{ count: number }>('/review/count'),
@@ -101,19 +126,9 @@ export function Dashboard() {
   const reviewCount = queue.data?.count ?? 0;
   const surplusReviewCount = surplus.data?.suggestions.length ?? 0;
 
-  return (
-    <div className="gutter mx-auto max-w-2xl pt-6 pb-12">
-      <HealthNotes
-        sync={syncStatus.data}
-        backups={backups.data}
-        today={today}
-        quiet={quietInstitutions(accounts.data ?? [])}
-        usage={usage.data}
-        dismissible
-      />
-      {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}
-
-      {(reviewCount > 0 || surplusReviewCount > 0) && (
+  const tiles: Record<DashboardTile, ReactNode> = {
+    review:
+      reviewCount > 0 || surplusReviewCount > 0 ? (
         <div className="flex flex-col gap-2">
           {reviewCount > 0 && (
             <ReviewRow
@@ -130,10 +145,9 @@ export function Dashboard() {
             />
           )}
         </div>
-      )}
-
-      {/* 1. Surplus */}
-      <section className="mt-8 first:mt-0">
+      ) : null,
+    surplus: (
+      <section>
         <h2 className="type-title">Surplus</h2>
         <Link
           to="/cash-to-payday"
@@ -154,16 +168,16 @@ export function Dashboard() {
           )}
         </Link>
       </section>
-
-      {/* 2. Summary */}
-      <section className="mt-8">
+    ),
+    budget: (
+      <section>
         <h2 className="type-title">Budget</h2>
         <div className="mt-2">
           <SummaryCard p={p} expenseCarriedCents={expenseCarriedCents} to="/budget" />
         </div>
       </section>
-
-      {/* 3. Spending */}
+    ),
+    spending: (
       <SpendingSection
         month={month}
         spentCents={t.spentCents}
@@ -172,9 +186,9 @@ export function Dashboard() {
         lastCategories={last.data?.categories}
         names={categories.data}
       />
-
-      {/* 4. Transactions */}
-      <section className="mt-10" aria-labelledby="txns-h">
+    ),
+    transactions: (
+      <section aria-labelledby="txns-h">
         <h2 id="txns-h" className="type-title">
           Transactions
         </h2>
@@ -196,14 +210,15 @@ export function Dashboard() {
         </div>
         <NavRow to="/transactions" label="Most recent" />
       </section>
-
-      {/* 5. Net worth trend */}
-      <section className="mt-10">
+    ),
+    netWorth: (
+      <section>
         <NetWorthSection to="/accounts" />
       </section>
-
-      {(upcoming.length > 0 || broken.length > 0) && (
-        <section className="mt-10">
+    ),
+    comingUp:
+      upcoming.length > 0 || broken.length > 0 ? (
+        <section>
           <h2 className="type-title">Coming up</h2>
           <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
             {upcoming.map((s) => (
@@ -226,7 +241,34 @@ export function Dashboard() {
             ))}
           </ul>
         </section>
-      )}
+      ) : null,
+    investments: <InvestmentsTile />,
+    savings: <SavingsTile />,
+    retirement: <RetirementTile />,
+    debt: <DebtTile />,
+    mortgageSchedule: <MortgageScheduleTile />,
+    mortgageYear: <MortgageYearTile />,
+  };
+  const order = tileOrder(me?.settings.dashboard ?? null);
+  const visible = order.all.filter((id) => order.shown.has(id) && tiles[id]);
+
+  return (
+    <div className="gutter mx-auto max-w-2xl pt-6 pb-12">
+      <HealthNotes
+        sync={syncStatus.data}
+        backups={backups.data}
+        today={today}
+        quiet={quietInstitutions(accounts.data ?? [])}
+        usage={usage.data}
+        dismissible
+      />
+      {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}
+      <div className="flex flex-col gap-8">
+        {visible.map((id) => (
+          <div key={id}>{tiles[id]}</div>
+        ))}
+      </div>
+      <CustomizeDashboard open={customizing} onClose={() => setCustomizing(false)} />
     </div>
   );
 }

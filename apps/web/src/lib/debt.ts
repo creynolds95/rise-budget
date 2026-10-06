@@ -16,6 +16,8 @@ export const DEFAULT_DEBT_PLAN: DebtPlan = {
   rollForward: true,
   extraCents: 0,
   mortgageExtraCents: 0,
+  mortgageLumps: [],
+  mortgageTermMonths: 360,
   homeValueAccountId: null,
 };
 
