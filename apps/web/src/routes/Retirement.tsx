@@ -179,7 +179,7 @@ export function Retirement() {
             />
             {f.successPct !== null && (
               <StaticRow
-                label="Success rate"
+                label="Chance of reaching goal"
                 value={<span className="money">{f.successPct}%</span>}
               />
             )}
