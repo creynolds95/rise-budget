@@ -93,13 +93,6 @@ export function Budget() {
 
         <div className="gutter -mr-2 mt-2 flex items-center justify-end">
           <Link
-            to={`/settings/reports${month === today.slice(0, 7) ? '' : `?m=${month}`}`}
-            aria-label="Reports"
-            className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-          >
-            <Icon name="flow" />
-          </Link>
-          <Link
             to={settingsHref}
             onClick={transitionClick(navigate, settingsHref)}
             aria-label="Budget settings"
