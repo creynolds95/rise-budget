@@ -68,6 +68,7 @@ describe('schemas', () => {
     const plan = RetirementPlan.parse({ currentAge: 31, goalAge: 65, spendTargetCents: 500_000 });
     expect(plan.realGrowthBps).toBe(400);
     expect(plan.withdrawalBps).toBe(350);
+    expect(plan.volatilityBps).toBe(1500);
     expect(plan.contributions).toEqual([]);
   });
 

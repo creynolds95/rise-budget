@@ -325,6 +325,7 @@ describe('T16 auth middleware + error contract', () => {
       contributions: [{ accountId: 'acct_1', monthlyCents: 120_000 }],
       realGrowthBps: 400,
       withdrawalBps: 350,
+      volatilityBps: 1500,
     };
     await call('PATCH', '/me/settings', { access: u.access, body: { retirement: plan } });
     const res = await call('PATCH', '/me/settings', { access: u.access, body: { appLock: '5m' } });

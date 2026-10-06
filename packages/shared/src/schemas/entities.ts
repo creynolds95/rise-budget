@@ -33,6 +33,8 @@ export const RetirementPlan = z.object({
   realGrowthBps: z.int().min(0).max(1000).default(400),
   /** Safe-withdrawal rate, basis points. Conservative default. */
   withdrawalBps: z.int().min(100).max(1000).default(350),
+  /** Yearly swing in returns for the Monte Carlo fan, basis points. */
+  volatilityBps: z.int().min(0).max(5000).default(1500),
 });
 export type RetirementPlan = z.infer<typeof RetirementPlan>;
 
