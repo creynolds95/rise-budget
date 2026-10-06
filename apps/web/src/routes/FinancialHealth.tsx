@@ -5,7 +5,8 @@ import { Skeleton } from '../components/primitives/Skeleton';
 import { useSwipeBack } from '../lib/gestures';
 import { formatCents } from '../lib/money';
 import { useAccounts, useMe, useToday } from '../lib/queries';
-import { groupView, planLoans } from '../lib/debt';
+import { groupView, owedCents, planLoans } from '../lib/debt';
+import { mortgageView } from '../lib/mortgage';
 import { monthName, periodOf } from '../lib/dates';
 import { goalView } from '../lib/savings';
 import { retirementView, totalMonthly } from '../lib/retirement';
@@ -41,6 +42,7 @@ export function FinancialHealth() {
   let state: string | undefined;
   let debtState: string | undefined;
   let savingsState: string | undefined;
+  let mortgageState: string | undefined;
   if (ready) {
     const goals = me.settings.savings?.goals ?? [];
     const fund = goals.find((g) => g.kind === 'emergency');
@@ -64,9 +66,13 @@ export function FinancialHealth() {
         ? student.debtFreePeriod
           ? `Debt-free ${monthName(student.debtFreePeriod)}`
           : 'Add payments'
-        : debt && debt.loans.length > 0
-          ? 'Mortgage only'
-          : 'Set up';
+        : 'Set up';
+    const loan = debt?.loans.find((l) => l.group === 'mortgage');
+    const acct = loan ? accounts.find((a) => a.id === loan.accountId && !a.archivedAt) : undefined;
+    if (debt && loan && acct) {
+      const v = mortgageView(loan, owedCents(acct.balanceCents), debt, periodOf(today));
+      mortgageState = v.payoffPeriod ? `Paid off ${monthName(v.payoffPeriod)}` : 'Add payment';
+    } else mortgageState = 'Set up';
     if (!plan) state = 'Set up';
     else {
       const ids = accounts.filter((a) => a.kind === 'investment' && !a.archivedAt).map((a) => a.id);
@@ -87,6 +93,7 @@ export function FinancialHealth() {
       <ul className="gutter pt-4">
         <Tile to="/financial-health/retirement" title="Retirement" state={state} />
         <Tile to="/financial-health/debt" title="Debt" state={debtState} />
+        <Tile to="/financial-health/mortgage" title="Mortgage" state={mortgageState} />
         <Tile to="/financial-health/savings" title="Savings" state={savingsState} />
       </ul>
     </div>

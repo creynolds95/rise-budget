@@ -90,6 +90,13 @@ export const DebtPlan = z.object({
   /** Extra per month, split by strategy across the student loans only. */
   extraCents: Cents.min(0).default(0),
   mortgageExtraCents: Cents.min(0).default(0),
+  /** One-time extra principal toward the mortgage, by the month it goes in. */
+  mortgageLumps: z
+    .array(z.object({ period: PeriodId, cents: Cents.min(1) }))
+    .max(240)
+    .default([]),
+  /** Original term; payments already made are the term less what remains. */
+  mortgageTermMonths: z.int().min(12).max(600).default(360),
   /** Manual account whose balance is the home's value, for equity. */
   homeValueAccountId: Id.nullable().default(null),
 });

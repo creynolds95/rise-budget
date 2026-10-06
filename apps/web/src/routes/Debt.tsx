@@ -7,7 +7,7 @@ import { Button } from '../components/primitives/Button';
 import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
-import { EditRow, StaticRow, ValueRow } from '../components/primitives/Rows';
+import { EditRow, StaticRow } from '../components/primitives/Rows';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { Toggle } from '../components/primitives/Toggle';
@@ -59,11 +59,6 @@ function Segmented<T extends string>({
   );
 }
 
-const GROUPS = [
-  { id: 'student', label: 'Student loans' },
-  { id: 'mortgage', label: 'Mortgage' },
-] as const;
-
 /** Add a loan to the plan, or edit one. Nothing is saved until Save. */
 function LoanSheet({
   open,
@@ -89,7 +84,6 @@ function LoanSheet({
   onRemove: (accountId: string) => void;
 }) {
   const [accountId, setAccountId] = useState<string | null>(loan?.accountId ?? null);
-  const [group, setGroup] = useState<DebtLoanPlan['group']>(loan?.group ?? 'student');
   const [apr, setApr] = useState(loan ? aprToText(loan.aprMilliPct) : '');
   const [payment, setPayment] = useState(loan?.paymentCents ?? 0);
   const [dueDay, setDueDay] = useState(String(loan?.dueDay ?? 1));
@@ -118,7 +112,7 @@ function LoanSheet({
           if (!valid || accountId === null || aprMilli === null) return;
           onSave({
             accountId,
-            group,
+            group: loan?.group ?? 'student',
             aprMilliPct: aprMilli,
             paymentCents: payment,
             dueDay: due,
@@ -159,12 +153,6 @@ function LoanSheet({
         </ul>
       )}
       <div className="mt-4 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-        <EditRow
-          label="Counts as"
-          field={
-            <Segmented label="Counts as" value={group} options={[...GROUPS]} onChange={setGroup} />
-          }
-        />
         <EditRow
           label="Rate"
           field={
@@ -235,52 +223,6 @@ function LoanSheet({
   );
 }
 
-function HomeValueSheet({
-  open,
-  onClose,
-  accounts,
-  selectedId,
-  onPick,
-}: {
-  open: boolean;
-  onClose: () => void;
-  accounts: { id: string; name: string; balanceCents: number }[];
-  selectedId: string | null;
-  onPick: (id: string | null) => void;
-}) {
-  return (
-    <Sheet open={open} title="Home value account" onClose={onClose}>
-      <ul className="divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft">
-        {[{ id: null, name: 'None', balanceCents: null }, ...accounts].map((a) => (
-          <li key={a.id ?? 'none'}>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={selectedId === a.id}
-              onClick={() => {
-                onPick(a.id);
-                onClose();
-              }}
-              className="flex min-h-13 w-full items-center justify-between gap-3 px-4 py-3 text-left active:bg-sage-100"
-            >
-              <span className="min-w-0 truncate">{a.name}</span>
-              <span className="flex items-center gap-3">
-                {a.balanceCents !== null && <MoneyText cents={a.balanceCents} tone="muted" />}
-                <span
-                  aria-hidden
-                  className={`size-5 rounded-full border ${
-                    selectedId === a.id ? 'border-sage-600 bg-sage-600' : 'border-hairline'
-                  }`}
-                />
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </Sheet>
-  );
-}
-
 const payoffText = (r: GroupView['rows'][number]): string =>
   r.done
     ? 'Paid off'
@@ -323,7 +265,6 @@ export function Debt() {
   const [editOpen, setEditOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addKey, setAddKey] = useState(0);
-  const [pickingHome, setPickingHome] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const save = useMutation({
@@ -345,15 +286,6 @@ export function Debt() {
         : null,
     [plan, live, period],
   );
-  const mortgageLoans = plan ? planLoans(plan, live, 'mortgage') : [];
-  const mortgage =
-    plan && mortgageLoans.length > 0
-      ? groupView(
-          mortgageLoans,
-          { extraCents: plan.mortgageExtraCents, strategy: 'snowball', rollForward: true },
-          period,
-        )
-      : null;
   const suggestions = plan ? dueSuggestions(plan, live, today) : [];
 
   const header = { back: { label: 'Financial health', to: '/financial-health' }, title: 'Debt' };
@@ -372,9 +304,6 @@ export function Debt() {
     )
     .map((a) => ({ id: a.id, name: a.name, owedCents: owedCents(a.balanceCents) }));
   const nameOf = (id: string) => accounts.find((a) => a.id === id)?.name ?? null;
-  const homeAccounts = live.filter((a) => a.balanceCents > 0 && a.kind !== 'depository');
-  const homeValue = accounts.find((a) => a.id === current.homeValueAccountId);
-
   const openAdd = () => {
     setAddKey((k) => k + 1);
     setAdding(true);
@@ -456,13 +385,6 @@ export function Debt() {
         onSave={upsert}
         onRemove={(id) => edit({ loans: current.loans.filter((l) => l.accountId !== id) })}
       />
-      <HomeValueSheet
-        open={pickingHome}
-        onClose={() => setPickingHome(false)}
-        accounts={homeAccounts}
-        selectedId={current.homeValueAccountId}
-        onPick={(id) => edit({ homeValueAccountId: id })}
-      />
     </>
   );
 
@@ -517,9 +439,6 @@ export function Debt() {
     ) : null;
 
   const hasStudent = student.rows.length > 0;
-  const equity = homeValue && mortgage ? homeValue.balanceCents - mortgage.owedCents : null;
-  const mortgageRow = mortgage?.rows[0];
-
   return (
     <>
       <DetailPage
@@ -674,57 +593,6 @@ export function Debt() {
         related={[
           ...(hasStudent
             ? [{ title: 'Student loans', children: <div>{student.rows.map(loanRow)}</div> }]
-            : []),
-          ...(mortgage && mortgageRow
-            ? [
-                {
-                  title: 'Mortgage',
-                  children: (
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(mortgageRow.plan)}
-                        className="flex min-h-14 w-full items-center justify-between gap-3 border-b border-hairline py-3 text-left active:bg-sage-100"
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate">{mortgageRow.name}</span>
-                          <span className="block type-caption text-ink-muted money">
-                            <MoneyText cents={mortgageRow.owedCents} tone="muted" />
-                            {` · ${aprToText(mortgageRow.plan.aprMilliPct)}% · ${formatCents(mortgageRow.plan.paymentCents)}/mo`}
-                          </span>
-                          {gapNote(mortgageRow)}
-                        </span>
-                        <span className="shrink-0 money">{payoffText(mortgageRow)}</span>
-                      </button>
-                      <EditRow
-                        label="Extra per month"
-                        field={
-                          <MoneyField
-                            label="Mortgage extra per month"
-                            cents={current.mortgageExtraCents}
-                            onCommit={(c) => edit({ mortgageExtraCents: c })}
-                          />
-                        }
-                      />
-                      {savings(mortgage)}
-                      <ValueRow
-                        label="Home value"
-                        onClick={() => setPickingHome(true)}
-                        muted={!homeValue}
-                      >
-                        {homeValue ? (
-                          <MoneyText cents={homeValue.balanceCents} whole />
-                        ) : (
-                          'Choose account'
-                        )}
-                      </ValueRow>
-                      {equity !== null && (
-                        <StaticRow label="Equity" value={<MoneyText cents={equity} whole />} />
-                      )}
-                    </div>
-                  ),
-                },
-              ]
             : []),
         ]}
         manage={
