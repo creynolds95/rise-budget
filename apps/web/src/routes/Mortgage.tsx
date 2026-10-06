@@ -11,7 +11,7 @@ import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { series } from '../design/tokens';
 import { api } from '../lib/api';
-import { isDue } from '@rise/shared/debt';
+import { isDue, levelPayment } from '@rise/shared/debt';
 import { DEFAULT_DEBT_PLAN, aprFromText, aprToText, owedCents } from '../lib/debt';
 import { addMonths, monthName, periodOf } from '../lib/dates';
 import { formatCents } from '../lib/money';
@@ -65,6 +65,10 @@ function NumberBox({
 const parseInt1 = (t: string): number | null => {
   const n = Number(t.trim());
   return t.trim() !== '' && Number.isInteger(n) && n >= 12 && n <= 600 ? n : null;
+};
+const parseLeft = (t: string): number | null => {
+  const n = Number(t.trim());
+  return t.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 600 ? n : null;
 };
 const showInt = (n: number) => String(n);
 
@@ -380,7 +384,6 @@ export function Mortgage() {
   const labelAt = (m: number) =>
     monthName(addMonths(period, m - (pending ? 1 : 0))).replace(/^(\w{3})\w* /, '$1 ');
   const lastMonth = lines.months.at(-1) ?? 0;
-  const noDate = view.payoffPeriod === null;
 
   return (
     <>
@@ -404,14 +407,16 @@ export function Mortgage() {
         }}
         shape={
           <>
-            {noDate && (
+            {view.estimated && (
               <p className="mb-4 text-clay money">
                 {loan.paymentCents === 0
-                  ? 'Enter the monthly payment.'
-                  : `Doesn't cover ${formatCents(first?.interestCents ?? 0)}/mo interest. Enter principal + interest, without escrow.`}
+                  ? 'No payment entered.'
+                  : `${formatCents(loan.paymentCents)} doesn't cover ${formatCents(first?.interestCents ?? 0)}/mo interest.`}{' '}
+                Dates assume {formatCents(view.paymentCents)}/mo. Set payments left or the payment
+                below.
               </p>
             )}
-            {!noDate && lines.months.length > 2 && (
+            {lines.months.length > 2 && (
               <>
                 <Chart
                   kind="lines"
@@ -461,8 +466,23 @@ export function Mortgage() {
               field={
                 <MoneyField
                   label="Monthly payment"
-                  cents={loan.paymentCents}
+                  cents={view.paymentCents}
                   onCommit={(c) => editLoan({ paymentCents: c })}
+                />
+              }
+            />
+            <EditRow
+              label="Payments left"
+              field={
+                <NumberBox
+                  label="Payments left"
+                  value={view.base.payoffMonth ?? 0}
+                  parse={parseLeft}
+                  show={showInt}
+                  width="w-12"
+                  onCommit={(n) =>
+                    editLoan({ paymentCents: levelPayment(owed, loan.aprMilliPct, n) })
+                  }
                 />
               }
             />
@@ -502,10 +522,6 @@ export function Mortgage() {
                 />
               </>
             )}
-            <StaticRow
-              label="Payments left"
-              value={<span className="money">{view.plan.payoffMonth ?? '—'}</span>}
-            />
             <ValueRow label="Home value" onClick={() => setPickingHome(true)} muted={!homeValue}>
               {homeValue ? <MoneyText cents={homeValue.balanceCents} whole /> : 'Choose account'}
             </ValueRow>

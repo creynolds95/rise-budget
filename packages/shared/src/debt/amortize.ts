@@ -100,3 +100,10 @@ export function paidSoFar(
   }
   return { principalCents: principal, interestCents: interest };
 }
+
+/** The level payment that pays `balanceCents` off in exactly `months` payments. */
+export function levelPayment(balanceCents: number, aprMilliPct: number, months: number): number {
+  if (aprMilliPct === 0) return Math.ceil(balanceCents / months);
+  const r = aprMilliPct / 1_200_000;
+  return Math.round((balanceCents * r) / (1 - (1 + r) ** -months));
+}

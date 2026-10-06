@@ -49,12 +49,23 @@ describe('mortgage view', () => {
     expect(v.plan.rows[0]?.extraCents).toBe(500_000);
   });
 
-  it('a payment that never pays off has no date and no payments counted', () => {
-    const v = mortgageView({ ...loan, paymentCents: 100_000 }, 33_064_962, settings, '2026-10');
-    expect(v.payoffPeriod).toBeNull();
+  it('a saved payment under the interest stands in a full-term payment, so a date always shows', () => {
+    const v = mortgageView({ ...loan, paymentCents: 79_400 }, 33_064_962, settings, '2026-10');
+    expect(v.estimated).toBe(true);
+    expect(v.paymentCents).toBe(195_592);
+    expect(v.payoffPeriod).toBe('2056-10');
     expect(v.paidCount).toBe(0);
     expect(v.ytd).toBeNull();
+    expect(
+      mortgageView({ ...loan, paymentCents: 0 }, 33_064_962, settings, '2026-10').estimated,
+    ).toBe(true);
     expect(v.monthsSooner).toBeNull();
+  });
+
+  it('a paid-off balance is not an estimate', () => {
+    const v = mortgageView({ ...loan, paymentCents: 0 }, 0, settings, '2026-10');
+    expect(v.estimated).toBe(false);
+    expect(v.payoffPeriod).toBe('2026-10');
   });
 
   it('a due payment not yet in the balance is the first one, so the date lands a month sooner', () => {

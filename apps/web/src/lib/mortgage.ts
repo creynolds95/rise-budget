@@ -1,8 +1,18 @@
-import { amortize, paidSoFar, type Amortization } from '@rise/shared/debt';
+import {
+  amortize,
+  levelPayment,
+  paidSoFar,
+  monthlyInterest,
+  type Amortization,
+} from '@rise/shared/debt';
 import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { addMonths } from './dates';
 
 export interface MortgageView {
+  /** The payment the schedule runs on. */
+  paymentCents: number;
+  /** The saved payment can't beat the interest, so a full-term payment stands in for the date. */
+  estimated: boolean;
   /** With the extra payments in the plan. */
   plan: Amortization;
   /** The scheduled payment alone. */
@@ -27,11 +37,13 @@ export function mortgageView(
   pending = false,
 ): MortgageView {
   const lead = pending ? 1 : 0;
-  const input = {
-    balanceCents: owedCents,
-    aprMilliPct: loan.aprMilliPct,
-    paymentCents: loan.paymentCents,
-  };
+  // A payment at or under the interest never pays off; show the full-term date until it's fixed.
+  const estimated =
+    owedCents > 0 && loan.paymentCents <= monthlyInterest(owedCents, loan.aprMilliPct);
+  const paymentCents = estimated
+    ? levelPayment(owedCents, loan.aprMilliPct, settings.mortgageTermMonths)
+    : loan.paymentCents;
+  const input = { balanceCents: owedCents, aprMilliPct: loan.aprMilliPct, paymentCents };
   const base = amortize({ ...input, extraMonthlyCents: 0, lumps: [] });
   const plan = amortize({
     ...input,
@@ -51,6 +63,8 @@ export function mortgageView(
       ? base.payoffMonth - plan.payoffMonth
       : null;
   return {
+    paymentCents,
+    estimated,
     plan,
     base,
     payoffPeriod: at(plan),
@@ -59,7 +73,7 @@ export function mortgageView(
     interestSavedCents:
       sooner !== null && sooner > 0 ? base.totalInterestCents - plan.totalInterestCents : null,
     paidCount,
-    ytd: thisYear > 0 ? paidSoFar(owedCents, loan.aprMilliPct, loan.paymentCents, thisYear) : null,
+    ytd: thisYear > 0 ? paidSoFar(owedCents, loan.aprMilliPct, paymentCents, thisYear) : null,
   };
 }
 

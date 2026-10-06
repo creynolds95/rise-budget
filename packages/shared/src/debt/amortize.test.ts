@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { amortize, paidSoFar } from './amortize';
+import { amortize, levelPayment, paidSoFar } from './amortize';
 import { MAX_MONTHS } from './payoff';
 // The servicer's schedule from 11/2026: [principal, interest, ending balance] per payment, cents.
 import statement from './fixtures-mortgage-pdf.json';
@@ -108,5 +108,22 @@ describe('paid so far', () => {
       principalCents: 0,
       interestCents: 10_000,
     });
+  });
+});
+
+describe('level payment', () => {
+  it("354 payments left on the statement's balance is the statement's payment", () => {
+    expect(levelPayment(33_064_962, 5875, 354)).toBe(196_811);
+  });
+
+  it('the payment it returns pays the loan off in that many months', () => {
+    const p = levelPayment(33_064_962, 5875, 360);
+    expect(p).toBe(195_592);
+    const a = amortize({ ...mortgage, paymentCents: p });
+    expect(a.payoffMonth).toBe(360);
+  });
+
+  it('no interest is the balance split evenly, rounded up', () => {
+    expect(levelPayment(100_000, 0, 3)).toBe(33_334);
   });
 });
