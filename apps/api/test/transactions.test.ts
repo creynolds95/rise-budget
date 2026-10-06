@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { call, signedInUser } from './helpers/http';
 
 async function setup() {
@@ -106,6 +106,12 @@ describe('T21 transactions & splits', () => {
   });
 
   it('a split into a past month changes that month and carries on with no confirmation (edge 5)', async () => {
+    // Carry only flows from months that have ended.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-01-15T18:00:00Z'));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const s = await setup();
     await s.api('PATCH', '/periods/2026-10', { expectedIncomeCents: 100_000 });
     await s.api('PATCH', '/periods/2026-11', { expectedIncomeCents: 100_000 });
