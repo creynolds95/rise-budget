@@ -85,16 +85,14 @@ export function Budget() {
       <div
         className={`mx-auto max-w-2xl pb-16 ${selected ? 'hidden lg:block lg:mx-0 lg:max-w-[560px] lg:flex-shrink-0' : ''}`}
       >
-        {/* Month and balance share one slim row that stays in view while the lists scroll. */}
-        <div className="gutter sticky top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px))] z-[5] bg-canvas py-2">
-          <div className="flex min-h-11 items-center justify-between gap-2 rounded-card bg-surface pl-1 pr-3 shadow-soft ring-1 ring-hairline">
-            <MonthSwitcher
-              month={month}
-              today={today}
-              onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
-            />
-            <LeftToBudget poolCents={p.poolCents} />
-          </div>
+        {/* Month and balance stay in view while the lists scroll. */}
+        <div className="sticky top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px))] z-[5] bg-canvas pb-1.5">
+          <MonthSwitcher
+            month={month}
+            today={today}
+            onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
+          />
+          <LeftToBudget poolCents={p.poolCents} />
         </div>
 
         <div className="gutter -mr-2 mt-2 flex items-center justify-end">
@@ -338,25 +336,25 @@ function MonthSwitcher({
   // H6/A9: plan up to 12 months ahead of the current month.
   const furthest = addMonths(current, 12);
   return (
-    <nav aria-label="Month" className="flex min-w-0 items-center">
-      <button
-        aria-label={`Previous month, ${monthName(addMonths(month, -1), false)}`}
-        className="flex size-11 shrink-0 items-center justify-center rounded-full text-xl text-sage-700 active:bg-sage-100"
-        onClick={() => onChange(addMonths(month, -1))}
-      >
-        ‹
-      </button>
-      <h1 className="type-title truncate">
-        {monthName(month, month.slice(0, 4) !== current.slice(0, 4))}
-      </h1>
-      <button
-        aria-label={`Next month, ${monthName(addMonths(month, 1), false)}`}
-        className="flex size-11 shrink-0 items-center justify-center rounded-full text-xl text-sage-700 active:bg-sage-100 disabled:opacity-30"
-        disabled={month >= furthest}
-        onClick={() => onChange(addMonths(month, 1))}
-      >
-        ›
-      </button>
+    <nav aria-label="Month" className="gutter pt-1">
+      <div className="flex items-center justify-between rounded-card bg-surface p-1 shadow-soft ring-1 ring-hairline">
+        <button
+          className="min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70"
+          onClick={() => onChange(addMonths(month, -1))}
+        >
+          ‹ {monthName(addMonths(month, -1), false).slice(0, 3)}
+        </button>
+        <h1 className="font-serif text-lg">
+          {monthName(month, month.slice(0, 4) !== current.slice(0, 4))}
+        </h1>
+        <button
+          className="min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70 disabled:opacity-30"
+          disabled={month >= furthest}
+          onClick={() => onChange(addMonths(month, 1))}
+        >
+          {monthName(addMonths(month, 1), false).slice(0, 3)} ›
+        </button>
+      </div>
     </nav>
   );
 }
@@ -595,10 +593,10 @@ function LeftToBudget({ poolCents }: { poolCents: number }) {
   const over = poolCents < 0;
   return (
     <div
-      className={`flex shrink-0 flex-col items-end rounded-button px-2.5 py-1 leading-tight ${over ? 'bg-clay text-surface' : poolCents > 0 ? 'bg-sage-100' : ''}`}
+      className={`gutter mt-1.5 flex items-center justify-between rounded-card px-4 py-1.5 text-sm ${over ? 'bg-clay text-surface' : poolCents > 0 ? 'bg-sage-100' : 'bg-surface shadow-soft'}`}
       role="status"
     >
-      <span className="text-[11px] font-medium">{over ? 'Over budget' : 'Left to budget'}</span>
+      <span className="font-medium">{over ? 'Over budget' : 'Left to budget'}</span>
       <MoneyText
         cents={Math.abs(poolCents)}
         tone={over ? 'onClay' : poolCents > 0 ? 'in' : 'ink'}
