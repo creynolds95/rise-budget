@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react';
 import type { RetirementPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
-import { Chart } from '../components/primitives/Chart';
 import { FanChart } from '../components/primitives/FanChart';
 import { IconButton } from '../components/primitives/Icon';
 import { MoneyField } from '../components/primitives/MoneyField';
@@ -164,19 +163,6 @@ export function Retirement() {
               <span>Age {shownAge}</span>
               <span>{AGE_MAX}</span>
             </div>
-            {v.series.length > 1 && (
-              <div className="mt-4">
-                <Chart
-                  kind="line"
-                  label="Projected retirement balance"
-                  points={v.series.map((p) => ({
-                    cents: p.balanceCents,
-                    inferred: false,
-                    label: `Age ${p.age}`,
-                  }))}
-                />
-              </div>
-            )}
             {f.fan.length > 1 && (
               <div className="mt-4">
                 <FanChart label="Range of projected balances" fan={f.fan} />
