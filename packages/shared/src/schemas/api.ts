@@ -9,7 +9,14 @@ import {
   RuleMatchType,
   SpendShape,
 } from './enums';
-import { AccountBadgeStyle, DebtPlan, FollowRule, RetirementPlan, SavingsPlan } from './entities';
+import {
+  AccountBadgeStyle,
+  DashboardTile,
+  DebtPlan,
+  FollowRule,
+  RetirementPlan,
+  SavingsPlan,
+} from './entities';
 
 export const ManualCadence = z.enum(['weekly', 'biweekly', 'monthly', 'semimonthly', 'annual']);
 
@@ -65,6 +72,7 @@ export const PatchSettingsBody = z.object({
     .array(z.object({ seriesId: z.string(), dueDate: IsoDate }))
     .max(200)
     .optional(),
+  dashboard: z.array(DashboardTile).max(DashboardTile.options.length).nullable().optional(),
   retirement: RetirementPlan.nullable().optional(),
   debt: DebtPlan.nullable().optional(),
   savings: SavingsPlan.nullable().optional(),

@@ -241,7 +241,7 @@ const gapNote = (r: GroupView['rows'][number]) =>
   ) : null;
 
 /** Up to ~48 evenly spaced points, always ending at the last month. */
-function chartPoints(view: GroupView, period: string) {
+export function chartPoints(view: GroupView, period: string) {
   const owed = view.totalOwedByMonth;
   const step = Math.max(1, Math.ceil((owed.length - 1) / 48));
   const idx = Array.from({ length: Math.ceil((owed.length - 1) / step) + 1 }, (_, i) =>

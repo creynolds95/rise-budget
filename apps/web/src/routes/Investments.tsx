@@ -22,7 +22,7 @@ interface InvestmentsResponse {
 }
 
 /** Investment accounts against the S&P 500. Balance-based: a deposit reads as growth. */
-export function Investments() {
+export function Investments({ compact = false }: { compact?: boolean } = {}) {
   const today = useToday();
   const [range, setRange] = useState<InvRange>('3M');
   // One year is fetched once; the chips just re-slice it.
@@ -98,15 +98,19 @@ export function Investments() {
           </p>
         )}
       </div>
-      <h2 className="mt-6 type-title">Accounts</h2>
-      <div className="mt-2 divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft">
-        {q.data.accounts.map((a) => (
-          <div key={a.id} className="flex items-baseline justify-between gap-3 px-4 py-3">
-            <span className="min-w-0 truncate">{a.name}</span>
-            <MoneyText cents={a.balanceCents} />
+      {!compact && (
+        <>
+          <h2 className="mt-6 type-title">Accounts</h2>
+          <div className="mt-2 divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft">
+            {q.data.accounts.map((a) => (
+              <div key={a.id} className="flex items-baseline justify-between gap-3 px-4 py-3">
+                <span className="min-w-0 truncate">{a.name}</span>
+                <MoneyText cents={a.balanceCents} />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </>
   );
 }
