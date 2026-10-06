@@ -48,18 +48,13 @@ describe('retirement view', () => {
 });
 
 describe('fan view', () => {
-  it('bands start at today and success needs a goal', () => {
+  it('bands start at today and run to the chosen age', () => {
     const f = fanView(plan, 10_000_000, 100_000, 65);
-    expect(f.fan[0]).toMatchObject({ age: 30, p10: 10_000_000, p90: 10_000_000 });
-    expect(f.fan[f.fan.length - 1]?.age).toBe(65);
-    expect(f.successPct).toBeGreaterThanOrEqual(0);
-    expect(f.successPct).toBeLessThanOrEqual(100);
-    expect(
-      fanView({ ...plan, spendTargetCents: 0 }, 10_000_000, 100_000, 65).successPct,
-    ).toBeNull();
+    expect(f[0]).toMatchObject({ age: 30, p10: 10_000_000, p90: 10_000_000 });
+    expect(f[f.length - 1]?.age).toBe(65);
   });
 
   it('a retirement age before today gives a single point', () => {
-    expect(fanView(plan, 1_000, 0, 20).fan).toHaveLength(1);
+    expect(fanView(plan, 1_000, 0, 20)).toHaveLength(1);
   });
 });
