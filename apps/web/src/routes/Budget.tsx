@@ -35,7 +35,7 @@ export function Budget() {
   const invalidate = useInvalidateMoney();
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const plan = usePlanFlow(month, categories.data ?? []);
+  const plan = usePlanFlow(month);
   const isDesktop = useIsDesktop();
   const selected = params.get('category');
 
@@ -92,13 +92,6 @@ export function Budget() {
         />
 
         <div className="gutter -mr-2 mt-2 flex items-center justify-end">
-          <Link
-            to={`/settings/reports${month === today.slice(0, 7) ? '' : `?m=${month}`}`}
-            aria-label="Reports"
-            className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-          >
-            <Icon name="flow" />
-          </Link>
           <Link
             to={settingsHref}
             onClick={transitionClick(navigate, settingsHref)}
@@ -598,13 +591,13 @@ function LeftToBudget({ poolCents }: { poolCents: number }) {
   const over = poolCents < 0;
   return (
     <div
-      className={`gutter mt-2 flex items-center justify-between rounded-card px-4 py-3 ${over ? 'bg-clay-100' : poolCents > 0 ? 'bg-sage-100' : 'bg-surface shadow-soft'}`}
+      className={`gutter mt-2 flex items-center justify-between rounded-card px-4 py-3 ${over ? 'bg-clay text-surface' : poolCents > 0 ? 'bg-sage-100' : 'bg-surface shadow-soft'}`}
       role="status"
     >
       <span className="font-medium">{over ? 'Over budget' : 'Left to budget'}</span>
       <MoneyText
         cents={Math.abs(poolCents)}
-        tone={over ? 'over' : poolCents > 0 ? 'in' : 'ink'}
+        tone={over ? 'onClay' : poolCents > 0 ? 'in' : 'ink'}
         className="text-lg font-semibold"
       />
     </div>

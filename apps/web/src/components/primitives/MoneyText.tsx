@@ -7,6 +7,8 @@ const TONE = {
   over: 'text-clay',
   /** Money coming in. */
   in: 'text-sage-700',
+  /** On a solid clay fill (the "Over budget" bar). */
+  onClay: 'text-surface',
 } as const;
 
 export type MoneyTone = keyof typeof TONE;
