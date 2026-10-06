@@ -21,6 +21,7 @@ const txn = (p: Partial<QueueItem>): QueueItem => ({
   isPending: false,
   isTransfer: false,
   transferPairId: null,
+  refundOfId: null,
   reviewState: 'needs_review',
   suggestedCategoryId: null,
   suggestionConfidence: 0,

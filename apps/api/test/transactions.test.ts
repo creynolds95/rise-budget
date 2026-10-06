@@ -402,3 +402,37 @@ describe('deleting a transaction', () => {
     expect(r.status).toBe(409);
   });
 });
+
+describe('refund association', () => {
+  it('a refund takes the purchase category, nets spending, and unlinks', async () => {
+    const s = await setup();
+    const buy = (await s.add('2026-09-05', 10_000, 'TARGET', s.home.id)).json;
+    const refund = (await s.add('2026-09-12', -4_000, 'TARGET REFUND', s.kids.id)).json;
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(10_000);
+    const r = await s.api('POST', `/transactions/${refund.id}/refund-link`, {
+      originalTxnId: buy.id,
+    });
+    expect(r.status).toBe(200);
+    expect(r.json.refundOfId).toBe(buy.id);
+    expect(r.json.splits).toMatchObject([{ categoryId: s.home.id, amountCents: -4_000 }]);
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(6_000);
+    expect(await spentIn(s, '2026-09', s.kids.id)).toBe(0);
+    // the purchase can't be deleted out from under its refund
+    expect((await s.api('DELETE', `/transactions/${buy.id}`)).status).toBe(409);
+    const u = await s.api('DELETE', `/transactions/${refund.id}/refund-link`);
+    expect(u.json.refundOfId).toBeNull();
+    expect((await s.api('DELETE', `/transactions/${buy.id}`)).status).toBe(204);
+  });
+
+  it('refuses a refund bigger than what is left, and a second link', async () => {
+    const s = await setup();
+    const buy = (await s.add('2026-09-05', 10_000, 'TARGET', s.home.id)).json;
+    const r1 = (await s.add('2026-09-12', -7_000, 'REFUND A')).json;
+    const r2 = (await s.add('2026-09-13', -4_000, 'REFUND B')).json;
+    const link = (id: string) =>
+      s.api('POST', `/transactions/${id}/refund-link`, { originalTxnId: buy.id });
+    expect((await link(r1.id)).status).toBe(200);
+    expect((await link(r2.id)).status).toBe(422);
+    expect((await link(r1.id)).status).toBe(409);
+  });
+});
