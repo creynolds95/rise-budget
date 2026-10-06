@@ -327,6 +327,7 @@ export const Transaction = z.object({
   isPending: z.boolean(),
   isTransfer: z.boolean(),
   transferPairId: Id.nullable(),
+  refundOfId: Id.nullable(),
   reviewState: ReviewState,
   suggestedCategoryId: Id.nullable(),
   suggestionConfidence: z.number().min(0).max(1),

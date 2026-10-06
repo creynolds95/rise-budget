@@ -1,5 +1,5 @@
 import { periodOf, validateSplits } from '@rise/shared/budget';
-import { normalizeMerchant } from '@rise/shared/categorize';
+import { allocateRefund, normalizeMerchant, refundFits } from '@rise/shared/categorize';
 import { nextScheduled } from '@rise/shared/recurring';
 import {
   BulkAcceptBody,
@@ -8,6 +8,7 @@ import {
   RecurringCashWithdrawalBody,
   ReplaceSplitsBody,
   TransactionQuery,
+  RefundLinkBody,
   TransferLinkBody,
   type RuleOffer,
 } from '@rise/shared/schemas';
@@ -31,7 +32,9 @@ import {
   nowIso,
   reassignSplitStmts,
   refreshAggregateStmts,
+  refundedCents,
   seriesId,
+  setRefundOf,
   sortKey,
   linkTransferStmts,
   movePostedAtStmts,
@@ -192,6 +195,8 @@ transactions.delete('/:id', async (c) => {
   if (!row) throw notFound();
   if (row.transfer_pair_id)
     throw new AppError(409, 'CONFLICT', 'Unlink this transfer from the other side before deleting');
+  if ((await refundedCents(userId, c.env.DB, row.id)) !== 0)
+    throw new AppError(409, 'CONFLICT', 'Unlink its refund before deleting');
   await deleteTransaction(userId, c.env.DB, row);
   return c.body(null, 204);
 });
@@ -352,6 +357,59 @@ transactions.post('/:id/transfer-link', async (c) => {
   return c.json({
     items: [await getTransaction(userId, db, a.id), await getTransaction(userId, db, b.id)],
   });
+});
+
+/**
+ * Tie a refund to the purchase it reverses. The refund takes the purchase's category (spread
+ * in proportion across its splits), so it offsets exactly what it undoes; partial refunds are
+ * fine up to what's left. The tap is the confirmation; unlink leaves the categories as they are.
+ */
+transactions.post('/:id/refund-link', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const { originalTxnId } = await body(c, RefundLinkBody);
+  const [refund, original] = await Promise.all([
+    getTransactionRow(userId, db, c.req.param('id')),
+    getTransactionRow(userId, db, originalTxnId),
+  ]);
+  if (!refund || !original) throw notFound();
+  if (refund.refund_of_id) throw new AppError(409, 'CONFLICT', 'Already linked to a purchase');
+  const asTxn = (r: TxnRow) => ({
+    id: r.id,
+    accountId: r.account_id,
+    postedAt: r.posted_at,
+    amountCents: r.amount_cents,
+    isTransfer: r.is_transfer === 1,
+  });
+  if (!refundFits(asTxn(refund), asTxn(original), await refundedCents(userId, db, original.id)))
+    throw new AppError(
+      422,
+      'BAD_REQUEST',
+      'A refund must come after its purchase and be no more than what is left of it',
+    );
+  const originalSplits = (await splitsFor(userId, db, [original.id])).get(original.id) ?? [];
+  if (originalSplits.length === 0)
+    throw new AppError(409, 'CONFLICT', 'That purchase has no category yet');
+  await replaceSplits(
+    userId,
+    db,
+    refund,
+    allocateRefund(
+      refund.amount_cents,
+      originalSplits.map((s) => ({ categoryId: s.category_id, amountCents: s.amount_cents })),
+    ).filter((s) => s.amountCents !== 0),
+  );
+  await setRefundOf(userId, db, refund.id, original.id);
+  return c.json(await getTransaction(userId, db, refund.id));
+});
+
+transactions.delete('/:id/refund-link', async (c) => {
+  const userId = c.get('userId');
+  const row = await getTransactionRow(userId, c.env.DB, c.req.param('id'));
+  if (!row) throw notFound();
+  if (!row.refund_of_id) throw new AppError(409, 'CONFLICT', 'Not linked to a purchase');
+  await setRefundOf(userId, c.env.DB, row.id, null);
+  return c.json(await getTransaction(userId, c.env.DB, row.id));
 });
 
 /**

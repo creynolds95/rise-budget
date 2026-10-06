@@ -131,6 +131,7 @@ export const BulkAcceptBody = z.union([
 ]);
 
 export const TransferLinkBody = z.object({ otherTxnId: Id });
+export const RefundLinkBody = z.object({ originalTxnId: Id });
 
 /** Caleb's "Recurring Cash Withdrawal" tag (cash-to-payday, not a category setting). */
 export const RecurringCashWithdrawalBody = z

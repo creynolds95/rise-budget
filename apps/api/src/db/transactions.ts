@@ -15,6 +15,7 @@ export interface TxnRow {
   is_pending: number;
   is_transfer: number;
   transfer_pair_id: string | null;
+  refund_of_id: string | null;
   review_state: string;
   suggested_category_id: string | null;
   suggestion_confidence: number;
@@ -46,6 +47,7 @@ const toTransaction = (r: TxnRow, splits: SplitRow[]): Transaction =>
     isPending: r.is_pending === 1,
     isTransfer: r.is_transfer === 1,
     transferPairId: r.transfer_pair_id,
+    refundOfId: r.refund_of_id,
     reviewState: r.review_state,
     suggestedCategoryId: r.suggested_category_id,
     suggestionConfidence: r.suggestion_confidence,
@@ -626,4 +628,31 @@ export async function listOutflows(
     amountCents: r.amount_cents,
     text: `${r.descriptor_raw} ${r.merchant_normalized} ${r.merchant_display ?? ''}`.toLowerCase(),
   }));
+}
+
+/** What earlier refunds of this purchase already returned, as positive cents. */
+export async function refundedCents(
+  userId: UserId,
+  db: D1Database,
+  originalId: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      'SELECT COALESCE(-SUM(amount_cents), 0) AS n FROM txn WHERE user_id = ?1 AND refund_of_id = ?2',
+    )
+    .bind(userId, originalId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+export async function setRefundOf(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  originalId: string | null,
+): Promise<void> {
+  await db
+    .prepare('UPDATE txn SET refund_of_id = ?3, updated_at = ?4 WHERE user_id = ?1 AND id = ?2')
+    .bind(userId, id, originalId, nowIso())
+    .run();
 }
