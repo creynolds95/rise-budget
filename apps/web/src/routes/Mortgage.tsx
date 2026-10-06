@@ -15,7 +15,7 @@ import { isDue, levelPayment } from '@rise/shared/debt';
 import { DEFAULT_DEBT_PLAN, aprFromText, aprToText, owedCents } from '../lib/debt';
 import { addMonths, monthName, periodOf } from '../lib/dates';
 import { formatCents } from '../lib/money';
-import { lineSeries, mortgageView } from '../lib/mortgage';
+import { equityOf, homeAccount, lineSeries, mortgageView } from '../lib/mortgage';
 import { useAccounts, useMe, useToday } from '../lib/queries';
 
 const field =
@@ -329,7 +329,7 @@ export function Mortgage() {
     });
   };
   const homeAccounts = live.filter((a) => a.balanceCents > 0 && a.kind !== 'depository');
-  const homeValue = accounts.find((a) => a.id === current.homeValueAccountId);
+  const homeValue = homeAccount(live, current.homeValueAccountId);
   const sheets = (
     <>
       <AccountSheet
@@ -342,7 +342,7 @@ export function Mortgage() {
         open={pickingHome}
         onClose={() => setPickingHome(false)}
         accounts={homeAccounts}
-        selectedId={current.homeValueAccountId}
+        selectedId={homeValue?.id ?? null}
         onPick={(id) => edit({ homeValueAccountId: id })}
       />
       <AddPaymentSheet
@@ -380,7 +380,7 @@ export function Mortgage() {
 
   const lines = lineSeries(view.plan, owed);
   const first = view.plan.rows[0];
-  const equity = homeValue ? homeValue.balanceCents - owed : null;
+  const equity = homeValue ? equityOf(homeValue.balanceCents, owed) : null;
   const labelAt = (m: number) =>
     monthName(addMonths(period, m - (pending ? 1 : 0))).replace(/^(\w{3})\w* /, '$1 ');
   const lastMonth = lines.months.at(-1) ?? 0;
@@ -526,7 +526,17 @@ export function Mortgage() {
               {homeValue ? <MoneyText cents={homeValue.balanceCents} whole /> : 'Choose account'}
             </ValueRow>
             {equity !== null && (
-              <StaticRow label="Equity" value={<MoneyText cents={equity} whole />} />
+              <StaticRow
+                label="Equity"
+                value={
+                  <span className="money">
+                    <MoneyText cents={equity.cents} whole />
+                    {equity.pct !== null && (
+                      <span className="text-ink-muted"> · {equity.pct}%</span>
+                    )}
+                  </span>
+                }
+              />
             )}
           </>
         }

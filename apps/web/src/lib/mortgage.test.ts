@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DebtLoanPlan } from '@rise/shared/schemas';
-import { lineSeries, monthsFrom, mortgageView } from './mortgage';
+import { equityOf, homeAccount, lineSeries, monthsFrom, mortgageView } from './mortgage';
 
 const loan: DebtLoanPlan = {
   accountId: 'm',
@@ -95,5 +95,36 @@ describe('mortgage view', () => {
     expect(s.months.at(-1)).toBe(354);
     expect(s.balance.length).toBeLessThanOrEqual(62);
     expect(lineSeries({ rows: [], payoffMonth: 0, totalInterestCents: 0 }, 0).months).toEqual([0]);
+  });
+});
+
+describe('home equity', () => {
+  const acct = (id: string, name: string, balanceCents = 40_000_000, kind = 'other') => ({
+    id,
+    name,
+    balanceCents,
+    kind,
+  });
+
+  it('uses the picked account, else the one asset named like a home', () => {
+    const list = [
+      acct('a', 'Checking', 100, 'depository'),
+      acct('h', 'Home value'),
+      acct('c', 'Car'),
+    ];
+    expect(homeAccount(list, 'c')?.id).toBe('c');
+    expect(homeAccount(list, null)?.id).toBe('h');
+    expect(homeAccount(list, 'gone')?.id).toBe('h');
+  });
+
+  it('guesses nothing when zero or several accounts look like a home', () => {
+    expect(homeAccount([acct('c', 'Car')], null)).toBeUndefined();
+    expect(homeAccount([acct('h', 'House'), acct('p', 'Rental property')], null)).toBeUndefined();
+    expect(homeAccount([acct('h', 'House', -5)], null)).toBeUndefined();
+  });
+
+  it('equity is value less owed, with its share of the value', () => {
+    expect(equityOf(40_000_000, 33_064_962)).toEqual({ cents: 6_935_038, pct: 17 });
+    expect(equityOf(0, 100)).toEqual({ cents: -100, pct: null });
   });
 });
