@@ -323,9 +323,9 @@ describe('T16 auth middleware + error contract', () => {
       goalAge: 65,
       spendTargetCents: 500_000,
       contributions: [{ accountId: 'acct_1', monthlyCents: 120_000 }],
+      realGrowthBps: 400,
       withdrawalBps: 350,
       volatilityBps: 1500,
-      withdrawalBps: 350,
     };
     await call('PATCH', '/me/settings', { access: u.access, body: { retirement: plan } });
     const res = await call('PATCH', '/me/settings', { access: u.access, body: { appLock: '5m' } });
