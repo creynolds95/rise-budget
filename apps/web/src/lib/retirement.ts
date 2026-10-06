@@ -5,9 +5,9 @@ import {
   projectSeries,
   requiredMonthlyContribution,
   simulateRetirement,
-  successRate,
 } from '@rise/shared/retirement';
 import type { RetirementPlan } from '@rise/shared/schemas';
+import type { FanBand } from '../components/primitives/FanChart';
 
 export const AGE_MIN = 55;
 export const AGE_MAX = 75;
@@ -72,33 +72,20 @@ export function retirementView(
   };
 }
 
-export interface FanView {
-  /** Percentile bands by age, in cents. */
-  fan: { age: number; p10: number; p25: number; p50: number; p75: number; p90: number }[];
-  /** Whole percent of runs that reach the needed balance; null until a goal is set. */
-  successPct: number | null;
-}
-
 /** The Monte Carlo fan for the plan at one retirement age. */
 export function fanView(
   plan: RetirementPlan,
   startCents: number,
   monthlyCents: number,
   atAge: number,
-): FanView {
+): FanBand[] {
   const years = Math.max(0, atAge - plan.currentAge);
-  const { fan, finals } = simulateRetirement({
+  const { fan } = simulateRetirement({
     startCents,
     monthlyContributionCents: monthlyCents,
     years,
     realGrowthBps: plan.realGrowthBps,
     volatilityBps: plan.volatilityBps,
   });
-  return {
-    fan: fan.map(({ year, ...bands }) => ({ age: plan.currentAge + year, ...bands })),
-    successPct:
-      plan.spendTargetCents > 0
-        ? successRate(finals, neededBalanceFor(plan.spendTargetCents, plan.withdrawalBps))
-        : null,
-  };
+  return fan.map(({ year, ...bands }) => ({ age: plan.currentAge + year, ...bands }));
 }

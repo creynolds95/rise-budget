@@ -66,13 +66,13 @@ export function RetirementTile() {
           <p className="type-display">
             <MoneyText cents={view.v.incomeCents} whole />
           </p>
-          {view.f.successPct !== null && (
-            <p className="type-caption text-ink-muted money">
-              {view.f.successPct}% chance of reaching goal
-            </p>
-          )}
           <div className="mt-3">
-            <FanChart label="Range of projected balances" fan={view.f.fan} interactive={false} />
+            <FanChart
+              label="Range of projected balances"
+              fan={view.f}
+              withdrawalBps={plan.withdrawalBps}
+              interactive={false}
+            />
           </div>
         </>
       )}

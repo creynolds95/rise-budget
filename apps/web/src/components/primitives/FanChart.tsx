@@ -1,4 +1,5 @@
 import { useState, type PointerEvent } from 'react';
+import { monthlyIncomeFor } from '@rise/shared/retirement';
 import { color } from '../../design/tokens';
 import { nearestIndex } from '../../lib/chart';
 import { formatCents } from '../../lib/money';
@@ -22,10 +23,13 @@ export interface FanBand {
 export function FanChart({
   label,
   fan,
+  withdrawalBps,
   interactive = true,
 }: {
   label: string;
   fan: FanBand[];
+  /** What each balance supports per month at this withdrawal rate, shown above the balance. */
+  withdrawalBps: number;
   interactive?: boolean;
 }) {
   const [active, setActive] = useState<number | null>(null);
@@ -96,10 +100,22 @@ export function FanChart({
       </div>
       <figcaption aria-live="polite" className="mt-2 type-caption text-ink-muted money">
         <span className="block text-center">Age {shown.age}</span>
-        <span className="mt-1 flex justify-between">
-          <span>Bad market: {formatCents(shown.p10, { whole: true })}</span>
-          <span>Typical: {formatCents(shown.p50, { whole: true })}</span>
-          <span>Good market: {formatCents(shown.p90, { whole: true })}</span>
+        <span className="mt-1 grid grid-cols-3 text-center">
+          {(
+            [
+              ['Bad market', shown.p10],
+              ['Typical', shown.p50],
+              ['Good market', shown.p90],
+            ] as const
+          ).map(([name, balance]) => (
+            <span key={name}>
+              <span className="block">{name}</span>
+              <span className="block type-body font-semibold text-ink">
+                {formatCents(monthlyIncomeFor(balance, withdrawalBps), { whole: true })}/mo
+              </span>
+              <span className="block text-ink-faint">{formatCents(balance, { whole: true })}</span>
+            </span>
+          ))}
         </span>
       </figcaption>
     </figure>

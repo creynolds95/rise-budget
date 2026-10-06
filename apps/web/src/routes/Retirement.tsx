@@ -163,9 +163,13 @@ export function Retirement() {
               <span>Age {shownAge}</span>
               <span>{AGE_MAX}</span>
             </div>
-            {f.fan.length > 1 && (
+            {f.length > 1 && (
               <div className="mt-4">
-                <FanChart label="Range of projected balances" fan={f.fan} />
+                <FanChart
+                  label="Range of projected balances"
+                  fan={f}
+                  withdrawalBps={plan.withdrawalBps}
+                />
               </div>
             )}
           </>
@@ -177,12 +181,6 @@ export function Retirement() {
               label={`At ${shownAge}`}
               value={<MoneyText cents={v.balanceCents} whole />}
             />
-            {f.successPct !== null && (
-              <StaticRow
-                label="Chance of reaching goal"
-                value={<span className="money">{f.successPct}%</span>}
-              />
-            )}
             {v.neededCents !== null && (
               <StaticRow
                 label="Needed for goal"
