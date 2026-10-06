@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PLAN, retirementView, totalMonthly } from './retirement';
+import { DEFAULT_PLAN, fanView, retirementView, totalMonthly } from './retirement';
 
 const plan = { ...DEFAULT_PLAN, currentAge: 30, goalAge: 65, spendTargetCents: 500_000 };
 
@@ -44,5 +44,22 @@ describe('retirement view', () => {
     const v = retirementView(plan, 1_000_000, 50_000, 28);
     expect(v.balanceCents).toBe(1_000_000);
     expect(v.series).toEqual([{ age: 30, balanceCents: 1_000_000 }]);
+  });
+});
+
+describe('fan view', () => {
+  it('bands start at today and success needs a goal', () => {
+    const f = fanView(plan, 10_000_000, 100_000, 65);
+    expect(f.fan[0]).toMatchObject({ age: 30, p10: 10_000_000, p90: 10_000_000 });
+    expect(f.fan.at(-1)!.age).toBe(65);
+    expect(f.successPct).toBeGreaterThanOrEqual(0);
+    expect(f.successPct).toBeLessThanOrEqual(100);
+    expect(
+      fanView({ ...plan, spendTargetCents: 0 }, 10_000_000, 100_000, 65).successPct,
+    ).toBeNull();
+  });
+
+  it('a retirement age before today gives a single point', () => {
+    expect(fanView(plan, 1_000, 0, 20).fan).toHaveLength(1);
   });
 });
