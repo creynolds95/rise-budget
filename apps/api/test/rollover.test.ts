@@ -11,7 +11,7 @@ async function setup() {
   const eat = (await api('POST', '/categories', { groupId: group.id, name: 'Eating out' })).json;
   const rent = (await api('POST', '/categories', { groupId: group.id, name: 'Rent', isBill: true }))
     .json;
-  // Planned amounts need income behind them, or raises hit INSUFFICIENT_POOL.
+  // Income behind the plans, so these months aren't over budget.
   for (const m of ['2026-09', '2026-10', '2026-11', '2026-12'])
     await api('PATCH', `/periods/${m}`, { expectedIncomeCents: 500_000 });
   return { ...u, api, eat, rent };
