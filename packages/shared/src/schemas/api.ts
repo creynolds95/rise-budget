@@ -281,6 +281,9 @@ export const TransactionQuery = z.object({
   to: IsoDate.optional(),
   account: IdList.optional(),
   category: IdList.optional(),
+  /** "Is not": everything except these. */
+  notAccount: IdList.optional(),
+  notCategory: IdList.optional(),
   q: z.string().optional(),
   reviewState: ReviewState.optional(),
   /** `out` is spending (positive), `in` is money arriving (negative). */

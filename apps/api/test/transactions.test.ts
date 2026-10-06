@@ -32,6 +32,29 @@ const spentIn = async (s: Awaited<ReturnType<typeof setup>>, period: string, cat
     (c: { categoryId: string }) => c.categoryId === categoryId,
   ).spentCents;
 
+describe('exclude filters', () => {
+  it('"not category" and "not account" leave out matches, keeping the rest', async () => {
+    const s = await setup();
+    const other = (await s.api('POST', '/accounts', { name: 'Checking', kind: 'checking' })).json;
+    await s.add('2026-09-02', 1000, 'HOME DEPOT', s.home.id);
+    await s.add('2026-09-03', 2000, 'LEGO STORE', s.kids.id);
+    await s.api('POST', '/transactions', {
+      accountId: other.id,
+      postedAt: '2026-09-04',
+      amountCents: 3000,
+      descriptor: 'OTHER ACCT',
+      categoryId: s.home.id,
+    });
+    const amounts = async (qs: string) =>
+      ((await s.api('GET', `/transactions?${qs}`)).json.items as { amountCents: number }[])
+        .map((t) => t.amountCents)
+        .sort();
+    expect(await amounts(`notCategory=${s.home.id}`)).toEqual([2000]);
+    expect(await amounts(`notAccount=${other.id}`)).toEqual([1000, 2000]);
+    expect(await amounts(`notAccount=${other.id}&notCategory=${s.kids.id}`)).toEqual([1000]);
+  });
+});
+
 describe('T21 transactions & splits', () => {
   it('manual entry normalises the merchant; a category with no signal still gets one (H1)', async () => {
     const s = await setup();

@@ -30,6 +30,9 @@ export interface Filters {
   to: string;
   accounts: string[];
   categories: string[];
+  /** The picked accounts/categories are left out instead of kept. */
+  excludeAccounts: boolean;
+  excludeCategories: boolean;
   direction: Direction;
   minCents: number | null;
   maxCents: number | null;
@@ -44,6 +47,8 @@ export const EMPTY: Filters = {
   to: '',
   accounts: [],
   categories: [],
+  excludeAccounts: false,
+  excludeCategories: false,
   direction: 'any',
   minCents: null,
   maxCents: null,
@@ -66,8 +71,12 @@ export function parseFilters(p: URLSearchParams): Filters {
     ),
     from: p.get('from') ?? '',
     to: p.get('to') ?? '',
-    accounts: list(p.get('account')),
-    categories: list(p.get('category')),
+    ...(p.get('notAccount')
+      ? { accounts: list(p.get('notAccount')), excludeAccounts: true }
+      : { accounts: list(p.get('account')), excludeAccounts: false }),
+    ...(p.get('notCategory')
+      ? { categories: list(p.get('notCategory')), excludeCategories: true }
+      : { categories: list(p.get('category')), excludeCategories: false }),
     direction: oneOf(p.get('direction'), ['any', 'out', 'in'] as const, 'any'),
     minCents: cents(p.get('min')),
     maxCents: cents(p.get('max')),
@@ -92,8 +101,9 @@ export function filtersToParams(f: Filters): URLSearchParams {
     if (f.from) p.set('from', f.from);
     if (f.to) p.set('to', f.to);
   } else if (f.range !== 'all') p.set('range', f.range);
-  if (f.accounts.length) p.set('account', f.accounts.join(','));
-  if (f.categories.length) p.set('category', f.categories.join(','));
+  if (f.accounts.length) p.set(f.excludeAccounts ? 'notAccount' : 'account', f.accounts.join(','));
+  if (f.categories.length)
+    p.set(f.excludeCategories ? 'notCategory' : 'category', f.categories.join(','));
   if (f.direction !== 'any') p.set('direction', f.direction);
   if (f.minCents !== null) p.set('min', String(f.minCents));
   if (f.maxCents !== null) p.set('max', String(f.maxCents));
@@ -127,8 +137,9 @@ export function dateBounds(f: Filters, today: string): { from?: string; to?: str
 export function apiQuery(f: Filters, today: string): Record<string, string> {
   const out: Record<string, string> = { ...dateBounds(f, today) };
   if (f.q.trim()) out.q = f.q.trim();
-  if (f.accounts.length) out.account = f.accounts.join(',');
-  if (f.categories.length) out.category = f.categories.join(',');
+  if (f.accounts.length) out[f.excludeAccounts ? 'notAccount' : 'account'] = f.accounts.join(',');
+  if (f.categories.length)
+    out[f.excludeCategories ? 'notCategory' : 'category'] = f.categories.join(',');
   if (f.direction !== 'any') out.direction = f.direction;
   if (f.minCents !== null) out.min = String(f.minCents);
   if (f.maxCents !== null) out.max = String(f.maxCents);
@@ -140,6 +151,8 @@ export function apiQuery(f: Filters, today: string): Record<string, string> {
 export interface Chip {
   key: string;
   label: string;
+  /** An "is not" filter, drawn differently so it can't be mistaken for a plain one. */
+  exclude?: boolean;
   clear: (f: Filters) => Filters;
 }
 
@@ -165,14 +178,16 @@ export function chips(
   if (f.accounts.length)
     out.push({
       key: 'accounts',
-      label: many(f.accounts, names.account),
-      clear: (x) => ({ ...x, accounts: [] }),
+      exclude: f.excludeAccounts,
+      label: `${f.excludeAccounts ? 'Not ' : ''}${many(f.accounts, names.account)}`,
+      clear: (x) => ({ ...x, accounts: [], excludeAccounts: false }),
     });
   if (f.categories.length)
     out.push({
       key: 'categories',
-      label: many(f.categories, names.category),
-      clear: (x) => ({ ...x, categories: [] }),
+      exclude: f.excludeCategories,
+      label: `${f.excludeCategories ? 'Not ' : ''}${many(f.categories, names.category)}`,
+      clear: (x) => ({ ...x, categories: [], excludeCategories: false }),
     });
   if (f.direction !== 'any')
     out.push({

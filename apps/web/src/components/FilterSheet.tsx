@@ -81,12 +81,17 @@ function Inner({
     amount: 'Amount',
     review: 'Review status',
   };
-  const summary = (ids: string[], total: number, name: (id: string) => string | undefined) =>
+  const summary = (
+    ids: string[],
+    total: number,
+    name: (id: string) => string | undefined,
+    exclude: boolean,
+  ) =>
     ids.length === 0
       ? 'All'
-      : ids.length === 1
-        ? (name(ids[0] as string) ?? '1')
-        : `${ids.length} of ${total}`;
+      : `${exclude ? 'Not ' : ''}${
+          ids.length === 1 ? (name(ids[0] as string) ?? '1') : `${ids.length} of ${total}`
+        }`;
 
   return (
     <Sheet
@@ -178,7 +183,9 @@ function Inner({
           <Group title="Filter by">
             <DrillRow
               label="Accounts"
-              value={summary(f.accounts, live.length, (id) => live.find((a) => a.id === id)?.name)}
+              value={summary(f.accounts, live.length, (id) => live.find((a) => a.id === id)?.name,
+                f.excludeAccounts,
+              )}
               onClick={() => setPage('accounts')}
             />
             <DrillRow
@@ -187,6 +194,7 @@ function Inner({
                 f.categories,
                 categories.length,
                 (id) => categories.find((c) => c.id === id)?.name,
+                f.excludeCategories,
               )}
               onClick={() => setPage('categories')}
             />
@@ -220,6 +228,8 @@ function Inner({
             items: live.filter((a) => a.kind === k.kind).map((a) => ({ id: a.id, label: a.name })),
           }))}
           selected={f.accounts}
+          exclude={f.excludeAccounts}
+          onMode={(excludeAccounts) => set({ excludeAccounts })}
           onChange={(accounts) => set({ accounts })}
         />
       )}
@@ -233,6 +243,8 @@ function Inner({
               .map((c) => ({ id: c.id, label: `${c.emoji ? `${c.emoji}  ` : ''}${c.name}` })),
           }))}
           selected={f.categories}
+          exclude={f.excludeCategories}
+          onMode={(excludeCategories) => set({ excludeCategories })}
           onChange={(categories) => set({ categories })}
         />
       )}
@@ -313,10 +325,14 @@ function DrillRow({
 function CheckList({
   groups,
   selected,
+  exclude,
+  onMode,
   onChange,
 }: {
   groups: { title: string; items: { id: string; label: string }[] }[];
   selected: string[];
+  exclude: boolean;
+  onMode: (exclude: boolean) => void;
   onChange: (ids: string[]) => void;
 }) {
   const sel = new Set(selected);
@@ -329,10 +345,20 @@ function CheckList({
   const visible = groups.filter((g) => g.items.length > 0);
   return (
     <>
+      <div className="flex gap-2">
+        <Pill on={!exclude} onClick={() => onMode(false)}>
+          Include
+        </Pill>
+        <Pill on={exclude} onClick={() => onMode(true)}>
+          Exclude
+        </Pill>
+      </div>
       <p className="px-1 type-caption text-ink-muted">
         {selected.length === 0
-          ? 'Showing all. Pick any to narrow it down.'
-          : `${selected.length} selected`}
+          ? exclude
+            ? 'Showing all. Pick any to hide them.'
+            : 'Showing all. Pick any to narrow it down.'
+          : `${selected.length} ${exclude ? 'hidden' : 'selected'}`}
         {selected.length > 0 && (
           <button className="ml-2 font-medium text-sage-700" onClick={() => onChange([])}>
             Clear

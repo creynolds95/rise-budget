@@ -235,7 +235,11 @@ export function Transactions() {
               key={c.key}
               onClick={() => apply(c.clear(filters))}
               aria-label={`Remove filter: ${c.label}`}
-              className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-sage-100 pr-2.5 pl-3.5 type-caption font-medium text-sage-700 active:bg-sage-300"
+              className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-full pr-2.5 pl-3.5 type-caption font-medium ${
+                c.exclude
+                  ? 'bg-surface text-ink ring-1 ring-ink-muted'
+                  : 'bg-sage-100 text-sage-700 active:bg-sage-300'
+              }`}
             >
               {c.label}
               <svg

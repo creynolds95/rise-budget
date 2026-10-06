@@ -91,6 +91,9 @@ export interface TxnFilters {
   to?: string | undefined;
   accountIds?: string[] | undefined;
   categoryIds?: string[] | undefined;
+  /** Everything except these; a transaction with any split in them is left out. */
+  notAccountIds?: string[] | undefined;
+  notCategoryIds?: string[] | undefined;
   q?: string | undefined;
   reviewState?: ReviewState | undefined;
   direction?: 'in' | 'out' | undefined;
@@ -155,6 +158,14 @@ export async function listTransactions(
       `EXISTS (SELECT 1 FROM split s WHERE s.user_id = t.user_id AND s.txn_id = t.id
          AND s.category_id IN (SELECT value FROM json_each(?)))`,
       JSON.stringify(f.categoryIds),
+    );
+  if (f.notAccountIds?.length)
+    add('t.account_id NOT IN (SELECT value FROM json_each(?))', JSON.stringify(f.notAccountIds));
+  if (f.notCategoryIds?.length)
+    add(
+      `NOT EXISTS (SELECT 1 FROM split s WHERE s.user_id = t.user_id AND s.txn_id = t.id
+         AND s.category_id IN (SELECT value FROM json_each(?)))`,
+      JSON.stringify(f.notCategoryIds),
     );
   if (f.q) {
     const like = `%${f.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;

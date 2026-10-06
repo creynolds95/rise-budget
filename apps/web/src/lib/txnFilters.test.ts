@@ -87,6 +87,21 @@ describe('transaction filters', () => {
     expect(chips({ ...EMPTY, range: 'custom' }, names)).toEqual([]);
   });
 
+  it('round-trips "is not" filters through the URL and API query', () => {
+    const f = parseFilters(new URLSearchParams('notCategory=a,b&account=x'));
+    expect(f).toMatchObject({
+      categories: ['a', 'b'],
+      excludeCategories: true,
+      accounts: ['x'],
+      excludeAccounts: false,
+    });
+    expect(filtersToParams(f).toString()).toBe('account=x&notCategory=a%2Cb');
+    expect(apiQuery(f, '2026-09-24')).toEqual({ account: 'x', notCategory: 'a,b' });
+    const c = chips({ ...EMPTY, accounts: ['x', 'y'], excludeAccounts: true }, names);
+    expect(c[0]).toMatchObject({ label: 'Not acct:x +1', exclude: true });
+    expect(c[0]?.clear({ ...EMPTY, accounts: ['x'], excludeAccounts: true })).toEqual(EMPTY);
+  });
+
   it('labels days the way people say them', () => {
     expect(dayLabel('2026-09-24', '2026-09-24')).toBe('Today');
     expect(dayLabel('2026-09-23', '2026-09-24')).toBe('Yesterday');
