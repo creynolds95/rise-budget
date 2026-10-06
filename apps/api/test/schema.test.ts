@@ -50,6 +50,8 @@ const INDEXES = [
   'ix_surplus_suggestion_user',
   // 0016
   'ix_txn_pair',
+  // 0023
+  'ix_txn_refund_of',
 ];
 
 describe('migration 0001', () => {

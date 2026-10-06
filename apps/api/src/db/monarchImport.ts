@@ -327,6 +327,13 @@ export async function undoMonarchBatch(
            (SELECT id FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */ AND import_batch_id = ?2)`,
       )
       .bind(userId, batchId),
+    // A synced refund may point at an imported purchase; FK enforcement would refuse the delete.
+    db
+      .prepare(
+        `UPDATE txn SET refund_of_id = NULL WHERE refund_of_id IS NOT NULL AND user_id = ?1 AND refund_of_id IN
+           (SELECT id FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */ AND import_batch_id = ?2)`,
+      )
+      .bind(userId, batchId),
     db
       .prepare(
         `DELETE FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */ AND import_batch_id = ?2`,
@@ -365,6 +372,11 @@ async function dropImported(
   return [
     db
       .prepare(`DELETE FROM split WHERE user_id = ?1 AND txn_id IN (${picked})`)
+      .bind(userId, ...binds),
+    db
+      .prepare(
+        `UPDATE txn SET refund_of_id = NULL WHERE refund_of_id IS NOT NULL AND user_id = ?1 AND refund_of_id IN (${picked})`,
+      )
       .bind(userId, ...binds),
     db.prepare(`DELETE FROM txn WHERE user_id = ?1 AND id IN (${picked})`).bind(userId, ...binds),
     ...periods.flatMap((p) => refreshAggregateStmts(userId, db, p.id)),
