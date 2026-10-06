@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { refreshAggregateStmts } from '../src/db';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { call, signedInUser } from './helpers/http';
 
 async function setup() {
@@ -54,6 +54,13 @@ const carried = (view: View, id: string) =>
   view.categories.find((c) => c.categoryId === id)?.carriedInCents;
 
 describe('live rollover', () => {
+  // Most cases look back from after the months they test, so every month in them has ended.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-01-15T18:00:00Z'));
+  });
+  afterEach(() => vi.useRealTimers());
+
   it('carries a rollover category both ways from October, and a non-rollover one not at all', async () => {
     const s = await setup();
     await s.api('PATCH', `/categories/${s.rent.id}`, { rolloverPolicy: 'return_to_pool' });
@@ -103,6 +110,20 @@ describe('live rollover', () => {
     await spend(s.userId, s.eat.id, 10_000, '2026-10-28');
     expect(carried((await s.api('GET', '/periods/2026-11')).json, s.eat.id)).toBe(-5_000);
     expect(carried((await s.api('GET', '/periods/2026-12')).json, s.eat.id)).toBe(25_000);
+  });
+
+  it('a month that has not ended rolls nothing forward', async () => {
+    vi.setSystemTime(new Date('2026-11-10T18:00:00Z'));
+    const s = await setup();
+    await s.api('PATCH', `/allocations/2026-10:${s.eat.id}`, { plannedCents: 30_000 });
+    await s.api('PATCH', `/allocations/2026-11:${s.eat.id}`, { plannedCents: 30_000 });
+    await s.api('PATCH', `/allocations/2026-12:${s.eat.id}`, { plannedCents: 30_000 });
+    await spend(s.userId, s.eat.id, 25_000, '2026-10-10');
+    // October has ended: November gets its 5,000. November's unspent plan is not projected,
+    // so December and January show October's carry, unchanged.
+    expect(carried((await s.api('GET', '/periods/2026-11')).json, s.eat.id)).toBe(5_000);
+    expect(carried((await s.api('GET', '/periods/2026-12')).json, s.eat.id)).toBe(5_000);
+    expect(carried((await s.api('GET', '/periods/2027-01')).json, s.eat.id)).toBe(5_000);
   });
 
   it('changing the rollover policy applies to the whole chain', async () => {
