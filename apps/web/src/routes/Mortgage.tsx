@@ -4,6 +4,7 @@ import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { Chart } from '../components/primitives/Chart';
+import { IconButton } from '../components/primitives/Icon';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow, StaticRow, ValueRow } from '../components/primitives/Rows';
@@ -71,6 +72,49 @@ const parseLeft = (t: string): number | null => {
   return t.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 600 ? n : null;
 };
 const showInt = (n: number) => String(n);
+
+/** A wide two-way switch. */
+function Pill<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex w-full gap-1 rounded-full bg-sage-100 p-1"
+    >
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={o.id === value}
+          onClick={() => onChange(o.id)}
+          className={`min-h-11 flex-1 rounded-full type-caption font-medium ${
+            o.id === value ? 'bg-surface text-sage-700 shadow-soft' : 'text-ink-muted'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 150 months as "12 yr 6 mo". */
+const duration = (months: number): string => {
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  return [y > 0 ? `${y} yr` : '', m > 0 ? `${m} mo` : ''].filter(Boolean).join(' ');
+};
 
 function Legend({ color, label }: { color: string; label: string }) {
   return (
@@ -269,6 +313,9 @@ export function Mortgage() {
   const [pickingAccount, setPickingAccount] = useState(false);
   const [pickingHome, setPickingHome] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [graph, setGraph] = useState<'schedule' | 'year'>('schedule');
+  const [tryExtra, setTryExtra] = useState(0);
+  const [managing, setManaging] = useState(false);
   const [addKey, setAddKey] = useState(0);
   const save = useMutation({
     mutationFn: (debt: DebtPlan) => api('PATCH', '/me/settings', { debt }),
@@ -380,6 +427,13 @@ export function Mortgage() {
 
   const lines = lineSeries(view.plan, owed);
   const first = view.plan.rows[0];
+  const tries = [10_000, 25_000, 50_000, 100_000, ...(tryExtra > 0 ? [tryExtra] : [])]
+    .sort((a, b) => a - b)
+    .filter((x, i, all) => all.indexOf(x) === i)
+    .map((extra) => ({
+      extra,
+      view: mortgageView(loan, owed, { ...current, mortgageExtraCents: extra }, period, pending),
+    }));
   const equity = homeValue ? equityOf(homeValue.balanceCents, owed) : null;
   const labelAt = (m: number) =>
     monthName(addMonths(period, m - (pending ? 1 : 0))).replace(/^(\w{3})\w* /, '$1 ');
@@ -388,7 +442,12 @@ export function Mortgage() {
   return (
     <>
       <DetailPage
-        header={header}
+        header={{
+          ...header,
+          action: (
+            <IconButton icon="more" label="Mortgage settings" onClick={() => setManaging(true)} />
+          ),
+        }}
         identity={{
           label: 'Mortgage paid off',
           hero: view.payoffPeriod ? (
@@ -416,99 +475,53 @@ export function Mortgage() {
                 below.
               </p>
             )}
-            {lines.months.length > 2 && (
-              <>
-                <Chart
-                  kind="lines"
-                  label="Balance, principal paid and interest paid over the life of the loan"
-                  slots={lines.balance.length}
-                  xLabels={[labelAt(0), labelAt(Math.round(lastMonth / 2)), labelAt(lastMonth)]}
-                  lines={[
-                    { label: 'Balance', values: lines.balance, color: series[0] },
-                    { label: 'Principal to date', values: lines.principal, color: series[3] },
-                    { label: 'Interest to date', values: lines.interest, color: series[2] },
-                  ]}
-                />
-                <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 type-caption text-ink-muted">
-                  <Legend color={series[0]} label="Balance" />
-                  <Legend color={series[3]} label="Principal to date" />
-                  <Legend color={series[2]} label="Interest to date" />
-                </ul>
-              </>
-            )}
             {view.ytd && (
-              <div className="mt-6 rounded-card bg-surface p-4 shadow-soft">
-                <p className="mb-3 type-label font-semibold text-ink-muted">
-                  {period.slice(0, 4)} so far
-                </p>
+              <div className="mb-4">
+                <Pill
+                  label="Graph"
+                  value={graph}
+                  options={[
+                    { id: 'schedule', label: 'Payoff schedule' },
+                    { id: 'year', label: `${period.slice(0, 4)} so far` },
+                  ]}
+                  onChange={setGraph}
+                />
+              </div>
+            )}
+            {view.ytd && graph === 'year' ? (
+              <div className="rounded-card bg-surface p-4 shadow-soft">
                 <Donut principal={view.ytd.principalCents} interest={view.ytd.interestCents} />
               </div>
+            ) : (
+              lines.months.length > 2 && (
+                <>
+                  <Chart
+                    kind="lines"
+                    label="Balance, principal paid and interest paid over the life of the loan"
+                    slots={lines.balance.length}
+                    xLabels={[labelAt(0), labelAt(Math.round(lastMonth / 2)), labelAt(lastMonth)]}
+                    lines={[
+                      { label: 'Balance', values: lines.balance, color: series[0] },
+                      { label: 'Principal to date', values: lines.principal, color: series[3] },
+                      { label: 'Interest to date', values: lines.interest, color: series[2] },
+                    ]}
+                  />
+                  <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 type-caption text-ink-muted">
+                    <Legend color={series[0]} label="Balance" />
+                    <Legend color={series[3]} label="Principal to date" />
+                    <Legend color={series[2]} label="Interest to date" />
+                  </ul>
+                </>
+              )
             )}
           </>
         }
         facts={
           <>
-            <EditRow
-              label="Rate"
-              field={
-                <NumberBox
-                  label="Rate"
-                  value={loan.aprMilliPct}
-                  parse={aprFromText}
-                  show={aprToText}
-                  suffix="%"
-                  onCommit={(n) => editLoan({ aprMilliPct: n })}
-                />
-              }
-            />
-            <EditRow
-              label="Monthly payment"
-              field={
-                <MoneyField
-                  label="Monthly payment"
-                  cents={view.paymentCents}
-                  onCommit={(c) => editLoan({ paymentCents: c })}
-                />
-              }
-            />
-            <EditRow
+            <StaticRow label="Monthly payment" value={<MoneyText cents={view.paymentCents} />} />
+            <StaticRow
               label="Payments left"
-              field={
-                <NumberBox
-                  label="Payments left"
-                  value={view.base.payoffMonth ?? 0}
-                  parse={parseLeft}
-                  show={showInt}
-                  width="w-12"
-                  onCommit={(n) =>
-                    editLoan({ paymentCents: levelPayment(owed, loan.aprMilliPct, n) })
-                  }
-                />
-              }
-            />
-            <EditRow
-              label="Term"
-              field={
-                <NumberBox
-                  label="Term in months"
-                  value={current.mortgageTermMonths}
-                  parse={parseInt1}
-                  show={showInt}
-                  suffix="mo"
-                  width="w-12"
-                  onCommit={(n) => edit({ mortgageTermMonths: n })}
-                />
-              }
-            />
-            <EditRow
-              label="Extra per month"
-              field={
-                <MoneyField
-                  label="Extra per month"
-                  cents={current.mortgageExtraCents}
-                  onCommit={(c) => edit({ mortgageExtraCents: c })}
-                />
-              }
+              value={<span className="money">{view.base.payoffMonth ?? '—'}</span>}
             />
             {view.monthsSooner !== null && view.interestSavedCents !== null && (
               <>
@@ -522,9 +535,12 @@ export function Mortgage() {
                 />
               </>
             )}
-            <ValueRow label="Home value" onClick={() => setPickingHome(true)} muted={!homeValue}>
-              {homeValue ? <MoneyText cents={homeValue.balanceCents} whole /> : 'Choose account'}
-            </ValueRow>
+            {homeValue && (
+              <StaticRow
+                label="Home value"
+                value={<MoneyText cents={homeValue.balanceCents} whole />}
+              />
+            )}
             {equity !== null && (
               <StaticRow
                 label="Equity"
@@ -540,50 +556,160 @@ export function Mortgage() {
             )}
           </>
         }
-        related={{
-          title: 'One-time payments',
-          children: (
-            <div>
-              {current.mortgageLumps.map((l, i) => (
-                <div
-                  key={`${l.period}-${i}`}
-                  className="flex min-h-12 items-center justify-between gap-3 border-b border-hairline py-2"
-                >
-                  <span>
-                    {monthName(l.period)} · <MoneyText cents={l.cents} whole />
-                  </span>
+        related={[
+          {
+            title: 'Pay extra per month',
+            children: (
+              <div>
+                <EditRow
+                  label="Try an amount"
+                  field={
+                    <MoneyField label="Try an amount" cents={tryExtra} onCommit={setTryExtra} />
+                  }
+                />
+                {tries.map((t) => (
+                  <StaticRow
+                    key={t.extra}
+                    label={`+${formatCents(t.extra, { whole: true })}/mo`}
+                    value={
+                      <span className="money">
+                        {t.view.payoffPeriod ? monthName(t.view.payoffPeriod) : '—'}
+                        <span className="block type-caption text-ink-muted">
+                          {t.view.monthsSooner !== null && t.view.interestSavedCents !== null
+                            ? `${duration(t.view.monthsSooner)} sooner · saves ${formatCents(t.view.interestSavedCents, { whole: true })}`
+                            : 'No change'}
+                        </span>
+                      </span>
+                    }
+                  />
+                ))}
+              </div>
+            ),
+          },
+          {
+            title: 'One-time payments',
+            children: (
+              <div>
+                {current.mortgageLumps.map((l, i) => (
+                  <div
+                    key={`${l.period}-${i}`}
+                    className="flex min-h-12 items-center justify-between gap-3 border-b border-hairline py-2"
+                  >
+                    <span>
+                      {monthName(l.period)} · <MoneyText cents={l.cents} whole />
+                    </span>
+                    <Button
+                      variant="quiet"
+                      onClick={() =>
+                        edit({ mortgageLumps: current.mortgageLumps.filter((_, j) => j !== i) })
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+                <div className="py-3">
                   <Button
                     variant="quiet"
-                    onClick={() =>
-                      edit({ mortgageLumps: current.mortgageLumps.filter((_, j) => j !== i) })
-                    }
+                    onClick={() => {
+                      setAddKey((k) => k + 1);
+                      setAdding(true);
+                    }}
                   >
-                    Remove
+                    Add a one-time payment
                   </Button>
                 </div>
-              ))}
-              <div className="py-3">
-                <Button
-                  variant="quiet"
-                  onClick={() => {
-                    setAddKey((k) => k + 1);
-                    setAdding(true);
-                  }}
-                >
-                  Add a one-time payment
-                </Button>
               </div>
-            </div>
-          ),
-        }}
-        manage={
-          <div className="py-3">
-            <Button variant="quiet" onClick={() => setPickingAccount(true)}>
-              Change account
-            </Button>
-          </div>
-        }
+            ),
+          },
+        ]}
       />
+      {sheets}
+      <Sheet open={managing} title="Mortgage settings" onClose={() => setManaging(false)}>
+        <div className="overflow-hidden rounded-card bg-surface px-4">
+          <EditRow
+            label="Rate"
+            field={
+              <NumberBox
+                label="Rate"
+                value={loan.aprMilliPct}
+                parse={aprFromText}
+                show={aprToText}
+                suffix="%"
+                onCommit={(n) => editLoan({ aprMilliPct: n })}
+              />
+            }
+          />
+          <EditRow
+            label="Monthly payment"
+            field={
+              <MoneyField
+                label="Monthly payment"
+                cents={view.paymentCents}
+                onCommit={(c) => editLoan({ paymentCents: c })}
+              />
+            }
+          />
+          <EditRow
+            label="Payments left"
+            field={
+              <NumberBox
+                label="Payments left"
+                value={view.base.payoffMonth ?? 0}
+                parse={parseLeft}
+                show={showInt}
+                width="w-12"
+                onCommit={(n) =>
+                  editLoan({ paymentCents: levelPayment(owed, loan.aprMilliPct, n) })
+                }
+              />
+            }
+          />
+          <EditRow
+            label="Term"
+            field={
+              <NumberBox
+                label="Term in months"
+                value={current.mortgageTermMonths}
+                parse={parseInt1}
+                show={showInt}
+                suffix="mo"
+                width="w-12"
+                onCommit={(n) => edit({ mortgageTermMonths: n })}
+              />
+            }
+          />
+          <EditRow
+            label="Extra per month"
+            field={
+              <MoneyField
+                label="Extra per month"
+                cents={current.mortgageExtraCents}
+                onCommit={(c) => edit({ mortgageExtraCents: c })}
+              />
+            }
+          />
+          <ValueRow
+            label="Home value"
+            onClick={() => {
+              setManaging(false);
+              setPickingHome(true);
+            }}
+            muted={!homeValue}
+          >
+            {homeValue ? <MoneyText cents={homeValue.balanceCents} whole /> : 'Choose account'}
+          </ValueRow>
+          <ValueRow
+            label="Account"
+            onClick={() => {
+              setManaging(false);
+              setPickingAccount(true);
+            }}
+          >
+            {account.name}
+          </ValueRow>
+        </div>
+      </Sheet>
       {sheets}
     </>
   );
