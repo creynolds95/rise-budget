@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { linkTransferStmts, upsertManualEventStmt, upsertManualRuleStmt } from '../src/db';
 import { buildCashToPaydayProjection } from '../src/lib/cashToPayday';
 import { refreshRecurring } from '../src/lib/recurring';
@@ -515,6 +515,12 @@ describe('Surplus never drops a schedule whose date has passed', () => {
 
 describe('a paycheck that changes from a date on (Caleb, 2026-10-05: 401k from Nov 5)', () => {
   it('projects the old amount before the date, the new one from it, then folds it in', async () => {
+    // The routes advance schedules by the real date; pin it to the day the test is written for.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-04T18:00:00Z'));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const s = await setup();
     const { id } = (
       await s.api('POST', '/cash-to-payday/manual-events', {
