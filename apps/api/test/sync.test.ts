@@ -98,19 +98,19 @@ describe('T27 SimpleFIN sync', () => {
     expect(Object.keys(by).sort()).toEqual([
       'Apple Card',
       'Apple Savings',
-      'Chase Credit',
       'Citi Credit',
-      'USAA Checking',
-      'USAA Credit',
-      'USAA Savings',
+      'Metro Credit',
+      'Summit Checking',
+      'Summit Credit',
+      'Summit Savings',
     ]);
-    expect(by['USAA Checking']).toMatchObject({
+    expect(by['Summit Checking']).toMatchObject({
       kind: 'depository',
       includeInBudget: true,
       syncCadenceHours: 24,
     });
-    expect(by['USAA Savings']).toMatchObject({ kind: 'depository', includeInBudget: false });
-    expect(by['Chase Credit']).toMatchObject({ kind: 'credit', includeInBudget: true });
+    expect(by['Summit Savings']).toMatchObject({ kind: 'depository', includeInBudget: false });
+    expect(by['Metro Credit']).toMatchObject({ kind: 'credit', includeInBudget: true });
     expect(by['Apple Card']).toMatchObject({ kind: 'credit', syncCadenceHours: 720 });
     expect(by['Apple Savings']).toMatchObject({
       kind: 'depository',
@@ -229,7 +229,7 @@ describe('T27 SimpleFIN sync', () => {
       desc: 'QT 0412 OUTSIDE TULSA OK',
       pending: true,
     };
-    await runSync(env.DB, s.userId, fake([{ id: 'card', name: 'USAA Credit', txns: [hold] }]), {
+    await runSync(env.DB, s.userId, fake([{ id: 'card', name: 'Summit Credit', txns: [hold] }]), {
       now: at('2026-09-18T20:00:00Z'),
     });
     const [row] = await s.txns();
@@ -250,7 +250,7 @@ describe('T27 SimpleFIN sync', () => {
     const r = await runSync(
       env.DB,
       s.userId,
-      fake([{ id: 'card', name: 'USAA Credit', txns: [posted] }]),
+      fake([{ id: 'card', name: 'Summit Credit', txns: [posted] }]),
       {
         now: at('2026-09-20T20:00:00Z'),
       },
@@ -272,7 +272,7 @@ describe('T27 SimpleFIN sync', () => {
 
   it('a multi-split pending row: the last split absorbs the drift', async () => {
     const s = await setup();
-    const src = (t: FakeTxn) => fake([{ id: 'card', name: 'Chase Credit', txns: [t] }]);
+    const src = (t: FakeTxn) => fake([{ id: 'card', name: 'Metro Credit', txns: [t] }]);
     await runSync(
       env.DB,
       s.userId,
@@ -326,7 +326,7 @@ describe('T27 SimpleFIN sync', () => {
   it('a posted row landing in a past month changes that month and nothing needs confirming (edge 5 via sync)', async () => {
     const s = await setup();
     const card = (t: FakeTxn) =>
-      fake([{ id: 'card', name: 'Chase Credit', txns: [t], reported: '2026-09-02' }]);
+      fake([{ id: 'card', name: 'Metro Credit', txns: [t], reported: '2026-09-02' }]);
     await runSync(
       env.DB,
       s.userId,
@@ -359,7 +359,7 @@ describe('T27 SimpleFIN sync', () => {
       fake([
         {
           id: 'good',
-          name: 'USAA Checking',
+          name: 'Summit Checking',
           txns: [{ id: 'g1', date: '2026-09-10', cents: 1_000, desc: 'KROGER' }],
         },
         { id: 'bad', name: 'Points Card', currency: 'https://example.com/points', txns: [] },
@@ -404,9 +404,9 @@ describe('T27 SimpleFIN sync', () => {
     const r = await runSync(
       env.DB,
       s.userId,
-      fake([{ id: 'a', name: 'USAA Checking', txns: [] }], ['USAA needs attention']),
+      fake([{ id: 'a', name: 'Summit Checking', txns: [] }], ['Summit needs attention']),
     );
-    expect(r).toMatchObject({ status: 'partial', errors: [{ message: 'USAA needs attention' }] });
+    expect(r).toMatchObject({ status: 'partial', errors: [{ message: 'Summit needs attention' }] });
   });
 
   it('balances land as sync snapshots dated by the bank; last_synced_at is when the bank reported', async () => {
@@ -444,7 +444,7 @@ describe('T27 SimpleFIN sync', () => {
     const src = fake([
       {
         id: 'a',
-        name: 'USAA Checking',
+        name: 'Summit Checking',
         txns: [{ id: 't', date: '2026-09-05', cents: 100, desc: 'X' }],
       },
     ]);
@@ -473,7 +473,7 @@ describe('T27 SimpleFIN sync', () => {
       fake([
         {
           id: 'a',
-          name: 'Chase Credit',
+          name: 'Metro Credit',
           txns: [{ id: 't', date: '2026-09-05', cents: 4_210, desc: 'KROGER #512 TULSA OK' }],
         },
       ]),
@@ -525,16 +525,16 @@ describe('T29 transfers', () => {
     fake([
       {
         id: 'chk',
-        name: 'USAA Checking',
+        name: 'Summit Checking',
         balance: 100_000,
         txns: [
-          { id: 'c1', date: '2026-09-03', cents: 84_500, desc: 'CHASE CREDIT CRD AUTOPAY' },
-          { id: 'c2', date: '2026-09-15', cents: 20_000, desc: 'USAA FUNDS TRANSFER DB' },
+          { id: 'c1', date: '2026-09-03', cents: 84_500, desc: 'METRO CREDIT CRD AUTOPAY' },
+          { id: 'c2', date: '2026-09-15', cents: 20_000, desc: 'SUMMIT FUNDS TRANSFER DB' },
         ],
       },
       {
         id: 'card',
-        name: 'Chase Credit',
+        name: 'Metro Credit',
         balance: -5_000,
         txns: [
           { id: 'k1', date: '2026-09-03', cents: -84_500, desc: 'AUTOMATIC PAYMENT - THANK YOU' },
@@ -544,9 +544,9 @@ describe('T29 transfers', () => {
       },
       {
         id: 'sav',
-        name: 'USAA Savings',
+        name: 'Summit Savings',
         balance: 800_000,
-        txns: [{ id: 's1', date: '2026-09-15', cents: -20_000, desc: 'USAA FUNDS TRANSFER CR' }],
+        txns: [{ id: 's1', date: '2026-09-15', cents: -20_000, desc: 'SUMMIT FUNDS TRANSFER CR' }],
       },
     ]);
 
@@ -576,8 +576,8 @@ describe('T29 transfers', () => {
     const checking = fake([
       {
         id: 'chk',
-        name: 'USAA Checking',
-        txns: [{ id: 'c1', date: '2026-09-03', cents: 84_500, desc: 'CHASE CREDIT CRD AUTOPAY' }],
+        name: 'Summit Checking',
+        txns: [{ id: 'c1', date: '2026-09-03', cents: 84_500, desc: 'METRO CREDIT CRD AUTOPAY' }],
       },
     ]);
     await runSync(env.DB, s.userId, checking, { now: at('2026-09-03T20:00:00Z') });
@@ -747,7 +747,7 @@ describe('sync plumbing', () => {
   it('routes: not connected → 409; status reports mode and runs', async () => {
     const s = await setup();
     expect((await s.api('POST', '/sync/run', {})).status).toBe(409);
-    await runSync(env.DB, s.userId, fake([{ id: 'a', name: 'USAA Checking', txns: [] }]));
+    await runSync(env.DB, s.userId, fake([{ id: 'a', name: 'Summit Checking', txns: [] }]));
     const st = await s.api('GET', '/sync/status');
     expect(st.json.mode).toBe('off');
     expect(st.json.runs[0]).toMatchObject({ status: 'ok', accountsTouched: 1, errors: [] });
@@ -774,7 +774,7 @@ describe('lone transfer legs', () => {
     const checking = fake([
       {
         id: 'chk',
-        name: 'USAA Checking',
+        name: 'Summit Checking',
         txns: [{ id: 'c1', date: '2026-09-03', cents: 29_005, desc: 'APPLECARD GSBANK PAYMENT' }],
       },
     ]);

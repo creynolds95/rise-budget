@@ -236,7 +236,7 @@ describe('T46 export', () => {
     const s = await setup();
     const other = (await s.api('POST', '/category-groups', { name: 'Home', kind: 'expense' })).json;
     const rent = (await s.api('POST', '/categories', { groupId: other.id, name: 'Rent' })).json;
-    const joint = (await s.api('POST', '/accounts', { name: 'Chase, Joint', kind: 'depository' }))
+    const joint = (await s.api('POST', '/accounts', { name: 'Metro, Joint', kind: 'depository' }))
       .json;
     const t = (
       await s.api('POST', '/transactions', {
@@ -261,7 +261,7 @@ describe('T46 export', () => {
     expect(rows).toHaveLength(2);
     for (const row of rows) {
       expect(row).toMatch(
-        /^2026-09-20,"Chase, Joint","[^"]*","(Rent|Groceries)",-45\.00,Posted,"half is roommate's ""share""","LANDLORD LLC"$/,
+        /^2026-09-20,"Metro, Joint","[^"]*","(Rent|Groceries)",-45\.00,Posted,"half is roommate's ""share""","LANDLORD LLC"$/,
       );
     }
     expect(rows.some((r) => r.includes('"Rent"'))).toBe(true);

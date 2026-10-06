@@ -15,16 +15,16 @@ const DAY = 86_400;
 const EPOCH_DAY = Date.UTC(2026, 6, 1) / 1000 / DAY; // balances accumulate from 2026-07-01
 
 type AccountKey =
-  'checking' | 'savings' | 'usaaCredit' | 'chase' | 'citi' | 'appleCard' | 'appleSavings';
+  'checking' | 'savings' | 'usaaCredit' | 'metro' | 'citi' | 'appleCard' | 'appleSavings';
 
 const ACCOUNTS: Record<
   AccountKey,
   { id: string; org: string; name: string; base: number; monthly?: true }
 > = {
-  checking: { id: 'mock-usaa-checking', org: 'USAA', name: 'USAA Checking', base: 320_000 },
-  savings: { id: 'mock-usaa-savings', org: 'USAA', name: 'USAA Savings', base: 800_000 },
-  usaaCredit: { id: 'mock-usaa-credit', org: 'USAA', name: 'USAA Credit', base: -41_250 },
-  chase: { id: 'mock-chase-credit', org: 'Chase', name: 'Chase Credit', base: -58_310 },
+  checking: { id: 'mock-usaa-checking', org: 'Summit', name: 'Summit Checking', base: 320_000 },
+  savings: { id: 'mock-usaa-savings', org: 'Summit', name: 'Summit Savings', base: 800_000 },
+  usaaCredit: { id: 'mock-usaa-credit', org: 'Summit', name: 'Summit Credit', base: -41_250 },
+  metro: { id: 'mock-metro-credit', org: 'Metro', name: 'Metro Credit', base: -58_310 },
   citi: { id: 'mock-citi-credit', org: 'Citi', name: 'Citi Credit', base: -23_975 },
   appleCard: {
     id: 'mock-apple-card',
@@ -89,9 +89,9 @@ function eventsOn(day: number): Event[] {
   }
   if (dom === 3)
     payment(
-      'chase',
-      'chase-pay',
-      'CHASE CREDIT CRD AUTOPAY PPD ID: 0000000000',
+      'metro',
+      'metro-pay',
+      'METRO CREDIT CRD AUTOPAY PPD ID: 0000000000',
       'AUTOMATIC PAYMENT - THANK YOU',
     );
   if (dom === 8)
@@ -105,12 +105,12 @@ function eventsOn(day: number): Event[] {
     payment(
       'usaaCredit',
       'usaa-pay',
-      'USAA CREDIT CARD PAYMENT',
-      'USAA CREDIT CARD PAYMENT RECEIVED',
+      'SUMMIT CREDIT CARD PAYMENT',
+      'SUMMIT CREDIT CARD PAYMENT RECEIVED',
     );
   if (dom === 15) {
-    add('checking', 'save-out', -20_000, 'USAA FUNDS TRANSFER DB');
-    add('savings', 'save-in', 20_000, 'USAA FUNDS TRANSFER CR');
+    add('checking', 'save-out', -20_000, 'SUMMIT FUNDS TRANSFER DB');
+    add('savings', 'save-in', 20_000, 'SUMMIT FUNDS TRANSFER CR');
   }
   if (dom === 20)
     payment(
@@ -120,7 +120,7 @@ function eventsOn(day: number): Event[] {
       'ACH Deposit Internet transfer from account ending in 4411',
     );
   if (dom === 5) add('appleCard', 'icloud', -299, 'APPLE.COM/BILL 866-712-7753 CA');
-  if (dom === 7) add('chase', 'netflix', -1_549, 'NETFLIX.COM LOS GATOS CA');
+  if (dom === 7) add('metro', 'netflix', -1_549, 'NETFLIX.COM LOS GATOS CA');
   if (dom === 11) add('citi', 'spotify', -1_199, 'SPOTIFY USA 877-7781161 NY');
   if (dom === 18) add('usaaCredit', 'prime', -1_499, 'Amazon Prime*2K4LM81Q3');
   if (dom === 22)
@@ -128,7 +128,7 @@ function eventsOn(day: number): Event[] {
 
   if (h('groc') % 3 === 0)
     add(
-      'chase',
+      'metro',
       'groc',
       -between(h('groc-amt'), 2_500, 16_000),
       pick(h('groc-m'), [

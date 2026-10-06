@@ -41,6 +41,10 @@ real acceptance bar.
 - If the SPEC is ambiguous, say so and pick the more conservative reading — the one that
   asks the user rather than guessing about their money.
 - Do not add dependencies without a reason that survives the 10 ms CPU budget.
+- This repo is public. Never put the owner's name, a real person's name, real bank or account
+  details, amounts from the owner's budget, or any deployment value (domain, database id,
+  secrets) in code, comments, tests, docs or commit messages. Say "the owner", and use made-up
+  names and numbers in fixtures. Deployment values live in GitHub secrets; see `docs/SETUP.md`.
 
 ## Kanban
 

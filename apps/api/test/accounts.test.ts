@@ -256,7 +256,7 @@ describe('T17 accounts & snapshots', () => {
     const id = crypto.randomUUID();
     await env.DB.prepare(
       `INSERT INTO account (id, user_id, name, kind, source, balance_cents, include_in_net_worth,
-         include_in_budget, created_at) VALUES (?1, ?2, 'Chase', 'credit', 'simplefin', 0, 1, 1, ?3)`,
+         include_in_budget, created_at) VALUES (?1, ?2, 'Metro', 'credit', 'simplefin', 0, 1, 1, ?3)`,
     )
       .bind(id, u.userId, new Date().toISOString())
       .run();

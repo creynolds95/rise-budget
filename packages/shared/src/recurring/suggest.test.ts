@@ -124,12 +124,12 @@ describe('cashMovements', () => {
   it('a savings transfer from checking forms a suggestion once savings is not cash', () => {
     const saving = ['2026-07-15', '2026-08-15', '2026-09-15'].map((d) => t(d, 25_000, 'usaa-sav'));
     const out = surplusSuggestions(
-      cashMovements(new Map([['USAA FUNDS TRANSFER', saving]]), new Set(['chk']), cards),
+      cashMovements(new Map([['SUMMIT FUNDS TRANSFER', saving]]), new Set(['chk']), cards),
       new Set(['chk']),
       new Set(),
       '2026-09-20',
     );
-    expect(out.map((x) => x.merchant)).toEqual(['USAA FUNDS TRANSFER']);
+    expect(out.map((x) => x.merchant)).toEqual(['SUMMIT FUNDS TRANSFER']);
   });
 });
 
