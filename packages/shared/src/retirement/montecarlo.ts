@@ -1,11 +1,15 @@
 /**
  * Monte Carlo over the retirement projection. Pure and deterministic: a seeded RNG, so the
  * same inputs always give the same fan. Integer cents, real dollars, rates in basis points.
- * Monthly returns are normal with the real growth as the mean and the volatility scaled
- * from annual; a month can't lose more than everything.
+ * Each month the balance takes the plain projection's step, then a lognormal shock
+ * exp(sd·z) whose median is 1: "Growth after inflation" is the typical (compound) rate, so
+ * the median path tracks the straight-line projection instead of falling under it by the
+ * volatility drag. A month can't lose more than everything.
  */
 
-export const MC_RUNS = 1000;
+import { monthlyStep } from './project';
+
+export const MC_RUNS = 5000;
 export const MC_SEED = 20_261_006;
 export const MC_PERCENTILES = [10, 25, 50, 75, 90] as const;
 
@@ -61,7 +65,6 @@ export function simulateRetirement(opts: {
   const { startCents, monthlyContributionCents, years, realGrowthBps, volatilityBps } = opts;
   const runs = opts.runs ?? MC_RUNS;
   const rand = seededRandom(opts.seed ?? MC_SEED);
-  const mean = realGrowthBps / 10_000 / 12;
   const sd = volatilityBps / 10_000 / Math.sqrt(12);
   const byYear: number[][] = Array.from({ length: years + 1 }, () => []);
   const record = (y: number, balance: number) => (byYear[y] as number[]).push(balance);
@@ -70,8 +73,9 @@ export function simulateRetirement(opts: {
     record(0, balance);
     for (let y = 1; y <= years; y++) {
       for (let m = 0; m < 12; m++) {
-        const ret = Math.max(-1, mean + sd * gaussian(rand));
-        balance = Math.round(balance * (1 + ret)) + monthlyContributionCents;
+        balance =
+          Math.round(monthlyStep(balance, realGrowthBps) * Math.exp(sd * gaussian(rand))) +
+          monthlyContributionCents;
       }
       record(y, balance);
     }

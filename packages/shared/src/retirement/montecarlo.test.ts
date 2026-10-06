@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { projectBalance } from './project';
-import { percentile, seededRandom, simulateRetirement, successRate } from './montecarlo';
+import { MC_RUNS, percentile, seededRandom, simulateRetirement, successRate } from './montecarlo';
 
 const base = {
   startCents: 10_000_000,
@@ -76,8 +76,14 @@ describe('simulateRetirement', () => {
       expect(p.p50).toBeLessThanOrEqual(p.p75);
       expect(p.p75).toBeLessThanOrEqual(p.p90);
     }
-    expect(finals).toHaveLength(1000);
+    expect(finals).toHaveLength(MC_RUNS);
     expect(fan[30]?.p90).toBeGreaterThan(fan[30]?.p10 ?? 0);
+  });
+
+  it('the median tracks the straight-line projection instead of sagging under it', () => {
+    const straight = projectBalance(base.startCents, base.monthlyContributionCents, 30, 400);
+    const median = simulateRetirement(base).fan[30]?.p50 ?? 0;
+    expect(Math.abs(median / straight - 1)).toBeLessThan(0.05);
   });
 
   it('more volatility widens the fan', () => {
