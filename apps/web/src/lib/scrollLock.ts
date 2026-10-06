@@ -1,40 +1,46 @@
 /**
- * Freezes the page under a sheet or menu. `overflow: hidden` on <body> alone doesn't stop
- * iOS Safari (or an installed PWA) from scrolling the page behind, so the body is pinned in
- * place with `position: fixed` at the current offset and put back where it was on release.
- * Counted, so a sheet opened from inside another sheet doesn't unlock the page early.
+ * Freezes the page under a sheet or menu without moving anything. The body is NOT pinned with
+ * `position: fixed`: on an installed iPhone PWA that re-lays-out the page and the viewport
+ * comes back short, lifting the tab bar and the menu off the bottom of the screen. Instead
+ * `overflow: hidden` goes on <html> and <body>, and touch moves that would scroll the page
+ * (anything not inside an element that can scroll itself) are cancelled, which is what stops
+ * iOS from dragging the page behind. Counted, so a sheet opened from inside another sheet
+ * doesn't unlock the page early.
  */
 let locks = 0;
-let saved: { y: number; style: string; path: string } | null = null;
+let saved: { html: string; body: string } | null = null;
 
 export const isScrollLocked = () => locks > 0;
 
+/** True when a touch starting at `el` would scroll that element or an ancestor instead of the page. */
+function scrollsItself(el: EventTarget | null): boolean {
+  for (let n = el as HTMLElement | null; n && n !== document.body; n = n.parentElement) {
+    const oy = getComputedStyle(n).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return true;
+  }
+  return false;
+}
+
+const onTouchMove = (e: TouchEvent) => {
+  if (e.touches.length === 1 && !scrollsItself(e.target) && e.cancelable) e.preventDefault();
+};
+
 export function lockScroll(): () => void {
   if (locks++ === 0) {
-    const body = document.body;
-    const y = window.scrollY;
-    saved = { y, style: body.getAttribute('style') ?? '', path: location.pathname };
-    Object.assign(body.style, {
-      position: 'fixed',
-      top: `-${y}px`,
-      // `top` shifts the box up by y; without this its 100dvh min-height ends y short of the
-      // screen bottom, lifting the sticky tab bar by the scroll offset.
-      minHeight: `calc(100dvh + ${y}px)`,
-      left: '0',
-      right: '0',
-      width: '100%',
-    });
+    const { documentElement: html, body } = document;
+    saved = { html: html.style.overflow, body: body.style.overflow };
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
   }
   let released = false;
   return () => {
     if (released) return;
     released = true;
     if (--locks > 0 || !saved) return;
-    const { y, style, path } = saved;
+    document.removeEventListener('touchmove', onTouchMove);
+    document.documentElement.style.overflow = saved.html;
+    document.body.style.overflow = saved.body;
     saved = null;
-    if (style) document.body.setAttribute('style', style);
-    else document.body.removeAttribute('style');
-    // Choosing a menu item lands on a new page, which keeps its own scroll position.
-    if (location.pathname === path) window.scrollTo(0, y);
   };
 }
