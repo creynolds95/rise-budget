@@ -35,7 +35,7 @@ export function SpendingSection(props: {
 
   return (
     <>
-      <section className="mt-10" aria-labelledby="spending-h">
+      <section aria-labelledby="spending-h">
         <h2 id="spending-h" className="type-title">
           Spending
         </h2>

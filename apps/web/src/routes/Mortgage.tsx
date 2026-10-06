@@ -116,7 +116,7 @@ const duration = (months: number): string => {
   return [y > 0 ? `${y} yr` : '', m > 0 ? `${m} mo` : ''].filter(Boolean).join(' ');
 };
 
-function Legend({ color, label }: { color: string; label: string }) {
+export function Legend({ color, label }: { color: string; label: string }) {
   return (
     <li className="flex items-center gap-2">
       <span aria-hidden className="h-0.5 w-4 rounded-full" style={{ background: color }} />
@@ -126,7 +126,7 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 /** Interest against principal in a ring; the share on each side, the dollars beneath. */
-function Donut({ principal, interest }: { principal: number; interest: number }) {
+export function Donut({ principal, interest }: { principal: number; interest: number }) {
   const total = principal + interest;
   const r = 40;
   const c = 2 * Math.PI * r;
