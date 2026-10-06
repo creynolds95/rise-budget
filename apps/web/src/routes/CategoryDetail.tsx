@@ -186,11 +186,11 @@ function CategoryDetailBody({
             <>
               {list.length === 0 && <p className="py-3 text-ink-muted">Nothing filed here yet.</p>}
               {list.slice(0, 5).map((t) => (
-                <TxnRow key={t.id} t={t} from={`${cat.name}|/budget/${categoryId}`} />
+                <TxnRow key={t.id} t={t} from={`${cat.name}|/budget/${categoryId}?m=${month}`} />
               ))}
               {list.length > 5 && (
                 <NavRow
-                  to={`/transactions?category=${categoryId}`}
+                  to={`/transactions?category=${categoryId}&from=${month}-01&to=${monthEnd(month)}`}
                   label={`All ${list.length}${txns.hasNextPage ? '+' : ''} transactions`}
                 />
               )}
