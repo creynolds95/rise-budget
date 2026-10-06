@@ -78,6 +78,8 @@ describe('schemas', () => {
     expect(plan.loans).toEqual([]);
     expect(plan.extraCents).toBe(0);
     expect(plan.mortgageExtraCents).toBe(0);
+    expect(plan.mortgageLumps).toEqual([]);
+    expect(plan.mortgageTermMonths).toBe(360);
     expect(plan.homeValueAccountId).toBeNull();
   });
 
