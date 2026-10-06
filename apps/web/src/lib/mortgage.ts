@@ -101,3 +101,26 @@ export function lineSeries(a: Amortization, balanceCents: number) {
     months: [0, ...idx.map((i) => i + 1)],
   };
 }
+
+const HOME = /\b(home|house|property|real estate|residence)\b/i;
+
+/** The home's value account: the one picked, else the only asset account named like a home. */
+export function homeAccount<
+  T extends { id: string; name: string; balanceCents: number; kind: string },
+>(accounts: T[], pickedId: string | null): T | undefined {
+  const picked = accounts.find((a) => a.id === pickedId);
+  if (picked) return picked;
+  const named = accounts.filter(
+    (a) => a.balanceCents > 0 && a.kind !== 'depository' && HOME.test(a.name),
+  );
+  return named.length === 1 ? named[0] : undefined;
+}
+
+/** What the home is worth less the mortgage, and as a share of its value. */
+export const equityOf = (
+  homeCents: number,
+  owedCents: number,
+): { cents: number; pct: number | null } => ({
+  cents: homeCents - owedCents,
+  pct: homeCents > 0 ? Math.round(((homeCents - owedCents) / homeCents) * 100) : null,
+});
