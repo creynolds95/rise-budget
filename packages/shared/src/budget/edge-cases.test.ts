@@ -8,9 +8,9 @@ import { paceFor, staleness, SYNC_CADENCE_HOURS } from './pace';
 import { pace } from './period';
 import { pool } from './pool';
 import { computeMonthEnd, rollChain } from './rollover';
-import { buildReallocation, planAllocationChange } from './reallocation';
+import { buildReallocation } from './reallocation';
 import { validateSplits } from './splits';
-import { cat, chainCat, month, slackCat } from './test-helpers';
+import { cat, chainCat, month } from './test-helpers';
 
 describe('SPEC §11 edge cases', () => {
   it.todo('#1 two identical CSV rows same day both survive — CSV import dropped by owner (T30)');
@@ -84,30 +84,18 @@ describe('SPEC §11 edge cases', () => {
     expect(out('return_to_pool', 1_000)).toEqual([{ categoryId: 'eat', carriedInCents: 0 }]);
   });
 
-  it('#8 a reallocation exceeding the pool requires a funding source before commit', () => {
-    const p = pace('2026-09', '2026-09-15');
-    const change = {
-      targetCategoryId: 'gas',
-      oldPlannedCents: 20_000,
-      newPlannedCents: 30_000,
-      poolCents: 4_000,
-    };
-    const cats = [
-      slackCat({ categoryId: 'eat', plannedCents: 30_000, spentCents: 5_000 }),
-      slackCat({ categoryId: 'gas', plannedCents: 20_000 }),
-    ];
-    const plan = planAllocationChange(change, cats, p);
-    expect(plan).toEqual({
-      kind: 'needs_funding',
-      deltaCents: 10_000,
-      shortfallCents: 6_000,
-      candidates: [{ categoryId: 'eat', slackCents: 10_000 }],
+  it('#8 a reallocation exceeding the pool commits and leaves the month over budget', () => {
+    // Planning past income is allowed (Caleb, 2026-10-06): nothing is blocked, the pool just
+    // goes negative and the Budget bar reads "Over budget".
+    const change = { targetCategoryId: 'gas', oldPlannedCents: 20_000, newPlannedCents: 30_000 };
+    const r = buildReallocation(change, [], new Map([['eat', 30_000]]));
+    expect(r).toEqual({
+      ok: true,
+      plannedDeltas: [{ categoryId: 'gas', deltaCents: 10_000 }],
+      rows: [{ fromCategoryId: null, toCategoryId: 'gas', amountCents: 10_000 }],
     });
-    // Committing without funding is refused.
-    expect(buildReallocation(change, [], new Map([['eat', 30_000]]))).toEqual({
-      ok: false,
-      error: { code: 'INSUFFICIENT_POOL', shortfallCents: 6_000 },
-    });
+    // Income 540 with eat 300 + gas 200 left 40 in the pool; gas at 300 puts the month 60 over.
+    expect(pool({ expectedIncomeCents: 54_000, plannedCents: [30_000, 30_000] })).toBe(-6_000);
   });
 
   it('#9 a fixed-shape category on day 1 does not report overspent', () => {

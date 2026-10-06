@@ -331,7 +331,12 @@ export function Sheet({
   return (
     <>
       {standIn}
-      <div className="fixed inset-0 z-40 flex items-end justify-center md:items-center">
+      <div
+        style={
+          keyboard && view ? { top: view.top, height: view.height, bottom: 'auto' } : undefined
+        }
+        className="fixed inset-0 z-40 flex items-end justify-center md:items-center"
+      >
         <button
           aria-label="Close"
           tabIndex={-1}

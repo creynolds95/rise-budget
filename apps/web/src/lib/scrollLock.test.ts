@@ -1,28 +1,52 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { lockScroll } from './scrollLock';
 
-describe('lockScroll', () => {
-  afterEach(() => document.body.removeAttribute('style'));
+const touchMove = (target: Element) => {
+  const e = new Event('touchmove', { bubbles: true, cancelable: true });
+  Object.defineProperty(e, 'touches', { value: [{}] });
+  target.dispatchEvent(e);
+  return e.defaultPrevented;
+};
 
-  it('pins the body at the current offset and restores it on release', () => {
-    Object.defineProperty(window, 'scrollY', { value: 240, configurable: true });
-    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+describe('lockScroll', () => {
+  afterEach(() => {
+    document.documentElement.removeAttribute('style');
+    document.body.removeAttribute('style');
+    document.body.innerHTML = '';
+  });
+
+  it('freezes the page without moving the body, and restores on release', () => {
     const release = lockScroll();
-    expect(document.body.style.position).toBe('fixed');
-    expect(document.body.style.top).toBe('-240px');
-    release();
+    expect(document.documentElement.style.overflow).toBe('hidden');
+    // body must stay untouched: overflow on it un-sticks the tab bar, position:fixed shrinks the viewport
     expect(document.body.getAttribute('style')).toBeNull();
-    expect(scrollTo).toHaveBeenCalledWith(0, 240);
+    release();
+    release();
+    expect(document.documentElement.style.overflow).toBe('');
   });
 
   it('stays locked until the last of nested locks releases', () => {
-    vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
     const outer = lockScroll();
     const inner = lockScroll();
     inner();
-    inner();
-    expect(document.body.style.position).toBe('fixed');
+    expect(document.documentElement.style.overflow).toBe('hidden');
     outer();
-    expect(document.body.style.position).toBe('');
+    expect(document.documentElement.style.overflow).toBe('');
+  });
+
+  it('cancels touch moves over the page but not inside a scrollable sheet', () => {
+    const page = document.createElement('div');
+    const sheet = document.createElement('div');
+    const child = document.createElement('span');
+    sheet.style.overflowY = 'auto';
+    Object.defineProperty(sheet, 'scrollHeight', { value: 500 });
+    Object.defineProperty(sheet, 'clientHeight', { value: 200 });
+    sheet.append(child);
+    document.body.append(page, sheet);
+    const release = lockScroll();
+    expect(touchMove(page)).toBe(true);
+    expect(touchMove(child)).toBe(false);
+    release();
+    expect(touchMove(page)).toBe(false);
   });
 });

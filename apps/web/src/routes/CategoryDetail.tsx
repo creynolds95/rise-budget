@@ -86,7 +86,7 @@ function CategoryDetailBody({
   const [editingCat, setEditingCat] = useState(false);
   const groups = useGroups();
   const navigate = useNavigate();
-  const plan = usePlanFlow(month, categories.data ?? []);
+  const plan = usePlanFlow(month);
 
   const cat = categories.data?.find((c) => c.id === categoryId);
   const isIncome = groups.data?.find((g) => g.id === cat?.groupId)?.kind === 'income';

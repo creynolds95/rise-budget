@@ -9,6 +9,7 @@ import { AccountDetail } from './routes/AccountDetail';
 import { Accounts } from './routes/Accounts';
 import { Budget } from './routes/Budget';
 import { Debt } from './routes/Debt';
+import { Mortgage } from './routes/Mortgage';
 import { Savings } from './routes/Savings';
 import { FinancialHealth } from './routes/FinancialHealth';
 import { Retirement } from './routes/Retirement';
@@ -60,6 +61,7 @@ export function App() {
           <Route path="financial-health" element={<FinancialHealth />} />
           <Route path="financial-health/retirement" element={<Retirement />} />
           <Route path="financial-health/debt" element={<Debt />} />
+          <Route path="financial-health/mortgage" element={<Mortgage />} />
           <Route path="financial-health/savings" element={<Savings />} />
           <Route path="reports" element={<Navigate to="/settings/reports" replace />} />
           <Route path="settings/:section" element={<SettingsSection />} />

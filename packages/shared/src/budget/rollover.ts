@@ -63,8 +63,12 @@ export interface RolledInto {
  * Walk the chain: what every month in `months` starts with. `months` runs from the chain start,
  * contiguous and ascending; the first month starts from nothing but its own adjustment. The
  * same categories should appear in every month.
+ *
+ * A month only rolls over once it has ended: months from `current` on pass nothing forward, so
+ * every later month starts with the carry as of the last ended month (plus its own adjustment).
+ * Unspent plans are never projected forward. Without `current`, every month counts as ended.
  */
-export function rollChain(months: readonly ChainMonth[]): RolledInto[] {
+export function rollChain(months: readonly ChainMonth[], current?: PeriodId): RolledInto[] {
   const out: RolledInto[] = [];
   let carried = new Map<string, Cents>();
   let expected = months[0]?.periodId;
@@ -77,6 +81,8 @@ export function rollChain(months: readonly ChainMonth[]): RolledInto[] {
       ]),
     );
     out.push({ periodId: m.periodId, carriedIn: withCarry });
+    expected = nextPeriod(m.periodId);
+    if (current !== undefined && m.periodId >= current) continue;
     carried = new Map(
       computeMonthEnd(
         m.categories.map((c) => ({
@@ -88,7 +94,6 @@ export function rollChain(months: readonly ChainMonth[]): RolledInto[] {
         })),
       ).map((c) => [c.categoryId, c.carriedInCents]),
     );
-    expected = nextPeriod(m.periodId);
   }
   return out;
 }

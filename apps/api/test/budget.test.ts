@@ -225,7 +225,7 @@ describe('T19 allocation edit + reallocation', () => {
     ]);
   });
 
-  it('beyond the pool without funding → 409 INSUFFICIENT_POOL with ranked candidates (edge 8)', async () => {
+  it('beyond the pool without funding saves and the month goes over budget (edge 8)', async () => {
     const s = await setup();
     await s.api('PATCH', `/periods/${PERIOD}`, { expectedIncomeCents: 100_000 });
     await s.api('PATCH', `/allocations/${PERIOD}:${s.fun.id}`, { plannedCents: 30_000 });
@@ -236,17 +236,25 @@ describe('T19 allocation edit + reallocation', () => {
     const res = await s.api('PATCH', `/allocations/${PERIOD}:${s.groceries.id}`, {
       plannedCents: 80_000,
     });
-    expect(res.status).toBe(409);
-    expect(res.json.error.code).toBe('INSUFFICIENT_POOL');
-    expect(res.json.error.detail.shortfallCents).toBe(10_000);
-    expect(res.json.error.detail.candidates[0].categoryId).toBe(s.fun.id);
-
-    // Nothing changed.
-    const after = await s.api('GET', `/periods/${PERIOD}`);
+    expect(res.status).toBe(200);
+    expect(res.json.poolCents).toBe(-10_000);
     expect(
-      after.json.categories.find((x: { categoryId: string }) => x.categoryId === s.groceries.id)
+      res.json.categories.find((x: { categoryId: string }) => x.categoryId === s.groceries.id)
         .plannedCents,
-    ).toBe(70_000);
+    ).toBe(80_000);
+    // Other categories are untouched; the overage is logged as drawn from the pool.
+    expect(
+      res.json.categories.find((x: { categoryId: string }) => x.categoryId === s.fun.id)
+        .plannedCents,
+    ).toBe(30_000);
+    const log = await s.api('GET', `/periods/${PERIOD}/reallocations`);
+    expect(log.json).toContainEqual(
+      expect.objectContaining({
+        fromCategoryId: null,
+        toCategoryId: s.groceries.id,
+        amountCents: 10_000,
+      }),
+    );
   });
 
   it('with funding, applies atomically and logs the move; the pool is unchanged', async () => {
@@ -278,7 +286,7 @@ describe('T19 allocation edit + reallocation', () => {
     });
   });
 
-  it('funding that still falls short → 409; invalid funding → 400', async () => {
+  it('invalid funding → 400', async () => {
     const s = await setup();
     await s.api('PATCH', `/allocations/${PERIOD}:${s.fun.id}`, { plannedCents: 0 });
     const short = await s.api('PATCH', `/allocations/${PERIOD}:${s.groceries.id}`, {

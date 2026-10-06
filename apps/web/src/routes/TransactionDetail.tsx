@@ -1,3 +1,4 @@
+import { REFUND_MAX_DAYS, suggestRefundOriginals } from '@rise/shared/categorize';
 import { surplusMatch, type Cadence } from '@rise/shared/recurring';
 import type { Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
@@ -55,6 +56,7 @@ export function TransactionDetail() {
   const [deleting, setDeleting] = useState(false);
   const navigate = useNavigate();
   const [linking, setLinking] = useState(false);
+  const [refunding, setRefunding] = useState(false);
   const [taggingWithdrawal, setTaggingWithdrawal] = useState(false);
   const [ruling, setRuling] = useState(false);
   const [offer, setOffer] = useState<Parameters<typeof RuleOfferSheet>[0]['offer']>(null);
@@ -219,6 +221,28 @@ export function TransactionDetail() {
                       icon: 'flow' as const,
                       onSelect: () => setLinking(true),
                     },
+                ...(income && !t.isTransfer
+                  ? [
+                      t.refundOfId
+                        ? {
+                            label: 'Unlink from purchase',
+                            icon: 'refresh' as const,
+                            onSelect: async () => {
+                              try {
+                                await api('DELETE', `/transactions/${id}/refund-link`);
+                                await refresh();
+                              } catch (e) {
+                                setError(e instanceof ApiError ? e.message : 'Could not unlink.');
+                              }
+                            },
+                          }
+                        : {
+                            label: 'Link as a refund',
+                            icon: 'refresh' as const,
+                            onSelect: () => setRefunding(true),
+                          },
+                    ]
+                  : []),
                 ...(!t.isTransfer
                   ? [
                       withdrawalRule
@@ -422,6 +446,9 @@ export function TransactionDetail() {
         onSaved={refresh}
       />
       <Leaving>
+        {refunding && (
+          <LinkRefundSheet t={t} onClose={() => setRefunding(false)} onLinked={refresh} />
+        )}
         {linking && (
           <LinkTransferSheet t={t} onClose={() => setLinking(false)} onLinked={refresh} />
         )}
@@ -731,6 +758,81 @@ function RecurringWithdrawalSheet({
       >
         {saving ? 'Saving…' : 'Save'}
       </Button>
+    </Sheet>
+  );
+}
+
+/** Purchases this refund could reverse: earlier outflows, best match first. */
+function LinkRefundSheet({
+  t,
+  onClose,
+  onLinked,
+}: {
+  t: Transaction;
+  onClose: () => void;
+  onLinked: () => Promise<void>;
+}) {
+  const accounts = useAccounts().data ?? [];
+  const [error, setError] = useState<string | null>(null);
+  const around = (d: number) =>
+    new Date(Date.parse(`${t.postedAt}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
+  const earlier = useQuery({
+    queryKey: ['txns', 'refund-candidates', t.id],
+    queryFn: () =>
+      get<TransactionPage>(`/transactions?from=${around(-REFUND_MAX_DAYS)}&to=${t.postedAt}`),
+  });
+  const pool = earlier.data?.items ?? [];
+  const asTxn = (o: Transaction) => ({
+    id: o.id,
+    accountId: o.accountId,
+    postedAt: o.postedAt,
+    amountCents: o.amountCents,
+    isTransfer: o.isTransfer,
+  });
+  const refunded = (id: string) =>
+    pool.reduce((sum, o) => (o.refundOfId === id ? sum - o.amountCents : sum), 0);
+  const candidates = suggestRefundOriginals(asTxn(t), pool.map(asTxn), refunded)
+    .map((c) => pool.find((o) => o.id === c.id))
+    .filter((o): o is Transaction => !!o)
+    .slice(0, 20);
+  return (
+    <Sheet open title="Link as a refund" onClose={onClose}>
+      <p className="text-ink-muted">Pick the purchase. This refund moves into its category.</p>
+      {earlier.isPending && <Skeleton className="mt-4 h-12 w-full" />}
+      {earlier.data && candidates.length === 0 && (
+        <p className="mt-4">
+          No purchase this refund could cover in the last {REFUND_MAX_DAYS} days.
+        </p>
+      )}
+      <ul className="mt-2">
+        {candidates.map((o) => (
+          <li key={o.id}>
+            <button
+              className="flex min-h-12 w-full items-center justify-between border-b border-hairline text-left active:bg-sage-100"
+              onClick={async () => {
+                try {
+                  await api('POST', `/transactions/${t.id}/refund-link`, {
+                    originalTxnId: o.id,
+                  });
+                  await onLinked();
+                  onClose();
+                } catch (e) {
+                  setError(e instanceof ApiError ? e.message : 'Could not link.');
+                }
+              }}
+            >
+              <span>
+                {merchantName(o)}
+                <span className="block type-caption text-ink-faint">
+                  {shortDate(o.postedAt)} · {accounts.find((a) => a.id === o.accountId)?.name}
+                </span>
+              </span>
+              <MoneyText cents={o.amountCents} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && <p className="mt-2 text-clay">{error}</p>}
     </Sheet>
   );
 }

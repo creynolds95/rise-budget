@@ -4,8 +4,10 @@ import {
   projectBalance,
   projectSeries,
   requiredMonthlyContribution,
+  simulateRetirement,
 } from '@rise/shared/retirement';
 import type { RetirementPlan } from '@rise/shared/schemas';
+import type { FanBand } from '../components/primitives/FanChart';
 
 export const AGE_MIN = 55;
 export const AGE_MAX = 75;
@@ -17,6 +19,7 @@ export const DEFAULT_PLAN: RetirementPlan = {
   contributions: [],
   realGrowthBps: 400,
   withdrawalBps: 350,
+  volatilityBps: 1500,
 };
 
 export interface RetirementView {
@@ -67,4 +70,22 @@ export function retirementView(
       balanceCents: p.balanceCents,
     })),
   };
+}
+
+/** The Monte Carlo fan for the plan at one retirement age. */
+export function fanView(
+  plan: RetirementPlan,
+  startCents: number,
+  monthlyCents: number,
+  atAge: number,
+): FanBand[] {
+  const years = Math.max(0, atAge - plan.currentAge);
+  const { fan } = simulateRetirement({
+    startCents,
+    monthlyContributionCents: monthlyCents,
+    years,
+    realGrowthBps: plan.realGrowthBps,
+    volatilityBps: plan.volatilityBps,
+  });
+  return fan.map(({ year, ...bands }) => ({ age: plan.currentAge + year, ...bands }));
 }

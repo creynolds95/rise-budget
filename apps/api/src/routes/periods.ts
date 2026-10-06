@@ -1,18 +1,10 @@
-import {
-  applyPlanDefault,
-  buildReallocation,
-  pace,
-  planAllocationChange,
-  resolvePlanned,
-  type SlackInput,
-} from '@rise/shared/budget';
+import { applyPlanDefault, buildReallocation, resolvePlanned } from '@rise/shared/budget';
 import { PatchAllocationBody, PatchPeriodBody, PeriodId } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
   addPlannedStmt,
   allocationPeriods,
   ensurePeriodStmt,
-  getUser,
   insertReallocationStmt,
   listAllocations,
   listCategories,
@@ -25,7 +17,6 @@ import {
   setPlannedStmt,
 } from '../db';
 import type { AppEnv } from '../env';
-import { localToday } from '../lib/dates';
 import { AppError } from '../lib/errors';
 import { loadPeriodView } from '../lib/period-view';
 import { body } from '../lib/validate';
@@ -61,8 +52,8 @@ periods.get('/:id/reallocations', async (c) => {
 });
 
 /**
- * T19 / SPEC §2.6. Raising planned beyond the pool without funding → 409 INSUFFICIENT_POOL
- * carrying the ranked candidates. With funding, every change and its log rows apply atomically.
+ * T19 / SPEC §2.6. Every change and its log rows apply atomically; optional funding moves
+ * money from other categories, and the pool covers the rest, past zero if need be.
  */
 allocations.patch('/:id', async (c) => {
   const userId = c.get('userId');
@@ -115,45 +106,20 @@ allocations.patch('/:id', async (c) => {
     return c.json({ period: updated.period, ...updated.view });
   }
 
+  // Planning past income is allowed: the pool covers whatever funding doesn't, even below
+  // zero, and the Budget bar shows "Over budget" (Caleb, 2026-10-06).
   const change = {
     targetCategoryId: categoryId,
     oldPlannedCents: target.plannedCents,
     newPlannedCents: b.plannedCents,
-    poolCents: view.poolCents,
   };
   const expense = view.categories.filter((x) => x.groupKind === 'expense');
-  const slackInputs: SlackInput[] = expense.map((x) => ({
-    categoryId: x.categoryId,
-    spendShape: x.spendShape,
-    carriedInCents: x.carriedInCents,
-    plannedCents: x.plannedCents,
-    spentCents: x.spentCents,
-    billPosted: x.spentCents > 0,
-  }));
-  const user = await getUser(userId, c.env.DB);
-  const p = pace(periodId, localToday(user?.timezone ?? 'America/Chicago'));
-  const plan = planAllocationChange(change, slackInputs, p);
-  if (plan.kind === 'needs_funding' && b.funding.length === 0) {
-    throw new AppError(409, 'INSUFFICIENT_POOL', 'Choose where this money comes from', {
-      shortfallCents: plan.shortfallCents,
-      candidates: plan.candidates,
-    });
-  }
-
   const result = buildReallocation(
     change,
     b.funding,
     new Map(expense.map((x) => [x.categoryId, x.plannedCents])),
   );
-  if (!result.ok) {
-    if (result.error.code === 'INSUFFICIENT_POOL') {
-      throw new AppError(409, 'INSUFFICIENT_POOL', 'Funding does not cover the increase', {
-        shortfallCents: result.error.shortfallCents,
-        candidates: plan.kind === 'needs_funding' ? plan.candidates : [],
-      });
-    }
-    throw new AppError(400, 'BAD_REQUEST', result.error.message);
-  }
+  if (!result.ok) throw new AppError(400, 'BAD_REQUEST', result.error.message);
 
   const db = c.env.DB;
   const [cats, rows] = await Promise.all([

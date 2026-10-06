@@ -21,6 +21,25 @@ import {
 
 /** Entity shapes as the API speaks them (camelCase, booleans as booleans). */
 
+/** Dashboard tiles a user can show, hide and reorder. */
+export const DASHBOARD_TILES = [
+  'review',
+  'surplus',
+  'budget',
+  'spending',
+  'transactions',
+  'netWorth',
+  'comingUp',
+  'investments',
+  'savings',
+  'retirement',
+  'debt',
+  'mortgageSchedule',
+  'mortgageYear',
+] as const;
+export const DashboardTile = z.enum(DASHBOARD_TILES);
+export type DashboardTile = z.infer<typeof DashboardTile>;
+
 /** Retirement plan, all in today's dollars. One household age; contributions are entered by hand. */
 export const RetirementPlan = z.object({
   currentAge: z.int().min(18).max(100),
@@ -33,6 +52,8 @@ export const RetirementPlan = z.object({
   realGrowthBps: z.int().min(0).max(1000).default(400),
   /** Safe-withdrawal rate, basis points. Conservative default. */
   withdrawalBps: z.int().min(100).max(1000).default(350),
+  /** Yearly swing in returns for the Monte Carlo fan, basis points. */
+  volatilityBps: z.int().min(0).max(5000).default(1500),
 });
 export type RetirementPlan = z.infer<typeof RetirementPlan>;
 
@@ -90,6 +111,13 @@ export const DebtPlan = z.object({
   /** Extra per month, split by strategy across the student loans only. */
   extraCents: Cents.min(0).default(0),
   mortgageExtraCents: Cents.min(0).default(0),
+  /** One-time extra principal toward the mortgage, by the month it goes in. */
+  mortgageLumps: z
+    .array(z.object({ period: PeriodId, cents: Cents.min(1) }))
+    .max(240)
+    .default([]),
+  /** Original term; payments already made are the term less what remains. */
+  mortgageTermMonths: z.int().min(12).max(600).default(360),
   /** Manual account whose balance is the home's value, for equity. */
   homeValueAccountId: Id.nullable().default(null),
 });
@@ -169,6 +197,8 @@ export const UserSettings = z.object({
     .array(z.object({ seriesId: z.string(), dueDate: IsoDate }))
     .max(200)
     .default([]),
+  /** Shown tiles in order; null until the user customizes, which keeps the stock layout. */
+  dashboard: z.array(DashboardTile).max(DASHBOARD_TILES.length).nullable().default(null),
   retirement: RetirementPlan.nullable().default(null),
   debt: DebtPlan.nullable().default(null),
   savings: SavingsPlan.nullable().default(null),
@@ -327,6 +357,7 @@ export const Transaction = z.object({
   isPending: z.boolean(),
   isTransfer: z.boolean(),
   transferPairId: Id.nullable(),
+  refundOfId: Id.nullable(),
   reviewState: ReviewState,
   suggestedCategoryId: Id.nullable(),
   suggestionConfidence: z.number().min(0).max(1),
