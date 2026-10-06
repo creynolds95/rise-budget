@@ -1,5 +1,6 @@
 import {
   monthlyIncomeFor,
+  simulateRetirement,
   neededBalanceFor,
   projectBalance,
   projectSeries,
@@ -17,6 +18,8 @@ export const DEFAULT_PLAN: RetirementPlan = {
   contributions: [],
   realGrowthBps: 400,
   withdrawalBps: 350,
+  volatilityBps: 1500,
+  horizonAge: 95,
 };
 
 export interface RetirementView {
@@ -66,5 +69,33 @@ export function retirementView(
       age: plan.currentAge + p.year,
       balanceCents: p.balanceCents,
     })),
+  };
+}
+
+export const MC_TRIALS = 1000;
+
+/** Range of outcomes at one retirement age: fixed seed, so the fan holds still between edits. */
+export function monteCarloView(
+  plan: RetirementPlan,
+  startCents: number,
+  monthlyCents: number,
+  atAge: number,
+) {
+  const yearsToRetire = Math.max(0, atAge - plan.currentAge);
+  const res = simulateRetirement({
+    startCents,
+    monthlyContributionCents: monthlyCents,
+    monthlySpendCents: plan.spendTargetCents,
+    yearsToRetire,
+    yearsToHorizon: Math.max(yearsToRetire, plan.horizonAge - plan.currentAge),
+    realGrowthBps: plan.realGrowthBps,
+    volatilityBps: plan.volatilityBps,
+    trials: MC_TRIALS,
+    seed: 1,
+  });
+  return {
+    successPct: res.successPct,
+    retireIndex: yearsToRetire,
+    series: res.series.map((p) => ({ ...p, age: plan.currentAge + p.year })),
   };
 }

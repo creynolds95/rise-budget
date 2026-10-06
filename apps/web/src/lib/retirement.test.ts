@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PLAN, retirementView, totalMonthly } from './retirement';
+import { DEFAULT_PLAN, monteCarloView, retirementView, totalMonthly } from './retirement';
 
 const plan = { ...DEFAULT_PLAN, currentAge: 30, goalAge: 65, spendTargetCents: 500_000 };
 
@@ -44,5 +44,21 @@ describe('retirement view', () => {
     const v = retirementView(plan, 1_000_000, 50_000, 28);
     expect(v.balanceCents).toBe(1_000_000);
     expect(v.series).toEqual([{ age: 30, balanceCents: 1_000_000 }]);
+  });
+});
+
+describe('monte carlo view', () => {
+  it('spans now to the horizon with ages and a retirement marker', () => {
+    const v = monteCarloView({ ...plan, horizonAge: 90 }, 10_000_000, 100_000, 65);
+    expect(v.series[0]).toMatchObject({ age: 30, year: 0 });
+    expect(v.series.at(-1)?.age).toBe(90);
+    expect(v.retireIndex).toBe(35);
+    expect(v.successPct).toBeGreaterThanOrEqual(0);
+    expect(v.successPct).toBeLessThanOrEqual(100);
+  });
+
+  it('never ends before retirement even if the horizon is set earlier', () => {
+    const v = monteCarloView({ ...plan, horizonAge: 60 }, 0, 0, 70);
+    expect(v.series.at(-1)?.age).toBe(70);
   });
 });

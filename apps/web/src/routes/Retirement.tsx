@@ -4,6 +4,7 @@ import type { RetirementPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { Chart } from '../components/primitives/Chart';
+import { FanChart } from '../components/primitives/FanChart';
 import { IconButton } from '../components/primitives/Icon';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -13,7 +14,14 @@ import { Skeleton } from '../components/primitives/Skeleton';
 import { api } from '../lib/api';
 import { formatCents } from '../lib/money';
 import { useAccounts, useMe } from '../lib/queries';
-import { AGE_MAX, AGE_MIN, DEFAULT_PLAN, retirementView, totalMonthly } from '../lib/retirement';
+import {
+  AGE_MAX,
+  AGE_MIN,
+  DEFAULT_PLAN,
+  monteCarloView,
+  retirementView,
+  totalMonthly,
+} from '../lib/retirement';
 
 /** A whole-number or percent box that commits on blur, reverting what it can't read. */
 function NumberField({
@@ -109,6 +117,7 @@ export function Retirement() {
   const edit = (patch: Partial<RetirementPlan>) => save.mutate({ ...plan, ...patch });
   const monthly = totalMonthly(plan, ids);
   const v = retirementView(plan, start, monthly, shownAge);
+  const mc = monteCarloView(plan, start, monthly, shownAge);
   const contributionOf = (id: string) =>
     plan.contributions.find((c) => c.accountId === id)?.monthlyCents ?? 0;
   const setContribution = (id: string, monthlyCents: number) =>
@@ -168,6 +177,15 @@ export function Retirement() {
                 />
               </div>
             )}
+            {plan.spendTargetCents > 0 && (
+              <div className="mt-6">
+                <FanChart
+                  label="Range of outcomes, 10th to 90th percentile"
+                  markAge={shownAge}
+                  points={mc.series}
+                />
+              </div>
+            )}
           </>
         }
         facts={
@@ -177,6 +195,12 @@ export function Retirement() {
               label={`At ${shownAge}`}
               value={<MoneyText cents={v.balanceCents} whole />}
             />
+            {plan.spendTargetCents > 0 && (
+              <StaticRow
+                label={`Odds money lasts to ${plan.horizonAge}`}
+                value={<span className="money">{mc.successPct}%</span>}
+              />
+            )}
             {v.neededCents !== null && (
               <StaticRow
                 label="Needed for goal"
@@ -264,6 +288,28 @@ export function Retirement() {
                 scale={100}
                 suffix="%"
                 onCommit={(n) => edit({ withdrawalBps: n })}
+              />
+            }
+          />
+          <EditRow
+            label="Market volatility per year"
+            field={
+              <NumberField
+                label="Market volatility per year"
+                value={plan.volatilityBps}
+                scale={100}
+                suffix="%"
+                onCommit={(n) => edit({ volatilityBps: n })}
+              />
+            }
+          />
+          <EditRow
+            label="Money must last to age"
+            field={
+              <NumberField
+                label="Money must last to age"
+                value={plan.horizonAge}
+                onCommit={(n) => edit({ horizonAge: n })}
               />
             }
           />
