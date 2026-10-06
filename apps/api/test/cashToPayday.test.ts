@@ -537,6 +537,12 @@ describe('a paycheck that changes from a date on (Caleb, 2026-10-05: 401k from N
       change: { amountCents: 170_025, on: '2026-11-05' },
     });
     expect(put.status).toBe(200);
+    // The route files the next date from the real clock; pin it so the test doesn't rot.
+    await env.DB.prepare(
+      "UPDATE recurring_series SET next_expected_date = '2026-10-05' WHERE user_id = ?1",
+    )
+      .bind(s.userId)
+      .run();
 
     const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-04', 0, 0);
     expect(p.points.slice(1).map((x) => [x.date, x.balanceCents])).toEqual([

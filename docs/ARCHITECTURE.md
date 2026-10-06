@@ -385,7 +385,7 @@ PATCH  /periods/:id                       expected_income
 GET    /periods/:id/reallocations
 
 PATCH  /allocations/:id                   { planned_cents, funding: [{from_category_id, amount_cents}] }
-                                          → 409 INSUFFICIENT_POOL if funding is required and absent
+                                          funding optional; the pool may go negative
 
 GET    /categories
 POST   /categories
@@ -413,8 +413,7 @@ GET    /export                            full SQLite dump or JSON bundle
 ```
 
 **Error contract.** Every error returns `{ error: { code, message, detail? } }` with a
-stable machine-readable `code`. `INSUFFICIENT_POOL` carries the ranked funding candidates
-so the client can render the reallocation sheet without a second round-trip.
+stable machine-readable `code`.
 
 ## 5. Auth & secrets
 
