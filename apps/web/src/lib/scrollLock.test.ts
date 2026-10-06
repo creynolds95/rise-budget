@@ -18,22 +18,20 @@ describe('lockScroll', () => {
   it('freezes the page without moving the body, and restores on release', () => {
     const release = lockScroll();
     expect(document.documentElement.style.overflow).toBe('hidden');
-    expect(document.body.style.overflow).toBe('hidden');
-    // position:fixed on <body> is what lifted the tab bar on iPhone
-    expect(document.body.style.position).toBe('');
+    // body must stay untouched: overflow on it un-sticks the tab bar, position:fixed shrinks the viewport
+    expect(document.body.getAttribute('style')).toBeNull();
     release();
     release();
     expect(document.documentElement.style.overflow).toBe('');
-    expect(document.body.style.overflow).toBe('');
   });
 
   it('stays locked until the last of nested locks releases', () => {
     const outer = lockScroll();
     const inner = lockScroll();
     inner();
-    expect(document.body.style.overflow).toBe('hidden');
+    expect(document.documentElement.style.overflow).toBe('hidden');
     outer();
-    expect(document.body.style.overflow).toBe('');
+    expect(document.documentElement.style.overflow).toBe('');
   });
 
   it('cancels touch moves over the page but not inside a scrollable sheet', () => {
