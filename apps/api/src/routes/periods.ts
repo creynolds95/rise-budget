@@ -107,7 +107,7 @@ allocations.patch('/:id', async (c) => {
   }
 
   // Planning past income is allowed: the pool covers whatever funding doesn't, even below
-  // zero, and the Budget bar shows "Over budget" (Caleb, 2026-10-06).
+  // zero, and the Budget bar shows "Over budget" (owner, 2026-10-06).
   const change = {
     targetCategoryId: categoryId,
     oldPlannedCents: target.plannedCents,

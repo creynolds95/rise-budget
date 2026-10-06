@@ -85,7 +85,7 @@ describe('SPEC §11 edge cases', () => {
   });
 
   it('#8 a reallocation exceeding the pool commits and leaves the month over budget', () => {
-    // Planning past income is allowed (Caleb, 2026-10-06): nothing is blocked, the pool just
+    // Planning past income is allowed (owner, 2026-10-06): nothing is blocked, the pool just
     // goes negative and the Budget bar reads "Over budget".
     const change = { targetCategoryId: 'gas', oldPlannedCents: 20_000, newPlannedCents: 30_000 };
     const r = buildReallocation(change, [], new Map([['eat', 30_000]]));

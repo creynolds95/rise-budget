@@ -137,7 +137,7 @@ else:
     the rest from the pool, even past zero
 ```
 
-Planning past income is allowed (Caleb, 2026-10-06). Nothing is blocked: the pool goes
+Planning past income is allowed (owner, 2026-10-06). Nothing is blocked: the pool goes
 negative and the Budget tab's bar reads "Over budget" on a solid clay fill until plans come
 back under income.
 
