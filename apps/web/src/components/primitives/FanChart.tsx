@@ -22,9 +22,10 @@ export function FanChart({ label, fan }: { label: string; fan: FanBand[] }) {
   const area = (hi: keyof FanBand, lo: keyof FanBand) =>
     [
       ...fan.map((p, i) => `${x(i)},${y(p[hi])}`),
-      ...fan.map((p, i) => `${x(fan.length - 1 - i)},${y(fan[fan.length - 1 - i]![lo])}`),
+      ...[...fan].reverse().map((p, i) => `${x(fan.length - 1 - i)},${y(p[lo])}`),
     ].join(' ');
-  const last = fan[fan.length - 1]!;
+  const last = fan[fan.length - 1];
+  if (!last) return null;
   return (
     <figure className="m-0">
       <svg

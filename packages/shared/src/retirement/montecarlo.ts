@@ -46,7 +46,7 @@ export interface MonteCarloResult {
 /** Nearest-rank percentile of an ascending array. */
 export function percentile(sorted: readonly number[], p: number): number {
   const rank = Math.ceil((p / 100) * sorted.length);
-  return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))]!;
+  return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))] ?? 0;
 }
 
 export function simulateRetirement(opts: {
@@ -64,15 +64,16 @@ export function simulateRetirement(opts: {
   const mean = realGrowthBps / 10_000 / 12;
   const sd = volatilityBps / 10_000 / Math.sqrt(12);
   const byYear: number[][] = Array.from({ length: years + 1 }, () => []);
+  const record = (y: number, balance: number) => (byYear[y] as number[]).push(balance);
   for (let r = 0; r < runs; r++) {
     let balance = startCents;
-    byYear[0]!.push(balance);
+    record(0, balance);
     for (let y = 1; y <= years; y++) {
       for (let m = 0; m < 12; m++) {
         const ret = Math.max(-1, mean + sd * gaussian(rand));
         balance = Math.round(balance * (1 + ret)) + monthlyContributionCents;
       }
-      byYear[y]!.push(balance);
+      record(y, balance);
     }
   }
   const fan = byYear.map((balances, year) => {
@@ -86,7 +87,7 @@ export function simulateRetirement(opts: {
       p90: percentile(s, 90),
     };
   });
-  return { fan, finals: [...byYear[years]!].sort((a, b) => a - b) };
+  return { fan, finals: [...(byYear[years] as number[])].sort((a, b) => a - b) };
 }
 
 /** Share of runs, as a whole percent, that end at or above the target balance. */

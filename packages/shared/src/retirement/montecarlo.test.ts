@@ -49,7 +49,7 @@ describe('simulateRetirement', () => {
     const r = simulateRetirement({ ...base, volatilityBps: 0, runs: 20 });
     const expected = projectBalance(base.startCents, base.monthlyContributionCents, 30, 400);
     expect(r.finals.every((f) => f === expected)).toBe(true);
-    expect(r.fan.at(-1)).toEqual({
+    expect(r.fan[r.fan.length - 1]).toEqual({
       year: 30,
       p10: expected,
       p25: expected,
@@ -77,13 +77,16 @@ describe('simulateRetirement', () => {
       expect(p.p75).toBeLessThanOrEqual(p.p90);
     }
     expect(finals).toHaveLength(1000);
-    expect(fan.at(-1)!.p90).toBeGreaterThan(fan.at(-1)!.p10);
+    expect(fan[30]?.p90).toBeGreaterThan(fan[30]?.p10 ?? 0);
   });
 
   it('more volatility widens the fan', () => {
-    const calm = simulateRetirement({ ...base, volatilityBps: 500 }).fan.at(-1)!;
-    const wild = simulateRetirement({ ...base, volatilityBps: 2500 }).fan.at(-1)!;
-    expect(wild.p90 - wild.p10).toBeGreaterThan(calm.p90 - calm.p10);
+    const spread = (volatilityBps: number) => {
+      const { fan } = simulateRetirement({ ...base, volatilityBps });
+      const last = fan[fan.length - 1];
+      return (last?.p90 ?? 0) - (last?.p10 ?? 0);
+    };
+    expect(spread(2500)).toBeGreaterThan(spread(500));
   });
 
   it('a month never loses more than the whole balance', () => {

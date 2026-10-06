@@ -51,7 +51,7 @@ describe('fan view', () => {
   it('bands start at today and success needs a goal', () => {
     const f = fanView(plan, 10_000_000, 100_000, 65);
     expect(f.fan[0]).toMatchObject({ age: 30, p10: 10_000_000, p90: 10_000_000 });
-    expect(f.fan.at(-1)!.age).toBe(65);
+    expect(f.fan[f.fan.length - 1]?.age).toBe(65);
     expect(f.successPct).toBeGreaterThanOrEqual(0);
     expect(f.successPct).toBeLessThanOrEqual(100);
     expect(
