@@ -11,6 +11,11 @@ on:
         required: false
         type: boolean
         default: false
+      schema:
+        description: 'Only print schema, indexes, planner stats and row counts (no data)'
+        required: false
+        type: boolean
+        default: false
       errors:
         description: 'Only print failed API requests from Workers Logs (method, path, status)'
         required: false
@@ -44,6 +49,7 @@ jobs:
             ${{ inputs.name && format('--name "{0}"', inputs.name) || '' }} \
             ${{ inputs.sync && '--sync' || '' }} \
             ${{ inputs.errors && '--errors' || '' }} \
+            ${{ inputs.schema && '--schema' || '' }} \
             --remote
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -23,11 +23,14 @@ describe('query layer scoping', () => {
         const loginLookup = file.endsWith('/auth.ts') && sql.includes('/* lookup:login */');
         // T46: the disaster-recovery dump reads whole tables. Allowed in backup.ts only.
         const systemBackup = file.endsWith('/backup.ts') && sql.includes('/* system:backup */');
+        // Daily usage counters belong to the database, not a user. usage.ts only.
+        const systemUsage = file.endsWith('/usage.ts') && sql.includes('/* system:usage */');
         expect(
           /\buser_id\b/.test(sql) ||
             sql.includes('/* scoped:user.id */') ||
             loginLookup ||
-            systemBackup,
+            systemBackup ||
+            systemUsage,
           sql,
         ).toBe(true);
       }

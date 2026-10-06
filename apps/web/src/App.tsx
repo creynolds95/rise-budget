@@ -8,10 +8,15 @@ import { useLinkTransitions } from './lib/gestures';
 import { AccountDetail } from './routes/AccountDetail';
 import { Accounts } from './routes/Accounts';
 import { Budget } from './routes/Budget';
+import { Debt } from './routes/Debt';
+import { Savings } from './routes/Savings';
+import { FinancialHealth } from './routes/FinancialHealth';
+import { Retirement } from './routes/Retirement';
 import { CashToPayday } from './routes/CashToPayday';
 import { CategoryDetail } from './routes/CategoryDetail';
 import { Dashboard } from './routes/Dashboard';
 import { Login, Register } from './routes/Login';
+import { Recurring } from './routes/Recurring';
 import { Review } from './routes/Review';
 import { Settings, SettingsSection } from './routes/Settings';
 import { TransactionDetail } from './routes/TransactionDetail';
@@ -46,14 +51,19 @@ export function App() {
           <Route path="transactions" element={<Transactions />} />
           <Route path="budget" element={<Budget />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="review" element={<Review />} />
+          <Route path="recurring" element={<Recurring />} />
+          <Route path="accounts/:id" element={<AccountDetail />} />
+          <Route path="transactions/:id" element={<TransactionDetail />} />
+          <Route path="budget/:categoryId" element={<CategoryDetail />} />
+          <Route path="cash-to-payday" element={<CashToPayday />} />
+          <Route path="financial-health" element={<FinancialHealth />} />
+          <Route path="financial-health/retirement" element={<Retirement />} />
+          <Route path="financial-health/debt" element={<Debt />} />
+          <Route path="financial-health/savings" element={<Savings />} />
+          <Route path="reports" element={<Navigate to="/settings/reports" replace />} />
+          <Route path="settings/:section" element={<SettingsSection />} />
         </Route>
-        <Route path="review" element={<Review />} />
-        <Route path="accounts/:id" element={<AccountDetail />} />
-        <Route path="transactions/:id" element={<TransactionDetail />} />
-        <Route path="budget/:categoryId" element={<CategoryDetail />} />
-        <Route path="cash-to-payday" element={<CashToPayday />} />
-        <Route path="reports" element={<Navigate to="/settings/reports" replace />} />
-        <Route path="settings/:section" element={<SettingsSection />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </LockGate>

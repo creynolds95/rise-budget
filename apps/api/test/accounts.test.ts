@@ -33,6 +33,59 @@ describe('T17 accounts & snapshots', () => {
     });
   });
 
+  it('sets and clears a custom badge; the three parts move together', async () => {
+    const u = await signedInUser();
+    const created = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'Credit union', kind: 'depository' },
+    });
+    expect(created.json.badge).toBeNull();
+    const id = created.json.id;
+
+    const set = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { text: 'CU', bg: '#1A4D2E', fg: '#FFFFFF' } },
+    });
+    expect(set.json.badge).toEqual({ text: 'CU', bg: '#1a4d2e', fg: '#ffffff' });
+
+    const renamed = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { name: 'My credit union' },
+    });
+    expect(renamed.json.badge).toEqual({ text: 'CU', bg: '#1a4d2e', fg: '#ffffff' });
+
+    const bad = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { text: 'TOOLONG', bg: 'red', fg: '#fff' } },
+    });
+    expect(bad.status).toBe(400);
+
+    const symbol = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { icon: 'home' } },
+    });
+    expect(symbol.json.badge).toEqual({ icon: 'home' });
+
+    const backToLetters = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { text: 'CU', bg: '#1A4D2E', fg: '#FFFFFF' } },
+    });
+    expect(backToLetters.json.badge).toEqual({ text: 'CU', bg: '#1a4d2e', fg: '#ffffff' });
+
+    const unknownSymbol = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { icon: 'rocket' } },
+    });
+    expect(unknownSymbol.status).toBe(400);
+
+    await call('PATCH', `/accounts/${id}`, { access: u.access, body: { badge: { icon: 'car' } } });
+    const cleared = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: null },
+    });
+    expect(cleared.json.badge).toBeNull();
+  });
+
   it("returns 404 for another user's account", async () => {
     const a = await signedInUser();
     const b = await signedInUser();
@@ -83,6 +136,56 @@ describe('T17 accounts & snapshots', () => {
     expect((await call('GET', `/accounts/${id}`, { access: u.access })).json.balanceCents).toBe(
       30_500_000,
     );
+  });
+
+  it('removing a dated balance re-points the current balance; the last one stays', async () => {
+    const u = await signedInUser();
+    const acct = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'House', kind: 'other' },
+    });
+    const id = acct.json.id;
+    const snap = (asOf: string, balanceCents: number) =>
+      call('POST', `/accounts/${id}/snapshots`, { access: u.access, body: { asOf, balanceCents } });
+    const del = (asOf: string, access = u.access) =>
+      call('DELETE', `/accounts/${id}/snapshots/${asOf}`, { access });
+    const balance = async () =>
+      (await call('GET', `/accounts/${id}`, { access: u.access })).json.balanceCents;
+
+    await snap('2026-06-01', 29_000_000);
+    await snap('2026-09-01', 31_000_000); // a typo
+
+    // Another user can't touch it.
+    expect((await del('2026-09-01', (await signedInUser()).access)).status).toBe(404);
+    expect((await del('not-a-date')).status).toBe(400);
+
+    expect((await del('2026-09-01')).status).toBe(200);
+    expect(await balance()).toBe(29_000_000);
+    expect((await call('GET', `/accounts/${id}/snapshots`, { access: u.access })).json).toEqual([
+      { asOf: '2026-06-01', balanceCents: 29_000_000 },
+    ]);
+
+    // Removing an older entry leaves the current balance alone.
+    await snap('2026-09-02', 30_000_000);
+    await del('2026-06-01');
+    expect(await balance()).toBe(30_000_000);
+
+    // The only balance left can't be removed.
+    expect((await del('2026-09-02')).status).toBe(409);
+    expect(await balance()).toBe(30_000_000);
+  });
+
+  it('a synced account keeps its balances', async () => {
+    const u = await signedInUser();
+    const id = 'acct-synced-' + crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO account (id, user_id, source, source_account_id, name, kind, balance_cents, created_at)
+       VALUES (?1, ?2, 'simplefin', ?1, 'Checking', 'depository', 100, ?3)`,
+    )
+      .bind(id, u.userId, new Date().toISOString())
+      .run();
+    const r = await call('DELETE', `/accounts/${id}/snapshots/2026-09-01`, { access: u.access });
+    expect(r.status).toBe(409);
   });
 
   it('flips the stored sign when kind crosses the liability boundary', async () => {

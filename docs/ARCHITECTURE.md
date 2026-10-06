@@ -286,6 +286,13 @@ CREATE TABLE recurring_series (
   updated_at          TEXT NOT NULL
 );
 
+-- 0014: Surplus projects only confirmed (source='manual') schedules. Sync rebuilds these
+-- candidates from the cash accounts; the user adds or dismisses each one.
+CREATE TABLE surplus_suggestion (
+  id, user_id, merchant_normalized, account_id, cadence, expected_amount_cents,
+  next_expected_date, anchor_days, updated_at
+);
+
 -- ── operations ────────────────────────────────────────────────────────────
 CREATE TABLE sync_run (
   id                TEXT PRIMARY KEY,

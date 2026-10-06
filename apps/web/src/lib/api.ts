@@ -64,6 +64,23 @@ export function refreshSession(): Promise<RefreshResult> {
 
 export const refresh = async () => (await refreshSession()) === 'ok';
 
+// ── database limit ───────────────────────────────────────────────────────────
+
+let dbLimited = false;
+const limitListeners = new Set<() => void>();
+
+/** True while the server is reporting that the free daily database allowance is spent. */
+export const isDbLimited = () => dbLimited;
+export function onDbLimitChange(fn: () => void): () => void {
+  limitListeners.add(fn);
+  return () => limitListeners.delete(fn);
+}
+function setDbLimited(v: boolean) {
+  if (v === dbLimited) return;
+  dbLimited = v;
+  for (const fn of limitListeners) fn();
+}
+
 // ── connectivity ─────────────────────────────────────────────────────────────
 
 let lastReachable = true;
@@ -172,12 +189,14 @@ export async function api<T>(
   if (res.status === 401 && !path.startsWith('/auth/') && (await refresh())) {
     res = await send(method, path, body, o);
   }
+  if (res.ok) setDbLimited(false);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   const json: unknown = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const err = (json as { error?: { code?: string; message?: string; detail?: unknown } } | null)
       ?.error;
+    if (err?.code === 'DB_LIMIT') setDbLimited(true);
     throw new ApiError(
       res.status,
       err?.code ?? 'UNKNOWN',
@@ -194,13 +213,15 @@ export const get = <T>(path: string) => api<T>('GET', path);
  * T46: hands the browser a file to save, reusing `send`'s auth and the one-retry-on-401
  * that `api` does. Export needs the raw body and its filename, not a JSON-parsed result.
  */
-export async function downloadExport(format: 'json' | 'csv'): Promise<void> {
-  const path = `/export?format=${format}`;
+export async function downloadExport(format: 'json' | 'csv' | 'backup'): Promise<void> {
+  const path = format === 'backup' ? '/export/backups/latest' : `/export?format=${format}`;
   let res = await send('GET', path, undefined, {});
   if (res.status === 401 && (await refresh())) res = await send('GET', path, undefined, {});
   if (!res.ok) throw new ApiError(res.status, 'UNKNOWN', 'Could not export your data');
   const disposition = res.headers.get('content-disposition') ?? '';
-  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `rise-export.${format}`;
+  const filename =
+    /filename="([^"]+)"/.exec(disposition)?.[1] ??
+    `rise-export.${format === 'backup' ? 'sql.gz' : format}`;
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement('a');
   a.href = url;

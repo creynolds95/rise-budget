@@ -168,4 +168,19 @@ describe('buildMoneyFlow', () => {
     ]);
     expect(flow.nodes.some((n) => n.id === 'leftover')).toBe(false);
   });
+
+  it('sums a category that appears once per month across a range', () => {
+    const flow = buildMoneyFlow([
+      cat({ categoryId: 'pay', groupKind: 'income', spentCents: -1_000 }),
+      cat({ categoryId: 'gro', spentCents: 300 }),
+      cat({ categoryId: 'pay', groupKind: 'income', spentCents: -1_000 }),
+      cat({ categoryId: 'gro', spentCents: 200 }),
+    ]);
+    expect(flow.links).toEqual([
+      { source: 'income', target: 'group:g1', valueCents: 500 },
+      { source: 'cat:pay', target: 'income', valueCents: 2_000 },
+      { source: 'group:g1', target: 'cat:gro', valueCents: 500 },
+      { source: 'income', target: 'leftover', valueCents: 1_500 },
+    ]);
+  });
 });

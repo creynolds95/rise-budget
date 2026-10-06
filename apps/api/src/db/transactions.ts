@@ -72,8 +72,13 @@ export async function splitsFor(
   if (txnIds.length === 0) return out;
   const { results } = await db
     .prepare(
-      `SELECT id, txn_id, category_id, amount_cents, period_id, sort_order FROM split
-       WHERE user_id = ?1 AND txn_id IN (SELECT value FROM json_each(?2)) ORDER BY sort_order, id`,
+      // Driven from the id list so each lookup uses the txn_id index. CROSS JOIN pins that
+      // order: left to itself, production read every split the user has once per id (5M rows
+      // in a day, Oct 2026). No INDEXED BY: if the index were ever missing it would turn a
+      // slow query into a failing one.
+      `SELECT s.id, s.txn_id, s.category_id, s.amount_cents, s.period_id, s.sort_order
+       FROM json_each(?2) j CROSS JOIN split s ON s.txn_id = j.value
+       WHERE s.user_id = ?1 ORDER BY s.sort_order, s.id`,
     )
     .bind(userId, JSON.stringify(txnIds))
     .all<SplitRow>();
@@ -97,27 +102,27 @@ export interface TxnFilters {
 }
 
 /**
- * Each sort is a fixed ORDER BY and the matching keyset condition on (?8 key, ?9 id), so a
- * page boundary never skips or repeats a row.
+ * Each sort is a fixed ORDER BY and the matching keyset condition on (key, id), so a page
+ * boundary never skips or repeats a row. `after` binds the key twice, then the id.
  */
 const SORTS: Record<TxnSort, { order: string; after: string }> = {
   date_desc: {
     order: 't.posted_at DESC, t.id DESC',
-    after: '(t.posted_at < ?8 OR (t.posted_at = ?8 AND t.id < ?9))',
+    after: '(t.posted_at < ? OR (t.posted_at = ? AND t.id < ?))',
   },
   date_asc: {
     order: 't.posted_at ASC, t.id ASC',
-    after: '(t.posted_at > ?8 OR (t.posted_at = ?8 AND t.id > ?9))',
+    after: '(t.posted_at > ? OR (t.posted_at = ? AND t.id > ?))',
   },
   amount_desc: {
-    order: 'ABS(t.amount_cents) DESC, t.id DESC',
+    order: 'ABS(t.amount_cents) DESC, t.id DESC /* scan-ok: sorting by size reads every row */',
     after:
-      '(ABS(t.amount_cents) < CAST(?8 AS INTEGER) OR (ABS(t.amount_cents) = CAST(?8 AS INTEGER) AND t.id < ?9))',
+      '(ABS(t.amount_cents) < CAST(? AS INTEGER) OR (ABS(t.amount_cents) = CAST(? AS INTEGER) AND t.id < ?))',
   },
   amount_asc: {
-    order: 'ABS(t.amount_cents) ASC, t.id ASC',
+    order: 'ABS(t.amount_cents) ASC, t.id ASC /* scan-ok: sorting by size reads every row */',
     after:
-      '(ABS(t.amount_cents) > CAST(?8 AS INTEGER) OR (ABS(t.amount_cents) = CAST(?8 AS INTEGER) AND t.id > ?9))',
+      '(ABS(t.amount_cents) > CAST(? AS INTEGER) OR (ABS(t.amount_cents) = CAST(? AS INTEGER) AND t.id > ?))',
   },
 };
 
@@ -131,40 +136,49 @@ export async function listTransactions(
   f: TxnFilters,
   limit: number,
 ): Promise<Transaction[]> {
-  const like = f.q ? `%${f.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
   const sort = SORTS[f.sort ?? 'date_desc'];
+  // Only the filters in use go into the SQL: an always-present "?n IS NULL OR …" clause
+  // stops SQLite using an index, so every list read and sorted the whole history.
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  const add = (sql: string, ...values: unknown[]) => {
+    where.push(sql);
+    binds.push(...values);
+  };
+  if (f.from) add('t.posted_at >= ?', f.from);
+  if (f.to) add('t.posted_at <= ?', f.to);
+  if (f.accountIds?.length === 1) add('t.account_id = ?', f.accountIds[0]);
+  else if (f.accountIds?.length)
+    add('t.account_id IN (SELECT value FROM json_each(?))', JSON.stringify(f.accountIds));
+  if (f.categoryIds?.length)
+    add(
+      `EXISTS (SELECT 1 FROM split s WHERE s.user_id = t.user_id AND s.txn_id = t.id
+         AND s.category_id IN (SELECT value FROM json_each(?)))`,
+      JSON.stringify(f.categoryIds),
+    );
+  if (f.q) {
+    const like = `%${f.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+    add(
+      `(t.descriptor_raw LIKE ? ESCAPE '\\' OR t.merchant_normalized LIKE ? ESCAPE '\\'
+        OR t.merchant_display LIKE ? ESCAPE '\\' OR t.notes LIKE ? ESCAPE '\\')`,
+      like,
+      like,
+      like,
+      like,
+    );
+  }
+  if (f.reviewState) add('t.review_state = ?', f.reviewState);
+  if (f.after) add(sort.after, f.after.key, f.after.key, f.after.id);
+  if (f.direction === 'out') add('t.amount_cents > 0');
+  if (f.direction === 'in') add('t.amount_cents < 0');
+  if (f.minCents != null) add('ABS(t.amount_cents) >= ?', f.minCents);
+  if (f.maxCents != null) add('ABS(t.amount_cents) <= ?', f.maxCents);
   const { results } = await db
     .prepare(
-      `SELECT * FROM txn t WHERE t.user_id = ?1
-         AND (?2 IS NULL OR t.posted_at >= ?2)
-         AND (?3 IS NULL OR t.posted_at <= ?3)
-         AND (?4 IS NULL OR t.account_id IN (SELECT value FROM json_each(?4)))
-         AND (?5 IS NULL OR EXISTS (SELECT 1 FROM split s WHERE s.user_id = ?1 AND s.txn_id = t.id
-              AND s.category_id IN (SELECT value FROM json_each(?5))))
-         AND (?6 IS NULL OR t.descriptor_raw LIKE ?6 ESCAPE '\\' OR t.merchant_normalized LIKE ?6 ESCAPE '\\'
-              OR t.merchant_display LIKE ?6 ESCAPE '\\' OR t.notes LIKE ?6 ESCAPE '\\')
-         AND (?7 IS NULL OR t.review_state = ?7)
-         AND (?8 IS NULL OR ${sort.after})
-         AND (?11 IS NULL OR (?11 = 'out' AND t.amount_cents > 0) OR (?11 = 'in' AND t.amount_cents < 0))
-         AND (?12 IS NULL OR ABS(t.amount_cents) >= ?12)
-         AND (?13 IS NULL OR ABS(t.amount_cents) <= ?13)
-       ORDER BY ${sort.order} LIMIT ?10`,
+      `SELECT * FROM txn t WHERE t.user_id = ?${where.map((w) => ` AND ${w}`).join('')}
+       ORDER BY ${sort.order} LIMIT ?`,
     )
-    .bind(
-      userId,
-      f.from ?? null,
-      f.to ?? null,
-      f.accountIds?.length ? JSON.stringify(f.accountIds) : null,
-      f.categoryIds?.length ? JSON.stringify(f.categoryIds) : null,
-      like,
-      f.reviewState ?? null,
-      f.after?.key ?? null,
-      f.after?.id ?? null,
-      limit,
-      f.direction ?? null,
-      f.minCents ?? null,
-      f.maxCents ?? null,
-    )
+    .bind(userId, ...binds, limit)
     .all<TxnRow>();
   const splits = await splitsFor(
     userId,
@@ -172,6 +186,15 @@ export async function listTransactions(
     results.map((r) => r.id),
   );
   return results.map((r) => toTransaction(r, splits.get(r.id) ?? []));
+}
+
+/** How many transactions wait for review, read straight from the review index. */
+export async function countNeedsReview(userId: UserId, db: D1Database): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS n FROM txn WHERE user_id = ?1 AND review_state = 'needs_review'")
+    .bind(userId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 export async function getTransactionRow(
@@ -529,4 +552,78 @@ export async function deletedSourceIds(
     .bind(userId, accountId)
     .all<{ source_id: string }>();
   return new Set(results.map((r) => r.source_id));
+}
+
+export interface OutflowRow {
+  id: string;
+  accountId: string;
+  postedAt: string;
+  amountCents: number;
+  /** Lowercase description, normalized merchant and display name, for name matching. */
+  text: string;
+}
+
+/** Posted money out between two dates, newest first. A short window on the date index. */
+/** Posted rows in both directions over a short window, newest first, for rules that follow
+ *  transfers. Same index as `listOutflows`; bounded by date and by LIMIT. */
+export async function listPostedWindow(
+  userId: UserId,
+  db: D1Database,
+  from: string,
+  to: string,
+): Promise<OutflowRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, account_id, posted_at, amount_cents, descriptor_raw, merchant_normalized, merchant_display FROM txn
+       WHERE user_id = ?1 AND posted_at >= ?2 AND posted_at <= ?3 AND amount_cents != 0 AND is_pending = 0
+       ORDER BY posted_at DESC, id DESC LIMIT 500`,
+    )
+    .bind(userId, from, to)
+    .all<{
+      id: string;
+      account_id: string;
+      posted_at: string;
+      amount_cents: number;
+      descriptor_raw: string;
+      merchant_normalized: string;
+      merchant_display: string | null;
+    }>();
+  return results.map((r) => ({
+    id: r.id,
+    accountId: r.account_id,
+    postedAt: r.posted_at,
+    amountCents: r.amount_cents,
+    text: `${r.descriptor_raw} ${r.merchant_normalized} ${r.merchant_display ?? ''}`.toLowerCase(),
+  }));
+}
+
+export async function listOutflows(
+  userId: UserId,
+  db: D1Database,
+  from: string,
+  to: string,
+): Promise<OutflowRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, account_id, posted_at, amount_cents, descriptor_raw, merchant_normalized, merchant_display FROM txn
+       WHERE user_id = ?1 AND posted_at >= ?2 AND posted_at <= ?3 AND amount_cents > 0 AND is_pending = 0
+       ORDER BY posted_at DESC, id DESC LIMIT 500`,
+    )
+    .bind(userId, from, to)
+    .all<{
+      id: string;
+      account_id: string;
+      posted_at: string;
+      amount_cents: number;
+      descriptor_raw: string;
+      merchant_normalized: string;
+      merchant_display: string | null;
+    }>();
+  return results.map((r) => ({
+    id: r.id,
+    accountId: r.account_id,
+    postedAt: r.posted_at,
+    amountCents: r.amount_cents,
+    text: `${r.descriptor_raw} ${r.merchant_normalized} ${r.merchant_display ?? ''}`.toLowerCase(),
+  }));
 }

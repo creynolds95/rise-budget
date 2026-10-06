@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isTabRoot } from './transition';
+import { isPushRoute, isTabRoot } from './transition';
 
 describe('isTabRoot', () => {
   it('is true for the four tab landing screens only', () => {
@@ -7,5 +7,12 @@ describe('isTabRoot', () => {
       expect(isTabRoot(p)).toBe(true);
     for (const p of ['/accounts/abc', '/settings', '/budget/xyz', '/cash-to-payday'])
       expect(isTabRoot(p)).toBe(false);
+  });
+});
+
+describe('isPushRoute', () => {
+  it('ignores a query or a hash', () => {
+    for (const p of ['/review', '/cash-to-payday?x=1', '/cash-to-payday#review'])
+      expect(isPushRoute(p)).toBe(true);
   });
 });

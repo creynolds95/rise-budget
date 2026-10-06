@@ -16,6 +16,7 @@ import {
   ensureIncomeCatchallCategory,
   ensureTransferCategory,
   finishSyncRun,
+  hadSyncRunSince,
   flagClosedPeriodStmt,
   getUser,
   insertSyncedAccountStmt,
@@ -130,7 +131,16 @@ export async function runSync(
   db: D1Database,
   userId: UserId,
   source: SimpleFinSource,
-  opts: { now?: Date; since?: string } = {},
+  opts: {
+    now?: Date;
+    since?: string;
+    /**
+     * Cron runs: when nothing new arrived and an earlier sync already ran today, skip the
+     * recurring re-detection. It re-reads three years of transactions (the biggest read in a
+     * sync) and its inputs haven't changed. A manual sync always runs it.
+     */
+    skipRecurringWhenIdle?: boolean;
+  } = {},
 ): Promise<SyncResult> {
   const now = opts.now ?? new Date();
   const runId = await startSyncRun(userId, db);
@@ -158,7 +168,11 @@ export async function runSync(
   ]);
   const tz = user?.timezone ?? 'America/Chicago';
   const today = localToday(tz, now);
-  const from = windowStart(known, today, opts.since);
+  const from = windowStart(
+    known.filter((a) => a.source === 'simplefin'),
+    today,
+    opts.since,
+  );
   // A day early in UTC so no local date in the window is missed; the planner dedupes.
   const startSec = (dayNumber(from) - 1) * 86_400;
 
@@ -184,6 +198,7 @@ export async function runSync(
       const acct: IncomingAccount = toIncomingAccount(sf, tz);
       const existing = known.find((a) => a.source_account_id === acct.sourceAccountId);
       if (existing?.archived_at) continue; // the user unlinked it
+      if (existing && existing.source !== 'simplefin') continue; // converted to manual
       const accountId = existing?.id ?? newId();
 
       const gone = existing ? await deletedSourceIds(userId, db, accountId) : new Set<string>();
@@ -358,7 +373,13 @@ export async function runSync(
   }
 
   try {
-    await refreshRecurring(db, userId, today);
+    const idle = rowsInserted + rowsUpdated + transfersLinked === 0 && errors.length === 0;
+    const startOfDay = `${now.toISOString().slice(0, 10)}T00:00:00.000Z`;
+    const skip =
+      opts.skipRecurringWhenIdle === true &&
+      idle &&
+      (await hadSyncRunSince(userId, db, startOfDay, runId));
+    if (!skip) await refreshRecurring(db, userId, today);
   } catch (e) {
     errors.push({ message: `Recurring detection: ${message(e)}` });
   }

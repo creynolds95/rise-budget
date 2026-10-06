@@ -8,6 +8,7 @@ import { SummaryCard } from './Budget';
 import { SpendingSection } from '../components/SpendingSection';
 import { HealthNotes } from '../components/HealthNotes';
 import { quietInstitutions, StaleNotes } from '../components/StaleNotes';
+import { MissedRow, useMissed } from '../components/MissedCharges';
 import { TxnRow } from '../components/TxnRow';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { NavRow } from '../components/primitives/Rows';
@@ -18,6 +19,7 @@ import { transitionClick } from '../lib/transition';
 import {
   useAccounts,
   useBackupStatus,
+  useUsage,
   useCashToPayday,
   useCategories,
   useMe,
@@ -30,6 +32,22 @@ import {
 
 const RECENT_TXNS = 4;
 
+/** A gold call to action that disappears once there is nothing left to review. */
+function ReviewRow({ to, count, what }: { to: string; count: number; what: string }) {
+  const navigate = useNavigate();
+  return (
+    <Link
+      to={to}
+      onClick={transitionClick(navigate, to)}
+      className="flex min-h-14 items-center rounded-card border-l-4 border-gold bg-gold-100 px-4 shadow-soft active:brightness-95"
+    >
+      <span className="type-body font-semibold">
+        <span className="money">{count}</span> {what}
+      </span>
+    </Link>
+  );
+}
+
 /** "This month, answered" (T41). The on-pace answer first, then what needs attention. */
 export function Dashboard() {
   const navigate = useNavigate();
@@ -40,14 +58,16 @@ export function Dashboard() {
   const last = usePeriod(addMonths(month, -1));
   const accounts = useAccounts();
   const recurring = useRecurring();
+  const broken = useMissed(recurring.data);
   const surplus = useCashToPayday();
   const categories = useCategories();
   const txns = useTransactions({ sort: 'date_desc' });
   const syncStatus = useSyncStatus();
   const backups = useBackupStatus();
+  const usage = useUsage();
   const queue = useQuery({
     queryKey: ['queue-count'],
-    queryFn: () => get<{ count: number }>('/review/queue'),
+    queryFn: () => get<{ count: number }>('/review/count'),
   });
 
   if (!period.data) {
@@ -76,9 +96,10 @@ export function Dashboard() {
       s.nextExpectedDate.slice(0, 7) === month &&
       s.expectedAmountCents > 0,
   );
-  const broken = (recurring.data ?? []).filter((s) => s.status === 'broken');
   const catName = (id: string | null) => categories.data?.find((c) => c.id === id)?.name;
   const recentTxns = (txns.data?.pages[0]?.items ?? []).slice(0, RECENT_TXNS);
+  const reviewCount = queue.data?.count ?? 0;
+  const surplusReviewCount = surplus.data?.suggestions.length ?? 0;
 
   return (
     <div className="gutter mx-auto max-w-2xl pt-6 pb-12">
@@ -87,9 +108,29 @@ export function Dashboard() {
         backups={backups.data}
         today={today}
         quiet={quietInstitutions(accounts.data ?? [])}
+        usage={usage.data}
         dismissible
       />
       {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}
+
+      {(reviewCount > 0 || surplusReviewCount > 0) && (
+        <div className="flex flex-col gap-2">
+          {reviewCount > 0 && (
+            <ReviewRow
+              to="/review"
+              count={reviewCount}
+              what={reviewCount === 1 ? 'transaction to review' : 'transactions to review'}
+            />
+          )}
+          {surplusReviewCount > 0 && (
+            <ReviewRow
+              to="/cash-to-payday#review"
+              count={surplusReviewCount}
+              what="to review in Surplus"
+            />
+          )}
+        </div>
+      )}
 
       {/* 1. Surplus */}
       <section className="mt-8 first:mt-0">
@@ -112,21 +153,6 @@ export function Dashboard() {
             />
           )}
         </Link>
-        {(queue.data?.count ?? 0) > 0 && (
-          <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-            {(queue.data?.count ?? 0) > 0 && (
-              <NavRow
-                to="/review"
-                label="To review"
-                value={
-                  <span className="rounded-full bg-sage-600 px-2 py-0.5 type-caption font-semibold text-surface money">
-                    {queue.data?.count}
-                  </span>
-                }
-              />
-            )}
-          </div>
-        )}
       </section>
 
       {/* 2. Summary */}
@@ -196,10 +222,7 @@ export function Dashboard() {
               </li>
             ))}
             {broken.map((s) => (
-              <li key={s.id} className="min-h-12 border-b border-hairline py-3 text-clay">
-                {merchantName(s)} hasn't charged since it was due{' '}
-                {shortDate(s.nextExpectedDate ?? '')}.
-              </li>
+              <MissedRow key={s.id} s={s} today={today} all={recurring.data ?? []} />
             ))}
           </ul>
         </section>

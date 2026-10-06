@@ -1,5 +1,6 @@
 import {
   Account,
+  AccountBadgeIcon,
   type AccountKind,
   type AccountSource,
   type PatchAccountBody,
@@ -24,6 +25,21 @@ interface AccountRow {
   last_synced_at: string | null;
   archived_at: string | null;
   created_at: string;
+  badge_icon: string | null;
+  badge_text: string | null;
+  badge_bg: string | null;
+  badge_fg: string | null;
+}
+
+/** A symbol, or letters + colors; a symbol since retired from the list falls back to automatic. */
+function toBadge(r: AccountRow) {
+  if (r.badge_icon) {
+    const icon = AccountBadgeIcon.safeParse(r.badge_icon);
+    return icon.success ? { icon: icon.data } : null;
+  }
+  return r.badge_text && r.badge_bg && r.badge_fg
+    ? { text: r.badge_text, bg: r.badge_bg, fg: r.badge_fg }
+    : null;
 }
 
 const toAccount = (r: AccountRow): Account =>
@@ -45,6 +61,7 @@ const toAccount = (r: AccountRow): Account =>
     lastSyncedAt: r.last_synced_at,
     archivedAt: r.archived_at,
     createdAt: r.created_at,
+    badge: toBadge(r),
   });
 
 export async function listAccounts(userId: UserId, db: D1Database): Promise<Account[]> {
@@ -151,6 +168,17 @@ export async function archiveAccount(userId: UserId, db: D1Database, accountId: 
     .run();
 }
 
+/** Detaches a synced account from SimpleFIN. Its history stays; its balance is now entered by
+ *  hand. `source_account_id` stays so sync keeps recognising (and skipping) it. */
+export async function convertToManual(userId: UserId, db: D1Database, accountId: string) {
+  await db
+    .prepare(
+      "UPDATE account SET source = 'manual' WHERE user_id = ?1 AND id = ?2 AND source = 'simplefin'",
+    )
+    .bind(userId, accountId)
+    .run();
+}
+
 export async function countAccountTransactions(
   userId: UserId,
   db: D1Database,
@@ -169,13 +197,17 @@ export async function deleteAccount(userId: UserId, db: D1Database, accountId: s
     db
       .prepare('DELETE FROM balance_snapshot WHERE user_id = ?1 AND account_id = ?2')
       .bind(userId, accountId),
-    db.prepare('DELETE FROM account WHERE user_id = ?1 AND id = ?2').bind(userId, accountId),
+    db
+      .prepare(
+        'DELETE FROM account WHERE user_id = ?1 AND id = ?2 /* scan-ok: foreign-key check, rare delete */',
+      )
+      .bind(userId, accountId),
   ]);
 }
 
 export type AccountPatch = PatchAccountBody;
 
-const PATCH_COLUMNS: Record<keyof AccountPatch, string> = {
+const PATCH_COLUMNS: Record<Exclude<keyof AccountPatch, 'badge'>, string> = {
   name: 'name',
   kind: 'kind',
   institutionName: 'institution_name',
@@ -192,7 +224,9 @@ export async function updateAccount(
   id: string,
   patch: AccountPatch,
 ): Promise<Account | null> {
-  const entries = (Object.keys(PATCH_COLUMNS) as (keyof AccountPatch)[])
+  const entries: (readonly [string, unknown])[] = (
+    Object.keys(PATCH_COLUMNS) as (keyof typeof PATCH_COLUMNS)[]
+  )
     .filter((k) => patch[k] !== undefined)
     .map(
       (k) =>
@@ -201,6 +235,16 @@ export async function updateAccount(
           typeof patch[k] === 'boolean' ? bool(patch[k] as boolean) : patch[k],
         ] as const,
     );
+  // The badge's columns move together; a symbol and letters never coexist, and null clears all.
+  if (patch.badge !== undefined) {
+    const b = patch.badge;
+    entries.push(
+      ['badge_icon', b && 'icon' in b ? b.icon : null],
+      ['badge_text', b && 'text' in b ? b.text : null],
+      ['badge_bg', b && 'bg' in b ? b.bg.toLowerCase() : null],
+      ['badge_fg', b && 'fg' in b ? b.fg.toLowerCase() : null],
+    );
+  }
   if (entries.length > 0) {
     const sets = entries.map(([col], i) => `${col} = ?${i + 3}`).join(', ');
     await db
@@ -254,18 +298,55 @@ export function putSnapshotStmts(
   ];
 }
 
+/** Removes one dated balance, then re-points the current balance at the newest one left.
+ *  The last remaining balance is never removed: an account always has a reported value. */
+export async function deleteSnapshot(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+  asOf: string,
+): Promise<boolean> {
+  const [del] = await db.batch([
+    db
+      .prepare(
+        `DELETE FROM balance_snapshot WHERE user_id = ?1 AND account_id = ?2 AND as_of = ?3
+         AND EXISTS (SELECT 1 FROM balance_snapshot o
+                     WHERE o.user_id = ?1 AND o.account_id = ?2 AND o.as_of <> ?3)`,
+      )
+      .bind(userId, accountId, asOf),
+    db
+      .prepare(
+        `UPDATE account SET balance_cents = COALESCE(
+           (SELECT b.balance_cents FROM balance_snapshot b
+            WHERE b.user_id = ?1 AND b.account_id = ?2 ORDER BY b.as_of DESC LIMIT 1),
+           balance_cents)
+         WHERE user_id = ?1 AND id = ?2`,
+      )
+      .bind(userId, accountId),
+  ]);
+  return (del?.meta.changes ?? 0) > 0;
+}
+
 export async function listSnapshots(
   userId: UserId,
   db: D1Database,
-  opts: { accountId?: string; to?: string } = {},
+  opts: { accountId?: string; from?: string; to?: string } = {},
 ): Promise<SnapshotRow[]> {
+  // With `from`, each account's history starts at its last balance on or before that day:
+  // enough to hold or interpolate the first days, without reading years of daily snapshots.
+  // Driven per account so each read is a range on (account_id, as_of).
   const { results } = await db
     .prepare(
-      `SELECT account_id, as_of, balance_cents FROM balance_snapshot
-       WHERE user_id = ?1 AND (?2 IS NULL OR account_id = ?2) AND (?3 IS NULL OR as_of <= ?3)
-       ORDER BY account_id, as_of`,
+      `SELECT b.account_id, b.as_of, b.balance_cents FROM account a
+       JOIN balance_snapshot b ON b.account_id = a.id
+       WHERE a.user_id = ?1 AND b.user_id = ?1 AND (?2 IS NULL OR a.id = ?2)
+         AND b.as_of <= COALESCE(?3, '9999-12-31')
+         AND b.as_of >= COALESCE(
+           (SELECT MAX(p.as_of) FROM balance_snapshot p WHERE p.account_id = a.id AND p.as_of <= ?4),
+           ?4, '')
+       ORDER BY b.account_id, b.as_of`,
     )
-    .bind(userId, opts.accountId ?? null, opts.to ?? null)
+    .bind(userId, opts.accountId ?? null, opts.to ?? null, opts.from ?? null)
     .all<SnapshotRow>();
   return results;
 }

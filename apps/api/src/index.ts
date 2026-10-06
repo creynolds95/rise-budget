@@ -4,6 +4,8 @@ import type { AppEnv } from './env';
 import { errorBody, renderError } from './lib/errors';
 import { idempotency } from './lib/idempotency';
 import { requireAuth } from './lib/session';
+import { flushUsage, meter, meterDb, type Tally } from './lib/usage';
+import { usage } from './routes/usage';
 import { auth } from './routes/auth';
 import { accounts } from './routes/accounts';
 import { categories, categoryGroups } from './routes/categories';
@@ -24,6 +26,8 @@ import { devices } from './routes/devices';
 import { findUserIdByEmail } from './db';
 import type { Env } from './env';
 import { BACKUP_CRON, runBackup } from './backup/run';
+import { applyFollows } from './lib/follow';
+import { applyLoanPayments } from './lib/loanPayments';
 import { runSync } from './sync/run';
 import { sourceFromEnv } from './sync/source';
 
@@ -39,6 +43,9 @@ app.use(
   }),
 );
 
+// Every request counts the D1 rows it reads and writes, for the Settings usage meter.
+app.use('*', meter);
+
 // Public: health and the auth handshake. There is no signup route (SPEC §9).
 app.get('/health', (c) => c.json({ ok: true as const }));
 app.route('/auth', auth);
@@ -48,6 +55,7 @@ app.use('*', requireAuth);
 app.use('*', idempotency);
 app.route('/me', me);
 app.route('/devices', devices);
+app.route('/usage', usage);
 app.route('/accounts', accounts);
 app.route('/networth', networth);
 app.route('/investments', investments);
@@ -78,9 +86,11 @@ app.onError(renderError);
 export async function scheduled(event: ScheduledController, env: Env): Promise<void> {
   const job = event.cron === BACKUP_CRON ? 'backup' : 'sync';
   const started = Date.now();
+  const tally: Tally = { read: 0, written: 0 };
+  const db = meterDb(env.DB, tally);
   try {
     if (job === 'backup') {
-      const r = await runBackup(env.DB, env.BACKUPS, new Date(event.scheduledTime));
+      const r = await runBackup(db, env.BACKUPS, new Date(event.scheduledTime));
       log({
         job,
         ok: true,
@@ -93,9 +103,28 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
     }
     const source = sourceFromEnv(env);
     if (!source || !env.SIMPLEFIN_OWNER_EMAIL) return;
-    const userId = await findUserIdByEmail(env.DB, env.SIMPLEFIN_OWNER_EMAIL);
+    const userId = await findUserIdByEmail(db, env.SIMPLEFIN_OWNER_EMAIL);
     if (!userId) return;
-    const r = await runSync(env.DB, userId, source);
+    const r = await runSync(db, userId, source);
+    if (r.status !== 'failed') {
+      // A loan-payment hiccup must not fail the sync; the Debt page still offers Apply by hand.
+      await applyLoanPayments(db, userId, new Date(event.scheduledTime)).catch((e: unknown) =>
+        log({
+          job,
+          ok: false,
+          step: 'loan-payments',
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+      await applyFollows(db, userId, new Date(event.scheduledTime)).catch((e: unknown) =>
+        log({
+          job,
+          ok: false,
+          step: 'follow',
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+    }
     log({ job, ok: r.status !== 'failed', ms: Date.now() - started, status: r.status });
   } catch (e) {
     // Rethrown so the Cron Trigger is marked failed in Cloudflare too; the Dashboard flags a
@@ -107,6 +136,8 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
       error: e instanceof Error ? e.message : String(e),
     });
     throw e;
+  } finally {
+    await flushUsage(env.DB, tally, 0, `cron ${job}`);
   }
 }
 

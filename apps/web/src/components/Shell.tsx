@@ -1,10 +1,14 @@
 import { useTabRootTrap } from '../lib/gestures';
-import { NavDrawer } from './NavDrawer';
+import { BackLink } from './BackLink';
+import { Floater } from './Floater';
+import { MENU_ITEMS, NavDrawer } from './NavDrawer';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
 import { Icon } from './primitives/Icon';
 import { HeaderActionsContext } from '../lib/headerActions';
 import { useMe } from '../lib/queries';
+import { useScrollMemory } from '../lib/scrollMemory';
+import { isTabRoot } from '../lib/transition';
 import { TABS, type Tab } from '../routes/table';
 
 const ICON: Record<Tab, string> = {
@@ -41,12 +45,15 @@ export function Shell() {
   const [actions, setActions] = useState<ReactNode>(null);
   const location = useLocation();
   useTabRootTrap(location.pathname);
+  useScrollMemory();
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = () => setMenuOpen(false);
   const onDashboard = location.pathname === '/';
-  // The menu lives on the Dashboard only. Sliding right from the left side opens it there.
+  const onTabRoot = isTabRoot(location.pathname);
+  // The menu sits on all four tabs. Sliding right from the left side opens it there; pushed
+  // screens keep that gesture for going back.
   useEffect(() => {
-    if (!onDashboard) return;
+    if (!onTabRoot) return;
     let start: { x: number; y: number } | null = null;
     const onStart = (e: TouchEvent) => {
       const t = e.touches[0];
@@ -73,12 +80,18 @@ export function Shell() {
       document.removeEventListener('touchstart', onStart);
       document.removeEventListener('touchend', onEnd);
     };
-  }, [onDashboard]);
+  }, [onTabRoot]);
   const currentTab = TABS.find((t) =>
     t.path === '/' ? onDashboard : location.pathname.startsWith(t.path),
   );
+  // Screens pushed from the Dashboard menu keep the Dashboard tab lit.
+  const fromDashboard = /^\/(review|recurring|cash-to-payday|financial-health)\/?$/.test(
+    location.pathname,
+  );
   const isActiveTab = (path: string) =>
-    path === '/' ? onDashboard : location.pathname.startsWith(path);
+    path === '/' ? onDashboard || fromDashboard : location.pathname.startsWith(path);
+  // Pushed screens bring their own banner; the tab title bar is only for the tab roots.
+  const showTabHead = onTabRoot || location.pathname === '/settings';
   // Screens that pin something under the tab title (the Transactions search) need its height.
   const head = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -103,7 +116,7 @@ export function Shell() {
           matching `lg:pl-72` padding. The phone tab bar is deliberately NOT fixed: it is the
           last item of a full-height column and `sticky`, because iOS can leave a
           fixed-position bar stranded mid-screen after a long session. */}
-      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72 lg:flex-col lg:justify-between lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
+      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72 lg:flex-col lg:justify-between lg:gap-6 lg:overflow-y-auto lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
         <div className="flex flex-col gap-7">
           <span className="px-3 font-serif text-xl tracking-tight text-sage-700">Rise</span>
           <nav aria-label="Tabs" className="flex flex-col gap-0.5">
@@ -135,6 +148,22 @@ export function Shell() {
               </NavLink>
             ))}
           </nav>
+          {/* Everything the phone's menu reaches; Settings sits at the foot. */}
+          <nav aria-label="Menu" className="flex flex-col gap-0.5 border-t border-hairline pt-5">
+            {MENU_ITEMS.filter((i) => i.to !== '/settings').map((i) => (
+              <NavLink
+                key={i.to}
+                to={i.to}
+                className={({ isActive }) =>
+                  `flex min-h-10 items-center rounded-card px-3 type-body ${
+                    isActive ? 'bg-sage-100 font-semibold text-sage-700' : 'text-ink-muted'
+                  }`
+                }
+              >
+                {i.label}
+              </NavLink>
+            ))}
+          </nav>
         </div>
         <Link
           to="/settings"
@@ -150,10 +179,11 @@ export function Shell() {
       <div className="min-w-0 flex-1">
         <div
           ref={head}
-          className="gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between border-b border-hairline bg-surface pb-1 pt-[max(12px,env(safe-area-inset-top))] shadow-soft lg:hidden"
+          className={`gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between banner bg-banner text-banner-ink shadow-soft lg:hidden ${showTabHead ? '' : 'hidden!'}`}
         >
-          <div className={`flex items-center gap-1 ${onDashboard ? '-ml-2' : ''}`}>
-            {onDashboard && (
+          <div className={`flex items-center gap-1 ${onTabRoot ? '-ml-2' : ''}`}>
+            {location.pathname === '/settings' && <BackLink to="/" label="Dashboard" />}
+            {onTabRoot && (
               <button
                 type="button"
                 aria-label="Menu"
@@ -163,7 +193,9 @@ export function Shell() {
                 <Icon name="menu" />
               </button>
             )}
-            <span className="type-page">{currentTab?.label ?? 'Rise'}</span>
+            <span className="type-page">
+              {currentTab?.label ?? (location.pathname === '/settings' ? 'Settings' : 'Rise')}
+            </span>
           </div>
           <div className="-mr-2 flex items-center">{actions}</div>
         </div>
@@ -179,6 +211,8 @@ export function Shell() {
         aria-label="Tabs"
         className="sticky bottom-0 z-20 border-t border-hairline bg-canvas pb-[env(safe-area-inset-bottom)] lg:hidden"
       >
+        {/* Rides the sticky tab bar rather than being `fixed`, for the same iOS reason. */}
+        <Floater className="absolute inset-x-0 bottom-full mb-3" />
         <ul className="mx-auto grid max-w-2xl grid-cols-4">
           {TABS.map((t) => (
             <li key={t.tab}>
@@ -220,6 +254,7 @@ export function Shell() {
           ))}
         </ul>
       </nav>
+      <Floater className="fixed inset-x-0 bottom-6 z-30 hidden lg:flex lg:pl-72" />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { refreshAggregateStmts } from '../src/db';
 import { call, signedInUser } from './helpers/http';
 
 describe('T41 dashboard spending report', () => {
@@ -35,9 +36,10 @@ describe('T41 dashboard spending report', () => {
     await txn('2026-09-02', -250_000, pay.id); // income is not spending
     await txn('2026-09-02', 40_000, xfer.id); // unbudgeted is not spending
     const dropped = await txn('2026-09-03', 9_999, food.id);
-    await env.DB.prepare("UPDATE txn SET review_state = 'dropped' WHERE id = ?1")
-      .bind(dropped.id)
-      .run();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE txn SET review_state = 'dropped' WHERE id = ?1").bind(dropped.id),
+      ...refreshAggregateStmts(u.userId, env.DB, '2026-09'),
+    ]);
 
     const r = await api('GET', '/reports/spending?month=2026-09');
     expect(r.status).toBe(200);
@@ -56,6 +58,51 @@ describe('T41 dashboard spending report', () => {
         { periodId: '2026-09', cents: 2_700 },
       ],
     });
+  });
+
+  it('never counts the Transfers group: card payments made or moved there stay out', async () => {
+    const u = await signedInUser();
+    const api = (method: string, path: string, body?: unknown) =>
+      call(method, path, { access: u.access, body });
+    const life = (await api('POST', '/category-groups', { name: 'Life', kind: 'expense' })).json;
+    const xfers = (await api('POST', '/category-groups', { name: 'Transfers', kind: 'expense' }))
+      .json;
+    const food = (await api('POST', '/categories', { groupId: life.id, name: 'Food' })).json;
+    // Created in Transfers asking to count: refused.
+    const ccp = (
+      await api('POST', '/categories', {
+        groupId: xfers.id,
+        name: 'Credit Card Payment',
+        budgeted: true,
+      })
+    ).json;
+    expect(ccp.budgeted).toBe(false);
+    // Created as spending, with history, then dragged into Transfers: its history leaves.
+    const moved = (await api('POST', '/categories', { groupId: life.id, name: 'Venmo out' })).json;
+    expect(moved.budgeted).toBe(true);
+    const card = (await api('POST', '/accounts', { name: 'Card', kind: 'credit' })).json;
+    const txn = (postedAt: string, amountCents: number, categoryId: string) =>
+      api('POST', '/transactions', {
+        accountId: card.id,
+        postedAt,
+        amountCents,
+        descriptor: 'X',
+        categoryId,
+      });
+    await txn('2026-09-01', 1_000, food.id);
+    await txn('2026-09-02', 50_000, ccp.id);
+    await txn('2026-09-03', 20_000, moved.id);
+    const patched = (await api('PATCH', `/categories/${moved.id}`, { groupId: xfers.id })).json;
+    expect(patched.budgeted).toBe(false);
+    // Asking to count while in Transfers is refused too.
+    const again = (await api('PATCH', `/categories/${moved.id}`, { budgeted: true })).json;
+    expect(again.budgeted).toBe(false);
+
+    const r = await api('GET', '/reports/spending?month=2026-09');
+    expect(r.json.days).toEqual([{ date: '2026-09-01', cents: 1_000 }]);
+    expect(r.json.months.at(-1)).toEqual({ periodId: '2026-09', cents: 1_000 });
+    const period = await api('GET', '/periods/2026-09');
+    expect(period.json.totals.spentCents).toBe(1_000);
   });
 
   it('rejects a missing or malformed month', async () => {

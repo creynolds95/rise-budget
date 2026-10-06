@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { BackLink } from '../BackLink';
 import { useSwipeBack } from '../../lib/gestures';
-import { transitionClick } from '../../lib/transition';
 
 /**
  * The five-zone detail template (DESIGN-SYSTEM.md §5). Zones are props, not children, so
@@ -9,7 +8,7 @@ import { transitionClick } from '../../lib/transition';
  */
 export interface DetailPageProps {
   header: {
-    /** Where back goes, and its name: "‹ Budget", never a bare arrow. */
+    /** Where back goes, and its name (the arrow's accessible label). */
     back: { label: string; to: string };
     title: string;
     /** The one primary action, or none. */
@@ -33,22 +32,14 @@ export const ZONES = ['header', 'identity', 'shape', 'facts', 'related', 'manage
 
 export function DetailPage(p: DetailPageProps) {
   if (!p.header.back.label.trim()) throw new Error('DetailPage: back control must name its origin');
-  const navigate = useNavigate();
   useSwipeBack(p.header.back.to);
   return (
     <article className="mx-auto max-w-2xl pb-24">
       <header
         data-zone="header"
-        className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas"
+        className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft"
       >
-        <Link
-          to={p.header.back.to}
-          onClick={transitionClick(navigate, p.header.back.to, 'back')}
-          className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700"
-        >
-          <span aria-hidden>‹</span>
-          {p.header.back.label}
-        </Link>
+        <BackLink to={p.header.back.to} label={p.header.back.label} />
         <h1 className="truncate type-body font-semibold">{p.header.title}</h1>
         <div className="justify-self-end">{p.header.action}</div>
       </header>
@@ -60,7 +51,9 @@ export function DetailPage(p: DetailPageProps) {
         </section>
       )}
       {p.shape && (
-        <section data-zone="shape" className="gutter pb-6">
+        // Without an identity zone above it, the shape needs its own room under the sticky
+        // header, or the tallest bar meets the banner.
+        <section data-zone="shape" className={`gutter pb-6 ${p.identity ? '' : 'pt-6'}`}>
           {p.shape}
         </section>
       )}

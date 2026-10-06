@@ -1,12 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router';
 import { axisPicks, surplusTone } from '../lib/surplus';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Chevron, EditRow } from '../components/primitives/Rows';
-import { Sheet } from '../components/primitives/Sheet';
+import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { Toggle } from '../components/primitives/Toggle';
 import { ApiError, api } from '../lib/api';
@@ -14,7 +15,7 @@ import { localToday, shortDate } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { useAccounts, useCashToPayday, useMe } from '../lib/queries';
 import { describeSchedule, draftFrom, schedulePayload, type ScheduleDraft } from '../lib/schedule';
-import type { ScheduleRow } from '../lib/types';
+import type { ScheduleRow, SuggestionRow } from '../lib/types';
 import { ScheduleFields } from '../components/ScheduleFields';
 
 /**
@@ -172,7 +173,7 @@ function AddManualEventSheet({
       </label>
       <label className="mt-3 flex flex-col gap-1">
         <span className="type-caption text-ink-muted">Amount</span>
-        <MoneyField label="Amount" cents={amountCents} onCommit={setAmountCents} />
+        <MoneyField label="Amount" cents={amountCents} draft onCommit={setAmountCents} />
       </label>
       <ScheduleFields
         draft={draft}
@@ -237,6 +238,11 @@ function ScheduleList({
             <span className="block type-caption text-ink-faint">
               {describeSchedule(r.cadence, r.anchorDays)} · next {shortDate(r.nextExpectedDate)}
             </span>
+            {r.change && (
+              <span className="block type-caption text-ink-faint">
+                <MoneyText cents={r.change.amountCents} /> from {shortDate(r.change.on)}
+              </span>
+            )}
           </span>
           <span className="flex shrink-0 items-center gap-2">
             <MoneyText cents={r.amountCents} tone={kind === 'income' ? 'in' : 'ink'} />
@@ -248,9 +254,52 @@ function ScheduleList({
   );
 }
 
+/** What sync found in the cash accounts. Nothing here counts until it is added. */
+function SuggestionList({
+  rows,
+  onAdd,
+  onDismiss,
+}: {
+  rows: SuggestionRow[];
+  onAdd: (r: SuggestionRow) => void;
+  onDismiss: (r: SuggestionRow) => void;
+}) {
+  return (
+    <ul>
+      {rows.map((r) => (
+        <li key={r.merchant} className="border-b border-hairline py-3">
+          <div className="flex items-start justify-between gap-4">
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{r.displayName}</span>
+              <span className="block type-caption text-ink-faint">
+                {r.accountName} · {describeSchedule(r.cadence, r.anchorDays)} · next{' '}
+                {shortDate(r.nextExpectedDate)}
+              </span>
+              {r.likelySameAs && (
+                <span className="block type-caption text-gold-text">
+                  Looks like {r.likelySameAs}, already in Surplus
+                </span>
+              )}
+            </span>
+            <MoneyText cents={r.amountCents} tone={r.kind === 'income' ? 'in' : 'ink'} />
+          </div>
+          <div className="mt-2 flex gap-2">
+            <Button className="flex-1" onClick={() => onAdd(r)}>
+              Add
+            </Button>
+            <Button variant="quiet" className="flex-1" onClick={() => onDismiss(r)}>
+              Dismiss
+            </Button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
- * Edit one schedule. A detected one is taken over by saving (so Rise stops re-detecting it);
- * "Remove" deletes a manual schedule or dismisses a detected one.
+ * Edit one schedule, or review a suggestion before adding it. "Remove" deletes a schedule;
+ * a suggestion is dismissed instead.
  */
 function EditScheduleSheet({
   row,
@@ -268,6 +317,10 @@ function EditScheduleSheet({
   const [draft, setDraft] = useState<ScheduleDraft>(() =>
     draftFrom(row.cadence, row.anchorDays, row.nextExpectedDate),
   );
+  const [changing, setChanging] = useState(row.change != null);
+  const [changeCents, setChangeCents] = useState(row.change?.amountCents ?? row.amountCents);
+  const [changeOn, setChangeOn] = useState(row.change?.on ?? row.nextExpectedDate);
+  const changeInvalid = changing && (changeCents <= 0 || !changeOn);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const run = async (fn: () => Promise<unknown>) => {
@@ -298,8 +351,32 @@ function EditScheduleSheet({
       )}
       <label className="mt-3 flex flex-col gap-1">
         <span className="type-caption text-ink-muted">Amount</span>
-        <MoneyField label="Amount" cents={amountCents} onCommit={setAmountCents} />
+        <MoneyField label="Amount" cents={amountCents} draft onCommit={setAmountCents} />
       </label>
+      {row.id && (
+        <div className="mt-3 flex min-h-11 items-center justify-between gap-4">
+          <span>Amount changes</span>
+          <Toggle label="Amount changes" on={changing} onChange={setChanging} />
+        </div>
+      )}
+      {row.id && changing && (
+        <div className="mt-1 flex gap-3">
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="type-caption text-ink-muted">Starting</span>
+            <input
+              type="date"
+              aria-label="Starting"
+              value={changeOn}
+              onChange={(e) => setChangeOn(e.target.value)}
+              className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
+            />
+          </label>
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="type-caption text-ink-muted">New amount</span>
+            <MoneyField label="New amount" cents={changeCents} draft onCommit={setChangeCents} />
+          </label>
+        </div>
+      )}
       <ScheduleFields
         draft={draft}
         onChange={setDraft}
@@ -308,7 +385,7 @@ function EditScheduleSheet({
       {error && <p className="mt-2 text-clay">{error}</p>}
       <Button
         className="mt-4 w-full"
-        disabled={saving || amountCents <= 0 || (row.isHandAdded && !label.trim())}
+        disabled={saving || amountCents <= 0 || changeInvalid || (row.isHandAdded && !label.trim())}
         onClick={() =>
           void run(() =>
             api('PUT', '/cash-to-payday/schedules', {
@@ -317,25 +394,28 @@ function EditScheduleSheet({
               amountCents,
               ...schedulePayload(draft),
               ...(row.isHandAdded ? { label: label.trim() } : {}),
+              ...(row.id
+                ? { change: changing ? { amountCents: changeCents, on: changeOn } : null }
+                : {}),
             }),
           )
         }
       >
-        {saving ? 'Saving…' : 'Save'}
+        {saving ? 'Saving…' : row.id ? 'Save' : 'Add to Surplus'}
       </Button>
       <Button
         variant="quiet"
         className="mt-2 w-full"
         disabled={saving}
         onClick={() =>
-          row.isManual && row.id
+          row.id
             ? void run(() =>
                 api('DELETE', `/cash-to-payday/schedules/${encodeURIComponent(row.id as string)}`),
               )
             : onDismiss()
         }
       >
-        Remove
+        {row.id ? 'Remove' : 'Dismiss'}
       </Button>
     </Sheet>
   );
@@ -361,6 +441,16 @@ export function CashToPayday() {
   });
   const [editing, setEditing] = useState<ScheduleRow | null>(null);
   const schedules = data?.schedules ?? [];
+  const suggestions = data?.suggestions ?? [];
+  const dismiss = (r: { merchant: string; displayName: string }) =>
+    setDismissed.mutate([...dismissed, { merchant: r.merchant, displayName: r.displayName }]);
+  // The Dashboard's "to review in Surplus" row lands here.
+  const { hash } = useLocation();
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const hasSuggestions = suggestions.length > 0;
+  useEffect(() => {
+    if (hash === '#review' && hasSuggestions) reviewRef.current?.scrollIntoView();
+  }, [hash, hasSuggestions]);
   // Only the Dashboard links here (routes/table.ts).
   const back = { label: 'Dashboard', to: '/' };
 
@@ -403,7 +493,7 @@ export function CashToPayday() {
             />
           ),
           context: noPaySchedule ? (
-            'No pay schedule found yet — add your income below, or wait for Rise to see a paycheck post.'
+            'Add your income below.'
           ) : data.lowestPoint.date !== data.points[0]?.date ? (
             <>
               Lowest point is{' '}
@@ -448,6 +538,22 @@ export function CashToPayday() {
           </>
         }
         related={[
+          ...(hasSuggestions
+            ? [
+                {
+                  title: 'To review',
+                  children: (
+                    <div ref={reviewRef} className="scroll-mt-16">
+                      <SuggestionList
+                        rows={suggestions}
+                        onAdd={(r) => setEditing({ ...r, id: null, isHandAdded: false })}
+                        onDismiss={dismiss}
+                      />
+                    </div>
+                  ),
+                },
+              ]
+            : []),
           {
             title: 'Upcoming income',
             children: (
@@ -524,29 +630,30 @@ export function CashToPayday() {
           },
         ]}
       />
-      {editing && (
-        <EditScheduleSheet
-          row={editing}
-          onClose={() => setEditing(null)}
-          onSaved={refresh}
-          onDismiss={() => {
-            setDismissed.mutate([
-              ...dismissed,
-              { merchant: editing.merchant, displayName: editing.displayName },
-            ]);
-            setEditing(null);
-          }}
-        />
-      )}
-      {addingKind && (
-        <AddManualEventSheet
-          kind={addingKind}
-          onClose={() => setAddingKind(null)}
-          onSaved={async () => {
-            await refresh();
-          }}
-        />
-      )}
+      <Leaving>
+        {editing && (
+          <EditScheduleSheet
+            row={editing}
+            onClose={() => setEditing(null)}
+            onSaved={refresh}
+            onDismiss={() => {
+              dismiss(editing);
+              setEditing(null);
+            }}
+          />
+        )}
+      </Leaving>
+      <Leaving>
+        {addingKind && (
+          <AddManualEventSheet
+            kind={addingKind}
+            onClose={() => setAddingKind(null)}
+            onSaved={async () => {
+              await refresh();
+            }}
+          />
+        )}
+      </Leaving>
     </>
   );
 }

@@ -32,7 +32,7 @@ export const RuleMatchType = z.enum(['contains', 'equals', 'regex']);
 export type RuleMatchType = z.infer<typeof RuleMatchType>;
 
 export const RecurringCadence = z.enum(['weekly', 'biweekly', 'monthly', 'annual', 'semimonthly']);
-export const RecurringStatus = z.enum(['active', 'broken', 'ended']);
+export const RecurringStatus = z.enum(['active', 'broken', 'lapsed', 'ended']);
 
 export const SyncRunStatus = z.enum(['running', 'ok', 'partial', 'failed']);
 export const ImportFormat = z.enum(['csv', 'ofx', 'qfx']);

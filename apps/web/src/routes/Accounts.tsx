@@ -4,6 +4,7 @@ import { useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
+import { AccountLogo } from '../components/AccountLogo';
 import { HealthNotes } from '../components/HealthNotes';
 import { quietInstitutions, quietWhenStale, StaleNotes, staleText } from '../components/StaleNotes';
 import { Button } from '../components/primitives/Button';
@@ -17,7 +18,8 @@ import { ApiError, api } from '../lib/api';
 import { allowsPercentChange, rangeStart, type Range } from '../lib/chart';
 import { daysBetween, localToday, shortDate } from '../lib/dates';
 import { useHeaderActions } from '../lib/headerActions';
-import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncOutcome';
+import { showFloater } from '../lib/floater';
+import { syncNote, type SyncRunResult } from '../lib/syncOutcome';
 import { navigateWithTransition } from '../lib/transition';
 import {
   useAccounts,
@@ -28,6 +30,9 @@ import {
   useToday,
 } from '../lib/queries';
 import type { AccountWithStaleness } from '../lib/types';
+
+/** How long the refresh outcome stays up. */
+const NOTE_MS = 3000;
 
 export const KIND_GROUPS: { kind: AccountKind; label: string }[] = [
   { kind: 'depository', label: 'Cash' },
@@ -59,15 +64,23 @@ export function Accounts() {
 
   const syncStatus = useSyncStatus();
   const syncMode = syncStatus.data?.mode;
+  // The sync floats above the tab bar: "Syncing banks…", then a short result that fades.
+  // These run even if the user leaves Accounts mid-sync. A failure stays until tapped.
   const refresh = useMutation({
     mutationFn: () => api<SyncRunResult>('POST', '/sync/run', {}),
-    onSuccess: () =>
-      Promise.all([
+    onMutate: () => showFloater({ text: 'Syncing banks…', busy: true }),
+    onSuccess: (r) => {
+      const n = syncNote(r);
+      showFloater({ ...n, ttlMs: n.tone === 'warn' ? undefined : NOTE_MS });
+      return Promise.all([
         invalidate(),
         ...['sync', 'review-queue', 'queue-count'].map((k) =>
           qc.invalidateQueries({ queryKey: [k] }),
         ),
-      ]),
+      ]);
+    },
+    onError: (e) =>
+      showFloater({ text: e instanceof ApiError ? e.message : 'Sync failed', tone: 'warn' }),
   });
 
   const headerButtons = (
@@ -101,37 +114,6 @@ export function Accounts() {
         <h1 className="type-page">Accounts</h1>
         <div className="-mr-2 flex items-center">{headerButtons}</div>
       </header>
-      {refresh.isPending && (
-        <p role="status" className="gutter type-caption text-ink-muted">
-          Asking your banks for anything new…
-        </p>
-      )}
-      {refresh.isSuccess &&
-        (() => {
-          const o = syncOutcome(
-            refresh.data,
-            banksLastReported(live.filter((a) => a.source === 'simplefin')),
-            tz,
-          );
-          return (
-            <p
-              role="status"
-              className={`gutter type-caption ${o.tone === 'warn' ? 'text-clay' : 'text-ink-muted'}`}
-            >
-              {o.text}
-            </p>
-          );
-        })()}
-      {refresh.isError && (
-        <p role="alert" className="gutter type-caption text-clay">
-          {refresh.error instanceof ApiError ? refresh.error.message : 'Refresh failed.'}
-        </p>
-      )}
-      {refresh.isSuccess && (
-        <p role="status" className="gutter type-caption text-ink-muted">
-          Up to date as of just now.
-        </p>
-      )}
       <section className="gutter pt-4">
         <NetWorthSection />
       </section>
@@ -159,9 +141,9 @@ export function Accounts() {
         return (
           <section key={kind} className="gutter mt-6">
             <div className="overflow-hidden rounded-card bg-surface shadow-soft">
-              <h2 className="flex items-baseline justify-between border-b border-hairline px-4 py-3 type-label font-bold text-ink">
-                <span>{label}</span>
-                <MoneyText cents={total} tone="muted" />
+              <h2 className="flex items-baseline justify-between gap-3 border-b border-hairline px-4 pt-4 pb-3.5 text-ink">
+                <span className="font-serif text-[22px] leading-7 tracking-[-0.01em]">{label}</span>
+                <MoneyText cents={total} className="text-lg font-semibold" />
               </h2>
               <div className="px-4">
                 {group.map((a) => (
@@ -281,22 +263,25 @@ function AccountRow({
     <NavRow
       to={`/accounts/${a.id}`}
       label={
-        <span className="block min-w-0">
-          <span className="block truncate">
-            {a.name}
-            {a.mask && <span className="text-ink-faint"> ··{a.mask}</span>}
-          </span>
-          <span
-            className={`block truncate type-caption ${stale ? 'text-gold-text' : 'text-ink-faint'}`}
-          >
-            {stale
-              ? quietWhenStale(a) && a.lastSyncedAt
-                ? `Last synced ${shortDate(localToday(tz, new Date(a.lastSyncedAt)))}`
-                : 'Not up to date'
-              : a.source === 'manual'
-                ? 'Manual'
-                : (a.institutionName ?? 'Synced')}
-            {!a.includeInNetWorth && ' · not in net worth'}
+        <span className="flex min-w-0 items-center gap-3">
+          <AccountLogo account={a} />
+          <span className="block min-w-0">
+            <span className="block truncate">
+              {a.name}
+              {a.mask && <span className="text-ink-faint"> ··{a.mask}</span>}
+            </span>
+            <span
+              className={`block truncate type-caption ${stale ? 'text-gold-text' : 'text-ink-faint'}`}
+            >
+              {stale
+                ? quietWhenStale(a) && a.lastSyncedAt
+                  ? `Last synced ${shortDate(localToday(tz, new Date(a.lastSyncedAt)))}`
+                  : 'Not up to date'
+                : a.source === 'manual'
+                  ? 'Manual'
+                  : (a.institutionName ?? 'Synced')}
+              {!a.includeInNetWorth && ' · not in net worth'}
+            </span>
           </span>
         </span>
       }
@@ -372,7 +357,7 @@ function AddAccountSheet({ open, onClose }: { open: boolean; onClose: () => void
           <span className="type-label text-ink-muted">
             {owes ? 'Amount owed today' : 'Balance today'}
           </span>
-          <MoneyField label="Balance today" cents={balance} onCommit={setBalance} />
+          <MoneyField label="Balance today" cents={balance} draft onCommit={setBalance} />
         </label>
         {error && <p className="text-clay">{error}</p>}
         <Button type="submit" disabled={!name.trim()}>

@@ -6,6 +6,7 @@ import {
   type RolloverPolicy,
   type SpendShape,
 } from '@rise/shared/schemas';
+import { refreshCategoryAggregateStmts } from './aggregates';
 import { reassignSplitStmts, splitsFor } from './transactions';
 import { bool, newId, nowIso, type UserId } from './util';
 
@@ -424,10 +425,14 @@ export async function updateCategory(
     );
   if (entries.length > 0) {
     const sets = entries.map(([col], i) => `${col} = ?${i + 3}`).join(', ');
-    await db
+    const update = db
       .prepare(`UPDATE category SET ${sets} WHERE user_id = ?1 AND id = ?2`)
-      .bind(userId, id, ...entries.map(([, v]) => v))
-      .run();
+      .bind(userId, id, ...entries.map(([, v]) => v));
+    // Flipping `budgeted` adds or removes the category's whole history from the aggregate cache.
+    await db.batch([
+      update,
+      ...(patch.budgeted !== undefined ? refreshCategoryAggregateStmts(userId, db, id) : []),
+    ]);
   }
   return getCategory(userId, db, id);
 }
@@ -545,11 +550,13 @@ export function archiveCategoryStmts(
     db.prepare('DELETE FROM rule WHERE user_id = ?1 AND category_id = ?2').bind(userId, id),
     // Learned suggestions must not point at a category the picker no longer shows.
     db
-      .prepare('DELETE FROM merchant_memory WHERE user_id = ?1 AND category_id = ?2')
+      .prepare(
+        'DELETE FROM merchant_memory WHERE user_id = ?1 AND category_id = ?2 /* scan-ok: category delete */',
+      )
       .bind(userId, id),
     db
       .prepare(
-        `UPDATE txn SET suggested_category_id = NULL, suggestion_confidence = 0
+        `UPDATE txn /* scan-ok: category delete */ SET suggested_category_id = NULL, suggestion_confidence = 0
          WHERE user_id = ?1 AND suggested_category_id = ?2`,
       )
       .bind(userId, id),

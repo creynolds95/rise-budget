@@ -16,5 +16,41 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      - run: pnpm test
+      - run: pnpm --filter '!@rise/api' test
+      # The API tests also list every SQL statement they run (QUERY_CATALOG), for the plan
+      # checks below. The list goes to a file, not the log.
+      - name: API tests
+        working-directory: apps/api
+        env:
+          QUERY_CATALOG: '1'
+        run: |
+          set -o pipefail
+          pnpm exec vitest run --reporter=verbose --silent=false 2>&1 | tee "$RUNNER_TEMP/api-tests.log" | grep -v 'QUERY_CATALOG '
+          echo "catalog: $(grep -c '^QUERY_CATALOG ' "$RUNNER_TEMP/api-tests.log") lines, $(grep '^QUERY_CATALOG ' "$RUNNER_TEMP/api-tests.log" | sort -u | wc -l) distinct, $(grep -c 'QUERY_CATALOG' "$RUNNER_TEMP/api-tests.log") anywhere"
+      # Every statement's plan, on the local planner and then on production's own (they
+      # differ: Oct 2026, a lookup that used an index locally scanned in production and spent
+      # the 5M-row daily allowance). EXPLAIN reads no rows, so asking production is free.
+      - name: Query plans (local)
+        working-directory: apps/api
+        run: node --experimental-strip-types scripts/check-plans.ts "$RUNNER_TEMP/api-tests.log"
+      - name: Query plans (production)
+        working-directory: apps/api
+        run: node --experimental-strip-types scripts/check-plans.ts "$RUNNER_TEMP/api-tests.log" --remote
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      # Migrations run once at deploy, outside the tests' catalog: a backfill gets the same check.
+      - name: Migration plans (production)
+        working-directory: apps/api
+        run: node --experimental-strip-types scripts/check-plans.ts --migrations --remote
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: query-catalog
+          path: ${{ runner.temp }}/api-tests.log
+          retention-days: 7
       - run: pnpm --filter @rise/shared coverage

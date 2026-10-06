@@ -1,4 +1,5 @@
 import type { Category, CategoryGroup } from '@rise/shared/schemas';
+import { isTransfersGroup } from '@rise/shared/categorize';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, api } from '../lib/api';
@@ -7,7 +8,7 @@ import { useInvalidateMoney, useRules } from '../lib/queries';
 import { Button } from './primitives/Button';
 import { Group, GroupRow } from './primitives/Group';
 import { Icon } from './primitives/Icon';
-import { Sheet } from './primitives/Sheet';
+import { Leaving, Sheet } from './primitives/Sheet';
 import { Toggle } from './primitives/Toggle';
 
 const EMOJI: { char: string; keywords: string }[] = [
@@ -94,15 +95,18 @@ export function CategoryEditSheet({
   onClose: () => void;
   onDeleted?: () => void;
 }) {
-  if (!category) return null;
   return (
-    <Editor
-      key={category.id}
-      category={category}
-      groups={groups}
-      onClose={onClose}
-      onDeleted={onDeleted}
-    />
+    <Leaving>
+      {category && (
+        <Editor
+          key={category.id}
+          category={category}
+          groups={groups}
+          onClose={onClose}
+          onDeleted={onDeleted}
+        />
+      )}
+    </Leaving>
   );
 }
 
@@ -127,6 +131,8 @@ function Editor({
   const [emojiSearch, setEmojiSearch] = useState('');
   const filteredEmoji = EMOJI.filter((e) => matchesEmojiSearch(e, emojiSearch));
   const [groupId, setGroupId] = useState(category.groupId);
+  // Transfers never count toward the budget; the server enforces it, so no toggle there.
+  const inTransfers = isTransfersGroup(groups.find((g) => g.id === groupId)?.name);
   const [roll, setRoll] = useState(category.rolloverPolicy === 'roll');
   const [once, setOnce] = useState(category.spendShape === 'fixed');
   const [budgeted, setBudgeted] = useState(category.budgeted);
@@ -148,7 +154,7 @@ function Editor({
     if (policy !== category.rolloverPolicy) patch.rolloverPolicy = policy;
     const shape = once ? 'fixed' : 'linear';
     if (shape !== category.spendShape) patch.spendShape = shape;
-    if (budgeted !== category.budgeted) patch.budgeted = budgeted;
+    if (!inTransfers && budgeted !== category.budgeted) patch.budgeted = budgeted;
   }
   const dirty = Object.keys(patch).length > 0;
 
@@ -280,7 +286,7 @@ function Editor({
         </GroupRow>
       </Group>
 
-      {kind === 'expense' && (
+      {kind === 'expense' && !inTransfers && (
         <Group title="Budget">
           <GroupRow
             label="Counts toward the budget"

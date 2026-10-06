@@ -140,7 +140,9 @@ export async function allocationPeriods(
   categoryId: string,
 ): Promise<string[]> {
   const { results } = await db
-    .prepare('SELECT period_id FROM allocation WHERE user_id = ?1 AND category_id = ?2')
+    .prepare(
+      'SELECT period_id FROM allocation WHERE user_id = ?1 AND category_id = ?2 /* scan-ok: "apply to future months" edit */',
+    )
     .bind(userId, categoryId)
     .all<{ period_id: string }>();
   return results.map((r) => r.period_id);
@@ -246,7 +248,11 @@ export async function allocationsBetween(
   return results;
 }
 
-/** `spentByCategory` for an inclusive range of months, read from the splits themselves. */
+/**
+ * `spentByCategory` for an inclusive range of months. Read from `period_aggregate` (same rule:
+ * budgeted categories, dropped pendings out), so the carry chain costs rows per month and
+ * category rather than a scan of every split since the chain began.
+ */
 export async function spentBetween(
   userId: UserId,
   db: D1Database,
@@ -255,13 +261,8 @@ export async function spentBetween(
 ): Promise<{ period_id: string; category_id: string; spent: number }[]> {
   const { results } = await db
     .prepare(
-      `SELECT s.period_id, s.category_id, SUM(s.amount_cents) AS spent
-       FROM split s
-       JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
-       JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
-       WHERE s.user_id = ?1 AND s.period_id BETWEEN ?2 AND ?3 AND c.budgeted = 1
-         AND t.review_state != 'dropped'
-       GROUP BY s.period_id, s.category_id`,
+      `SELECT period_id, category_id, spent_cents AS spent FROM period_aggregate
+       WHERE user_id = ?1 AND period_id BETWEEN ?2 AND ?3`,
     )
     .bind(userId, from, to)
     .all<{ period_id: string; category_id: string; spent: number }>();

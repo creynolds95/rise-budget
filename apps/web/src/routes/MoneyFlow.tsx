@@ -4,7 +4,6 @@ import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { series } from '../design/tokens';
-import { monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { useMoneyFlow } from '../lib/queries';
 
@@ -45,15 +44,24 @@ function buildPalette(nodes: readonly FlowNode[]): Map<string, string> {
   return map;
 }
 
-/** Money flow report (Reports tab): where a month's income came from and where it went. */
-export function MoneyFlowReportView({ month }: { month: string }) {
-  const flow = useMoneyFlow(month);
+/** Money flow report (Reports tab): where a month's (or range's) income came from and went. */
+export function MoneyFlowReportView({
+  month,
+  from = month,
+  label,
+}: {
+  month: string;
+  from?: string;
+  /** "October" or "May – Oct 2026". */
+  label: string;
+}) {
+  const flow = useMoneyFlow(month, from);
   const leftoverCents =
     flow.data?.links.find((l) => l.target === 'leftover')?.valueCents ?? (0 as const);
 
   return (
     <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-      <p className="type-label text-ink-muted">Left over in {monthName(month, false)}</p>
+      <p className="type-label text-ink-muted">Left over, {label}</p>
       <p className="mt-1 type-display">
         {flow.data ? <MoneyText cents={leftoverCents} /> : <Skeleton className="h-9 w-32" />}
       </p>
@@ -62,7 +70,7 @@ export function MoneyFlowReportView({ month }: { month: string }) {
           <Skeleton className="h-64 w-full" />
         ) : flow.data.links.length === 0 ? (
           <p className="py-6 text-ink-muted">
-            Nothing to show yet — categorize some income and spending this month.
+            Nothing to show yet — categorize some income and spending.
           </p>
         ) : (
           <Zoomable>

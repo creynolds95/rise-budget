@@ -32,6 +32,35 @@ export function refreshAggregateStmts(
   ];
 }
 
+/**
+ * Rebuilds one category's rows across every period. Needed when its `budgeted` flag flips: the
+ * cache only holds budgeted categories, so the flip adds or removes all of its history at once.
+ */
+export function refreshCategoryAggregateStmts(
+  userId: UserId,
+  db: D1Database,
+  categoryId: string,
+): D1PreparedStatement[] {
+  return [
+    db
+      .prepare(
+        'DELETE FROM period_aggregate WHERE user_id = ?1 AND category_id = ?2 /* scan-ok: budgeted flip */',
+      )
+      .bind(userId, categoryId),
+    db
+      .prepare(
+        `INSERT INTO period_aggregate (user_id, period_id, category_id, spent_cents, txn_count)
+         SELECT s.user_id, s.period_id, s.category_id, SUM(s.amount_cents), COUNT(DISTINCT s.txn_id)
+         FROM split s
+         JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+         JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
+         WHERE s.user_id = ?1 AND s.category_id = ?2 AND c.budgeted = 1 AND t.review_state != 'dropped'
+         GROUP BY s.period_id /* scan-ok: budgeted flip rebuilds one category's history */`,
+      )
+      .bind(userId, categoryId),
+  ];
+}
+
 export interface AggregateRow {
   periodId: string;
   categoryId: string;
@@ -89,7 +118,7 @@ export async function spendingByDay(
   return results;
 }
 
-/** Income per period over an inclusive range, same budgeted/dropped rule; sign-flipped to positive. */
+/** Income per period over an inclusive range, same budgeted/dropped rule (read from the aggregate cache); sign-flipped to positive. */
 export async function incomeByPeriod(
   userId: UserId,
   db: D1Database,
@@ -98,21 +127,19 @@ export async function incomeByPeriod(
 ): Promise<{ periodId: string; cents: number }[]> {
   const { results } = await db
     .prepare(
-      `SELECT s.period_id AS periodId, -SUM(s.amount_cents) AS cents
-       FROM split s
-       JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
-       JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
-       JOIN category_group g ON g.id = c.group_id AND g.user_id = s.user_id
-       WHERE s.user_id = ?1 AND s.period_id BETWEEN ?2 AND ?3
-         AND c.budgeted = 1 AND g.kind = 'income' AND t.review_state != 'dropped'
-       GROUP BY s.period_id ORDER BY s.period_id`,
+      `SELECT a.period_id AS periodId, -SUM(a.spent_cents) AS cents
+       FROM period_aggregate a
+       JOIN category c ON c.id = a.category_id AND c.user_id = a.user_id
+       JOIN category_group g ON g.id = c.group_id AND g.user_id = a.user_id
+       WHERE a.user_id = ?1 AND a.period_id BETWEEN ?2 AND ?3 AND g.kind = 'income'
+       GROUP BY a.period_id ORDER BY a.period_id`,
     )
     .bind(userId, fromPeriod, toPeriod)
     .all<{ periodId: string; cents: number }>();
   return results;
 }
 
-/** Spending per period over an inclusive range, same rule; quiet months are simply absent. */
+/** Spending per period over an inclusive range, same rule (from the aggregate cache); quiet months are simply absent. */
 export async function spendingByPeriod(
   userId: UserId,
   db: D1Database,
@@ -121,14 +148,12 @@ export async function spendingByPeriod(
 ): Promise<{ periodId: string; cents: number }[]> {
   const { results } = await db
     .prepare(
-      `SELECT s.period_id AS periodId, SUM(s.amount_cents) AS cents
-       FROM split s
-       JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
-       JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
-       JOIN category_group g ON g.id = c.group_id AND g.user_id = s.user_id
-       WHERE s.user_id = ?1 AND s.period_id BETWEEN ?2 AND ?3
-         AND c.budgeted = 1 AND g.kind = 'expense' AND t.review_state != 'dropped'
-       GROUP BY s.period_id ORDER BY s.period_id`,
+      `SELECT a.period_id AS periodId, SUM(a.spent_cents) AS cents
+       FROM period_aggregate a
+       JOIN category c ON c.id = a.category_id AND c.user_id = a.user_id
+       JOIN category_group g ON g.id = c.group_id AND g.user_id = a.user_id
+       WHERE a.user_id = ?1 AND a.period_id BETWEEN ?2 AND ?3 AND g.kind = 'expense'
+       GROUP BY a.period_id ORDER BY a.period_id`,
     )
     .bind(userId, fromPeriod, toPeriod)
     .all<{ periodId: string; cents: number }>();

@@ -1,0 +1,16 @@
+# Monthly, grouped: one PR of routine bumps. CI decides if it's safe; merge it if green.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      routine:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2

@@ -90,6 +90,29 @@ describe('T25 categorisation', () => {
     expect(audit.results.map((r) => r.action)).toEqual(['rule.created', 'rule.deleted']);
   });
 
+  it('asking for the same rule twice keeps one; a new answer replaces the old rule', async () => {
+    const s = await setup();
+    const make = (categoryId: string) =>
+      s.api('POST', '/rules', {
+        matchField: 'merchant',
+        matchType: 'equals',
+        matchValue: 'Benchmark Mortgage',
+        categoryId,
+      });
+    const first = await make(s.home.id);
+    expect(first.status).toBe(201);
+    const again = await make(s.home.id);
+    expect(again.status).toBe(200);
+    expect(again.json.id).toBe(first.json.id);
+    expect((await s.api('GET', '/rules')).json).toHaveLength(1);
+
+    const changed = await make(s.kids.id);
+    expect(changed.status).toBe(201);
+    const all = (await s.api('GET', '/rules')).json;
+    expect(all).toHaveLength(1);
+    expect(all[0].categoryId).toBe(s.kids.id);
+  });
+
   it('rejects a broken regex and unknown categories', async () => {
     const s = await setup();
     const bad = await s.api('POST', '/rules', {

@@ -11,6 +11,8 @@ import {
   PeriodId,
   RecurringSeries,
   User,
+  DebtPlan,
+  RetirementPlan,
 } from './index';
 
 describe('schemas', () => {
@@ -53,8 +55,30 @@ describe('schemas', () => {
       cushionCents: 50_000,
       cashAccountIds: [],
       dismissedPayMerchants: [],
+      dismissedMisses: [],
+      retirement: null,
+      debt: null,
+      savings: null,
+      follow: { rules: [], log: [] },
     });
     expect(u.timezone).toBe('America/Chicago');
+  });
+
+  it('a retirement plan defaults to conservative rates and no contributions', () => {
+    const plan = RetirementPlan.parse({ currentAge: 31, goalAge: 65, spendTargetCents: 500_000 });
+    expect(plan.realGrowthBps).toBe(400);
+    expect(plan.withdrawalBps).toBe(350);
+    expect(plan.contributions).toEqual([]);
+  });
+
+  it('a debt plan defaults to snowball with freed payments carried forward', () => {
+    const plan = DebtPlan.parse({});
+    expect(plan.strategy).toBe('snowball');
+    expect(plan.rollForward).toBe(true);
+    expect(plan.loans).toEqual([]);
+    expect(plan.extraCents).toBe(0);
+    expect(plan.mortgageExtraCents).toBe(0);
+    expect(plan.homeValueAccountId).toBeNull();
   });
 
   it('error contract carries a stable code', () => {

@@ -147,6 +147,9 @@ function WhereItWent(props: {
   names: Category[] | undefined;
   prevMonth: string;
 }) {
+  // Before the early return: a hook after it is skipped on an empty month, and React throws
+  // when the next render (spending arrives) calls one more hook than the last.
+  const navigate = useNavigate();
   const spent = props.categories
     .filter((c) => c.groupKind === 'expense' && c.spentCents > 0)
     .sort((a, b) => b.spentCents - a.spentCents);
@@ -156,7 +159,6 @@ function WhereItWent(props: {
   const lastBy = new Map((props.lastCategories ?? []).map((c) => [c.categoryId, c.spentCents]));
   const cat = (id: string) => props.names?.find((c) => c.id === id);
   const rest = spent.length - top.length;
-  const navigate = useNavigate();
 
   return (
     <section className="mt-10" aria-labelledby="where-h">

@@ -2,6 +2,8 @@ import { staleness } from '@rise/shared/budget';
 import {
   CreateAccountBody,
   CreateSnapshotBody,
+  FollowUndoBody,
+  IsoDate,
   isLiabilityKind,
   PatchAccountBody,
   type Account,
@@ -9,9 +11,11 @@ import {
 import { Hono } from 'hono';
 import {
   archiveAccount,
+  convertToManual,
   countAccountTransactions,
   createAccount,
   deleteAccount,
+  deleteSnapshot,
   flipAccountSign,
   getAccount,
   listAccounts,
@@ -21,6 +25,7 @@ import {
 } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
+import { undoFollow } from '../lib/follow';
 import { body } from '../lib/validate';
 
 export const accounts = new Hono<AppEnv>();
@@ -93,6 +98,21 @@ accounts.post('/:id/snapshots', async (c) => {
   return c.json({ asOf: b.asOf, balanceCents: b.balanceCents }, 201);
 });
 
+/** Takes back a mistyped balance. Manual accounts only; the last balance always stays. */
+accounts.delete('/:id/snapshots/:asOf', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  const a = await getAccount(userId, c.env.DB, id);
+  if (!a) throw notFound();
+  if (a.source !== 'manual')
+    throw new AppError(409, 'CONFLICT', 'Synced accounts get balances from sync');
+  const asOf = IsoDate.safeParse(c.req.param('asOf'));
+  if (!asOf.success) throw new AppError(400, 'BAD_REQUEST', 'Date must be YYYY-MM-DD');
+  if (!(await deleteSnapshot(userId, c.env.DB, id, asOf.data)))
+    throw new AppError(409, 'CONFLICT', 'An account keeps at least one balance');
+  return c.json({ deleted: true });
+});
+
 /** Closes a manual account: it leaves the active list, but keeps its history in net worth. */
 accounts.post('/:id/archive', async (c) => {
   const userId = c.get('userId');
@@ -103,6 +123,25 @@ accounts.post('/:id/archive', async (c) => {
     throw new AppError(409, 'CONFLICT', 'Disconnect a synced account instead of closing it');
   await archiveAccount(userId, c.env.DB, id);
   return c.json(withStaleness((await getAccount(userId, c.env.DB, id)) as Account, Date.now()));
+});
+
+/** Detaches a synced account from SimpleFIN so its balance is kept by hand (loans in Debt). */
+accounts.post('/:id/convert-to-manual', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  const a = await getAccount(userId, c.env.DB, id);
+  if (!a) throw notFound();
+  if (a.source !== 'simplefin') throw new AppError(409, 'CONFLICT', 'Already a manual account');
+  await convertToManual(userId, c.env.DB, id);
+  return c.json(withStaleness((await getAccount(userId, c.env.DB, id)) as Account, Date.now()));
+});
+
+/** Reverses what a follow rule did to this account for one transaction. */
+accounts.post('/:id/follow-undo', async (c) => {
+  const { txnId } = await body(c, FollowUndoBody);
+  const ok = await undoFollow(c.env.DB, c.get('userId'), c.req.param('id'), txnId);
+  if (!ok) throw new AppError(404, 'NOT_FOUND', 'Nothing to undo');
+  return c.json({ undone: true });
 });
 
 /** Erases a manual account and every balance it ever reported. Never for a synced account,

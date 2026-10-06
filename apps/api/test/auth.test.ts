@@ -308,7 +308,27 @@ describe('T16 auth middleware + error contract', () => {
       cushionCents: 50_000,
       cashAccountIds: [],
       dismissedPayMerchants: [],
+      dismissedMisses: [],
+      retirement: null,
+      debt: null,
+      savings: null,
+      follow: { rules: [], log: [] },
     });
+  });
+
+  it('saves a retirement plan and keeps it through an unrelated patch', async () => {
+    const u = await signedInUser();
+    const plan = {
+      currentAge: 31,
+      goalAge: 65,
+      spendTargetCents: 500_000,
+      contributions: [{ accountId: 'acct_1', monthlyCents: 120_000 }],
+      realGrowthBps: 400,
+      withdrawalBps: 350,
+    };
+    await call('PATCH', '/me/settings', { access: u.access, body: { retirement: plan } });
+    const res = await call('PATCH', '/me/settings', { access: u.access, body: { appLock: '5m' } });
+    expect(res.json.retirement).toEqual(plan);
   });
 });
 

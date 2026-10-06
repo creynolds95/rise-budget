@@ -1,15 +1,15 @@
+import { isTransfersGroup } from '@rise/shared/categorize';
 import type {
   AppLock,
   Category,
   CategoryGroup,
   CategoryGroupKind,
   Rule,
-  RuleMatchField,
-  RuleMatchType,
 } from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { BackLink } from '../components/BackLink';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { CategoryEditSheet } from '../components/CategoryEditSheet';
@@ -20,12 +20,12 @@ import { transitionClick } from '../lib/transition';
 import { passkeyMessage } from '../lib/passkey';
 import { clearPin, hasPin, lockKeys, setPin, store as lockStore, validPin } from '../lib/lock';
 import { getThemeSetting, setThemeSetting, type ThemeSetting } from '../lib/theme';
-import { CategoryPicker } from '../components/CategoryPicker';
+import { RULE_FIELD as FIELD, RULE_TYPE as TYPE, RuleSheet } from '../components/RuleSheet';
 import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
 import { Icon, IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
-import { Sheet } from '../components/primitives/Sheet';
+import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Sortable } from '../components/primitives/Sortable';
 import { Investments } from './Investments';
 import { MonarchImport } from './MonarchImport';
@@ -35,9 +35,11 @@ import { ApiError, api, downloadExport } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncOutcome';
 import { localToday, shortDate } from '../lib/dates';
+import { isStale, RUNNING, updateApp, useLatestBuild } from '../lib/version';
 import {
   useAccounts,
   useBackupStatus,
+  useUsage,
   useCategories,
   useDevices,
   useGroups,
@@ -155,9 +157,45 @@ export function Settings() {
         Sign out
       </Button>
       {/* Which build is running, so a deploy that never went out is visible (C20). */}
-      <p className="mt-6 type-caption text-ink-faint money">
-        Built {shortDate(localToday(me?.timezone, new Date(__APP_VERSION__)))} · {__APP_COMMIT__}
+      <AppVersion timeZone={me?.timezone} />
+    </div>
+  );
+}
+
+function AppVersion({ timeZone }: { timeZone: string | undefined }) {
+  const latest = useLatestBuild();
+  const [updating, setUpdating] = useState(false);
+  const built = new Date(RUNNING.version).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(timeZone ? { timeZone } : {}),
+  });
+  const stale = latest !== null && isStale(RUNNING, latest);
+  return (
+    <div className="mt-6 flex min-h-11 items-center justify-between gap-4">
+      <p className="type-caption text-ink-muted money">
+        Version {RUNNING.commit} · {built}
+        <br />
+        {stale ? (
+          <span className="text-ink">Update available</span>
+        ) : (
+          latest && <span className="text-ink-faint">Latest</span>
+        )}
       </p>
+      {stale && (
+        <Button
+          className="shrink-0"
+          disabled={updating}
+          onClick={() => {
+            setUpdating(true);
+            void updateApp();
+          }}
+        >
+          {updating ? 'Updating…' : 'Update'}
+        </Button>
+      )}
     </div>
   );
 }
@@ -195,7 +233,6 @@ function Card({
 export function SettingsSection() {
   const { section = '' } = useParams();
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const backTo = backFrom(params.get('from'), { label: 'Settings', to: '/settings' }).to;
   useSwipeBack(backTo);
   if (!(section in SECTIONS)) return <Navigate to="/settings" replace />;
@@ -203,15 +240,8 @@ export function SettingsSection() {
   const back = backFrom(params.get('from'), { label: 'Settings', to: '/settings' });
   return (
     <div className="mx-auto max-w-2xl pb-16">
-      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid min-h-14 grid-cols-[1fr_auto_1fr] items-center bg-canvas">
-        <Link
-          to={back.to}
-          onClick={transitionClick(navigate, back.to, 'back')}
-          className="flex min-h-11 items-center gap-1 justify-self-start text-sage-700"
-        >
-          <span aria-hidden>‹</span>
-          {back.label}
-        </Link>
+      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft">
+        <BackLink to={back.to} label={back.label} />
         <h1 className="type-body font-semibold">{SECTIONS[s]}</h1>
         <span id="settings-action" className="justify-self-end" />
       </header>
@@ -271,6 +301,12 @@ function BudgetSection() {
   });
   const future = me?.settings.planChangesApplyToFuture ?? false;
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // Carry where Budget settings itself was opened from, so back from Categories retraces the path.
+  const own = params.get('from');
+  const categoriesHref = `/settings/categories?from=${encodeURIComponent(
+    `Budget settings|/settings/budget${own ? `?from=${encodeURIComponent(own)}` : ''}`,
+  )}`;
   return (
     <>
       <Group title="When you change a plan">
@@ -291,11 +327,8 @@ function BudgetSection() {
       </Group>
       <Group title="Categories">
         <Link
-          to="/settings/categories?from=Budget settings|/settings/budget"
-          onClick={transitionClick(
-            navigate,
-            '/settings/categories?from=Budget settings|/settings/budget',
-          )}
+          to={categoriesHref}
+          onClick={transitionClick(navigate, categoriesHref)}
           className="flex min-h-13 items-center justify-between px-4 py-3 active:bg-sage-100"
         >
           <span>Categories and groups</span>
@@ -323,7 +356,7 @@ function CategoriesSection() {
   const q = query.trim().toLowerCase();
   // Transfers (account moves, card payments) is its own group, apart from expenses.
   const groupTab = (g: CategoryGroup): 'income' | 'expense' | 'transfer' =>
-    g.kind === 'income' ? 'income' : g.name.toLowerCase() === 'transfers' ? 'transfer' : 'expense';
+    g.kind === 'income' ? 'income' : isTransfersGroup(g.name) ? 'transfer' : 'expense';
   const matches = (c: Category, g: CategoryGroup) =>
     !q || g.name.toLowerCase().includes(q) || c.name.toLowerCase().includes(q);
   const shownGroups = groups.filter((g) => {
@@ -556,7 +589,7 @@ function CategoriesSection() {
               value={renaming.name}
               onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
               required
-              autoFocus
+              data-sheet-focus
             />
             <Button type="submit" disabled={!renaming.name.trim()}>
               Save
@@ -610,16 +643,6 @@ function IncomeCategoryAdd({
     </form>
   );
 }
-
-const FIELD: Record<RuleMatchField, string> = {
-  merchant: 'Merchant',
-  descriptor: 'Bank description',
-};
-const TYPE: Record<RuleMatchType, string> = {
-  equals: 'is',
-  contains: 'contains',
-  regex: 'matches pattern',
-};
 
 /** Rules are viewable, editable, deletable (T43). Editing replaces the rule. */
 function RulesSection() {
@@ -685,109 +708,16 @@ function RulesSection() {
       <Button variant="quiet" className="-ml-4 mt-4" onClick={() => setEditing('new')}>
         Add a rule
       </Button>
-      {editing && (
-        <RuleSheet
-          rule={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={refresh}
-        />
-      )}
+      <Leaving>
+        {editing && (
+          <RuleSheet
+            rule={editing === 'new' ? null : editing}
+            onClose={() => setEditing(null)}
+            onSaved={refresh}
+          />
+        )}
+      </Leaving>
     </>
-  );
-}
-
-function RuleSheet({
-  rule,
-  onClose,
-  onSaved,
-}: {
-  rule: Rule | null;
-  onClose: () => void;
-  onSaved: () => Promise<unknown>;
-}) {
-  const categories = useCategories().data ?? [];
-  const [field, setField] = useState<RuleMatchField>(rule?.matchField ?? 'merchant');
-  const [type, setType] = useState<RuleMatchType>(rule?.matchType ?? 'equals');
-  const [value, setValue] = useState(rule?.matchValue ?? '');
-  const [categoryId, setCategoryId] = useState(rule?.categoryId ?? '');
-  const [picking, setPicking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const input = 'min-h-11 w-full rounded-input border border-hairline bg-surface px-3';
-  return (
-    <Sheet open title={rule ? 'Edit rule' : 'New rule'} onClose={onClose}>
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setError(null);
-          try {
-            // Create first, so a rejected edit leaves the old rule in place.
-            await api('POST', '/rules', {
-              matchField: field,
-              matchType: type,
-              matchValue: value.trim(),
-              categoryId,
-              priority: rule?.priority ?? 0,
-            });
-            if (rule) await api('DELETE', `/rules/${rule.id}`);
-            await onSaved();
-            onClose();
-          } catch (err) {
-            setError(err instanceof ApiError ? err.message : 'Could not save.');
-          }
-        }}
-      >
-        <div className="flex gap-2">
-          <select
-            aria-label="Match on"
-            className={input}
-            value={field}
-            onChange={(e) => setField(e.target.value as RuleMatchField)}
-          >
-            {Object.entries(FIELD).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="Match type"
-            className={input}
-            value={type}
-            onChange={(e) => setType(e.target.value as RuleMatchType)}
-          >
-            {Object.entries(TYPE).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
-        <input
-          aria-label="Match value"
-          className={input}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="QUIKTRIP"
-          required
-        />
-        <button type="button" className={`${input} text-left`} onClick={() => setPicking(true)}>
-          {categories.find((c) => c.id === categoryId)?.name ?? 'Choose a category…'}
-        </button>
-        {error && <p className="text-clay">{error}</p>}
-        <Button type="submit" disabled={!value.trim() || !categoryId}>
-          Save rule
-        </Button>
-      </form>
-      <CategoryPicker
-        open={picking}
-        onClose={() => setPicking(false)}
-        onPick={(id) => {
-          setCategoryId(id);
-          setPicking(false);
-        }}
-      />
-    </Sheet>
   );
 }
 
@@ -1045,8 +975,10 @@ function SecuritySection() {
           <Chevron />
         </button>
       </Group>
-      {totpSheet && <TotpSetupSheet onClose={() => setTotpSheet(false)} />}
-      {recoverySheet && <RecoveryCodesSheet onClose={() => setRecoverySheet(false)} />}
+      <Leaving>{totpSheet && <TotpSetupSheet onClose={() => setTotpSheet(false)} />}</Leaving>
+      <Leaving>
+        {recoverySheet && <RecoveryCodesSheet onClose={() => setRecoverySheet(false)} />}
+      </Leaving>
       <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
         Sign out
       </Button>
@@ -1292,13 +1224,66 @@ function RecoveryCodesSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
+const compact = (n: number) =>
+  n >= 1_000_000
+    ? `${(n / 1_000_000).toFixed(1)}M`
+    : n >= 1_000
+      ? `${Math.round(n / 1_000)}k`
+      : `${n}`;
+
+/**
+ * Cloudflare's free tier caps the database per UTC day (it resets at 7 pm Central). The Worker
+ * counts what it uses, so this shows how close a day got, not just whether it failed.
+ */
+function UsageGroup() {
+  const usage = useUsage().data;
+  const today = usage?.days.find((d) => d.day === new Date().toISOString().slice(0, 10));
+  const read = today?.rowsRead ?? 0;
+  const written = today?.rowsWritten ?? 0;
+  const pct = (n: number, cap: number) => Math.round((n / cap) * 100);
+  const peak = (key: 'rowsRead' | 'rowsWritten') =>
+    usage ? Math.max(0, ...usage.days.map((d) => d[key])) : 0;
+  const line = (n: number, cap: number) => (
+    <span className={`tabular-nums ${n / cap >= 0.8 ? 'text-clay' : 'text-ink-muted'}`}>
+      {pct(n, cap)}% · {compact(n)} of {compact(cap)}
+    </span>
+  );
+  return (
+    <Group title="Database use (free daily limit)">
+      {!usage ? (
+        <GroupRow label="Today">
+          <Skeleton className="h-5 w-24" />
+        </GroupRow>
+      ) : (
+        <>
+          <GroupRow label="Reads today">{line(read, usage.limits.rowsRead)}</GroupRow>
+          <GroupRow label="Writes today">{line(written, usage.limits.rowsWritten)}</GroupRow>
+          {usage.routes.map((r) => (
+            <GroupRow key={r.route} label={r.route}>
+              <span className="tabular-nums text-ink-muted">
+                {compact(r.rowsRead)} reads · {r.requests}×
+              </span>
+            </GroupRow>
+          ))}
+          <GroupRow label="Busiest day, last 14">
+            <span className="tabular-nums text-ink-muted">
+              {pct(peak('rowsRead'), usage.limits.rowsRead)}% reads ·{' '}
+              {pct(peak('rowsWritten'), usage.limits.rowsWritten)}% writes
+            </span>
+          </GroupRow>
+        </>
+      )}
+    </Group>
+  );
+}
+
 /** T46. The user can always walk away with their data (ARCHITECTURE §8). */
 function DataSection() {
   const backups = useBackupStatus().data;
-  const [busy, setBusy] = useState<'json' | 'csv' | null>(null);
+  const [busy, setBusy] = useState<'json' | 'csv' | 'backup' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const download = async (format: 'json' | 'csv') => {
+  const download = async (format: 'json' | 'csv' | 'backup') => {
     setBusy(format);
     setError(null);
     try {
@@ -1349,7 +1334,22 @@ function DataSection() {
         <GroupRow label="Last backup">
           <span className="text-ink-muted">{backupState ?? <Skeleton className="h-5 w-24" />}</span>
         </GroupRow>
+        {backups?.latest && (
+          <button
+            onClick={() => void download('backup')}
+            disabled={busy !== null}
+            className="flex min-h-13 w-full items-center justify-between px-4 py-3 text-left active:bg-sage-100 disabled:opacity-60"
+          >
+            <span className="block">Download latest backup</span>
+            {busy === 'backup' ? (
+              <span className="type-caption text-ink-muted">Preparing…</span>
+            ) : (
+              <Chevron />
+            )}
+          </button>
+        )}
       </Group>
+      <UsageGroup />
       <MonarchImport />
     </>
   );

@@ -16,6 +16,8 @@
   --color-sage-600: #5f7a55;
   --color-sage-300: #a8bc9f;
   --color-sage-100: #edf1ea;
+  --color-banner: #4a6142;
+  --color-banner-ink: #ffffff;
   --color-gold: #c9a24d;
   --color-gold-text: #8a6d22;
   --color-gold-100: #f7f0de;
@@ -49,6 +51,8 @@
     --color-sage-600: #7a9a6d;
     --color-sage-300: #435239;
     --color-sage-100: #232b1d;
+    --color-banner: #2c3a25;
+    --color-banner-ink: #ecefe6;
     --color-gold: #d4b05b;
     --color-gold-text: #e0be72;
     --color-gold-100: #2e2712;
@@ -67,6 +71,8 @@
   --color-sage-600: #7a9a6d;
   --color-sage-300: #435239;
   --color-sage-100: #232b1d;
+  --color-banner: #2c3a25;
+  --color-banner-ink: #ecefe6;
   --color-gold: #d4b05b;
   --color-gold-text: #e0be72;
   --color-gold-100: #2e2712;
@@ -166,14 +172,30 @@
   }
 }
 
-/* Motion: sheets rise, menus pop. Nothing moves for people who asked it not to. */
+/*
+ * Motion: sheets rise, menus pop. Screens, sheets and the menu share one clock and one curve
+ * (mirrored in lib/motion.ts), an ease-in-out that starts from rest and settles, like iOS. Nothing
+ * moves for people who asked it not to.
+ */
+:root {
+  --motion-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-in: 500ms;
+  --motion-out: 400ms;
+}
 @theme {
   --animate-sheet-in: sheet-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1);
-  --animate-sheet-up: sheet-up 300ms cubic-bezier(0.32, 0.72, 0, 1);
-  --animate-sheet-out: sheet-out 220ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  --animate-fade-out: fade-out 220ms ease-in forwards;
-  --animate-fade-in: fade-in 200ms ease-out;
+  --animate-sheet-up: sheet-up var(--motion-in) var(--motion-ease);
+  --animate-sheet-out: sheet-out var(--motion-out) var(--motion-ease) forwards;
+  --animate-fade-out: fade-out var(--motion-out) ease-out forwards;
+  --animate-fade-in: fade-in var(--motion-in) ease-out;
   --animate-pop-in: pop-in 140ms ease-out;
+  --animate-indeterminate: indeterminate 1.2s ease-in-out infinite;
+  --animate-caret: caret 1s steps(1) infinite;
+}
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
 }
 @keyframes sheet-in {
   from {
@@ -199,6 +221,14 @@
 @keyframes fade-in {
   from {
     opacity: 0;
+  }
+}
+@keyframes indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
   }
 }
 @keyframes pop-in {
@@ -237,8 +267,8 @@
 ::view-transition-old(root),
 ::view-transition-new(root) {
   mix-blend-mode: normal;
-  animation-duration: 320ms;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  animation-duration: var(--motion-in);
+  animation-timing-function: var(--motion-ease);
   animation-fill-mode: both;
 }
 html[data-page-transition='forward']::view-transition-old(root) {
@@ -291,4 +321,38 @@ html[data-page-transition='back']::view-transition-new(root) {
     transform: translateX(0);
     filter: brightness(1);
   }
+}
+
+/* Title banner: one spacing for every page that has one, so the title always sits the same
+   distance below the island. Change --banner-pt here and every page moves together. */
+.banner {
+  --banner-pt: max(12px, calc(env(safe-area-inset-top) - 1px));
+  padding-top: var(--banner-pt);
+  padding-bottom: 4px;
+  min-height: calc(var(--banner-pt) + 48px);
+}
+/* Controls inside inherit the banner ink instead of their usual ink/muted/sage text. */
+.banner .text-ink,
+.banner .text-ink-muted,
+.banner .text-sage-700 {
+  color: var(--color-banner-ink);
+}
+.banner [class*='active:bg-sage-100']:active {
+  background: rgb(255 255 255 / 0.16);
+}
+/* A menu opened from the banner is a normal surface: normal ink. */
+.banner [role='menu'] {
+  color: var(--color-ink);
+}
+.banner [role='menu'] .text-ink {
+  color: var(--color-ink);
+}
+.banner [role='menu'] .text-ink-muted {
+  color: var(--color-ink-muted);
+}
+.banner [role='menu'] .text-sage-700 {
+  color: var(--color-sage-700);
+}
+.banner [role='menu'] [class*='active:bg-sage-100']:active {
+  background: var(--color-sage-100);
 }

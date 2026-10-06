@@ -9,6 +9,7 @@ import {
   RuleMatchType,
   SpendShape,
 } from './enums';
+import { AccountBadgeStyle, DebtPlan, FollowRule, RetirementPlan, SavingsPlan } from './entities';
 
 export const ManualCadence = z.enum(['weekly', 'biweekly', 'monthly', 'semimonthly', 'annual']);
 
@@ -34,6 +35,7 @@ export const ErrorCode = z.enum([
   'IDEMPOTENCY_CONFLICT',
   'RATE_LIMITED',
   'STEP_UP_REQUIRED',
+  'DB_LIMIT',
   'INTERNAL',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -59,7 +61,18 @@ export const PatchSettingsBody = z.object({
   dismissedPayMerchants: z
     .array(z.object({ merchant: z.string(), displayName: z.string() }))
     .optional(),
+  dismissedMisses: z
+    .array(z.object({ seriesId: z.string(), dueDate: IsoDate }))
+    .max(200)
+    .optional(),
+  retirement: RetirementPlan.nullable().optional(),
+  debt: DebtPlan.nullable().optional(),
+  savings: SavingsPlan.nullable().optional(),
+  /** Rules only: the log is the server's. */
+  follow: z.object({ rules: z.array(FollowRule).max(20) }).optional(),
 });
+
+export const FollowUndoBody = z.object({ txnId: Id });
 
 export const CreateAccountBody = z.object({
   name: z.string().min(1),
@@ -81,6 +94,8 @@ export const PatchAccountBody = z.object({
   expectedPaymentCents: Cents.nullable().optional(),
   paymentDay: z.int().min(1).max(31).nullable().optional(),
   syncCadenceHours: z.int().positive().nullable().optional(),
+  /** null puts back the automatic badge. */
+  badge: AccountBadgeStyle.nullable().optional(),
 });
 export type PatchAccountBody = z.infer<typeof PatchAccountBody>;
 
@@ -170,6 +185,8 @@ export const ScheduleBody = z
     anchorDays: AnchorDays.optional(),
     /** Only a hand-added schedule has a name of its own to change. */
     label: z.string().trim().min(1).max(60).optional(),
+    /** A new amount from a date on (unsigned, same kind); null clears it. Saved rules only. */
+    change: z.object({ amountCents: Cents.positive(), on: IsoDate }).nullable().default(null),
   })
   .refine((b) => b.cadence !== 'semimonthly' || b.anchorDays, {
     message: 'anchorDays is required for a semimonthly cadence',
@@ -339,6 +356,26 @@ export const CreateCategoryGroupBody = z.object({
 export const ExportQuery = z.object({ format: z.enum(['json', 'csv']).default('json') });
 export type ExportQuery = z.infer<typeof ExportQuery>;
 
+/** Cloudflare free-tier D1 allowances, per UTC day. */
+export const D1_DAILY_LIMITS = { rowsRead: 5_000_000, rowsWritten: 100_000 } as const;
+
+export const UsageDay = z.object({
+  day: z.string(), // YYYY-MM-DD, UTC
+  rowsRead: z.number().int(),
+  rowsWritten: z.number().int(),
+  requests: z.number().int(),
+});
+export const UsageStatus = z.object({
+  limits: z.object({ rowsRead: z.number().int(), rowsWritten: z.number().int() }),
+  /** Newest first, today included. Days with no activity are absent. */
+  days: z.array(UsageDay),
+  /** Today's heaviest routes by rows read, most first. */
+  routes: z.array(
+    z.object({ route: z.string(), rowsRead: z.number().int(), requests: z.number().int() }),
+  ),
+});
+export type UsageStatus = z.infer<typeof UsageStatus>;
+
 export const BackupStatus = z.object({
   latest: z.object({ date: IsoDate, bytes: z.int().nonnegative() }).nullable(),
   count: z.int().nonnegative(),
@@ -357,7 +394,10 @@ export const SpendingReport = z.object({
 });
 export type SpendingReport = z.infer<typeof SpendingReport>;
 
-export const MoneyFlowReportQuery = z.object({ month: PeriodId });
+/** `from` widens the flow to every month from `from` through `month`. */
+export const MoneyFlowReportQuery = z
+  .object({ month: PeriodId, from: PeriodId.optional() })
+  .refine((q) => q.from === undefined || q.from <= q.month);
 
 /** Money-flow (Sankey) diagram: income → expense groups → categories, plus what's left over. */
 export const MoneyFlowReport = z.object({
@@ -473,3 +513,6 @@ export const MonarchFeedOverlap = z.object({
   to: z.string(),
 });
 export type MonarchFeedOverlap = z.infer<typeof MonarchFeedOverlap>;
+
+/** The user's call on a detected series: it ended (stop watching it) or track it again. */
+export const PatchSeriesBody = z.object({ status: z.enum(['ended', 'active']) });

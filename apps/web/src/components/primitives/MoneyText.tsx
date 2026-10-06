@@ -1,4 +1,4 @@
-import { formatCents, type FormatOptions } from '../../lib/money';
+import { formatBalance, formatCents, type FormatOptions } from '../../lib/money';
 
 const TONE = {
   ink: 'text-ink',
@@ -16,11 +16,18 @@ export function MoneyText({
   cents,
   tone = 'ink',
   className = '',
+  balance = false,
   ...format
-}: { cents: number; tone?: MoneyTone; className?: string } & FormatOptions) {
+}: {
+  cents: number;
+  tone?: MoneyTone;
+  className?: string;
+  /** A budget balance: whole dollars, except an overspend under $1 (see formatBalance). */
+  balance?: boolean;
+} & FormatOptions) {
   return (
     <span className={`money whitespace-nowrap ${TONE[tone]} ${className}`} data-cents={cents}>
-      {formatCents(cents, format)}
+      {balance ? formatBalance(cents, format) : formatCents(cents, format)}
     </span>
   );
 }

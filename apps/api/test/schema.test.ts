@@ -27,6 +27,9 @@ const TABLES = [
   'audit_log',
   'idempotency',
   'period_aggregate',
+  'surplus_suggestion',
+  'usage_day',
+  'usage_route',
 ];
 
 const INDEXES = [
@@ -41,6 +44,12 @@ const INDEXES = [
   'ix_audit_action',
   'ix_idempotency_created',
   'ix_sync_run_started',
+  // 0013
+  'ix_txn_user_date',
+  // 0014
+  'ix_surplus_suggestion_user',
+  // 0016
+  'ix_txn_pair',
 ];
 
 describe('migration 0001', () => {

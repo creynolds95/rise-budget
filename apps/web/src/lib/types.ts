@@ -4,7 +4,7 @@
  */
 import type { PeriodView, Staleness } from '@rise/shared/budget';
 import type { NetWorthPoint } from '@rise/shared/networth';
-import type { Account, Period, RuleOffer, Transaction } from '@rise/shared/schemas';
+import type { Account, Period, Rule, RuleOffer, Transaction } from '@rise/shared/schemas';
 
 export type AccountWithStaleness = Account & { staleness: Staleness };
 
@@ -53,11 +53,13 @@ export interface MerchantView {
   displayName: string | null;
   suppressRuleOffer: boolean;
   topCategoryIds: string[];
+  /** The merchant-field rule that files this merchant, if any. */
+  rule: Rule | null;
 }
 
 /** One paycheck or bill schedule on the Surplus page. */
 export interface ScheduleRow {
-  /** The manual rule's id; null for a detected one (editing it takes it over). */
+  /** The manual rule's id; null for a suggestion, which saving adds. */
   id: string | null;
   merchant: string;
   displayName: string;
@@ -66,8 +68,23 @@ export interface ScheduleRow {
   cadence: string;
   anchorDays: [number, number] | null;
   nextExpectedDate: string;
-  isManual: boolean;
   isHandAdded: boolean;
+  /** A new amount from a date on; always null on a suggestion. */
+  change?: { amountCents: number; on: string } | null;
+}
+
+/** A schedule sync found in a cash account, waiting to be added or dismissed. */
+export interface SuggestionRow {
+  merchant: string;
+  displayName: string;
+  accountName: string;
+  kind: 'income' | 'expense';
+  amountCents: number;
+  cadence: string;
+  anchorDays: [number, number] | null;
+  nextExpectedDate: string;
+  /** A hand-added schedule this looks like: adding it may count the same money twice. */
+  likelySameAs: string | null;
 }
 
 export interface CashToPaydayResponse {
@@ -83,9 +100,9 @@ export interface CashToPaydayResponse {
       nextExpectedDate: string;
       anchorDays: [number, number] | null;
     };
-    isManual: boolean;
   }[];
   schedules: ScheduleRow[];
+  suggestions: SuggestionRow[];
   cashAccounts: { id: string; name: string }[];
   cushionCents: number;
   dismissedPayMerchants: { merchant: string; displayName: string }[];
