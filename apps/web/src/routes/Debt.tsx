@@ -4,6 +4,7 @@ import { monthlyInterest } from '@rise/shared/debt';
 import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
+import { IconButton } from '../components/primitives/Icon';
 import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -288,9 +289,12 @@ export function Debt() {
   );
   const suggestions = plan ? dueSuggestions(plan, live, today) : [];
 
-  const header = { back: { label: 'Financial health', to: '/financial-health' }, title: 'Debt' };
+  const baseHeader = {
+    back: { label: 'Financial health', to: '/financial-health' },
+    title: 'Debt',
+  };
   if (!me || !accounts) {
-    return <DetailPage header={header} shape={<Skeleton className="h-64 w-full" />} />;
+    return <DetailPage header={baseHeader} shape={<Skeleton className="h-64 w-full" />} />;
   }
 
   const current = plan ?? DEFAULT_DEBT_PLAN;
@@ -307,6 +311,10 @@ export function Debt() {
   const openAdd = () => {
     setAddKey((k) => k + 1);
     setAdding(true);
+  };
+  const header = {
+    ...baseHeader,
+    action: <IconButton icon="plus" label="Add a loan" onClick={openAdd} />,
   };
   const openEdit = (l: DebtLoanPlan) => {
     setEditing(l);
@@ -394,11 +402,6 @@ export function Debt() {
         <DetailPage
           header={header}
           identity={{ label: 'Debt', hero: <span className="text-ink-muted">Not set up</span> }}
-          manage={
-            <div className="py-3">
-              <Button onClick={openAdd}>Add a loan</Button>
-            </div>
-          }
         />
         {sheets}
       </>
@@ -595,13 +598,6 @@ export function Debt() {
             ? [{ title: 'Student loans', children: <div>{student.rows.map(loanRow)}</div> }]
             : []),
         ]}
-        manage={
-          <div className="py-3">
-            <Button variant="quiet" onClick={openAdd}>
-              Add a loan
-            </Button>
-          </div>
-        }
       />
       {sheets}
     </>
