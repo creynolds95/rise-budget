@@ -10,6 +10,8 @@ describe('lockScroll', () => {
     const release = lockScroll();
     expect(document.body.style.position).toBe('fixed');
     expect(document.body.style.top).toBe('-240px');
+    // Keeps the box reaching the screen bottom, so the tab bar doesn't rise by the offset.
+    expect(document.body.getAttribute('style')).toContain('min-height: calc(100dvh + 240px)');
     release();
     expect(document.body.getAttribute('style')).toBeNull();
     expect(scrollTo).toHaveBeenCalledWith(0, 240);
