@@ -83,6 +83,8 @@ transactions.get('/', async (c) => {
       to: f.to,
       accountIds: f.account,
       categoryIds: f.category,
+      notAccountIds: f.notAccount,
+      notCategoryIds: f.notCategory,
       q: f.q,
       reviewState: f.reviewState,
       direction: f.direction,

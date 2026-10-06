@@ -87,6 +87,7 @@ function Inner({
       : ids.length === 1
         ? (name(ids[0] as string) ?? '1')
         : `${ids.length} of ${total}`;
+  const withNot = (s: string, not: boolean) => (not && s !== 'All' ? `Not ${s}` : s);
 
   return (
     <Sheet
@@ -178,15 +179,21 @@ function Inner({
           <Group title="Filter by">
             <DrillRow
               label="Accounts"
-              value={summary(f.accounts, live.length, (id) => live.find((a) => a.id === id)?.name)}
+              value={withNot(
+                summary(f.accounts, live.length, (id) => live.find((a) => a.id === id)?.name),
+                f.notAccounts,
+              )}
               onClick={() => setPage('accounts')}
             />
             <DrillRow
               label="Categories"
-              value={summary(
-                f.categories,
-                categories.length,
-                (id) => categories.find((c) => c.id === id)?.name,
+              value={withNot(
+                summary(
+                  f.categories,
+                  categories.length,
+                  (id) => categories.find((c) => c.id === id)?.name,
+                ),
+                f.notCategories,
               )}
               onClick={() => setPage('categories')}
             />
@@ -221,6 +228,8 @@ function Inner({
           }))}
           selected={f.accounts}
           onChange={(accounts) => set({ accounts })}
+          not={f.notAccounts}
+          onNot={(notAccounts) => set({ notAccounts })}
         />
       )}
 
@@ -234,6 +243,8 @@ function Inner({
           }))}
           selected={f.categories}
           onChange={(categories) => set({ categories })}
+          not={f.notCategories}
+          onNot={(notCategories) => set({ notCategories })}
         />
       )}
 
@@ -314,10 +325,14 @@ function CheckList({
   groups,
   selected,
   onChange,
+  not,
+  onNot,
 }: {
   groups: { title: string; items: { id: string; label: string }[] }[];
   selected: string[];
   onChange: (ids: string[]) => void;
+  not: boolean;
+  onNot: (not: boolean) => void;
 }) {
   const sel = new Set(selected);
   const toggle = (id: string) => {
@@ -329,10 +344,16 @@ function CheckList({
   const visible = groups.filter((g) => g.items.length > 0);
   return (
     <>
+      <div className="flex gap-2 px-1">
+        <Pill on={!not} onClick={() => onNot(false)}>
+          Include
+        </Pill>
+        <Pill on={not} onClick={() => onNot(true)}>
+          Exclude
+        </Pill>
+      </div>
       <p className="px-1 type-caption text-ink-muted">
-        {selected.length === 0
-          ? 'Showing all. Pick any to narrow it down.'
-          : `${selected.length} selected`}
+        {selected.length === 0 ? 'All' : `${selected.length} selected`}
         {selected.length > 0 && (
           <button className="ml-2 font-medium text-sage-700" onClick={() => onChange([])}>
             Clear

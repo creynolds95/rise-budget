@@ -190,6 +190,28 @@ describe('T21 transactions & splits', () => {
     expect((await s.api('GET', '/transactions?account=,')).status).toBe(400);
   });
 
+  it('excludes categories and accounts', async () => {
+    const s = await setup();
+    const cash = (await s.api('POST', '/accounts', { name: 'Cash', kind: 'depository' })).json;
+    await s.add('2026-09-02', 500, 'A', s.home.id);
+    await s.add('2026-09-03', 700, 'B', s.kids.id);
+    await s.api('POST', '/transactions', {
+      accountId: cash.id,
+      postedAt: '2026-09-05',
+      amountCents: 300,
+      descriptor: 'D',
+      categoryId: s.kids.id,
+    });
+    const names = (r: { json: { items: { descriptorRaw: string }[] } }) =>
+      r.json.items.map((t) => t.descriptorRaw);
+    expect(names(await s.api('GET', `/transactions?notCategory=${s.kids.id}`))).toEqual(['A']);
+    expect(names(await s.api('GET', `/transactions?notAccount=${cash.id}`))).toEqual(['B', 'A']);
+    expect(
+      names(await s.api('GET', `/transactions?notAccount=${cash.id}&notCategory=${s.kids.id}`)),
+    ).toEqual(['A']);
+    expect((await s.api('GET', '/transactions?notCategory=,')).status).toBe(400);
+  });
+
   it('filters by direction and amount size', async () => {
     const s = await setup();
     await s.add('2026-09-02', 500, 'small');

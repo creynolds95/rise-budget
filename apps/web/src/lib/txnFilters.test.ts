@@ -33,6 +33,24 @@ describe('transaction filters', () => {
     expect(filtersToParams(EMPTY).toString()).toBe('');
   });
 
+  it('carries exclusions in the URL and the API query, and labels them', () => {
+    const f: Filters = {
+      ...EMPTY,
+      categories: ['c', 'd'],
+      notCategories: true,
+      accounts: ['a'],
+      notAccounts: true,
+    };
+    const p = filtersToParams(f);
+    expect(p.toString()).toBe('notAccount=a&notCategory=c%2Cd');
+    expect(parseFilters(p)).toEqual(f);
+    expect(apiQuery(f, '2026-09-24')).toEqual({ notAccount: 'a', notCategory: 'c,d' });
+    const cs = chips(f, names);
+    expect(cs.map((c) => c.label)).toEqual(['Not acct:a', 'Not cat:c +1']);
+    expect(cs[1]?.clear(f)).toMatchObject({ categories: [], notCategories: false });
+    expect(cs[0]?.clear(f)).toMatchObject({ accounts: [], notAccounts: false });
+  });
+
   it('treats old links with from/to as a custom range, and ignores junk', () => {
     const f = parseFilters(new URLSearchParams('from=2026-09-01&sort=sideways&min=abc'));
     expect(f).toMatchObject({
