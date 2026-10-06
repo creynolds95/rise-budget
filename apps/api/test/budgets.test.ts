@@ -152,7 +152,7 @@ describe('rows read on a production-sized database', () => {
       ],
       ['sync, 2 new per account', () => runSync(env.DB, s.userId, source(2), { now }), 50_000],
       // The backup reads every row on purpose. This file's database holds two production-sized
-      // users, so this is ~2× Caleb's real nightly cost.
+      // users, so this is ~2× a real nightly cost.
       ['backup', () => runBackup(env.DB, env.BACKUPS, now), 250_000],
     ];
     const failures: string[] = [];

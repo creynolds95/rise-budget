@@ -307,7 +307,7 @@ export function projectOccurrences(series: DetectedSeries, count: number): Proje
 }
 
 /**
- * A user-declared cash withdrawal (SPEC-adjacent: Caleb's cash-to-payday tool). Unlike a
+ * A user-declared cash withdrawal (SPEC-adjacent: the owner's cash-to-payday tool). Unlike a
  * `DetectedSeries`, its cadence and next date are declared up front from one transaction
  * rather than inferred from three — for a bill that's real but too new, too irregularly
  * amounted, or too easily confused with a sibling (two different student loans) to detect.
@@ -320,7 +320,7 @@ export interface ManualRule {
   nextExpectedDate: string;
 }
 
-/** Caleb: 2 days late without notice is worth flagging — shorter than a detected series's 7. */
+/** Owner: 2 days late without notice is worth flagging — shorter than a detected series's 7. */
 export const MISSED_AFTER_DAYS = 2;
 
 /**

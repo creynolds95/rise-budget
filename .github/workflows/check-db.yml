@@ -32,6 +32,21 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # wrangler.toml holds placeholders so this public repo carries no deployment details.
+      - name: Configure wrangler.toml
+        working-directory: apps/api
+        run: |
+          : "${D1_DATABASE_ID:?set the D1_DATABASE_ID repo secret}" "${RISE_HOST:?set the RISE_HOST repo secret}"
+          # Fail before anything deploys if a value was pasted with extra text, a scheme or a path.
+          printf '%s' "$D1_DATABASE_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' \
+            || { echo "D1_DATABASE_ID must be a bare UUID"; exit 1; }
+          printf '%s' "$RISE_HOST" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$' \
+            || { echo "RISE_HOST must be a bare host name, e.g. rise.example.workers.dev"; exit 1; }
+          sed -i -e "s/00000000-0000-0000-0000-000000000000/$D1_DATABASE_ID/" \
+            -e "s/rise\.example\.workers\.dev/$RISE_HOST/g" wrangler.toml
+        env:
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          RISE_HOST: ${{ secrets.RISE_HOST }}
       - name: Run check
         working-directory: apps/api
         run: |

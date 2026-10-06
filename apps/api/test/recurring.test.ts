@@ -52,8 +52,8 @@ async function setup() {
 const netflix = (extra: [string, string, number, string][] = []) =>
   bridge([
     {
-      id: 'chase',
-      name: 'Chase Credit',
+      id: 'metro',
+      name: 'Metro Credit',
       reported: '2026-08-20',
       txns: [
         ['n6', '2026-06-07', 1_549, 'NETFLIX.COM LOS GATOS CA'],
@@ -267,8 +267,8 @@ describe('T32 late arrivals through sync', () => {
       s.userId,
       bridge([
         {
-          id: 'chase',
-          name: 'Chase Credit',
+          id: 'metro',
+          name: 'Metro Credit',
           reported: '2026-09-05',
           txns: [['late', '2026-08-30', 1_549, 'NETFLIX.COM']],
         },

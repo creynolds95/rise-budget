@@ -14,9 +14,9 @@ const TZ = 'America/Chicago';
 const LATE_EVENING = Date.UTC(2026, 8, 10, 3) / 1000;
 
 const account = (over: Partial<SimpleFinAccount> = {}): SimpleFinAccount => ({
-  org: { name: 'USAA' },
+  org: { name: 'Summit' },
   id: 'ACT-1',
-  name: 'USAA Checking',
+  name: 'Summit Checking',
   currency: 'USD',
   balance: '1523.07',
   'balance-date': LATE_EVENING,
@@ -88,20 +88,23 @@ describe('SimpleFIN adapter (SPEC §6.1, §6.3)', () => {
     ).toBe('1970-01-01');
   });
 
-  it('guesses kind for Caleb’s accounts; savings stay out of the budget; Apple is monthly', () => {
+  it('guesses kind for typical accounts; savings stay out of the budget; Apple is monthly', () => {
     const g = (name: string, org: string, balance = '100.00') =>
       toIncomingAccount(account({ name, org: { name: org }, balance }), TZ);
-    expect(g('USAA Checking', 'USAA')).toMatchObject({
+    expect(g('Summit Checking', 'Summit')).toMatchObject({
       kind: 'depository',
       includeInBudget: true,
       syncCadenceHours: 24,
     });
-    expect(g('USAA Savings', 'USAA')).toMatchObject({ kind: 'depository', includeInBudget: false });
-    expect(g('USAA Rewards Visa', 'USAA', '-812.44')).toMatchObject({
+    expect(g('Summit Savings', 'Summit')).toMatchObject({
+      kind: 'depository',
+      includeInBudget: false,
+    });
+    expect(g('Summit Rewards Visa', 'Summit', '-812.44')).toMatchObject({
       kind: 'credit',
       balanceCents: -81_244,
     });
-    expect(g('Chase Freedom', 'Chase', '-12.00')).toMatchObject({ kind: 'credit' });
+    expect(g('Metro Freedom', 'Metro', '-12.00')).toMatchObject({ kind: 'credit' });
     expect(g('Citi Double Cash Card', 'Citi', '0.00')).toMatchObject({
       kind: 'credit',
       includeInBudget: true,
@@ -112,7 +115,7 @@ describe('SimpleFIN adapter (SPEC §6.1, §6.3)', () => {
       includeInBudget: false,
       syncCadenceHours: 720,
     });
-    expect(g('Auto Loan', 'USAA', '-9000.00')).toMatchObject({ kind: 'loan' });
+    expect(g('Auto Loan', 'Summit', '-9000.00')).toMatchObject({ kind: 'loan' });
     expect(g('Fidelity 401(k)', 'Fidelity', '50000.00')).toMatchObject({
       kind: 'investment',
       includeInBudget: false,

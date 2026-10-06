@@ -95,7 +95,7 @@ allocations.patch('/:id', async (c) => {
       setPlannedStmt(userId, db, periodId, categoryId, b.plannedCents),
       ...future,
     ]);
-    // Paychecks are the period's expected income now (Caleb, 2026-09-25) — resync it from
+    // Paychecks are the period's expected income now (owner, 2026-09-25) — resync it from
     // the sum of every income category's plan so the two can never drift apart.
     const resynced = await loadPeriodView(c.env, userId, periodId);
     const totalIncomePlanned = resynced.view.categories
@@ -107,7 +107,7 @@ allocations.patch('/:id', async (c) => {
   }
 
   // Planning past income is allowed: the pool covers whatever funding doesn't, even below
-  // zero, and the Budget bar shows "Over budget" (Caleb, 2026-10-06).
+  // zero, and the Budget bar shows "Over budget" (owner, 2026-10-06).
   const change = {
     targetCategoryId: categoryId,
     oldPlannedCents: target.plannedCents,

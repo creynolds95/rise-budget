@@ -275,7 +275,7 @@ describe('projecting a series forward (cash-to-payday)', () => {
   });
 });
 
-describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to auto-detect)', () => {
+describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to auto-detect)', () => {
   it('walks a monthly anchor forward to the first date on or after today', () => {
     expect(firstUpcoming('monthly', '2026-09-01', null, '2026-09-25')).toBe('2026-10-01');
     // Already in the future: stays put.
@@ -361,7 +361,7 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
   });
 
   it('a paycheck that lands early moves on to the next payday, not back to the one it paid', () => {
-    // Caleb, 2026-10-04: paid Friday Oct 2 for Monday Oct 5; Surplus still expected it on the 5th.
+    // owner, 2026-10-04: paid Friday Oct 2 for Monday Oct 5; Surplus still expected it on the 5th.
     const occ: Occurrence[] = [{ date: '2026-10-02', amountCents: -289_039, categoryId: null }];
     const r = rule({
       cadence: 'semimonthly',

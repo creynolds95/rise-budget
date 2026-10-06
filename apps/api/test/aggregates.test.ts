@@ -40,7 +40,7 @@ describe('T23 period aggregates', () => {
     for (const name of ['Groceries', 'Gas', 'Eating out', 'Kids']) {
       cats.push((await api('POST', '/categories', { groupId: group.id, name })).json.id);
     }
-    const card = (await api('POST', '/accounts', { name: 'Chase Credit', kind: 'credit' })).json;
+    const card = (await api('POST', '/accounts', { name: 'Metro Credit', kind: 'credit' })).json;
     const days = ['2026-07-03', '2026-07-28', '2026-08-01', '2026-08-15', '2026-09-09'];
     const r = rng(42);
     const txns: { id: string; amount: number }[] = [];

@@ -35,7 +35,7 @@ export type ReallocationResult =
  * Build the atomic write set for a planned-amount change (SPEC §2.6). Category-to-category
  * moves leave SUM(planned) — and therefore the pool — unchanged; only the pool-funded part
  * moves it. Whatever funding doesn't cover comes from the pool, even past zero: planning
- * beyond income is allowed and shows as "Over budget" (Caleb, 2026-10-06).
+ * beyond income is allowed and shows as "Over budget" (owner, 2026-10-06).
  */
 export function buildReallocation(
   change: AllocationChange,

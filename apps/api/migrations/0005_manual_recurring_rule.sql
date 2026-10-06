@@ -1,4 +1,4 @@
--- Caleb: a real cash auto-withdrawal (mortgage, a specific student loan) doesn't clear the
+-- Owner: a real cash auto-withdrawal (mortgage, a specific student loan) doesn't clear the
 -- 3-occurrence bar for auto-detection while sync history is short, and two loans paid on
 -- different days can't share one category's "is bill" flag anyway. Let him declare one
 -- straight from a transaction instead of waiting on detection. Reuses `recurring_series`

@@ -68,7 +68,7 @@ remaining = available - spent
 Each category has `rollover_policy ∈ { roll, return_to_pool }`, changeable at any time.
 In the UI this is one switch: **Rolls over to next month**.
 
-**Only a rolling category carries, in both directions** (Caleb, 2026-10-01). Credit or debit,
+**Only a rolling category carries, in both directions** (owner, 2026-10-01). Credit or debit,
 a category that is not marked to roll starts every month fresh: its leftover and its overspend
 both stay in the month they happened in. Neither goes to the pool.
 
@@ -137,7 +137,7 @@ else:
     the rest from the pool, even past zero
 ```
 
-Planning past income is allowed (Caleb, 2026-10-06). Nothing is blocked: the pool goes
+Planning past income is allowed (owner, 2026-10-06). Nothing is blocked: the pool goes
 negative and the Budget tab's bar reads "Over budget" on a solid clay fill until plans come
 back under income.
 

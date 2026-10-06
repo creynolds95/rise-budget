@@ -701,7 +701,7 @@ function RenameSheet({
 }
 
 /**
- * Caleb's "Recurring Cash Withdrawal" tag, and the same for a paycheck: a real cash auto-draft
+ * The owner's "Recurring Cash Withdrawal" tag, and the same for a paycheck: a real cash auto-draft
  * (a specific student loan, a mortgage) or income (a semimonthly paycheck) too new or too
  * easily confused with a sibling for auto-detection to find on its own. The amount comes from
  * this transaction, never typed in. Feeds the cash-to-payday tool only — it doesn't touch this

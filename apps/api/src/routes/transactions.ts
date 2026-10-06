@@ -468,10 +468,10 @@ transactions.delete('/:id/transfer-link', async (c) => {
 });
 
 /**
- * Caleb's "Recurring Cash Withdrawal" tag (cash-to-payday tool, SPEC-adjacent): a real cash
+ * The owner's "Recurring Cash Withdrawal" tag (cash-to-payday tool, SPEC-adjacent): a real cash
  * auto-draft too new or too easily confused with a sibling to auto-detect from 3 charges.
  * Also used the same way for a paycheck (income transactions carry a negative amount_cents,
- * SPEC §1.1) too new or irregular for auto-detection to pick up on its own — e.g. Caleb's
+ * SPEC §1.1) too new or irregular for auto-detection to pick up on its own — e.g. the owner's
  * semimonthly schedule paid the 5th and 20th. One rule per merchant — tagging again from
  * another of its transactions replaces it.
  */

@@ -92,7 +92,7 @@ export const changeOf = (r: ManualRuleRow): AmountChange | null =>
     ? { amountCents: r.next_amount_cents, on: r.amount_changes_on }
     : null;
 
-/** Every manual rule (Caleb's "Recurring Cash Withdrawal" tag), for `refreshRecurring`. */
+/** Every manual rule (the owner's "Recurring Cash Withdrawal" tag), for `refreshRecurring`. */
 export async function listManualRules(userId: UserId, db: D1Database): Promise<ManualRuleRow[]> {
   const { results } = await db
     .prepare(

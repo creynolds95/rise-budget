@@ -41,11 +41,11 @@ describe('DetailPage (DESIGN-SYSTEM.md §5)', () => {
     const { getByRole } = render(
       <MemoryRouter>
         <DetailPage
-          header={{ back: { label: 'USAA Checking', to: '/accounts/1' }, title: 'Kroger' }}
+          header={{ back: { label: 'Summit Checking', to: '/accounts/1' }, title: 'Kroger' }}
         />
       </MemoryRouter>,
     );
-    expect(getByRole('link', { name: 'Back to USAA Checking' })).toBeTruthy();
+    expect(getByRole('link', { name: 'Back to Summit Checking' })).toBeTruthy();
     expect(() =>
       render(
         <MemoryRouter>

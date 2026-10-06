@@ -19,7 +19,7 @@ Cap hit → D1 queries fail until 00:00 UTC. Nothing is charged.
 
 ## 2. Where reads come from (measured)
 
-Method: a synthetic history in the real test harness, counting `meta.rows_read` per call. 7.4k txns ≈ Caleb's real size; 12k ≈ +3 years.
+Method: a synthetic history in the real test harness, counting `meta.rows_read` per call. 7.4k txns ≈ a real-world size; 12k ≈ +3 years.
 
 | Source | 7.4k txns | 12k txns | Grows with |
 |---|---|---|---|

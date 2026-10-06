@@ -160,7 +160,7 @@ describe('transfer offer for a lone leg', () => {
     ).toBe('card_payment');
   });
   it('offers a plain transfer between bank accounts', () => {
-    expect(transferOffer(txn({ descriptorRaw: 'USAA FUNDS TRANSFER DB' }), 'depository')).toBe(
+    expect(transferOffer(txn({ descriptorRaw: 'SUMMIT FUNDS TRANSFER DB' }), 'depository')).toBe(
       'transfer',
     );
   });

@@ -253,12 +253,15 @@ describe('Monarch import: merging history into a live account', () => {
   async function pair() {
     const s = await setup();
     const setupRes = await s.api('POST', '/import/monarch/setup', {
-      accounts: [{ monarchName: 'USAA CLASSIC CHECKING (...1335)', kind: 'depository' }],
+      accounts: [{ monarchName: 'SUMMIT CLASSIC CHECKING (...4821)', kind: 'depository' }],
       categories: [],
     });
-    const historyId = setupRes.json.accounts['USAA CLASSIC CHECKING (...1335)'] as string;
+    const historyId = setupRes.json.accounts['SUMMIT CLASSIC CHECKING (...4821)'] as string;
     const live = (
-      await s.api('POST', '/accounts', { name: 'USAA CLASSIC CHECKING (1335)', kind: 'depository' })
+      await s.api('POST', '/accounts', {
+        name: 'SUMMIT CLASSIC CHECKING (4821)',
+        kind: 'depository',
+      })
     ).json;
     // A manual account is not a bank feed: make the twin one.
     await env.DB.prepare("UPDATE account SET source = 'simplefin' WHERE id = ?1")
@@ -277,9 +280,9 @@ describe('Monarch import: merging history into a live account', () => {
     expect(list.json).toEqual([
       {
         historyId: s.historyId,
-        historyName: 'USAA CLASSIC CHECKING (...1335)',
+        historyName: 'SUMMIT CLASSIC CHECKING (...4821)',
         liveId: s.live.id,
-        liveName: 'USAA CLASSIC CHECKING (1335)',
+        liveName: 'SUMMIT CLASSIC CHECKING (4821)',
         rows: 2,
         duplicates: 0,
       },
@@ -337,7 +340,7 @@ describe('Monarch import: merging history into a live account', () => {
 
   it('does not offer a pair when two live accounts share the mask', async () => {
     const s = await pair();
-    const twin = (await s.api('POST', '/accounts', { name: 'Other (1335)', kind: 'depository' }))
+    const twin = (await s.api('POST', '/accounts', { name: 'Other (4821)', kind: 'depository' }))
       .json;
     await env.DB.prepare("UPDATE account SET source = 'simplefin' WHERE id = ?1")
       .bind(twin.id)

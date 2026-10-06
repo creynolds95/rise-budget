@@ -4,7 +4,7 @@ import { assertCents, type Cents } from './money';
 import { nextPeriod, type PeriodId } from './period';
 
 /**
- * Live rollover (Caleb, 2026-10-01). There is no closing: every month's carry-in is worked out
+ * Live rollover (owner, 2026-10-01). There is no closing: every month's carry-in is worked out
  * from the month before, so the 1st rolls over on its own and a late recategorisation flows
  * forward into every later month. The chain starts at `ROLLOVER_START`; nothing carries into
  * it or out of any month before it (those are history). Income never rolls: a month that

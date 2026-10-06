@@ -10,7 +10,7 @@ async function setup() {
   const gas = (await api('POST', '/categories', { groupId: group.id, name: 'Gas' })).json;
   const home = (await api('POST', '/categories', { groupId: group.id, name: 'Home' })).json;
   const kids = (await api('POST', '/categories', { groupId: group.id, name: 'Kids' })).json;
-  const card = (await api('POST', '/accounts', { name: 'USAA Credit', kind: 'credit' })).json;
+  const card = (await api('POST', '/accounts', { name: 'Summit Credit', kind: 'credit' })).json;
 
   /** A synced row waiting in the review queue. */
   const queued = async (descriptor: string, merchant: string, amountCents = 4_000) => {

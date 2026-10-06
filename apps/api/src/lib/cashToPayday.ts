@@ -84,7 +84,7 @@ export async function buildCashToPaydayProjection(
   // Re-checked here: an add or dismiss since the last sync takes effect at once.
   const skip = new Set([...dismissedMerchants, ...manualRules.map((r) => r.merchant_normalized)]);
   const pending = saved.filter((r) => !skip.has(r.merchant_normalized));
-  // A manual rule projects even while flagged `broken` (unconfirmed) — Caleb still wants it
+  // A manual rule projects even while flagged `broken` (unconfirmed) — the owner still wants it
   // planned for; `broken` only ever surfaces as the Dashboard's "hasn't charged since" note.
   const confirmed = manualRules.map((r) => ({
     rule: r,

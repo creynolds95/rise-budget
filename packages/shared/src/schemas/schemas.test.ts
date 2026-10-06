@@ -95,7 +95,7 @@ describe('schemas', () => {
 
   it('PATCH bodies never inject defaults for absent keys', () => {
     expect(PatchSettingsBody.parse({ appLock: '5m' })).toEqual({ appLock: '5m' });
-    expect(PatchAccountBody.parse({ name: 'USAA Savings' })).toEqual({ name: 'USAA Savings' });
+    expect(PatchAccountBody.parse({ name: 'Summit Savings' })).toEqual({ name: 'Summit Savings' });
   });
 
   it('RecurringSeries accepts the `<userId>|<merchant>` id of a long merchant name', () => {

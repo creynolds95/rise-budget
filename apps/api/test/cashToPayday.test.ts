@@ -44,7 +44,7 @@ async function setup() {
   const u = await signedInUser();
   const api = (method: string, path: string, body?: unknown) =>
     call(method, path, { access: u.access, body });
-  const checking = (await api('POST', '/accounts', { name: 'USAA Checking', kind: 'depository' }))
+  const checking = (await api('POST', '/accounts', { name: 'Summit Checking', kind: 'depository' }))
     .json;
   await api('POST', `/accounts/${checking.id}/snapshots`, {
     asOf: '2026-09-25',
@@ -58,7 +58,7 @@ const feed = () =>
   bridge([
     {
       id: 'chk',
-      name: 'USAA Checking',
+      name: 'Summit Checking',
       reported: '2026-09-25',
       txns: [
         ['p1', '2026-07-20', -310_000, 'ACME CORP PAYROLL'],
@@ -140,7 +140,7 @@ describe('cash to payday', () => {
     const mortgage = listed.suggestions.find(
       (r: { merchant: string }) => r.merchant === 'MORTGAGE SERVICING',
     );
-    expect(mortgage?.accountName).toBe('USAA Checking');
+    expect(mortgage?.accountName).toBe('Summit Checking');
     await s.api('PATCH', '/me/settings', {
       dismissedPayMerchants: [{ merchant: 'MORTGAGE SERVICING', displayName: 'Mortgage' }],
     });
@@ -163,7 +163,7 @@ describe('cash to payday', () => {
   it('a plain empty settings default counts every budgeted depository account as cash', async () => {
     const s = await setup();
     const res = await s.api('GET', '/cash-to-payday');
-    expect(res.json.cashAccounts).toEqual([{ id: s.checking.id, name: 'USAA Checking' }]);
+    expect(res.json.cashAccounts).toEqual([{ id: s.checking.id, name: 'Summit Checking' }]);
     expect(res.json.cushionCents).toBe(50_000);
   });
 
@@ -329,7 +329,7 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
   });
 });
 
-describe('Surplus counts every non-card dollar leaving checking (Caleb, 2026-10-04)', () => {
+describe('Surplus counts every non-card dollar leaving checking (owner, 2026-10-04)', () => {
   const TODAY = '2026-09-20';
   const months = ['2026-07', '2026-08', '2026-09'];
   // Checking pays a synced loan, moves money to synced savings, and pays a card. Each pair
@@ -338,11 +338,11 @@ describe('Surplus counts every non-card dollar leaving checking (Caleb, 2026-10-
     bridge([
       {
         id: 'chk',
-        name: 'USAA Checking',
+        name: 'Summit Checking',
         reported: '2026-09-25',
         txns: months.flatMap((m, i) => [
           [`l${i}`, `${m}-14`, 106_054, 'THECB LOAN PYMT'],
-          [`s${i}`, `${m}-15`, 25_000, 'USAA FUNDS TRANSFER DB'],
+          [`s${i}`, `${m}-15`, 25_000, 'SUMMIT FUNDS TRANSFER DB'],
           [`c${i}`, `${m}-10`, 80_000 + i * 13_117, 'CITI CARD PAYMENT'],
         ]) as [string, string, number, string][],
       },
@@ -359,9 +359,9 @@ describe('Surplus counts every non-card dollar leaving checking (Caleb, 2026-10-
       },
       {
         id: 'sav',
-        name: 'USAA Savings',
+        name: 'Summit Savings',
         reported: '2026-09-25',
-        txns: months.map((m, i) => [`S${i}`, `${m}-15`, -25_000, 'USAA FUNDS TRANSFER CR']) as [
+        txns: months.map((m, i) => [`S${i}`, `${m}-15`, -25_000, 'SUMMIT FUNDS TRANSFER CR']) as [
           string,
           string,
           number,
@@ -417,19 +417,19 @@ describe('Surplus counts every non-card dollar leaving checking (Caleb, 2026-10-
   it('suggests the loan payment and the savings transfer from checking, never the card payment', async () => {
     const s = await synced();
     expect(s.transfers).toBe(18); // every leg linked: the case that used to hide them
-    await s.api('PATCH', '/me/settings', { cashAccountIds: [s.id('USAA Checking')] });
+    await s.api('PATCH', '/me/settings', { cashAccountIds: [s.id('Summit Checking')] });
     await refreshRecurring(env.DB, s.userId, TODAY);
     const { suggestions } = await buildCashToPaydayProjection(env.DB, s.userId, TODAY, 0, 0);
     expect(suggestions.map((r: { merchant: string }) => r.merchant).sort()).toEqual([
+      'SUMMIT FUNDS TRANSFER DB',
       'THECB LOAN PYMT',
-      'USAA FUNDS TRANSFER DB',
     ]);
   });
 
   it('a transfer between two cash accounts nets to nothing', async () => {
     const s = await synced();
     await s.api('PATCH', '/me/settings', {
-      cashAccountIds: [s.id('USAA Checking'), s.id('USAA Savings')],
+      cashAccountIds: [s.id('Summit Checking'), s.id('Summit Savings')],
     });
     await refreshRecurring(env.DB, s.userId, TODAY);
     const { suggestions } = await buildCashToPaydayProjection(env.DB, s.userId, TODAY, 0, 0);
@@ -513,7 +513,7 @@ describe('Surplus never drops a schedule whose date has passed', () => {
   });
 });
 
-describe('a paycheck that changes from a date on (Caleb, 2026-10-05: 401k from Nov 5)', () => {
+describe('a paycheck that changes from a date on (owner, 2026-10-05)', () => {
   it('projects the old amount before the date, the new one from it, then folds it in', async () => {
     // The routes advance schedules by the real date; pin it to the day the test is written for.
     vi.useFakeTimers({ toFake: ['Date'] });
