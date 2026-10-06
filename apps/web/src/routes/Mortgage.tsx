@@ -11,6 +11,7 @@ import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { series } from '../design/tokens';
 import { api } from '../lib/api';
+import { isDue } from '@rise/shared/debt';
 import { DEFAULT_DEBT_PLAN, aprFromText, aprToText, owedCents } from '../lib/debt';
 import { addMonths, monthName, periodOf } from '../lib/dates';
 import { formatCents } from '../lib/money';
@@ -277,9 +278,12 @@ export function Mortgage() {
   const account = loan ? live.find((a) => a.id === loan.accountId) : undefined;
   const owed = account ? owedCents(account.balanceCents) : 0;
   const current = plan ?? DEFAULT_DEBT_PLAN;
+  // A manual balance doesn't move until the payment is applied; until then it's still ahead.
+  const pending =
+    !!loan && account?.source === 'manual' && isDue({ ...loan, owedCents: owed }, today);
   const view = useMemo(
-    () => (loan && account ? mortgageView(loan, owed, current, period) : null),
-    [loan, account, owed, current, period],
+    () => (loan && account ? mortgageView(loan, owed, current, period, pending) : null),
+    [loan, account, owed, current, period, pending],
   );
 
   const header = {
@@ -373,7 +377,8 @@ export function Mortgage() {
   const lines = lineSeries(view.plan, owed);
   const first = view.plan.rows[0];
   const equity = homeValue ? homeValue.balanceCents - owed : null;
-  const labelAt = (m: number) => monthName(addMonths(period, m)).replace(/^(\w{3})\w* /, '$1 ');
+  const labelAt = (m: number) =>
+    monthName(addMonths(period, m - (pending ? 1 : 0))).replace(/^(\w{3})\w* /, '$1 ');
   const lastMonth = lines.months.at(-1) ?? 0;
   const noDate = view.payoffPeriod === null;
 

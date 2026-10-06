@@ -17,13 +17,16 @@ export interface MortgageView {
   ytd: { principalCents: number; interestCents: number } | null;
 }
 
-/** The first payment is next month, so the month index maps to periods from there. */
+/** The first payment is next month (this month's if `pending`), so month indexes map from there. */
 export function mortgageView(
   loan: DebtLoanPlan,
   owedCents: number,
   settings: Pick<DebtPlan, 'mortgageExtraCents' | 'mortgageLumps' | 'mortgageTermMonths'>,
   period: string,
+  /** This month's payment is due but not in the balance yet, so it is the first one ahead. */
+  pending = false,
 ): MortgageView {
+  const lead = pending ? 1 : 0;
   const input = {
     balanceCents: owedCents,
     aprMilliPct: loan.aprMilliPct,
@@ -34,12 +37,12 @@ export function mortgageView(
     ...input,
     extraMonthlyCents: settings.mortgageExtraCents,
     lumps: settings.mortgageLumps.map((l) => ({
-      month: Math.max(1, monthsFrom(period, l.period)),
+      month: Math.max(1, monthsFrom(period, l.period) + lead),
       cents: l.cents,
     })),
   });
   const at = (a: Amortization) =>
-    a.payoffMonth === null ? null : addMonths(period, a.payoffMonth);
+    a.payoffMonth === null ? null : addMonths(period, a.payoffMonth - lead);
   const paidCount =
     base.payoffMonth === null ? 0 : Math.max(0, settings.mortgageTermMonths - base.payoffMonth);
   const thisYear = Math.min(paidCount, Number(period.slice(5, 7)));

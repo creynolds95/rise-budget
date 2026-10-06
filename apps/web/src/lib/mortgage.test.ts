@@ -57,6 +57,20 @@ describe('mortgage view', () => {
     expect(v.monthsSooner).toBeNull();
   });
 
+  it('a due payment not yet in the balance is the first one, so the date lands a month sooner', () => {
+    const v = mortgageView(loan, 33_064_962, settings, '2026-10', true);
+    expect(v.payoffPeriod).toBe('2056-03');
+    expect(v.paidCount).toBe(6);
+    const lump = mortgageView(
+      loan,
+      33_064_962,
+      { ...settings, mortgageLumps: [{ period: '2026-10', cents: 100_000 }] },
+      '2026-10',
+      true,
+    );
+    expect(lump.plan.rows[0]?.extraCents).toBe(100_000);
+  });
+
   it('counts months between periods', () => {
     expect(monthsFrom('2026-10', '2027-01')).toBe(3);
   });

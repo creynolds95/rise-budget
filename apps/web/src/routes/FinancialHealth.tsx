@@ -1,3 +1,4 @@
+import { isDue } from '@rise/shared/debt';
 import { Link, useNavigate } from 'react-router';
 import { BackLink } from '../components/BackLink';
 import { Chevron } from '../components/primitives/Rows';
@@ -70,7 +71,14 @@ export function FinancialHealth() {
     const loan = debt?.loans.find((l) => l.group === 'mortgage');
     const acct = loan ? accounts.find((a) => a.id === loan.accountId && !a.archivedAt) : undefined;
     if (debt && loan && acct) {
-      const v = mortgageView(loan, owedCents(acct.balanceCents), debt, periodOf(today));
+      const v = mortgageView(
+        loan,
+        owedCents(acct.balanceCents),
+        debt,
+        periodOf(today),
+        acct.source === 'manual' &&
+          isDue({ ...loan, owedCents: owedCents(acct.balanceCents) }, today),
+      );
       mortgageState = v.payoffPeriod ? `Paid off ${monthName(v.payoffPeriod)}` : 'Add payment';
     } else mortgageState = 'Set up';
     if (!plan) state = 'Set up';
