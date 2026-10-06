@@ -84,6 +84,7 @@ export interface ManualRuleRow {
   label: string | null;
   next_amount_cents: number | null;
   amount_changes_on: string | null;
+  paycheck_json: string | null;
 }
 
 /** A rule's pending amount change, if any (both columns set together). */
@@ -97,7 +98,7 @@ export async function listManualRules(userId: UserId, db: D1Database): Promise<M
   const { results } = await db
     .prepare(
       `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
-         anchor_days, label, next_amount_cents, amount_changes_on
+         anchor_days, label, next_amount_cents, amount_changes_on, paycheck_json
        FROM recurring_series WHERE user_id = ?1 AND source = 'manual'`,
     )
     .bind(userId)
@@ -151,6 +152,7 @@ export function updateManualRuleStmt(
     anchorDays: [number, number] | null;
     label?: string | undefined;
     change: AmountChange | null;
+    paycheckJson: string | null;
   },
 ): D1PreparedStatement {
   return db
@@ -158,7 +160,7 @@ export function updateManualRuleStmt(
       `UPDATE recurring_series SET cadence = ?3, expected_amount_cents = ?4,
          next_expected_date = ?5, anchor_days = ?6, status = 'active', updated_at = ?7,
          label = CASE WHEN label IS NULL THEN NULL ELSE COALESCE(?8, label) END,
-         next_amount_cents = ?9, amount_changes_on = ?10
+         next_amount_cents = ?9, amount_changes_on = ?10, paycheck_json = ?11
        WHERE user_id = ?1 AND id = ?2 AND source = 'manual'`,
     )
     .bind(
@@ -172,6 +174,7 @@ export function updateManualRuleStmt(
       v.label ?? null,
       v.change?.amountCents ?? null,
       v.change?.on ?? null,
+      v.paycheckJson,
     );
 }
 
@@ -193,7 +196,7 @@ export async function listManualEvents(userId: UserId, db: D1Database): Promise<
   const { results } = await db
     .prepare(
       `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
-         anchor_days, label, next_amount_cents, amount_changes_on
+         anchor_days, label, next_amount_cents, amount_changes_on, paycheck_json
        FROM recurring_series WHERE user_id = ?1 AND source = 'manual' AND label IS NOT NULL
        ORDER BY next_expected_date`,
     )

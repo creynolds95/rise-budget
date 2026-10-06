@@ -1,11 +1,13 @@
 import { projectCashFlow, type CashEvent, type CashProjection } from '@rise/shared/cash-projection';
 import type { Account, User } from '@rise/shared/schemas';
 import {
+  foldPaycheck,
   likelySameAs,
   upcomingOccurrences,
   withAmountChange,
   type AmountChange,
   type DetectedSeries,
+  type PaycheckBreakdown,
 } from '@rise/shared/recurring';
 import { changeOf, displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
 
@@ -28,6 +30,13 @@ export interface PaySchedule {
   series: DetectedSeries;
 }
 
+/** A stored breakdown; once its change has taken effect (no change pending) it is made current. */
+function breakdownOf(json: string | null, changePending: boolean): PaycheckBreakdown | null {
+  if (!json) return null;
+  const b = JSON.parse(json) as PaycheckBreakdown;
+  return changePending ? b : foldPaycheck(b);
+}
+
 /** One paycheck or bill schedule, as the Surplus page lists and edits it. */
 export interface ScheduleRow {
   id: string;
@@ -42,6 +51,8 @@ export interface ScheduleRow {
   isHandAdded: boolean;
   /** A new amount from a date on, unsigned like `amountCents`. */
   change: AmountChange | null;
+  /** Gross-to-net lines for a paycheck; informational only. */
+  breakdown: PaycheckBreakdown | null;
 }
 
 /** A schedule sync found in the cash accounts, waiting for the user to add or dismiss it. */
@@ -157,6 +168,7 @@ export async function buildCashToPaydayProjection(
     change: rule.amount_changes_on
       ? { amountCents: Math.abs(rule.next_amount_cents ?? 0), on: rule.amount_changes_on }
       : null,
+    breakdown: breakdownOf(rule.paycheck_json, rule.amount_changes_on != null),
   }));
   // Hand-added schedules only: a tagged one already hides its own merchant's suggestion.
   const handAdded = schedules

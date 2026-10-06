@@ -537,6 +537,12 @@ describe('a paycheck that changes from a date on (Caleb, 2026-10-05: 401k from N
       change: { amountCents: 170_025, on: '2026-11-05' },
     });
     expect(put.status).toBe(200);
+    // The PUT picks the next date from the real clock; pin it to the scenario's.
+    await env.DB.prepare(
+      "UPDATE recurring_series SET next_expected_date = '2026-10-05' WHERE user_id = ?1",
+    )
+      .bind(s.userId)
+      .run();
 
     const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-04', 0, 0);
     expect(p.points.slice(1).map((x) => [x.date, x.balanceCents])).toEqual([
@@ -586,6 +592,56 @@ describe('a paycheck that changes from a date on (Caleb, 2026-10-05: 401k from N
     await s.api('PUT', '/cash-to-payday/schedules', { ...body, id });
     const { schedules } = (await s.api('GET', '/cash-to-payday')).json;
     expect(schedules[0].change).toBeNull();
+  });
+});
+
+describe('a paycheck gross-to-net breakdown', () => {
+  const pay = {
+    kind: 'income',
+    amountCents: 207_000,
+    cadence: 'semimonthly',
+    anchorDate: '2026-10-05',
+    anchorDays: [5, 20],
+    label: 'Payroll',
+  };
+  const breakdown = {
+    grossCents: 300_000,
+    nextGrossCents: 300_000,
+    lines: [
+      { label: 'Taxes', kind: 'tax', amountCents: 60_000 },
+      { label: '401k', kind: 'retirement', amountCents: 33_000, nextAmountCents: 69_975 },
+    ],
+  };
+
+  it('is stored on the schedule and never moves the projection', async () => {
+    const s = await setup();
+    const { id } = (await s.api('POST', '/cash-to-payday/manual-events', pay)).json;
+    const change = { amountCents: 170_025, on: '2026-11-05' };
+    await s.api('PUT', '/cash-to-payday/schedules', { ...pay, id, change });
+    const before = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-04', 0, 0);
+    await s.api('PUT', '/cash-to-payday/schedules', { ...pay, id, change, breakdown });
+    const after = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-04', 0, 0);
+    expect(after.schedules[0]?.breakdown).toEqual(breakdown);
+    expect(after.points).toEqual(before.points);
+  });
+
+  it('becomes current once the change has taken effect, and a save without one clears it', async () => {
+    const s = await setup();
+    const { id } = (await s.api('POST', '/cash-to-payday/manual-events', pay)).json;
+    await s.api('PUT', '/cash-to-payday/schedules', { ...pay, id, breakdown });
+    // No change pending: the breakdown's "from" values are simply the values.
+    const { schedules } = (await s.api('GET', '/cash-to-payday')).json;
+    expect(schedules[0].breakdown.lines[1].amountCents).toBe(69_975);
+    await s.api('PUT', '/cash-to-payday/schedules', { ...pay, id });
+    expect((await s.api('GET', '/cash-to-payday')).json.schedules[0].breakdown).toBeNull();
+  });
+
+  it('is dropped from an expense schedule', async () => {
+    const s = await setup();
+    const bill = { ...pay, kind: 'expense', label: 'Rent' };
+    const { id } = (await s.api('POST', '/cash-to-payday/manual-events', bill)).json;
+    await s.api('PUT', '/cash-to-payday/schedules', { ...bill, id, breakdown });
+    expect((await s.api('GET', '/cash-to-payday')).json.schedules[0].breakdown).toBeNull();
   });
 });
 

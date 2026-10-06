@@ -128,6 +128,7 @@ cashToPayday.put('/schedules', async (c) => {
           amountCents: b.kind === 'income' ? -b.change.amountCents : b.change.amountCents,
           on: b.change.on,
         },
+        paycheckJson: b.kind === 'income' && b.breakdown ? JSON.stringify(b.breakdown) : null,
       }),
     ]);
     if (result[0]?.meta.rows_written === 0)

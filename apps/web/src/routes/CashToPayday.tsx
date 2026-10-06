@@ -1,3 +1,4 @@
+import type { PaycheckBreakdown } from '@rise/shared/recurring';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
@@ -16,6 +17,7 @@ import { formatCents } from '../lib/money';
 import { useAccounts, useCashToPayday, useMe } from '../lib/queries';
 import { describeSchedule, draftFrom, schedulePayload, type ScheduleDraft } from '../lib/schedule';
 import type { ScheduleRow, SuggestionRow } from '../lib/types';
+import { PaycheckBreakdownEditor } from '../components/PaycheckBreakdownEditor';
 import { ScheduleFields } from '../components/ScheduleFields';
 
 /**
@@ -321,6 +323,10 @@ function EditScheduleSheet({
   const [changeCents, setChangeCents] = useState(row.change?.amountCents ?? row.amountCents);
   const [changeOn, setChangeOn] = useState(row.change?.on ?? row.nextExpectedDate);
   const changeInvalid = changing && (changeCents <= 0 || !changeOn);
+  const [breakdown, setBreakdown] = useState<PaycheckBreakdown | null>(row.breakdown ?? null);
+  const breakdownInvalid =
+    breakdown != null &&
+    (breakdown.grossCents <= 0 || breakdown.lines.some((l) => !l.label.trim()));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const run = async (fn: () => Promise<unknown>) => {
@@ -377,6 +383,30 @@ function EditScheduleSheet({
           </label>
         </div>
       )}
+      {row.id && row.kind === 'income' && (
+        <>
+          <div className="mt-3 flex min-h-11 items-center justify-between gap-4">
+            <span>Gross-to-net breakdown</span>
+            <Toggle
+              label="Gross-to-net breakdown"
+              on={breakdown != null}
+              onChange={(on) => setBreakdown(on ? { grossCents: amountCents, lines: [] } : null)}
+            />
+          </div>
+          {breakdown && (
+            <PaycheckBreakdownEditor
+              value={breakdown}
+              onChange={setBreakdown}
+              changeOn={changing ? changeOn : null}
+              amountCents={amountCents}
+              onUseNet={(net, after) => {
+                setAmountCents(net);
+                if (after != null) setChangeCents(after);
+              }}
+            />
+          )}
+        </>
+      )}
       <ScheduleFields
         draft={draft}
         onChange={setDraft}
@@ -385,7 +415,13 @@ function EditScheduleSheet({
       {error && <p className="mt-2 text-clay">{error}</p>}
       <Button
         className="mt-4 w-full"
-        disabled={saving || amountCents <= 0 || changeInvalid || (row.isHandAdded && !label.trim())}
+        disabled={
+          saving ||
+          amountCents <= 0 ||
+          changeInvalid ||
+          breakdownInvalid ||
+          (row.isHandAdded && !label.trim())
+        }
         onClick={() =>
           void run(() =>
             api('PUT', '/cash-to-payday/schedules', {
@@ -395,7 +431,10 @@ function EditScheduleSheet({
               ...schedulePayload(draft),
               ...(row.isHandAdded ? { label: label.trim() } : {}),
               ...(row.id
-                ? { change: changing ? { amountCents: changeCents, on: changeOn } : null }
+                ? {
+                    change: changing ? { amountCents: changeCents, on: changeOn } : null,
+                    breakdown: row.kind === 'income' ? breakdown : null,
+                  }
                 : {}),
             }),
           )

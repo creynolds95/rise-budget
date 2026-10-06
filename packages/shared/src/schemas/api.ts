@@ -174,6 +174,23 @@ export const ManualCashEventBody = z
  * Edit one paycheck/bill schedule: `id` for a manual rule (tagged or hand-added), or `merchant`
  * to take a detected one over (it then stops being re-detected).
  */
+/** A paycheck's gross-to-net lines. Informational: the schedule's own amount is what Surplus uses. */
+export const PaycheckBreakdownBody = z.object({
+  grossCents: Cents.positive(),
+  nextGrossCents: Cents.positive().optional(),
+  lines: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(40),
+        kind: z.enum(['tax', 'retirement', 'health', 'other']),
+        amountCents: Cents.nonnegative(),
+        nextAmountCents: Cents.nonnegative().optional(),
+      }),
+    )
+    .max(20),
+});
+export type PaycheckBreakdownBody = z.infer<typeof PaycheckBreakdownBody>;
+
 export const ScheduleBody = z
   .object({
     id: z.string().min(1).optional(),
@@ -187,6 +204,8 @@ export const ScheduleBody = z
     label: z.string().trim().min(1).max(60).optional(),
     /** A new amount from a date on (unsigned, same kind); null clears it. Saved rules only. */
     change: z.object({ amountCents: Cents.positive(), on: IsoDate }).nullable().default(null),
+    /** Gross-to-net lines for an income schedule; null clears. Saved rules only. */
+    breakdown: PaycheckBreakdownBody.nullable().default(null),
   })
   .refine((b) => b.cadence !== 'semimonthly' || b.anchorDays, {
     message: 'anchorDays is required for a semimonthly cadence',
