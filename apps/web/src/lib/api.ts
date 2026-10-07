@@ -3,8 +3,7 @@
  * token is an httpOnly cookie the browser sends to /api/auth. A 401 triggers one refresh,
  * shared by every request waiting on it, then a single retry.
  */
-import { get as idbGet, set as idbSet } from 'idb-keyval';
-import { Outbox, isQueueable, type OutboxEntry, type SendResult } from './outbox';
+import { Outbox, idbStore, isQueueable, type OutboxEntry, type SendResult } from './outbox';
 
 export class ApiError extends Error {
   override readonly name = 'ApiError';
@@ -227,7 +226,11 @@ export async function api<T>(
   if (res.status === 401 && !path.startsWith('/auth/') && (await refresh())) {
     res = await send(method, path, body, o);
   }
-  if (res.ok) setDbLimited(false);
+  if (res.ok) {
+    setDbLimited(false);
+    if (MUTATING.has(method) && isQueueable(method, path))
+      void outbox.supersede(method, path, body);
+  }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   const json = parseJson(text);
@@ -285,11 +288,7 @@ export async function downloadExport(
 
 // ── offline outbox ───────────────────────────────────────────────────────────
 
-const OUTBOX_KEY = 'rise-outbox';
-export const outbox = new Outbox({
-  load: async () => (await idbGet<OutboxEntry[]>(OUTBOX_KEY)) ?? [],
-  save: (entries) => idbSet(OUTBOX_KEY, entries),
-});
+export const outbox = new Outbox(idbStore('rise-outbox'));
 
 const outboxListeners = new Set<() => void>();
 export function onOutboxChange(fn: () => void): () => void {
