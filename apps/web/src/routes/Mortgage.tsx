@@ -316,6 +316,8 @@ export function Mortgage() {
   const [graph, setGraph] = useState<'schedule' | 'year'>('schedule');
   const [tryExtra, setTryExtra] = useState(0);
   const [managing, setManaging] = useState(false);
+  // The slider is a view, not a setting; it opens on today every visit.
+  const [slot, setSlot] = useState(0);
   const [addKey, setAddKey] = useState(0);
   const save = useMutation({
     mutationFn: (debt: DebtPlan) => api('PATCH', '/me/settings', { debt }),
@@ -438,6 +440,7 @@ export function Mortgage() {
   const labelAt = (m: number) =>
     monthName(addMonths(period, m - (pending ? 1 : 0))).replace(/^(\w{3})\w* /, '$1 ');
   const lastMonth = lines.months.at(-1) ?? 0;
+  const shownSlot = Math.min(slot, Math.max(0, lines.months.length - 1));
 
   return (
     <>
@@ -495,6 +498,21 @@ export function Mortgage() {
             ) : (
               lines.months.length > 2 && (
                 <>
+                  <input
+                    type="range"
+                    aria-label="Payoff date"
+                    min={0}
+                    max={lines.months.length - 1}
+                    step={1}
+                    value={shownSlot}
+                    onChange={(e) => setSlot(Number(e.target.value))}
+                    className="w-full accent-sage-600"
+                  />
+                  <div className="mb-4 flex justify-between type-caption text-ink-muted money">
+                    <span>{labelAt(0)}</span>
+                    <span>{labelAt(lines.months[shownSlot] ?? 0)}</span>
+                    <span>{labelAt(lastMonth)}</span>
+                  </div>
                   <Chart
                     kind="lines"
                     label="Balance, principal paid and interest paid over the life of the loan"
@@ -519,6 +537,18 @@ export function Mortgage() {
         }
         facts={
           <>
+            <StaticRow
+              label={`Balance in ${labelAt(lines.months[shownSlot] ?? 0)}`}
+              value={<MoneyText cents={lines.balance[shownSlot] ?? 0} whole />}
+            />
+            <StaticRow
+              label="Principal paid to date"
+              value={<MoneyText cents={lines.principal[shownSlot] ?? 0} whole />}
+            />
+            <StaticRow
+              label="Interest paid to date"
+              value={<MoneyText cents={lines.interest[shownSlot] ?? 0} whole />}
+            />
             <StaticRow label="Monthly payment" value={<MoneyText cents={view.paymentCents} />} />
             <StaticRow
               label="Payments left"
@@ -557,73 +587,6 @@ export function Mortgage() {
             )}
           </>
         }
-        related={[
-          {
-            title: 'Pay extra per month',
-            children: (
-              <div>
-                <EditRow
-                  label="Try an amount"
-                  field={
-                    <MoneyField label="Try an amount" cents={tryExtra} onCommit={setTryExtra} />
-                  }
-                />
-                {tries.map((t) => (
-                  <StaticRow
-                    key={t.extra}
-                    label={`+${formatCents(t.extra, { whole: true })}/mo`}
-                    value={
-                      <span className="money">
-                        {t.view.payoffPeriod ? monthName(t.view.payoffPeriod) : '—'}
-                        <span className="block type-caption text-ink-muted">
-                          {t.view.monthsSooner !== null && t.view.interestSavedCents !== null
-                            ? `${duration(t.view.monthsSooner)} sooner · saves ${formatCents(t.view.interestSavedCents, { whole: true })}`
-                            : 'No change'}
-                        </span>
-                      </span>
-                    }
-                  />
-                ))}
-              </div>
-            ),
-          },
-          {
-            title: 'One-time payments',
-            children: (
-              <div>
-                {current.mortgageLumps.map((l, i) => (
-                  <div
-                    key={`${l.period}-${i}`}
-                    className="flex min-h-12 items-center justify-between gap-3 border-b border-hairline py-2"
-                  >
-                    <span>
-                      {monthName(l.period)} · <MoneyText cents={l.cents} whole />
-                    </span>
-                    <Button
-                      variant="quiet"
-                      onClick={() =>
-                        edit({ mortgageLumps: current.mortgageLumps.filter((_, j) => j !== i) })
-                      }
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-                <div className="py-3">
-                  <Button
-                    variant="quiet"
-                    onClick={() => {
-                      setAddKey((k) => k + 1);
-                      setAdding(true);
-                    }}
-                  >
-                    Add a one-time payment
-                  </Button>
-                </div>
-              </div>
-            ),
-          },
-        ]}
       />
       {sheets}
       <Sheet open={managing} title="Mortgage settings" onClose={() => setManaging(false)}>
@@ -710,8 +673,62 @@ export function Mortgage() {
             {account.name}
           </ValueRow>
         </div>
+        <h3 className="mt-6 mb-2 type-label font-semibold text-ink-muted">Pay extra per month</h3>
+        <div>
+          <EditRow
+            label="Try an amount"
+            field={<MoneyField label="Try an amount" cents={tryExtra} onCommit={setTryExtra} />}
+          />
+          {tries.map((t) => (
+            <StaticRow
+              key={t.extra}
+              label={`+${formatCents(t.extra, { whole: true })}/mo`}
+              value={
+                <span className="money">
+                  {t.view.payoffPeriod ? monthName(t.view.payoffPeriod) : '—'}
+                  <span className="block type-caption text-ink-muted">
+                    {t.view.monthsSooner !== null && t.view.interestSavedCents !== null
+                      ? `${duration(t.view.monthsSooner)} sooner · saves ${formatCents(t.view.interestSavedCents, { whole: true })}`
+                      : 'No change'}
+                  </span>
+                </span>
+              }
+            />
+          ))}
+        </div>
+        <h3 className="mt-6 mb-2 type-label font-semibold text-ink-muted">One-time payments</h3>
+        <div>
+          {current.mortgageLumps.map((l, i) => (
+            <div
+              key={`${l.period}-${i}`}
+              className="flex min-h-12 items-center justify-between gap-3 border-b border-hairline py-2"
+            >
+              <span>
+                {monthName(l.period)} · <MoneyText cents={l.cents} whole />
+              </span>
+              <Button
+                variant="quiet"
+                onClick={() =>
+                  edit({ mortgageLumps: current.mortgageLumps.filter((_, j) => j !== i) })
+                }
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <div className="py-3">
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setAddKey((k) => k + 1);
+                setAdding(true);
+              }}
+            >
+              Add a one-time payment
+            </Button>
+          </div>
+        </div>
       </Sheet>
-      {sheets}
     </>
   );
 }
