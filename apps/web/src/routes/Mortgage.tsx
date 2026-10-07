@@ -316,8 +316,6 @@ export function Mortgage() {
   const [graph, setGraph] = useState<'schedule' | 'year'>('schedule');
   const [tryExtra, setTryExtra] = useState(0);
   const [managing, setManaging] = useState(false);
-  // The slider is a view, not a setting; it opens on today every visit.
-  const [slot, setSlot] = useState(0);
   const [addKey, setAddKey] = useState(0);
   const save = useMutation({
     mutationFn: (debt: DebtPlan) => api('PATCH', '/me/settings', { debt }),
@@ -440,7 +438,6 @@ export function Mortgage() {
   const labelAt = (m: number) =>
     monthName(addMonths(period, m - (pending ? 1 : 0))).replace(/^(\w{3})\w* /, '$1 ');
   const lastMonth = lines.months.at(-1) ?? 0;
-  const shownSlot = Math.min(slot, Math.max(0, lines.months.length - 1));
 
   return (
     <>
@@ -498,26 +495,19 @@ export function Mortgage() {
             ) : (
               lines.months.length > 2 && (
                 <>
-                  <input
-                    type="range"
-                    aria-label="Payoff date"
-                    min={0}
-                    max={lines.months.length - 1}
-                    step={1}
-                    value={shownSlot}
-                    onChange={(e) => setSlot(Number(e.target.value))}
-                    className="w-full accent-sage-600"
-                  />
-                  <div className="mb-4 flex justify-between type-caption text-ink-muted money">
-                    <span>{labelAt(0)}</span>
-                    <span>{labelAt(lines.months[shownSlot] ?? 0)}</span>
-                    <span>{labelAt(lastMonth)}</span>
-                  </div>
                   <Chart
                     kind="lines"
                     label="Balance, principal paid and interest paid over the life of the loan"
                     slots={lines.balance.length}
                     scrubLabels={lines.months.map((m) => labelAt(m))}
+                    scrubExtra={
+                      homeValue
+                        ? lines.balance.map(
+                            (b) =>
+                              `Equity · ${formatCents(equityOf(homeValue.balanceCents, b).cents, { whole: true })}`,
+                          )
+                        : undefined
+                    }
                     xLabels={[labelAt(0), labelAt(Math.round(lastMonth / 2)), labelAt(lastMonth)]}
                     lines={[
                       { label: 'Balance', values: lines.balance, color: series[0] },
@@ -537,18 +527,6 @@ export function Mortgage() {
         }
         facts={
           <>
-            <StaticRow
-              label={`Balance in ${labelAt(lines.months[shownSlot] ?? 0)}`}
-              value={<MoneyText cents={lines.balance[shownSlot] ?? 0} whole />}
-            />
-            <StaticRow
-              label="Principal paid to date"
-              value={<MoneyText cents={lines.principal[shownSlot] ?? 0} whole />}
-            />
-            <StaticRow
-              label="Interest paid to date"
-              value={<MoneyText cents={lines.interest[shownSlot] ?? 0} whole />}
-            />
             <StaticRow label="Monthly payment" value={<MoneyText cents={view.paymentCents} />} />
             <StaticRow
               label="Payments left"

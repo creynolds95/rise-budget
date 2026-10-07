@@ -460,6 +460,7 @@ const gapNote = (r: GroupView['rows'][number]) =>
 
 /** Up to ~48 evenly spaced points, always ending at the last month. */
 export function chartPoints(view: GroupView, period: string) {
+  const total = view.rows.length;
   const owed = view.totalOwedByMonth;
   const step = Math.max(1, Math.ceil((owed.length - 1) / 48));
   const idx = Array.from({ length: Math.ceil((owed.length - 1) / step) + 1 }, (_, i) =>
@@ -468,7 +469,11 @@ export function chartPoints(view: GroupView, period: string) {
   return idx.map((i) => ({
     cents: owed[i] ?? 0,
     inferred: false,
-    label: monthName(addMonths(period, i)),
+    label: `${monthName(addMonths(period, i))} · ${
+      view.rows.filter(
+        (r) => r.done || (r.payoffPeriod !== null && r.payoffPeriod <= addMonths(period, i)),
+      ).length
+    } of ${total} paid off`,
   }));
 }
 
@@ -485,8 +490,6 @@ export function Debt() {
   const [addKey, setAddKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [managing, setManaging] = useState(false);
-  // The slider is a view, not a setting; it opens on today every visit.
-  const [month, setMonth] = useState(0);
 
   const save = useMutation({
     mutationFn: (debt: DebtPlan) => api('PATCH', '/me/settings', { debt }),
@@ -662,8 +665,6 @@ export function Debt() {
     ) : null;
 
   const hasStudent = student.rows.length > 0;
-  const lastMonth = Math.max(0, student.totalOwedByMonth.length - 1);
-  const shownMonth = Math.min(month, lastMonth);
   return (
     <>
       <DetailPage
@@ -757,22 +758,7 @@ export function Debt() {
             )}
             {hasStudent && student.debtFreePeriod && student.totalOwedByMonth.length > 2 && (
               <>
-                <input
-                  type="range"
-                  aria-label="Payoff date"
-                  min={0}
-                  max={lastMonth}
-                  step={1}
-                  value={shownMonth}
-                  onChange={(e) => setMonth(Number(e.target.value))}
-                  className="w-full accent-sage-600"
-                />
-                <div className="flex justify-between type-caption text-ink-muted money">
-                  <span>{monthName(period)}</span>
-                  <span>{monthName(addMonths(period, shownMonth))}</span>
-                  <span>{monthName(addMonths(period, lastMonth))}</span>
-                </div>
-                <div className="mt-4">
+                <div>
                   <Chart
                     kind="line"
                     label="Student loans still owed"
@@ -783,33 +769,7 @@ export function Debt() {
             )}
           </>
         }
-        facts={
-          hasStudent ? (
-            <>
-              <StaticRow
-                label={`Owed in ${monthName(addMonths(period, shownMonth))}`}
-                value={<MoneyText cents={student.totalOwedByMonth[shownMonth] ?? 0} whole />}
-              />
-              <StaticRow
-                label="Loans paid off"
-                value={
-                  <span className="money">
-                    {
-                      student.rows.filter(
-                        (r) =>
-                          r.done ||
-                          (r.payoffPeriod !== null &&
-                            r.payoffPeriod <= addMonths(period, shownMonth)),
-                      ).length
-                    }{' '}
-                    of {student.rows.length}
-                  </span>
-                }
-              />
-              {savings(student)}
-            </>
-          ) : undefined
-        }
+        facts={hasStudent ? <>{savings(student)}</> : undefined}
         related={[
           ...(hasStudent
             ? [{ title: 'Student loans', children: <div>{student.rows.map(loanRow)}</div> }]

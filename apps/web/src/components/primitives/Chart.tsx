@@ -30,6 +30,8 @@ export function Chart(
         xLabels: string[];
         /** One label per slot; with it, touching and dragging reads every line at that slot. */
         scrubLabels?: string[];
+        /** An extra read-out line per slot, shown under the lines in the touch tooltip. */
+        scrubExtra?: (string | null)[] | undefined;
       }
   ) & { label: string; range?: Range; onRange?: (r: Range) => void },
 ) {
@@ -198,6 +200,9 @@ export function Chart(
                   {l.label} · {formatCents(l.values[active] ?? 0, { whole: true })}
                 </span>
               ))}
+              {multi.scrubExtra?.[active] && (
+                <span className="block">{multi.scrubExtra[active]}</span>
+              )}
             </span>
           </>
         )}
