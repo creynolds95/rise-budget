@@ -484,6 +484,9 @@ export function Debt() {
   const [adding, setAdding] = useState(false);
   const [addKey, setAddKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [managing, setManaging] = useState(false);
+  // The slider is a view, not a setting; it opens on today every visit.
+  const [month, setMonth] = useState(0);
 
   const save = useMutation({
     mutationFn: (debt: DebtPlan) => api('PATCH', '/me/settings', { debt }),
@@ -531,7 +534,7 @@ export function Debt() {
   };
   const header = {
     ...baseHeader,
-    action: <IconButton icon="plus" label="Add a loan" onClick={openAdd} />,
+    action: <IconButton icon="more" label="Debt settings" onClick={() => setManaging(true)} />,
   };
   const openEdit = (l: DebtLoanPlan) => {
     setEditing(l);
@@ -659,6 +662,8 @@ export function Debt() {
     ) : null;
 
   const hasStudent = student.rows.length > 0;
+  const lastMonth = Math.max(0, student.totalOwedByMonth.length - 1);
+  const shownMonth = Math.min(month, lastMonth);
   return (
     <>
       <DetailPage
@@ -751,59 +756,54 @@ export function Debt() {
               </div>
             )}
             {hasStudent && student.debtFreePeriod && student.totalOwedByMonth.length > 2 && (
-              <Chart
-                kind="line"
-                label="Student loans still owed"
-                points={chartPoints(student, period)}
-              />
+              <>
+                <input
+                  type="range"
+                  aria-label="Payoff date"
+                  min={0}
+                  max={lastMonth}
+                  step={1}
+                  value={shownMonth}
+                  onChange={(e) => setMonth(Number(e.target.value))}
+                  className="w-full accent-sage-600"
+                />
+                <div className="flex justify-between type-caption text-ink-muted money">
+                  <span>{monthName(period)}</span>
+                  <span>{monthName(addMonths(period, shownMonth))}</span>
+                  <span>{monthName(addMonths(period, lastMonth))}</span>
+                </div>
+                <div className="mt-4">
+                  <Chart
+                    kind="line"
+                    label="Student loans still owed"
+                    points={chartPoints(student, period)}
+                  />
+                </div>
+              </>
             )}
           </>
         }
         facts={
           hasStudent ? (
             <>
-              <EditRow
-                label="Extra per month"
-                field={
-                  <MoneyField
-                    label="Extra per month"
-                    cents={current.extraCents}
-                    onCommit={(c) => edit({ extraCents: c })}
-                  />
-                }
+              <StaticRow
+                label={`Owed in ${monthName(addMonths(period, shownMonth))}`}
+                value={<MoneyText cents={student.totalOwedByMonth[shownMonth] ?? 0} whole />}
               />
-              <EditRow
-                label="Extra goes to"
-                field={
-                  <Segmented
-                    label="Extra goes to"
-                    value={current.strategy}
-                    options={[
-                      { id: 'snowball', label: 'Smallest' },
-                      { id: 'avalanche', label: 'Highest rate' },
-                    ]}
-                    onChange={(strategy) => edit({ strategy })}
-                  />
-                }
-              />
-              <EditRow
-                label="Apply payments when they post"
-                field={
-                  <Toggle
-                    label="Apply payments when they post"
-                    on={current.autoApply}
-                    onChange={(autoApply) => edit({ autoApply })}
-                  />
-                }
-              />
-              <EditRow
-                label="Freed payments move on"
-                field={
-                  <Toggle
-                    label="Freed payments move on"
-                    on={current.rollForward}
-                    onChange={(rollForward) => edit({ rollForward })}
-                  />
+              <StaticRow
+                label="Loans paid off"
+                value={
+                  <span className="money">
+                    {
+                      student.rows.filter(
+                        (r) =>
+                          r.done ||
+                          (r.payoffPeriod !== null &&
+                            r.payoffPeriod <= addMonths(period, shownMonth)),
+                      ).length
+                    }{' '}
+                    of {student.rows.length}
+                  </span>
                 }
               />
               {savings(student)}
@@ -812,23 +812,76 @@ export function Debt() {
         }
         related={[
           ...(hasStudent
-            ? [
-                { title: 'Student loans', children: <div>{student.rows.map(loanRow)}</div> },
-                {
-                  title: 'What if',
-                  children: (
-                    <WhatIf
-                      loans={planLoans(plan, live, 'student')}
-                      plan={plan}
-                      period={period}
-                      onApply={edit}
-                    />
-                  ),
-                },
-              ]
+            ? [{ title: 'Student loans', children: <div>{student.rows.map(loanRow)}</div> }]
             : []),
         ]}
       />
+      <Sheet open={managing} title="Debt settings" onClose={() => setManaging(false)}>
+        <div className="overflow-hidden rounded-card bg-surface px-4">
+          <EditRow
+            label="Extra per month"
+            field={
+              <MoneyField
+                label="Extra per month"
+                cents={current.extraCents}
+                onCommit={(c) => edit({ extraCents: c })}
+              />
+            }
+          />
+          <EditRow
+            label="Extra goes to"
+            field={
+              <Segmented
+                label="Extra goes to"
+                value={current.strategy}
+                options={[
+                  { id: 'snowball', label: 'Smallest' },
+                  { id: 'avalanche', label: 'Highest rate' },
+                ]}
+                onChange={(strategy) => edit({ strategy })}
+              />
+            }
+          />
+          <EditRow
+            label="Apply payments when they post"
+            field={
+              <Toggle
+                label="Apply payments when they post"
+                on={current.autoApply}
+                onChange={(autoApply) => edit({ autoApply })}
+              />
+            }
+          />
+          <EditRow
+            label="Freed payments move on"
+            field={
+              <Toggle
+                label="Freed payments move on"
+                on={current.rollForward}
+                onChange={(rollForward) => edit({ rollForward })}
+              />
+            }
+          />
+        </div>
+        <div className="mt-4">
+          <Button
+            variant="quiet"
+            onClick={() => {
+              setManaging(false);
+              openAdd();
+            }}
+          >
+            Add a loan
+          </Button>
+        </div>
+        <h3 className="mt-6 mb-2 type-label font-semibold text-ink-muted">What if</h3>
+        <WhatIf
+          loans={planLoans(plan, live, 'student')}
+          plan={plan}
+          period={period}
+          onApply={edit}
+        />
+      </Sheet>
       {sheets}
     </>
   );
