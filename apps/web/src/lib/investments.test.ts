@@ -9,6 +9,13 @@ describe('investments', () => {
     expect(invRangeStart('1Y', '2026-10-01')).toBe('2025-10-01');
     expect(invRangeStart('6M', '2026-10-01')).toBe('2026-04-01');
   });
+  it('range starts clamp to the target month’s last day', () => {
+    expect(invRangeStart('1M', '2027-03-31')).toBe('2027-02-28');
+    expect(invRangeStart('3M', '2026-05-31')).toBe('2026-02-28');
+    expect(invRangeStart('6M', '2026-08-31')).toBe('2026-02-28');
+    expect(invRangeStart('1M', '2028-03-30')).toBe('2028-02-29');
+    expect(invRangeStart('3M', '2026-01-15')).toBe('2025-10-15');
+  });
   it('rebases both lines and forward-fills weekends', () => {
     const pts = [
       { date: '2026-09-04', balanceCents: 100_000 },

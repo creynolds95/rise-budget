@@ -39,6 +39,14 @@ describe('fixed pace', () => {
     });
     expect(paceFor({ ...rent, typicalPostDay: 20 }, mid).expectedSpentCents).toBe(0);
   });
+  it('a post day past the end of a short month is due on its last day', () => {
+    const feb28 = { elapsedDays: 28, totalDays: 28 };
+    expect(paceFor({ ...rent, typicalPostDay: 31 }, feb28).expectedSpentCents).toBe(150000);
+    expect(
+      paceFor({ ...rent, typicalPostDay: 31 }, { elapsedDays: 27, totalDays: 28 })
+        .expectedSpentCents,
+    ).toBe(0);
+  });
 });
 
 describe('staleness', () => {

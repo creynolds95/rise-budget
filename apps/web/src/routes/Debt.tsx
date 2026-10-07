@@ -625,6 +625,11 @@ export function Debt() {
         <DetailPage
           header={header}
           identity={{ label: 'Debt', hero: <span className="text-ink-muted">Not set up</span> }}
+          manage={
+            <div className="py-3">
+              <Button onClick={openAdd}>Add a loan</Button>
+            </div>
+          }
         />
         {sheets}
       </>

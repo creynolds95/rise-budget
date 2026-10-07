@@ -218,6 +218,33 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
     expect(after[0].label).toBe('Car payment');
   });
 
+  it('ends the horizon where the soonest schedule runs out, so mixed pay cadences stay whole', async () => {
+    const s = await setup();
+    const add = (
+      label: string,
+      kind: string,
+      amountCents: number,
+      cadence: string,
+      anchorDate: string,
+    ) =>
+      s.api('POST', '/cash-to-payday/manual-events', {
+        label,
+        kind,
+        amountCents,
+        cadence,
+        anchorDate,
+      });
+    await add('Biweekly pay', 'income', 150_000, 'biweekly', '2026-10-09');
+    await add('Side income', 'income', 20_000, 'monthly', '2026-11-01');
+    await add('Rent', 'expense', 250_000, 'monthly', '2026-11-01');
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-07', 200_000, 0);
+    // The biweekly run's third paycheck (Nov 6) ends it. Running to the monthly run's third
+    // (Jan 1) would count three rents against three of the biweekly pays and dip below zero.
+    expect(p.points.at(-1)?.date).toBe('2026-11-06');
+    expect(p.points.every((x) => x.date <= '2026-11-06')).toBe(true);
+    expect(p.lowestPoint.balanceCents).toBeGreaterThanOrEqual(0);
+  });
+
   it('404s deleting an event that is not yours or does not exist', async () => {
     const s = await setup();
     const res = await s.api('DELETE', '/cash-to-payday/manual-events/not-real');

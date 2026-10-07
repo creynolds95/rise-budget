@@ -16,7 +16,14 @@ export function invRangeStart(range: InvRange, today: string): string {
   if (range === 'YTD') return `${today.slice(0, 4)}-01-01`;
   if (range === '1W') d.setUTCDate(d.getUTCDate() - 7);
   else if (range === '1Y') d.setUTCFullYear(d.getUTCFullYear() - 1);
-  else d.setUTCMonth(d.getUTCMonth() - (range === '1M' ? 1 : range === '3M' ? 3 : 6));
+  else {
+    // Clamped to the target month's last day: May 31 less 3 months is Feb 28, not Mar 3.
+    const day = d.getUTCDate();
+    d.setUTCDate(1);
+    d.setUTCMonth(d.getUTCMonth() - (range === '1M' ? 1 : range === '3M' ? 3 : 6));
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    d.setUTCDate(Math.min(day, last));
+  }
   return iso(d);
 }
 

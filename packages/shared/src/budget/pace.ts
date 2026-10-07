@@ -36,7 +36,9 @@ export function paceFor(input: PaceInput, p: Pace): PaceResult {
     expected = mulDiv(available, p.elapsedDays, p.totalDays);
   } else {
     const due =
-      input.billPosted || (input.typicalPostDay !== null && p.elapsedDays >= input.typicalPostDay);
+      input.billPosted ||
+      (input.typicalPostDay !== null &&
+        p.elapsedDays >= Math.min(input.typicalPostDay, p.totalDays));
     expected = due ? available : 0;
   }
   const headroom = expected - spent;
