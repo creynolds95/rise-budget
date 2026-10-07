@@ -72,16 +72,20 @@ describe('idle cron syncs skip recurring re-detection', () => {
     const s = await setup();
     const opts = { now: new Date('2026-08-20T20:00:00Z'), since: '2026-06-01' };
     const mark = async () => {
-      await env.DB.prepare("UPDATE recurring_series SET updated_at = 'MARK' WHERE user_id = ?1")
+      // A detected series is only rewritten when re-detection changes it, so the mark is a
+      // prediction re-detection would correct.
+      await env.DB.prepare(
+        "UPDATE recurring_series SET next_expected_date = 'MARK' WHERE user_id = ?1",
+      )
         .bind(s.userId)
         .run();
     };
     const stamp = async () =>
       (
-        await env.DB.prepare('SELECT updated_at FROM recurring_series WHERE user_id = ?1')
+        await env.DB.prepare('SELECT next_expected_date FROM recurring_series WHERE user_id = ?1')
           .bind(s.userId)
-          .first<{ updated_at: string }>()
-      )?.updated_at;
+          .first<{ next_expected_date: string }>()
+      )?.next_expected_date;
 
     // The first run of the day has no earlier sync to lean on, so it always detects.
     await runSync(env.DB, s.userId, netflix(), { ...opts, skipRecurringWhenIdle: true });
@@ -98,6 +102,24 @@ describe('idle cron syncs skip recurring re-detection', () => {
     const fresh = netflix([['h1', '2026-08-19', 777, 'HULU 877-8244']]);
     await runSync(env.DB, s.userId, fresh, { ...opts, skipRecurringWhenIdle: true });
     expect(await stamp()).not.toBe('MARK'); // new rows: detected
+  });
+});
+
+describe('re-detection writes only what changed', () => {
+  it('a series that comes out the same is not rewritten', async () => {
+    const s = await setup();
+    const opts = { now: new Date('2026-08-20T20:00:00Z'), since: '2026-06-01' };
+    await runSync(env.DB, s.userId, netflix(), opts);
+    await env.DB.prepare("UPDATE recurring_series SET updated_at = 'MARK' WHERE user_id = ?1")
+      .bind(s.userId)
+      .run();
+    await runSync(env.DB, s.userId, netflix(), opts);
+    const row = await env.DB.prepare(
+      'SELECT updated_at, next_expected_date FROM recurring_series WHERE user_id = ?1',
+    )
+      .bind(s.userId)
+      .first<{ updated_at: string; next_expected_date: string }>();
+    expect(row).toEqual({ updated_at: 'MARK', next_expected_date: '2026-09-07' });
   });
 });
 

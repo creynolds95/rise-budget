@@ -445,12 +445,14 @@ Cron trigger `0 8,14,22 * * *` (UTC) → 3× daily, plus `POST /sync/run`.
 ```
 for each synced account:
     fetch window = [last_synced_at - 5 days, now]      # overlap absorbs late posts
+                                                       # (35 days on Sunday's 08:00 run: late backfills)
     upsert by (account_id, source, source_id)
     reconcile pending → posted   (SPEC §3.2)
     run transfer detection over the affected window
     run categorisation for new rows
     update account.balance_cents and last_synced_at
-    recompute period_aggregate for touched periods
+    recompute period_aggregate for touched periods     # once each, in the account's batch;
+                                                       # only changed rows are written
 write sync_run
 ```
 

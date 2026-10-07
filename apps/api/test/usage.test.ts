@@ -2,8 +2,10 @@ import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it, vi } from 'vitest';
 import { runBackup } from '../src/backup/run';
 import { gunzip } from '../src/backup/sql';
+import { addUsage, listRouteUsage, listUsage, ROUTE_USAGE_MIN_ROWS } from '../src/db';
 import { meterDb, type Tally } from '../src/lib/usage';
 import { call, signedInUser } from './helpers/http';
+import { seedProdShape } from './helpers/prodShape';
 
 describe('D1 usage meter', () => {
   it('counts rows read and written per statement, batch and first()', async () => {
@@ -55,12 +57,25 @@ describe('D1 usage meter', () => {
 
   it('names the heaviest routes by pattern, not by URL', async () => {
     const u = await signedInUser();
-    await call('GET', '/periods/2026-10', { access: u.access });
-    await call('GET', '/periods/2026-11', { access: u.access });
+    await seedProdShape(u.userId, 'use');
+    await call('GET', '/periods/2026-09', { access: u.access });
+    await call('GET', '/periods/2026-08', { access: u.access });
     const r = await call('GET', '/usage', { access: u.access });
     const row = r.json.routes.find((x: { route: string }) => x.route === 'GET /api/periods/:id');
     expect(row?.requests).toBeGreaterThanOrEqual(2);
-    expect(row?.rowsRead).toBeGreaterThan(0);
+    expect(row?.rowsRead).toBeGreaterThanOrEqual(2 * ROUTE_USAGE_MIN_ROWS);
+  });
+
+  it('a light request counts toward the day but writes no per-route row', async () => {
+    const now = new Date('2031-03-04T12:00:00Z');
+    await addUsage(env.DB, now, ROUTE_USAGE_MIN_ROWS - 1, 2, 1, 'GET /api/light');
+    await addUsage(env.DB, now, ROUTE_USAGE_MIN_ROWS, 0, 1, 'GET /api/heavy');
+    expect((await listRouteUsage(env.DB, now, 10)).map((r) => r.route)).toEqual(['GET /api/heavy']);
+    expect((await listUsage(env.DB, now, 1))[0]).toMatchObject({
+      rows_read: 2 * ROUTE_USAGE_MIN_ROWS - 1,
+      rows_written: 2,
+      requests: 2,
+    });
   });
 });
 

@@ -24,6 +24,11 @@ export interface BalancePoint {
 /** Days since 1970-01-01 for a valid ISO date, in pure integer arithmetic. */
 export function dayNumber(date: IsoDate): number {
   const { year, month, day } = parseIsoDate(date);
+  return daysFromCivil(year, month, day);
+}
+
+/** `dayNumber` from a year, month (1-12) and day already in hand: no string parsing. */
+export function daysFromCivil(year: number, month: number, day: number): number {
   // Howard Hinnant's days_from_civil.
   const y = month <= 2 ? year - 1 : year;
   const era = Math.floor(y / 400);

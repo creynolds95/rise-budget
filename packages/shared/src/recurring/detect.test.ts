@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { dateFromDayNumber, dayNumber } from '../networth';
 import {
+  MAX_SERIES_OCCURRENCES,
   addMonths,
   advanceManualRule,
   detectSemimonthly,
@@ -144,6 +146,64 @@ describe('recurring detection (SPEC §7)', () => {
   });
 });
 
+describe('long histories stay cheap (a Worker has 10 ms of CPU per sync)', () => {
+  const every = (n: number, days: number, from = '2001-01-05', cents = (_: number) => 999) =>
+    Array.from({ length: n }, (_, i) => o(dateFromDayNumber(dayNumber(from) + days * i), cents(i)));
+
+  it('1,000 weekly charges still detect, from the most recent ones, in a few ms', () => {
+    const charges = every(1_000, 7);
+    const t = Date.now();
+    const s = detectSemimonthly(charges, '2020-03-01') ?? detectSeries(charges, '2020-03-01');
+    expect(Date.now() - t).toBeLessThan(100);
+    expect(s).toMatchObject({
+      cadence: 'weekly',
+      lastDate: '2020-02-28',
+      nextExpectedDate: '2020-03-06',
+      occurrences: MAX_SERIES_OCCURRENCES,
+      status: 'active',
+    });
+  });
+
+  it('a near-daily merchant with 1,000 irregular charges finds nothing, quickly', () => {
+    const charges = Array.from({ length: 1_000 }, (_, i) =>
+      o(dateFromDayNumber(dayNumber('2024-01-01') + i + (i % 3)), 300 + ((i * 7919) % 4_000)),
+    );
+    const t = Date.now();
+    expect(
+      detectSemimonthly(charges, '2026-10-01') ?? detectSeries(charges, '2026-10-01'),
+    ).toBeNull();
+    expect(Date.now() - t).toBeLessThan(100);
+  });
+
+  it('a steady price creep never settles into a series, and stays bounded doing so', () => {
+    const charges = every(1_000, 7, '2001-01-05', (i) => 1_000 + 10 * i);
+    const t = Date.now();
+    const s = detectSeries(charges, '2020-03-01');
+    expect(Date.now() - t).toBeLessThan(100);
+    // Only the latest few charges are within 5% of each other.
+    expect(s?.occurrences).toBeLessThan(MAX_SERIES_OCCURRENCES);
+    expect(s?.expectedAmountCents).toBe(1_000 + 10 * 999);
+  });
+
+  it('a long semimonthly history detects from its most recent charges', () => {
+    const charges: Occurrence[] = [];
+    for (let m = 0; m < 300; m++) {
+      const y = 2001 + Math.floor(m / 12);
+      const mm = String((m % 12) + 1).padStart(2, '0');
+      charges.push(o(shiftWeekendToFriday(`${y}-${mm}-05`), -250_000));
+      charges.push(o(shiftWeekendToFriday(`${y}-${mm}-20`), -250_000));
+    }
+    const t = Date.now();
+    const s = detectSemimonthly(charges, '2025-12-21');
+    expect(Date.now() - t).toBeLessThan(100);
+    expect(s).toMatchObject({
+      cadence: 'semimonthly',
+      anchorDays: [5, 20],
+      occurrences: MAX_SERIES_OCCURRENCES,
+    });
+  });
+});
+
 describe('semimonthly pay detection (5th & 20th, 1st & 15th, ...)', () => {
   it('shifts a weekend payday to the Friday before, never later', () => {
     expect(shiftWeekendToFriday('2026-06-20')).toBe('2026-06-19'); // Saturday
@@ -231,6 +291,12 @@ describe('semimonthly pay detection (5th & 20th, 1st & 15th, ...)', () => {
       o('2026-02-20', 500),
     ];
     expect(detectSemimonthly(unsteady, '2026-03-01')).toBeNull();
+    // Every 13 days: each gap passes, but over time the days of month fill in with no two
+    // clusters left to anchor on.
+    const everyThirteen = Array.from({ length: 14 }, (_, i) =>
+      o(dateFromDayNumber(dayNumber('2026-01-01') + 13 * i), 500),
+    );
+    expect(detectSemimonthly(everyThirteen, '2026-07-01')).toBeNull();
   });
 
   it('carries the category once two charges share it, same as detectSeries', () => {

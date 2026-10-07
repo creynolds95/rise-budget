@@ -54,6 +54,8 @@ const INDEXES = [
   'ix_txn_refund_of',
   'ix_txn_feed',
   'ix_txn_csv_source',
+  // 0025
+  'ix_txn_open_pending',
 ];
 
 describe('migration 0001', () => {

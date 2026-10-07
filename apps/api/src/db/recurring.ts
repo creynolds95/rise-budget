@@ -246,6 +246,7 @@ export function advanceManualRuleStmt(
 ): D1PreparedStatement {
   // A rule saved without its days keeps the ones it was first due on (never re-anchored).
   // Once every date still ahead is on or after a pending amount change, it becomes the amount.
+  // A refresh that moves nothing writes nothing (the last WHERE line).
   return db
     .prepare(
       `UPDATE recurring_series SET next_expected_date = ?3, status = ?4, updated_at = ?5,
@@ -254,7 +255,9 @@ export function advanceManualRuleStmt(
            THEN next_amount_cents ELSE expected_amount_cents END,
          next_amount_cents = CASE WHEN ?3 >= amount_changes_on THEN NULL ELSE next_amount_cents END,
          amount_changes_on = CASE WHEN ?3 >= amount_changes_on THEN NULL ELSE amount_changes_on END
-       WHERE user_id = ?1 AND id = ?2`,
+       WHERE user_id = ?1 AND id = ?2
+         AND (next_expected_date IS NOT ?3 OR status IS NOT ?4
+           OR (anchor_days IS NULL AND ?6 IS NOT NULL) OR ?3 >= amount_changes_on)`,
     )
     .bind(
       userId,
@@ -277,7 +280,7 @@ export function deleteManualRuleStmt(
     .bind(userId, id);
 }
 
-/** A series the user marked `ended` stays ended. */
+/** A series the user marked `ended` stays ended. A row that would not change is not rewritten. */
 export function upsertSeriesStmt(
   userId: UserId,
   db: D1Database,
@@ -295,7 +298,12 @@ export function upsertSeriesStmt(
          next_expected_date = excluded.next_expected_date,
          status = CASE WHEN recurring_series.status = 'ended' THEN 'ended' ELSE excluded.status END,
          updated_at = excluded.updated_at
-       WHERE recurring_series.user_id = ?1`,
+       WHERE recurring_series.user_id = ?1 AND (
+         recurring_series.category_id IS NOT excluded.category_id
+         OR recurring_series.cadence IS NOT excluded.cadence
+         OR recurring_series.expected_amount_cents IS NOT excluded.expected_amount_cents
+         OR recurring_series.next_expected_date IS NOT excluded.next_expected_date
+         OR recurring_series.status NOT IN ('ended', excluded.status))`,
     )
     .bind(
       userId,
@@ -398,7 +406,10 @@ export function setTypicalPostDayStmt(
     .bind(userId, categoryId, day);
 }
 
-/** Rebuild the user's Surplus suggestions from scratch (one refresh's whole answer). */
+/**
+ * Make the user's Surplus suggestions exactly one refresh's whole answer: drop the ones no
+ * longer suggested, and write a suggestion only when it is new or has changed.
+ */
 export function replaceSuggestionsStmts(
   userId: UserId,
   db: D1Database,
@@ -406,13 +417,29 @@ export function replaceSuggestionsStmts(
 ): D1PreparedStatement[] {
   const now = nowIso();
   return [
-    db.prepare('DELETE FROM surplus_suggestion WHERE user_id = ?1').bind(userId),
+    db
+      .prepare(
+        `DELETE FROM surplus_suggestion WHERE user_id = ?1
+         AND id NOT IN (SELECT value FROM json_each(?2))`,
+      )
+      .bind(userId, JSON.stringify(suggestions.map((s) => seriesId(userId, s.merchant)))),
     ...suggestions.map(({ merchant, accountId, series: s }) =>
       db
         .prepare(
           `INSERT INTO surplus_suggestion (id, user_id, merchant_normalized, account_id, cadence,
              expected_amount_cents, next_expected_date, anchor_days, updated_at)
-           VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+           VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+           ON CONFLICT (id) DO UPDATE SET
+             account_id = excluded.account_id, cadence = excluded.cadence,
+             expected_amount_cents = excluded.expected_amount_cents,
+             next_expected_date = excluded.next_expected_date,
+             anchor_days = excluded.anchor_days, updated_at = excluded.updated_at
+           WHERE surplus_suggestion.user_id = ?1 AND (
+             surplus_suggestion.account_id IS NOT excluded.account_id
+             OR surplus_suggestion.cadence IS NOT excluded.cadence
+             OR surplus_suggestion.expected_amount_cents IS NOT excluded.expected_amount_cents
+             OR surplus_suggestion.next_expected_date IS NOT excluded.next_expected_date
+             OR surplus_suggestion.anchor_days IS NOT excluded.anchor_days)`,
         )
         .bind(
           userId,

@@ -3,6 +3,58 @@ import { describe, expect, it } from 'vitest';
 import { refreshAggregateStmts } from '../src/db';
 import { call, signedInUser } from './helpers/http';
 
+describe('T23 period_aggregate refresh writes only what moved', () => {
+  it('an unchanged month writes nothing; a category that stops counting leaves the cache', async () => {
+    const u = await signedInUser();
+    const api = (method: string, path: string, body?: unknown) =>
+      call(method, path, { access: u.access, body });
+    const life = (await api('POST', '/category-groups', { name: 'Life', kind: 'expense' })).json;
+    const food = (await api('POST', '/categories', { groupId: life.id, name: 'Food' })).json;
+    const fun = (await api('POST', '/categories', { groupId: life.id, name: 'Fun' })).json;
+    const card = (await api('POST', '/accounts', { name: 'Card', kind: 'credit' })).json;
+    const add = async (amountCents: number, categoryId: string) =>
+      (
+        await api('POST', '/transactions', {
+          accountId: card.id,
+          postedAt: '2026-09-04',
+          amountCents,
+          descriptor: 'X',
+          categoryId,
+        })
+      ).json;
+    await add(1_200, food.id);
+    const film = await add(900, fun.id);
+    const cache = async () =>
+      (
+        await env.DB.prepare(
+          `SELECT category_id, spent_cents, txn_count FROM period_aggregate
+           WHERE user_id = ?1 AND period_id = '2026-09' ORDER BY spent_cents`,
+        )
+          .bind(u.userId)
+          .all()
+      ).results;
+    const refresh = async () =>
+      (await env.DB.batch(refreshAggregateStmts(u.userId, env.DB, '2026-09'))).reduce(
+        (n, r) => n + (r.meta.rows_written ?? 0),
+        0,
+      );
+    expect(await cache()).toEqual([
+      { category_id: fun.id, spent_cents: 900, txn_count: 1 },
+      { category_id: food.id, spent_cents: 1_200, txn_count: 1 },
+    ]);
+    expect(await refresh()).toBe(0);
+
+    await env.DB.prepare("UPDATE txn SET review_state = 'dropped' WHERE id = ?1")
+      .bind(film.id)
+      .run();
+    expect(await refresh()).toBeGreaterThan(0);
+    expect(await cache()).toEqual([{ category_id: food.id, spent_cents: 1_200, txn_count: 1 }]);
+    expect(await refresh()).toBe(0);
+    await add(300, food.id); // its own batch refreshes the month: the row is updated in place
+    expect(await cache()).toEqual([{ category_id: food.id, spent_cents: 1_500, txn_count: 2 }]);
+  });
+});
+
 describe('T41 dashboard spending report', () => {
   it('counts what the budget counts: budgeted expense splits, not income, unbudgeted or dropped', async () => {
     const u = await signedInUser();
