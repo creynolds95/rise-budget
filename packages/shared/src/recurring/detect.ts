@@ -1,4 +1,5 @@
 import { dateFromDayNumber, dayNumber, daysFromCivil } from '../networth';
+import { within5Pct } from './amount';
 
 /**
  * Recurring detection (SPEC §7). Pure. A series is ≥ 3 charges from one merchant with
@@ -464,7 +465,7 @@ export function advanceManualRule(
   const anchorDay = rule.anchorDays?.[0] ?? parts(rule.nextExpectedDate).d;
   const confirming = occurrences
     .filter((o) => Math.sign(o.amountCents) === Math.sign(rule.expectedAmountCents))
-    .filter((o) => steadyAmounts([o.amountCents, rule.expectedAmountCents]))
+    .filter((o) => within5Pct(o.amountCents, rule.expectedAmountCents))
     .filter((o) => dayNumber(o.date) >= dayNumber(rule.nextExpectedDate) - early)
     .sort((a, b) => a.date.localeCompare(b.date));
   const step = (d: string) =>
