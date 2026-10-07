@@ -67,7 +67,7 @@ export function TxnRow({
             type="button"
             aria-label={`Change category for ${merchantName(t)}`}
             onClick={onRecategorize}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700"
+            className="hit-44 flex size-9 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700"
           >
             <svg
               aria-hidden

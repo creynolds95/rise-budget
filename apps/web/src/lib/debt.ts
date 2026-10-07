@@ -7,7 +7,7 @@ import {
   type Strategy,
 } from '@rise/shared/debt';
 import type { Account, DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
-import { addMonths, monthsBetween } from './dates';
+import { addMonths, monthName, monthsBetween } from './dates';
 
 export const DEFAULT_DEBT_PLAN: DebtPlan = {
   loans: [],
@@ -220,4 +220,23 @@ export function scenarioView(
       return { name: l.name, payoffPeriod: m === null ? null : addMonths(period, m) };
     }),
   };
+}
+
+/** Up to ~48 evenly spaced points, always ending at the last month. */
+export function chartPoints(view: GroupView, period: string) {
+  const total = view.rows.length;
+  const owed = view.totalOwedByMonth;
+  const step = Math.max(1, Math.ceil((owed.length - 1) / 48));
+  const idx = Array.from({ length: Math.ceil((owed.length - 1) / step) + 1 }, (_, i) =>
+    Math.min(i * step, owed.length - 1),
+  );
+  return idx.map((i) => ({
+    cents: owed[i] ?? 0,
+    inferred: false,
+    label: `${monthName(addMonths(period, i))} · ${
+      view.rows.filter(
+        (r) => r.done || (r.payoffPeriod !== null && r.payoffPeriod <= addMonths(period, i)),
+      ).length
+    } of ${total} paid off`,
+  }));
 }

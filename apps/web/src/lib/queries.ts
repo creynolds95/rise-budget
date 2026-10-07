@@ -18,7 +18,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { api, get } from './api';
+import { api, get, outbox } from './api';
 import { localToday } from './dates';
 import type {
   AccountWithStaleness,
@@ -214,6 +214,11 @@ export function usePatchTransaction() {
       reviewState?: 'reviewed' | 'needs_review';
       postedAt?: string;
     }) => api<PatchedTransaction>('PATCH', `/transactions/${id}`, body),
-    onSuccess: invalidate,
+    onSuccess: async (_, { id, ...body }) => {
+      // This edit reached the server; an older offline edit to the same field must not
+      // replay over it.
+      await outbox.supersede('PATCH', `/transactions/${id}`, body);
+      await invalidate();
+    },
   });
 }

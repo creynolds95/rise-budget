@@ -1,3 +1,4 @@
+import { Loading, PlanUnknown, useSettingsState } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import type { RetirementPlan } from '@rise/shared/schemas';
@@ -64,6 +65,7 @@ function NumberField({
 
 export function Retirement() {
   const me = useMe().data;
+  const settings = useSettingsState();
   const accounts = useAccounts().data;
   const qc = useQueryClient();
   const save = useMutation({
@@ -88,7 +90,19 @@ export function Retirement() {
     title: 'Retirement',
   };
   if (!me || !accounts) {
-    return <DetailPage header={header} shape={<Skeleton className="h-64 w-full" />} />;
+    return (
+      <DetailPage
+        header={header}
+        shape={
+          <Loading>
+            <Skeleton className="h-64 w-full" />
+          </Loading>
+        }
+      />
+    );
+  }
+  if (!plan && settings !== 'current') {
+    return <PlanUnknown header={header} label="Retirement" state={settings} />;
   }
   if (!plan) {
     return (

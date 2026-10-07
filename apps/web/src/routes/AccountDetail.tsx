@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import { netWorthSeries } from '@rise/shared/networth';
 import { isLiabilityKind, type AccountBadgeStyle, type AccountKind } from '@rise/shared/schemas';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -71,7 +72,14 @@ export function AccountDetail() {
     return (
       <DetailPage
         header={{ back, title: '' }}
-        identity={{ label: 'Balance', hero: <Skeleton className="h-11 w-40" /> }}
+        identity={{
+          label: 'Balance',
+          hero: (
+            <Loading compact>
+              <Skeleton className="h-11 w-40" />
+            </Loading>
+          ),
+        }}
       />
     );
   }

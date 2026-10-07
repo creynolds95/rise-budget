@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -95,7 +96,14 @@ function CategoryDetailBody({
     return (
       <DetailPage
         header={{ back, title: cat?.name ?? '' }}
-        identity={{ label: 'Available this month', hero: <Skeleton className="h-11 w-40" /> }}
+        identity={{
+          label: 'Available this month',
+          hero: (
+            <Loading compact>
+              <Skeleton className="h-11 w-40" />
+            </Loading>
+          ),
+        }}
       />
     );
   }

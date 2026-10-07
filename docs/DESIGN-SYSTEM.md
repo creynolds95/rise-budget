@@ -31,6 +31,7 @@ element identical visual weight and no hierarchy. Rise does not.
 
   --clay:         #A8563C;  /* overspend / carried deficit — NOT red */
   --clay-100:     #F6E7E1;
+  --clay-text:    #97492F;  /* clay text on --clay-100 (plain --clay is 4.29:1 there) */
 }
 ```
 

@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import { DetailPage } from '../components/detail/DetailPage';
 import { dueDate, MissedRow, useMissed, useSetSeriesStatus } from '../components/MissedCharges';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -19,7 +20,11 @@ export function Recurring() {
     return (
       <DetailPage
         header={{ back, title: 'Recurring' }}
-        facts={<Skeleton className="my-4 h-24 w-full" />}
+        facts={
+          <Loading>
+            <Skeleton className="my-4 h-24 w-full" />
+          </Loading>
+        }
       />
     );
   }

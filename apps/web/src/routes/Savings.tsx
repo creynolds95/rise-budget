@@ -1,3 +1,4 @@
+import { Loading, PlanUnknown, useSettingsState } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { SavingsGoal, SavingsPlan } from '@rise/shared/schemas';
@@ -185,6 +186,7 @@ const paceText = (v: GoalView): string =>
 
 export function Savings() {
   const me = useMe().data;
+  const settings = useSettingsState();
   const accounts = useAccounts().data;
   const today = useToday();
   const qc = useQueryClient();
@@ -202,7 +204,16 @@ export function Savings() {
     title: 'Savings goals',
   };
   if (!me || !accounts) {
-    return <DetailPage header={header} shape={<Skeleton className="h-64 w-full" />} />;
+    return (
+      <DetailPage
+        header={header}
+        shape={
+          <Loading>
+            <Skeleton className="h-64 w-full" />
+          </Loading>
+        }
+      />
+    );
   }
 
   const live = accounts.filter((a) => !a.archivedAt);
@@ -227,6 +238,9 @@ export function Savings() {
     />
   );
 
+  if (views.length === 0 && settings !== 'current') {
+    return <PlanUnknown header={header} label="Savings goals" state={settings} />;
+  }
   if (views.length === 0) {
     return (
       <>

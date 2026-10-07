@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import { useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -41,7 +42,13 @@ export function Investments({ compact = false }: { compact?: boolean } = {}) {
   const shortHistory = firstDate !== undefined && firstDate > invRangeStart(range, today);
   const total = (q.data?.accounts ?? []).reduce((n, a) => n + a.balanceCents, 0);
 
-  if (q.isPending) return <Skeleton className="h-64 w-full" />;
+  if (q.isPending) {
+    return (
+      <Loading>
+        <Skeleton className="h-64 w-full" />
+      </Loading>
+    );
+  }
   if (!q.data || q.data.accounts.length === 0)
     return (
       <p className="text-ink-muted">

@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
@@ -254,6 +255,19 @@ function ScheduleList({
   );
 }
 
+/** The last row of a list: a full-width tap target that adds to it. */
+function AddRow({ onClick, children }: { onClick: () => void; children: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-12 w-full items-center py-3 text-left font-medium text-sage-700 active:bg-sage-100"
+    >
+      {children}
+    </button>
+  );
+}
+
 /** What sync found in the cash accounts. Nothing here counts until it is added. */
 function SuggestionList({
   rows,
@@ -458,7 +472,14 @@ export function CashToPayday() {
     return (
       <DetailPage
         header={{ back, title: 'Surplus' }}
-        identity={{ label: 'Free to move right now', hero: <Skeleton className="h-11 w-40" /> }}
+        identity={{
+          label: 'On hand until payday',
+          hero: (
+            <Loading compact>
+              <Skeleton className="h-11 w-40" />
+            </Loading>
+          ),
+        }}
       />
     );
   }
@@ -482,7 +503,7 @@ export function CashToPayday() {
       <DetailPage
         header={{ back, title: 'Surplus' }}
         identity={{
-          label: 'Free to move right now',
+          label: 'On hand until payday',
           hero: noPaySchedule ? (
             <span className="text-2xl font-semibold text-ink-muted">Confirm your pay dates</span>
           ) : (
@@ -558,16 +579,6 @@ export function CashToPayday() {
             title: 'Upcoming income',
             children: (
               <>
-                <div className="flex items-center justify-between border-b border-hairline pb-3">
-                  <h3 className="type-title">Income</h3>
-                  <button
-                    type="button"
-                    className="text-sage-700"
-                    onClick={() => setAddingKind('income')}
-                  >
-                    Add
-                  </button>
-                </div>
                 {upcomingIncome.length === 0 ? (
                   <p className="py-3 text-ink-muted">Nothing expected yet.</p>
                 ) : (
@@ -588,6 +599,7 @@ export function CashToPayday() {
                 )}
 
                 <ScheduleList kind="income" rows={schedules} onEdit={setEditing} />
+                <AddRow onClick={() => setAddingKind('income')}>Add income</AddRow>
               </>
             ),
           },
@@ -595,16 +607,6 @@ export function CashToPayday() {
             title: 'Upcoming expenses',
             children: (
               <>
-                <div className="flex items-center justify-between border-b border-hairline pb-3">
-                  <h3 className="type-title">Expenses</h3>
-                  <button
-                    type="button"
-                    className="text-sage-700"
-                    onClick={() => setAddingKind('expense')}
-                  >
-                    Add
-                  </button>
-                </div>
                 {upcomingExpenses.length === 0 ? (
                   <p className="py-3 text-ink-muted">Nothing expected yet.</p>
                 ) : (
@@ -625,6 +627,7 @@ export function CashToPayday() {
                 )}
 
                 <ScheduleList kind="expense" rows={schedules} onEdit={setEditing} />
+                <AddRow onClick={() => setAddingKind('expense')}>Add expense</AddRow>
               </>
             ),
           },

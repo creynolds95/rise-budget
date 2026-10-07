@@ -23,6 +23,7 @@
   --color-gold-100: #f7f0de;
   --color-clay: #a8563c;
   --color-clay-100: #f6e7e1;
+  --color-clay-text: #97492f;
 
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-serif: 'Fraunces', ui-serif, Georgia, serif;
@@ -58,6 +59,7 @@
     --color-gold-100: #2e2712;
     --color-clay: #d98467;
     --color-clay-100: #3a211a;
+    --color-clay-text: #d98467;
   }
 }
 :root[data-theme='dark'] {
@@ -78,6 +80,7 @@
   --color-gold-100: #2e2712;
   --color-clay: #d98467;
   --color-clay-100: #3a211a;
+  --color-clay-text: #d98467;
 }
 
 @layer base {
@@ -164,6 +167,16 @@
 }
 @utility money {
   font-variant-numeric: tabular-nums;
+}
+/* A control drawn smaller than 44×44 (DESIGN-SYSTEM §2) still takes a 44×44 tap. */
+@utility hit-44 {
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block: min(0px, calc((100% - 44px) / 2));
+    inset-inline: min(0px, calc((100% - 44px) / 2));
+  }
 }
 @utility gutter {
   padding-left: 16px;

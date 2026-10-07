@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import { isLiabilityKind, type AccountKind } from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type MouseEvent } from 'react';
@@ -130,8 +131,10 @@ export function Accounts() {
 
       {accounts.isPending && (
         <div className="gutter mt-6">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="mt-2 h-12 w-full" />
+          <Loading>
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="mt-2 h-12 w-full" />
+          </Loading>
         </div>
       )}
       {KIND_GROUPS.map(({ kind, label }) => {
@@ -206,7 +209,9 @@ export function NetWorthSection({ to }: { to?: string } = {}) {
               whole
             />
           ) : nw.isPending ? (
-            <Skeleton className="h-11 w-48" />
+            <Loading compact>
+              <Skeleton className="h-11 w-48" />
+            </Loading>
           ) : (
             <span className="text-ink-muted">No balances yet</span>
           )}
