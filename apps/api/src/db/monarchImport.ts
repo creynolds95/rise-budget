@@ -381,7 +381,7 @@ async function unlinkSurvivingLegsStmts(
 ): Promise<D1PreparedStatement[]> {
   const { results: legs } = await db
     .prepare(
-      `SELECT * FROM txn WHERE user_id = ?1 AND transfer_pair_id IS NOT NULL
+      `SELECT * FROM txn INDEXED BY ix_txn_pair WHERE user_id = ?1 AND transfer_pair_id IS NOT NULL
          AND transfer_pair_id IN (${pickedSql}) AND id NOT IN (${pickedSql})`,
     )
     .bind(userId, ...binds)
