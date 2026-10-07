@@ -196,6 +196,7 @@ export function useInvalidateMoney() {
         'groups',
         'cash-to-payday',
         'reports',
+        'category-history',
       ].map((k) => qc.invalidateQueries({ queryKey: [k] })),
     );
 }

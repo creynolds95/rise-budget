@@ -204,7 +204,7 @@ export async function runSync(
       const gone = existing ? await deletedSourceIds(userId, db, accountId) : new Set<string>();
       const incoming: IncomingWithMerchant[] = sf.transactions
         .map((t) => {
-          const i = toIncomingTxn(t, tz);
+          const i = toIncomingTxn(t, tz, Math.floor(now.getTime() / 1000));
           return { ...i, merchant: normalizeMerchant(i.descriptor) };
         })
         // What the user deleted stays deleted, even while the bank keeps reporting it.

@@ -77,8 +77,13 @@ export interface IncomingTxn {
  * positive, so transaction signs flip here. Balances already follow the person's view
  * (credit negative when owed) and pass through.
  */
-export function toIncomingTxn(t: SimpleFinTransaction, timeZone: string): IncomingTxn {
-  const when = t.posted > 0 ? t.posted : (t.transacted_at ?? 0);
+export function toIncomingTxn(
+  t: SimpleFinTransaction,
+  timeZone: string,
+  /** A pending row with no date at all is dated now, not 1970 (where it would sit in 1969-12). */
+  nowSeconds = 0,
+): IncomingTxn {
+  const when = t.posted > 0 ? t.posted : (t.transacted_at ?? nowSeconds);
   return {
     sourceId: t.id,
     postedAt: localDate(when, timeZone),
