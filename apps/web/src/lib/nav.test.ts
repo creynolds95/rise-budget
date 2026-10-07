@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { backFrom } from './nav';
+import { backFrom, listOrigin } from './nav';
 
 describe('backFrom', () => {
   it('reads Label|path', () =>
@@ -13,5 +13,16 @@ describe('backFrom', () => {
     for (const raw of [null, '', 'Review', '|/review', 'Evil|https://x.test', 'Evil|//x.test']) {
       expect(backFrom(raw)).toEqual({ label: 'Transactions', to: '/transactions' });
     }
+  });
+});
+
+describe('listOrigin', () => {
+  it('reads a valid origin', () =>
+    expect(listOrigin('Food|/budget/c1?m=2026-09')).toEqual({
+      label: 'Food',
+      to: '/budget/c1?m=2026-09',
+    }));
+  it('is null when missing or unsafe', () => {
+    for (const raw of [null, '', 'Evil|https://x.test']) expect(listOrigin(raw)).toBeNull();
   });
 });

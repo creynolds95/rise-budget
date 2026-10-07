@@ -1,5 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { listOrigin } from '../lib/nav';
+import { useSwipeBack } from '../lib/gestures';
+import { BackLink } from '../components/BackLink';
 import { useNavigate, useSearchParams } from 'react-router';
 import { AddTransactionSheet } from '../components/AddTransactionSheet';
 import { CategoryPicker } from '../components/CategoryPicker';
@@ -48,7 +51,14 @@ export function Transactions() {
   const [marking, setMarking] = useState(false);
   const qc = useQueryClient();
   const invalidate = useInvalidateMoney();
-  const apply = (f: Filters) => setParams(filtersToParams(f), { replace: true });
+  const origin = listOrigin(params.get('back'));
+  useSwipeBack(origin?.to ?? null);
+  const apply = (f: Filters) => {
+    const next = filtersToParams(f);
+    const back = params.get('back');
+    if (back) next.set('back', back);
+    setParams(next, { replace: true });
+  };
 
   // Search as you type, without a request per keystroke.
   useEffect(() => {
@@ -192,6 +202,11 @@ export function Transactions() {
 
   return (
     <div className={`mx-auto pb-12 ${desktop ? 'max-w-5xl' : 'max-w-2xl'}`}>
+      {origin && (
+        <div className="gutter pt-1">
+          <BackLink to={origin.to} label={origin.label} />
+        </div>
+      )}
       <header className="gutter hidden items-center justify-between pt-3 lg:flex">
         <h1 className="type-page">Transactions</h1>
         <div className="-mr-2 flex">
