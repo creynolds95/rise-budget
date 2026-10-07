@@ -52,6 +52,8 @@ const INDEXES = [
   'ix_txn_pair',
   // 0023
   'ix_txn_refund_of',
+  'ix_txn_feed',
+  'ix_txn_csv_source',
 ];
 
 describe('migration 0001', () => {

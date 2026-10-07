@@ -105,7 +105,8 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
     if (!source || !env.SIMPLEFIN_OWNER_EMAIL) return;
     const userId = await findUserIdByEmail(db, env.SIMPLEFIN_OWNER_EMAIL);
     if (!userId) return;
-    const r = await runSync(db, userId, source);
+    // An idle cron run (nothing new from the bank) skips the CPU-heavy recurring re-detection.
+    const r = await runSync(db, userId, source, { skipRecurringWhenIdle: true });
     if (r.status !== 'failed') {
       // A loan-payment hiccup must not fail the sync; the Debt page still offers Apply by hand.
       await applyLoanPayments(db, userId, new Date(event.scheduledTime)).catch((e: unknown) =>

@@ -121,8 +121,10 @@ export async function monarchSetup(
  * date match alone misses it). `?1` must be the user id.
  */
 function coveredByFeed(accountSql: string, dateSql: string): string {
+  // INDEXED BY: through any other index this is a range scan per row (migration 0024). A
+  // planner that drifted back to one would quietly read millions of rows; this fails instead.
   return `EXISTS (
-    SELECT 1 FROM txn f WHERE f.user_id = ?1 AND f.account_id = ${accountSql}
+    SELECT 1 FROM txn f INDEXED BY ix_txn_feed WHERE f.user_id = ?1 AND f.account_id = ${accountSql}
       AND f.source = 'simplefin' AND f.review_state != 'dropped' AND f.posted_at <= ${dateSql})`;
 }
 
@@ -149,9 +151,10 @@ async function presentSourceIds(
 ): Promise<Set<string>> {
   const { results } = await db
     .prepare(
-      `SELECT source_id FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */
-         AND (?3 IS NULL OR import_batch_id = ?3)
-         AND source_id IN (SELECT value FROM json_each(?2))`,
+      `SELECT t.source_id FROM json_each(?2) j
+         CROSS JOIN txn t INDEXED BY ix_txn_csv_source ON t.user_id = ?1 AND t.source = 'csv'
+           AND t.source_id = j.value
+         WHERE (?3 IS NULL OR t.import_batch_id = ?3)`,
     )
     .bind(userId, JSON.stringify(sourceIds), batchId ?? null)
     .all<{ source_id: string }>();

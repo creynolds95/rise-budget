@@ -1282,6 +1282,9 @@ function DataSection() {
   const backups = useBackupStatus().data;
   const [busy, setBusy] = useState<'json' | 'csv' | 'backup' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The import panel's reads (batches, merges, feed overlaps) cost thousands of D1 rows on a
+  // large history, so they load only when it's opened, not on every visit here.
+  const [importOpen, setImportOpen] = useState(false);
 
   const download = async (format: 'json' | 'csv' | 'backup') => {
     setBusy(format);
@@ -1350,7 +1353,20 @@ function DataSection() {
         )}
       </Group>
       <UsageGroup />
-      <MonarchImport />
+      {importOpen ? (
+        <MonarchImport />
+      ) : (
+        <Group>
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="flex min-h-13 w-full items-center justify-between px-4 py-3 text-left active:bg-sage-100"
+          >
+            <span className="block">Import from Monarch</span>
+            <Chevron />
+          </button>
+        </Group>
+      )}
     </>
   );
 }
