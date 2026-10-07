@@ -9,7 +9,9 @@ import {
   owedCents,
   payoffGap,
   planLoans,
+  scenarioView,
   type LoanRow,
+  type Scenario,
 } from './debt';
 
 const loan = (over: Partial<DebtLoanPlan> = {}): DebtLoanPlan => ({
@@ -190,5 +192,68 @@ describe('mortgage payoff', () => {
 
   it('a paid-off loan has no gap', () => {
     expect(payoffGap({ done: true, payoffPeriod: null, plan: loan() })).toBeNull();
+  });
+});
+
+describe('scenarioView', () => {
+  const loans = [
+    { plan: loan({ accountId: 'a', paymentCents: 20_000 }), name: 'A', owedCents: 1_000_000 },
+    {
+      plan: loan({ accountId: 'b', paymentCents: 10_000, aprMilliPct: 4000 }),
+      name: 'B',
+      owedCents: 200_000,
+    },
+  ];
+  const opts = { extraCents: 0, strategy: 'snowball' as const, rollForward: true };
+  const none: Scenario = {
+    extraCents: 0,
+    lumpCents: 0,
+    lumpPeriod: '2026-10',
+    target: 'snowball',
+    payOffIds: [],
+  };
+
+  it('an empty scenario matches the plan', () => {
+    const v = scenarioView(loans, opts, none, '2026-10');
+    expect(v.monthsSooner).toBe(0);
+    expect(v.interestSavedCents).toBe(0);
+    expect(v.upfrontCents).toBe(0);
+  });
+
+  it('paying a loan off now saves months and interest, and costs its balance', () => {
+    const v = scenarioView(loans, opts, { ...none, payOffIds: ['b'] }, '2026-10');
+    expect(v.monthsSooner).toBeGreaterThan(0);
+    expect(v.interestSavedCents).toBeGreaterThan(0);
+    expect(v.upfrontCents).toBe(200_000);
+    expect(v.payoffs[1]?.payoffPeriod).toBe('2026-10');
+  });
+
+  it('a lump goes in the month picked, to a named loan or by rule', () => {
+    const named = scenarioView(
+      loans,
+      opts,
+      { ...none, lumpCents: 100_000, lumpPeriod: '2027-01', target: { loanId: 'a' } },
+      '2026-10',
+    );
+    const rule = scenarioView(
+      loans,
+      opts,
+      { ...none, lumpCents: 100_000, lumpPeriod: '2025-01', target: 'avalanche' },
+      '2026-10',
+    );
+    expect(named.upfrontCents).toBe(100_000);
+    expect(named.monthsSooner).toBeGreaterThan(0);
+    expect(rule.interestSavedCents).toBeGreaterThan(named.interestSavedCents ?? 0);
+  });
+
+  it('has no comparison when a loan never finishes', () => {
+    const stuck = [
+      { plan: loan({ accountId: 'z', paymentCents: 0 }), name: 'Z', owedCents: 50_000 },
+    ];
+    const v = scenarioView(stuck, opts, none, '2026-10');
+    expect(v.debtFreePeriod).toBeNull();
+    expect(v.monthsSooner).toBeNull();
+    expect(v.interestSavedCents).toBeNull();
+    expect(v.payoffs[0]?.payoffPeriod).toBeNull();
   });
 });
