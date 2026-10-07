@@ -44,12 +44,15 @@ export function Shell() {
   const me = useMe().data;
   const [actions, setActions] = useState<ReactNode>(null);
   const location = useLocation();
-  useTabRootTrap(location.pathname);
+  // A Transactions list opened from a category or account is a pushed screen, not the tab.
+  const pushedList =
+    location.pathname === '/transactions' && new URLSearchParams(location.search).has('back');
+  useTabRootTrap(pushedList ? '/transactions/pushed' : location.pathname);
   useScrollMemory();
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = () => setMenuOpen(false);
   const onDashboard = location.pathname === '/';
-  const onTabRoot = isTabRoot(location.pathname);
+  const onTabRoot = isTabRoot(location.pathname) && !pushedList;
   // The menu sits on all four tabs. Sliding right from the left side opens it there; pushed
   // screens keep that gesture for going back.
   useEffect(() => {

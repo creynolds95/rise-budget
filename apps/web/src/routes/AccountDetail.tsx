@@ -201,7 +201,10 @@ export function AccountDetail() {
               <TxnRow key={t.id} t={t} from={`${a.name}|/accounts/${id}`} />
             ))}
             {list.length > 5 && (
-              <NavRow to={`/transactions?account=${id}`} label="All transactions" />
+              <NavRow
+                to={`/transactions?account=${id}&back=${encodeURIComponent(`${a.name}|/accounts/${id}`)}`}
+                label="All transactions"
+              />
             )}
           </>
         )

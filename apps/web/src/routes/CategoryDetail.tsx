@@ -190,7 +190,7 @@ function CategoryDetailBody({
               ))}
               {list.length > 5 && (
                 <NavRow
-                  to={`/transactions?category=${categoryId}&from=${month}-01&to=${monthEnd(month)}`}
+                  to={`/transactions?category=${categoryId}&from=${month}-01&to=${monthEnd(month)}&back=${encodeURIComponent(`${cat.name}|/budget/${categoryId}?m=${month}`)}`}
                   label={`All ${list.length}${txns.hasNextPage ? '+' : ''} transactions`}
                 />
               )}

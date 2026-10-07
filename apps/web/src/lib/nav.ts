@@ -2,6 +2,12 @@
  * `?from=Label|/path` names where a detail page's back control goes (DESIGN-SYSTEM §5: back
  * always names its origin). Only same-app paths are accepted; anything else falls back.
  */
+/** The screen a pushed Transactions list (opened from a category or account) returns to. */
+export function listOrigin(raw: string | null): { label: string; to: string } | null {
+  const found = backFrom(raw, { label: '', to: '' });
+  return found.to ? found : null;
+}
+
 export function backFrom(
   raw: string | null,
   fallback = { label: 'Transactions', to: '/transactions' },

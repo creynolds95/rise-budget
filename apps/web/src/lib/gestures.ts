@@ -109,9 +109,10 @@ export function useLinkTransitions() {
  * Swipe right from the left part of the screen to go back, on a screen that slid in from
  * the side. The edge strip is included: `installEdgeGuard` keeps iOS's own gesture out of it.
  */
-export function useSwipeBack(to: string) {
+export function useSwipeBack(to: string | null) {
   const navigate = useNavigate();
   useEffect(() => {
+    if (!to) return;
     let start: { x: number; y: number } | null = null;
     const onStart = (e: TouchEvent) => {
       const t = e.touches[0];
