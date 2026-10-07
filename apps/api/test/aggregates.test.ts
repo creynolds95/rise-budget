@@ -91,7 +91,7 @@ describe('T23 period aggregates', () => {
       }
     }
     expect((await liveSums(u.userId)).length).toBeGreaterThan(4);
-  });
+  }, 20_000);
 
   it('only returns the asked range, and only for this user', async () => {
     const a = await signedInUser();

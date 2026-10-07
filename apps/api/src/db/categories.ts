@@ -7,7 +7,7 @@ import {
   type SpendShape,
 } from '@rise/shared/schemas';
 import { refreshCategoryAggregateStmts } from './aggregates';
-import { reassignSplitStmts, splitsFor } from './transactions';
+import { reassignSplitStmts, splitsFor, type TxnRow } from './transactions';
 import { bool, newId, nowIso, type UserId } from './util';
 
 interface GroupRow {
@@ -349,6 +349,45 @@ export async function ensureIncomeCatchallCategory(
  * can always recategorize either leg to a budgeted category later — nothing here is special
  * beyond its `budgeted` flag, and `is_transfer`/`transfer_pair_id` stay a pure pairing marker.
  */
+/**
+ * C2: the catch-all an ordinary row falls back to — the income one for money into a cash
+ * (depository) account, else the expense "Other". The same choice sync makes for a new row with
+ * no match (`sync/run.ts`); off a cash account a card's own ledger runs the other way, so
+ * direction means nothing there.
+ */
+export async function fallbackCategoryFor(
+  userId: UserId,
+  db: D1Database,
+  txn: { account_id: string; amount_cents: number },
+): Promise<Category> {
+  if (txn.amount_cents < 0) {
+    const acct = await db
+      .prepare('SELECT kind FROM account WHERE user_id = ?1 AND id = ?2')
+      .bind(userId, txn.account_id)
+      .first<{ kind: string }>();
+    if (acct?.kind === 'depository') return ensureIncomeCatchallCategory(userId, db);
+  }
+  return ensureCatchallCategory(userId, db);
+}
+
+/**
+ * A transfer leg being unlinked goes back to its fallback category (`fallbackCategoryFor`) only
+ * if it is still on the default Transfer category from link time (A5): a leg the person has
+ * since recategorized keeps that choice. Statements only; the caller batches them with the
+ * unlink itself.
+ */
+export async function revertTransferLegStmts(
+  userId: UserId,
+  db: D1Database,
+  leg: TxnRow,
+  transferCategoryId: string,
+): Promise<D1PreparedStatement[]> {
+  const own = (await splitsFor(userId, db, [leg.id])).get(leg.id) ?? [];
+  if (own.length !== 1 || own[0]?.category_id !== transferCategoryId) return [];
+  const fallback = await fallbackCategoryFor(userId, db, leg);
+  return reassignSplitStmts(userId, db, leg, own, fallback.id);
+}
+
 export async function ensureTransferCategory(userId: UserId, db: D1Database): Promise<Category> {
   const existing = await db
     .prepare(

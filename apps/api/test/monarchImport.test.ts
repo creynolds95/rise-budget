@@ -389,4 +389,61 @@ describe('Monarch import: rows the bank feed also has', () => {
     expect(await count(s.userId, 'split')).toBe(1);
     expect(await listAggregates(s.userId, env.DB, '2026-07', '2026-08')).toEqual([]);
   });
+
+  it('unlinks a kept row that was a transfer with a removed one', async () => {
+    const s = await setup();
+    const t = await linkedToImport(s, '2026-08-04');
+    await bankRow(s.userId, s.card.id, '2026-07-01', 1);
+    const done = await s.api('DELETE', `/import/monarch/overlaps/${s.card.id}`);
+    expect(done.status).toBe(200);
+    await expectUnlinked(s, t.deposit.id);
+  });
+});
+
+/** An imported card payment linked, by hand, to a deposit on a manual account. */
+async function linkedToImport(s: Awaited<ReturnType<typeof setup>>, postedAt = '2025-05-05') {
+  await s.rows([s.row({ sourceId: 'monarch:pay', postedAt, amountCents: 4200 })]);
+  const imported = await env.DB.prepare(
+    "SELECT id FROM txn WHERE user_id = ?1 AND source = 'csv' AND source_id = 'monarch:pay'",
+  )
+    .bind(s.userId)
+    .first<{ id: string }>();
+  const savings = (await s.api('POST', '/accounts', { name: 'Savings', kind: 'depository' })).json;
+  const deposit = (
+    await s.api('POST', '/transactions', {
+      accountId: savings.id,
+      postedAt,
+      amountCents: -4200,
+      descriptor: 'TRANSFER IN',
+    })
+  ).json;
+  const link = await s.api('POST', `/transactions/${deposit.id}/transfer-link`, {
+    otherTxnId: imported?.id,
+  });
+  expect(link.status).toBe(200);
+  return { deposit, importedId: imported?.id };
+}
+
+async function expectUnlinked(s: Awaited<ReturnType<typeof setup>>, id: string) {
+  const kept = (await s.api('GET', `/transactions/${id}`)).json;
+  expect(kept).toMatchObject({ isTransfer: false, reviewState: 'needs_review' });
+  expect(kept.transferPairId ?? null).toBeNull();
+  const cat = await env.DB.prepare(
+    `SELECT c.name, g.kind FROM split s JOIN category c ON c.id = s.category_id
+       JOIN category_group g ON g.id = c.group_id WHERE s.txn_id = ?1`,
+  )
+    .bind(id)
+    .all<{ name: string; kind: string }>();
+  // A deposit into a cash account goes back to the income catch-all, not expense "Other".
+  expect(cat.results).toEqual([{ name: 'Other Income', kind: 'income' }]);
+}
+
+describe('Monarch import: undo with a transfer to a kept row', () => {
+  it('takes the import back and unlinks the surviving leg', async () => {
+    const s = await setup();
+    const t = await linkedToImport(s);
+    expect((await s.api('DELETE', `/import/monarch/batches/${s.batchId}`)).status).toBe(204);
+    expect(await count(s.userId, 'txn')).toBe(1);
+    await expectUnlinked(s, t.deposit.id);
+  });
 });

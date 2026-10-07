@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
-import { createSession } from '../db';
+import { createSession, isSessionLive } from '../db';
 import type { AppEnv } from '../env';
 import { deviceLabel } from './device';
 import { AppError } from './errors';
@@ -55,12 +55,17 @@ export async function issueSession(c: Context<AppEnv>, userId: string) {
   });
 }
 
-/** T16: every route behind this requires a valid access token. */
+/**
+ * T16: every route behind this requires a valid access token whose session is still live — a
+ * device signed out from Settings (or a session ended by refresh reuse) stops working at once,
+ * not when its 15-minute token expires. One primary-key read per request.
+ */
 export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const header = c.req.header('Authorization') ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   const claims = token ? await verifyAccess(c.env, token) : null;
-  if (!claims) throw new AppError(401, 'UNAUTHORIZED', 'Sign in required');
+  if (!claims || !(await isSessionLive(claims.userId, c.env.DB, claims.sessionId)))
+    throw new AppError(401, 'UNAUTHORIZED', 'Sign in required');
   c.set('userId', claims.userId);
   c.set('sessionId', claims.sessionId);
   await next();
@@ -70,7 +75,7 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const header = c.req.header('Authorization') ?? '';
   const claims = header.startsWith('Bearer ') ? await verifyAccess(c.env, header.slice(7)) : null;
-  if (claims) {
+  if (claims && (await isSessionLive(claims.userId, c.env.DB, claims.sessionId))) {
     c.set('userId', claims.userId);
     c.set('sessionId', claims.sessionId);
   }

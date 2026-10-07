@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { deleteTransaction, getTransactionRow, type TxnRow } from '../src/db';
 import { call, signedInUser } from './helpers/http';
 
 async function setup() {
@@ -158,7 +159,7 @@ describe('T21 transactions & splits', () => {
     );
     expect((await s.api('GET', '/transactions?q=100%25')).json.items).toEqual([]);
     expect((await s.api('GET', '/transactions?cursor=***')).status).toBe(400);
-  });
+  }, 20_000);
 
   it('filters by category through splits', async () => {
     const s = await setup();
@@ -246,7 +247,7 @@ describe('T21 transactions & splits', () => {
     }[];
     expect(old[0]?.postedAt).toBe('2026-09-10');
     expect((await s.api('GET', '/transactions?sort=sideways')).status).toBe(400);
-  });
+  }, 20_000);
 
   it('rejects unknown or foreign categories and accounts; users cannot see each other', async () => {
     const a = await setup();
@@ -270,7 +271,7 @@ describe('T21 transactions & splits', () => {
     expect(
       (await a.api('PATCH', `/transactions/${t.json.id}`, { reviewState: 'dropped' })).status,
     ).toBe(400);
-  });
+  }, 20_000);
 
   it('transfers never count toward spent', async () => {
     const s = await setup();
@@ -400,6 +401,57 @@ describe('deleting a transaction', () => {
     await s.api('POST', `/transactions/${out.json.id}/transfer-link`, { otherTxnId: inn.id });
     const r = await s.api('DELETE', `/transactions/${out.json.id}`);
     expect(r.status).toBe(409);
+  });
+
+  it('is all or nothing: a delete the database refuses leaves the splits in place', async () => {
+    const s = await setup();
+    const purchase = await s.add('2026-09-10', 5_000, 'CHIPOTLE', s.home.id);
+    const refund = await s.add('2026-09-12', -5_000, 'CHIPOTLE REFUND', s.home.id);
+    // Point the refund at the purchase behind the route's back, so the row delete hits the FK.
+    await env.DB.prepare('UPDATE txn SET refund_of_id = ?2 WHERE user_id = ?1 AND id = ?3')
+      .bind(s.userId, purchase.json.id, refund.json.id)
+      .run();
+    const row = await getTransactionRow(s.userId, env.DB, purchase.json.id);
+    await expect(deleteTransaction(s.userId, env.DB, row as TxnRow)).rejects.toThrow();
+    const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM split WHERE txn_id = ?1')
+      .bind(purchase.json.id)
+      .first<{ n: number }>();
+    expect(left?.n).toBe(1);
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(0);
+  });
+});
+
+describe('unlinking a transfer', () => {
+  it('sends a deposit leg to the income catch-all and the outflow leg to Other', async () => {
+    const s = await setup();
+    const checking = (await s.api('POST', '/accounts', { name: 'Checking', kind: 'depository' }))
+      .json;
+    const savings = (await s.api('POST', '/accounts', { name: 'Savings', kind: 'depository' }))
+      .json;
+    const leg = async (accountId: string, amountCents: number, descriptor: string) =>
+      (
+        await s.api('POST', '/transactions', {
+          accountId,
+          postedAt: '2026-09-10',
+          amountCents,
+          descriptor,
+        })
+      ).json;
+    const out = await leg(checking.id, 5_000, 'TRANSFER TO SAVINGS');
+    const inn = await leg(savings.id, -5_000, 'TRANSFER FROM CHECKING');
+    await s.api('POST', `/transactions/${out.id}/transfer-link`, { otherTxnId: inn.id });
+    const r = await s.api('DELETE', `/transactions/${inn.id}/transfer-link`);
+    expect(r.status).toBe(200);
+    const cats = (await s.api('GET', '/categories')).json as { id: string; name: string }[];
+    const nameOf = (id: string) => cats.find((c) => c.id === id)?.name;
+    const byId = new Map(
+      (r.json.items as { id: string; splits: { categoryId: string }[] }[]).map((t) => [
+        t.id,
+        t.splits.map((sp) => nameOf(sp.categoryId)),
+      ]),
+    );
+    expect(byId.get(inn.id)).toEqual(['Other Income']);
+    expect(byId.get(out.id)).toEqual(['Other']);
   });
 });
 

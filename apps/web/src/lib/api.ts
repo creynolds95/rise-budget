@@ -36,12 +36,39 @@ export const hasAccess = () => access !== null;
 export type RefreshResult = 'ok' | 'denied' | 'offline';
 let refreshingState: Promise<RefreshResult> | null = null;
 
+/** Name of the Web Lock every tab of this origin takes around a refresh. */
+export const REFRESH_LOCK = 'rise-refresh';
+
 /**
- * Trade the refresh cookie for a new access token. Concurrent callers share one attempt.
- * 'offline' means the server couldn't be reached — not that the session is gone.
+ * Run `fn` holding the cross-tab refresh lock. The refresh cookie is shared by every tab (and an
+ * installed app on the same browser profile), and each refresh rotates it: two tabs refreshing
+ * at once would present the same token twice. With the lock they take turns, and the second
+ * sends the cookie the first was just given. Where Web Locks are missing the server's 60-second
+ * grace for the just-superseded token covers the overlap.
+ */
+async function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  if (typeof locks?.request !== 'function') return fn();
+  let ran = false;
+  try {
+    return (await locks.request(REFRESH_LOCK, () => {
+      ran = true;
+      return fn();
+    })) as T;
+  } catch (e) {
+    // The lock itself was refused (an opaque origin, say): go without it.
+    if (ran) throw e;
+    return fn();
+  }
+}
+
+/**
+ * Trade the refresh cookie for a new access token. Concurrent callers in this tab share one
+ * attempt; other tabs wait their turn on a Web Lock. 'offline' means the server couldn't be
+ * reached — not that the session is gone.
  */
 export function refreshSession(): Promise<RefreshResult> {
-  refreshingState ??= (async (): Promise<RefreshResult> => {
+  refreshingState ??= withRefreshLock(async (): Promise<RefreshResult> => {
     try {
       const res = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' });
       reachable(true);
@@ -55,10 +82,10 @@ export function refreshSession(): Promise<RefreshResult> {
     } catch {
       reachable(false);
       return 'offline';
-    } finally {
-      refreshingState = null;
     }
-  })();
+  }).finally(() => {
+    refreshingState = null;
+  });
   return refreshingState;
 }
 
@@ -156,6 +183,17 @@ async function send(method: string, path: string, body: unknown, opts: RequestOp
   }
 }
 
+const NOT_JSON = Symbol('not-json');
+
+function parseJson(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return NOT_JSON;
+  }
+}
+
 export async function api<T>(
   method: string,
   path: string,
@@ -192,7 +230,17 @@ export async function api<T>(
   if (res.ok) setDbLimited(false);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
-  const json: unknown = text ? JSON.parse(text) : null;
+  const json = parseJson(text);
+  if (json === NOT_JSON) {
+    // A proxy's or platform's own error page (HTML, plain text), not the API's error contract.
+    throw new ApiError(
+      res.status,
+      'UNKNOWN',
+      res.ok
+        ? 'Rise sent back something unexpected. Try again.'
+        : "That didn't go through. Try again.",
+    );
+  }
   if (!res.ok) {
     const err = (json as { error?: { code?: string; message?: string; detail?: unknown } } | null)
       ?.error;
@@ -212,11 +260,16 @@ export const get = <T>(path: string) => api<T>('GET', path);
 /**
  * T46: hands the browser a file to save, reusing `send`'s auth and the one-retry-on-401
  * that `api` does. Export needs the raw body and its filename, not a JSON-parsed result.
+ * The backup file is the whole database, credentials included, so the server wants a
+ * moments-old passkey step-up for it (`opts.stepUp`, from `useAuth().stepUp()`).
  */
-export async function downloadExport(format: 'json' | 'csv' | 'backup'): Promise<void> {
+export async function downloadExport(
+  format: 'json' | 'csv' | 'backup',
+  opts: Pick<RequestOptions, 'stepUp'> = {},
+): Promise<void> {
   const path = format === 'backup' ? '/export/backups/latest' : `/export?format=${format}`;
-  let res = await send('GET', path, undefined, {});
-  if (res.status === 401 && (await refresh())) res = await send('GET', path, undefined, {});
+  let res = await send('GET', path, undefined, opts);
+  if (res.status === 401 && (await refresh())) res = await send('GET', path, undefined, opts);
   if (!res.ok) throw new ApiError(res.status, 'UNKNOWN', 'Could not export your data');
   const disposition = res.headers.get('content-disposition') ?? '';
   const filename =

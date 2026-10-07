@@ -419,7 +419,13 @@ stable machine-readable `code`.
 
 **Token model.** Access JWT, 15 min, signed HS256 with a Worker secret. Refresh token is
 opaque, 30 days, stored hashed in `session`, rotated on every use with reuse-detection
-(a replayed refresh revokes the whole session family).
+(a replayed refresh revokes the whole session family). The token current just before the
+last rotation stays good for 60 s and gets the same successor (derived under the Worker
+secret), so two tabs refreshing together or a lost response don't sign the owner out; tabs
+also take turns through a Web Lock. Every authenticated request checks its session row
+(one primary-key read), so a revoked device is out at once, not after 15 minutes. The
+whole-database backup download needs a passkey step-up. TOTP codes are single-use;
+recovery codes are stored as HMAC-SHA-256 under `TOTP_KEY`.
 
 **Web storage.** Refresh token in an `httpOnly; Secure; SameSite=Strict` cookie. Access
 token in memory only — never `localStorage`.

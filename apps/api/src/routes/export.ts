@@ -4,6 +4,7 @@ import { listBackups } from '../backup/run';
 import { exportUserData, transactionsCsv, writeAudit } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
+import { requireStepUp } from '../lib/session';
 
 /** T46: the user can always walk away with their data (ARCHITECTURE §8). */
 export const dataExport = new Hono<AppEnv>();
@@ -53,8 +54,13 @@ dataExport.get('/backups', async (c) => {
   );
 });
 
-/** The newest nightly backup, as the gzipped SQL file in R2, so the data can leave Cloudflare. */
-dataExport.get('/backups/latest', async (c) => {
+/**
+ * The newest nightly backup, as the gzipped SQL file in R2, so the data can leave Cloudflare.
+ * It is the whole database — sessions, passkey records, sealed TOTP secrets, recovery-code
+ * hashes — so, like adding a sign-in method, it needs a moments-old passkey step-up (H4), not
+ * just a standing access token. The JSON and CSV exports leave credentials out and don't.
+ */
+dataExport.get('/backups/latest', requireStepUp, async (c) => {
   const last = (await listBackups(c.env.BACKUPS)).at(-1);
   const object = last && (await c.env.BACKUPS.get(`backups/${last.date}.sql.gz`));
   if (!last || !object) throw new AppError(404, 'NOT_FOUND', 'No backup yet');

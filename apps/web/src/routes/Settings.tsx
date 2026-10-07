@@ -1295,6 +1295,7 @@ function UsageGroup() {
 /** T46. The user can always walk away with their data (ARCHITECTURE §8). */
 function DataSection() {
   const backups = useBackupStatus().data;
+  const { stepUp } = useAuth();
   const [busy, setBusy] = useState<'json' | 'csv' | 'backup' | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The import panel's reads (batches, merges, feed overlaps) cost thousands of D1 rows on a
@@ -1305,9 +1306,15 @@ function DataSection() {
     setBusy(format);
     setError(null);
     try {
-      await downloadExport(format);
+      // The backup file is the whole database, sign-in records included: confirm with a
+      // passkey first, like adding a sign-in method.
+      await downloadExport(format, format === 'backup' ? { stepUp: await stepUp() } : {});
     } catch {
-      setError("That didn't go through. Try again.");
+      setError(
+        format === 'backup'
+          ? "That didn't go through. Confirm with your passkey to download the backup."
+          : "That didn't go through. Try again.",
+      );
     } finally {
       setBusy(null);
     }

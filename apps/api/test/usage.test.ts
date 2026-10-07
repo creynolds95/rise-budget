@@ -84,10 +84,13 @@ describe('latest backup download', () => {
     const u = await signedInUser();
     const keys = await env.BACKUPS.list({ prefix: 'backups/' });
     if (keys.objects.length) await env.BACKUPS.delete(keys.objects.map((o) => o.key));
-    expect((await call('GET', '/export/backups/latest', { access: u.access })).status).toBe(404);
+    const stepUp = { 'x-step-up': u.stepUp };
+    expect(
+      (await call('GET', '/export/backups/latest', { access: u.access, headers: stepUp })).status,
+    ).toBe(404);
     await runBackup(env.DB, env.BACKUPS, new Date());
     const res = await exports.default.fetch('https://rise.test/api/export/backups/latest', {
-      headers: { authorization: `Bearer ${u.access}` },
+      headers: { authorization: `Bearer ${u.access}`, ...stepUp },
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-disposition')).toContain('rise-backup-');
