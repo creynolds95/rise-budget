@@ -30,16 +30,19 @@ export function invRangeStart(range: InvRange, today: string): string {
 /**
  * Both lines rebased to 0% at the first portfolio day on or after `start`. The index only
  * trades on weekdays, so each portfolio day reads the latest close on or before it.
+ *
+ * The portfolio line is chain-linked: each day's return is measured on the accounts that were
+ * already there, so an account joining (its first balance, `joinedCents`) moves the balance but
+ * not the line. Without that, adding a $50k account to a flat $100k would read as +50%.
  */
 export function growthSeries(
-  points: readonly { date: string; balanceCents: number }[],
+  points: readonly { date: string; balanceCents: number; joinedCents?: number }[],
   sp500: readonly { date: string; level: number }[] | null,
   start: string,
 ): GrowthPoint[] {
   const pts = points.filter((p) => p.date >= start);
   const first = pts[0];
-  const base = first?.balanceCents;
-  if (!first || !base) return [];
+  if (!first || !first.balanceCents) return [];
   const sp = [...(sp500 ?? [])].sort((a, b) => (a.date < b.date ? -1 : 1));
   const at = (date: string) => {
     let hit: number | null = null;
@@ -50,11 +53,18 @@ export function growthSeries(
     return hit;
   };
   const sp0 = at(first.date) ?? sp.find((s) => s.date >= first.date)?.level ?? null;
-  return pts.map((p) => {
+  let index = 1;
+  let prev = first.balanceCents;
+  return pts.map((p, i) => {
+    if (i > 0) {
+      // A day after an empty balance has nothing to measure a return on: it links flat.
+      if (prev !== 0) index *= (p.balanceCents - (p.joinedCents ?? 0)) / prev;
+      prev = p.balanceCents;
+    }
     const level = at(p.date);
     return {
       date: p.date,
-      portfolio: (p.balanceCents / base - 1) * 100,
+      portfolio: (index - 1) * 100,
       sp500: sp0 && level ? (level / sp0 - 1) * 100 : null,
     };
   });

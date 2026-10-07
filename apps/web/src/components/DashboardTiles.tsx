@@ -219,6 +219,7 @@ export function SavingsTile() {
           g,
           accounts.filter((a) => !a.archivedAt),
           periodOf(today),
+          goals,
         ),
       )
     : [];

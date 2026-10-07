@@ -17,7 +17,7 @@ import { nearestIndex } from '../lib/chart';
 import { useToday } from '../lib/queries';
 
 interface InvestmentsResponse {
-  points: { date: string; balanceCents: number; inferred: boolean }[];
+  points: { date: string; balanceCents: number; joinedCents: number; inferred: boolean }[];
   accounts: { id: string; name: string; balanceCents: number }[];
   sp500: { date: string; level: number }[] | null;
 }

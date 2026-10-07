@@ -30,6 +30,34 @@ describe('investments', () => {
     expect(g[1]?.portfolio).toBeCloseTo(10);
     expect(g[1]?.sp500).toBe(0);
   });
+  it('an account joining is not growth: its day links on the accounts already there', () => {
+    // A flat $100k, then a $50k account appears: still 0%, not +50%.
+    const pts = [
+      { date: '2026-09-01', balanceCents: 100_000_00, joinedCents: 0 },
+      { date: '2026-09-02', balanceCents: 150_000_00, joinedCents: 50_000_00 },
+      { date: '2026-09-03', balanceCents: 150_000_00, joinedCents: 0 },
+      // Then the whole $150k gains 10%.
+      { date: '2026-09-04', balanceCents: 165_000_00, joinedCents: 0 },
+    ];
+    const g = growthSeries(pts, null, '2026-09-01');
+    expect(g.map((p) => p.portfolio)).toEqual([0, 0, 0, expect.closeTo(10, 9)]);
+  });
+  it('a joining day still counts the old accounts’ own move', () => {
+    const pts = [
+      { date: '2026-09-01', balanceCents: 100_000_00 },
+      // The old $100k rose 1% the day a $50k account joined.
+      { date: '2026-09-02', balanceCents: 151_000_00, joinedCents: 50_000_00 },
+    ];
+    expect(growthSeries(pts, null, '2026-09-01')[1]?.portfolio).toBeCloseTo(1, 9);
+  });
+  it('a day after an empty balance links flat instead of dividing by zero', () => {
+    const pts = [
+      { date: '2026-09-01', balanceCents: 100_00 },
+      { date: '2026-09-02', balanceCents: 0 },
+      { date: '2026-09-03', balanceCents: 50_00, joinedCents: 50_00 },
+    ];
+    expect(growthSeries(pts, null, '2026-09-01').map((p) => p.portfolio)).toEqual([0, -100, -100]);
+  });
   it('handles no data, no index, and a late first close', () => {
     expect(growthSeries([], null, '2026-01-01')).toEqual([]);
     expect(

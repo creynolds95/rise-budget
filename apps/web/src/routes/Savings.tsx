@@ -219,7 +219,7 @@ export function Savings() {
   const live = accounts.filter((a) => !a.archivedAt);
   const cash = live.filter((a) => a.kind === 'depository');
   const goals = me.settings.savings?.goals ?? [];
-  const views = goals.map((g) => goalView(g, live, periodOf(today)));
+  const views = goals.map((g) => goalView(g, live, periodOf(today), goals));
   const edit = (next: SavingsGoal[]) => save.mutate({ goals: next });
   const openSheet = (g: SavingsGoal | null) => {
     setEditing(g);

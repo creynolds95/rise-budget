@@ -80,6 +80,11 @@ describe('continuesElsewhere', () => {
     expect(at('ESPN', '2026-09-13', 1_099)).toBe(false); // itself
   });
 
+  it('a steady amount is within 5% of the expected one, not ~10%', () => {
+    expect(at('ESPN PLUS', '2026-09-13', 1_153)).toBe(true); // +4.9%
+    expect(at('ESPN PLUS', '2026-09-13', 1_198)).toBe(false); // +9.0%
+  });
+
   it('never matches a name with no distinctive word', () => {
     const plain = { ...espn, merchant: 'ACH PAYMENT' };
     expect(continuesElsewhere(plain, new Map([['ACH WEB', [o('2026-09-13', 1_099)]]]))).toBe(false);

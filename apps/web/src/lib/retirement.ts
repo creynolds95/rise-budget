@@ -30,7 +30,10 @@ export interface RetirementView {
   neededCents: number | null;
   /** Projected income as a percent of the target; null until a target is set. */
   pctOfGoal: number | null;
-  /** Extra monthly contribution needed to reach the target by this age; null until a target is set. */
+  /**
+   * Extra monthly contribution needed to reach the target by this age. Null until a target is
+   * set, and null at an age with no months left to contribute in (no monthly figure gets there).
+   */
   gapMonthlyCents: number | null;
   series: { age: number; balanceCents: number }[];
 }
@@ -52,19 +55,16 @@ export function retirementView(
   const incomeCents = monthlyIncomeFor(balanceCents, plan.withdrawalBps);
   const hasGoal = plan.spendTargetCents > 0;
   const neededCents = hasGoal ? neededBalanceFor(plan.spendTargetCents, plan.withdrawalBps) : null;
+  const required =
+    neededCents === null
+      ? null
+      : requiredMonthlyContribution(startCents, neededCents, years, plan.realGrowthBps);
   return {
     balanceCents,
     incomeCents,
     neededCents,
     pctOfGoal: hasGoal ? Math.round((incomeCents * 100) / plan.spendTargetCents) : null,
-    gapMonthlyCents:
-      neededCents === null
-        ? null
-        : Math.max(
-            0,
-            requiredMonthlyContribution(startCents, neededCents, years, plan.realGrowthBps) -
-              monthlyCents,
-          ),
+    gapMonthlyCents: required === null ? null : Math.max(0, required - monthlyCents),
     series: projectSeries(startCents, monthlyCents, years, plan.realGrowthBps).map((p) => ({
       age: plan.currentAge + p.year,
       balanceCents: p.balanceCents,

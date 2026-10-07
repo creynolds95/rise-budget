@@ -51,7 +51,7 @@ export function FinancialHealth() {
   if (ready) {
     const goals = me.settings.savings?.goals ?? [];
     const fund = goals.find((g) => g.kind === 'emergency');
-    const fundView = fund ? goalView(fund, accounts, periodOf(today)) : null;
+    const fundView = fund ? goalView(fund, accounts, periodOf(today), goals) : null;
     savingsState =
       fundView?.covered != null
         ? `${fundView.covered} months covered`

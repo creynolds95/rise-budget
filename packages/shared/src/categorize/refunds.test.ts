@@ -68,6 +68,28 @@ describe('allocateRefund', () => {
     expect(odd.reduce((s, x) => s + x.amountCents, 0)).toBe(-100);
     expect(odd.map((x) => x.amountCents)).toEqual([-34, -33, -33]);
   });
+  it('is exact integer maths at any size (largest remainder, ties to the earlier split)', () => {
+    // Shares of 1/3 each of an odd refund: the float version's remainders were 0.333…, the
+    // integer one compares exact remainders; same answer, no float in sight.
+    const big = allocateRefund(-9_007_199_254_740, [
+      { categoryId: 'a', amountCents: 3_000_000_000_001 },
+      { categoryId: 'b', amountCents: 3_000_000_000_001 },
+      { categoryId: 'c', amountCents: 3_000_000_000_001 },
+    ]);
+    expect(big.map((x) => x.amountCents)).toEqual([
+      -3_002_399_751_580, -3_002_399_751_580, -3_002_399_751_580,
+    ]);
+    expect(big.reduce((s, x) => s + x.amountCents, 0)).toBe(-9_007_199_254_740);
+  });
+  it('a negative split (a discount line) gets no share; the rest share by size', () => {
+    expect(
+      allocateRefund(-1_000, [
+        { categoryId: 'a', amountCents: 3_000 },
+        { categoryId: 'disc', amountCents: -500 },
+        { categoryId: 'b', amountCents: 1_000 },
+      ]).map((x) => x.amountCents),
+    ).toEqual([-750, 0, -250]);
+  });
   it('a single split takes all of it', () => {
     expect(allocateRefund(-250, [{ categoryId: 'a', amountCents: 999 }])).toEqual([
       { categoryId: 'a', amountCents: -250 },

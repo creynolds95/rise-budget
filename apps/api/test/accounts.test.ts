@@ -366,3 +366,34 @@ describe('T17 net worth', () => {
     ).toBe(400);
   });
 });
+
+describe('investments', () => {
+  it('says how much joined each day, so a new account is not read as growth', async () => {
+    const u = await signedInUser();
+    const add = async (name: string) =>
+      (await call('POST', '/accounts', { access: u.access, body: { name, kind: 'investment' } }))
+        .json.id as string;
+    const snap = (id: string, asOf: string, balanceCents: number) =>
+      call('POST', `/accounts/${id}/snapshots`, { access: u.access, body: { asOf, balanceCents } });
+    const old = await add('Index fund');
+    const fresh = await add('Brokerage');
+    await snap(old, '2026-09-01', 10_000_000);
+    await snap(old, '2026-09-03', 10_000_000);
+    await snap(fresh, '2026-09-02', 5_000_000);
+    await snap(fresh, '2026-09-03', 5_000_000);
+    const r = await call('GET', '/investments?from=2026-09-01&to=2026-09-03', {
+      access: u.access,
+    });
+    expect(r.status).toBe(200);
+    expect(
+      r.json.points.map((p: { balanceCents: number; joinedCents: number }) => [
+        p.balanceCents,
+        p.joinedCents,
+      ]),
+    ).toEqual([
+      [10_000_000, 0],
+      [15_000_000, 5_000_000],
+      [15_000_000, 0],
+    ]);
+  });
+});

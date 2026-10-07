@@ -107,3 +107,28 @@ export function netWorthSeries(
   }
   return out;
 }
+
+/**
+ * What accounts joined the series on each day of [from, to]: an included account's first
+ * balance, keyed by its first snapshot date, when that date is after `from` (the range's first
+ * day is the base everything is measured from). A growth line subtracts it so an account
+ * appearing is not read as a gain: before its first snapshot it contributes nothing, so the
+ * day it arrives the total jumps by its whole balance.
+ */
+export function joinedCents(
+  accounts: readonly NetWorthAccount[],
+  from: IsoDate,
+  to: IsoDate,
+): Map<IsoDate, Cents> {
+  const out = new Map<IsoDate, Cents>();
+  for (const a of accounts) {
+    if (!a.includeInNetWorth) continue;
+    const first = a.snapshots.reduce<Snapshot | null>(
+      (m, s) => (m === null || s.asOf < m.asOf ? s : m),
+      null,
+    );
+    if (!first || first.asOf <= from || first.asOf > to) continue;
+    out.set(first.asOf, (out.get(first.asOf) ?? 0) + first.balanceCents);
+  }
+  return out;
+}

@@ -12,8 +12,8 @@ import { Hono } from 'hono';
 import {
   incomeByPeriod,
   listAggregates,
-  listCategories,
-  listGroups,
+  listCategoriesWithArchived,
+  listGroupsWithArchived,
   spendingByDay,
   spendingByPeriod,
 } from '../db';
@@ -48,8 +48,10 @@ reports.get('/money-flow', async (c) => {
   const db = c.env.DB;
   const [aggregates, categories, groups] = await Promise.all([
     listAggregates(userId, db, from, month),
-    listCategories(userId, db),
-    listGroups(userId, db),
+    // Archived too: a category archived since still spent that money, and the cash-flow chart
+    // counts it. Only categories with amounts in the range reach the flow.
+    listCategoriesWithArchived(userId, db),
+    listGroupsWithArchived(userId, db),
   ]);
   const catById = new Map(categories.map((cat) => [cat.id, cat]));
   const groupById = new Map(groups.map((g) => [g.id, g]));

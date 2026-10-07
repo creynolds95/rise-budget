@@ -149,4 +149,11 @@ describe('likelySameAs', () => {
     expect(at(245_000, '2026-11-14')).toBeNull();
     expect(at(-245_000, '2026-11-01')).toBeNull();
   });
+
+  it('the same amount means within 5% of the hand-added one, not ~10%', () => {
+    const at = (cents: number) =>
+      likelySameAs({ expectedAmountCents: cents, nextExpectedDate: '2026-11-01' }, mortgage);
+    expect(at(257_250)).toBe('Mortgage'); // +5%
+    expect(at(267_050)).toBeNull(); // +9%
+  });
 });

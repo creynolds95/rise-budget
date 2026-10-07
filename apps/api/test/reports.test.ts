@@ -163,6 +163,42 @@ describe('money-flow (Sankey) report', () => {
     expect(r.json.links).toHaveLength(4);
   });
 
+  it('keeps an archived category’s (and group’s) money, so it totals what cash flow does', async () => {
+    const u = await signedInUser();
+    const api = (method: string, path: string, body?: unknown) =>
+      call(method, path, { access: u.access, body });
+    const old = (await api('POST', '/category-groups', { name: 'Old', kind: 'expense' })).json;
+    const income = (await api('POST', '/category-groups', { name: 'In', kind: 'income' })).json;
+    const gone = (await api('POST', '/categories', { groupId: old.id, name: 'Gym' })).json;
+    const pay = (await api('POST', '/categories', { groupId: income.id, name: 'Paycheck' })).json;
+    const card = (await api('POST', '/accounts', { name: 'Card', kind: 'credit' })).json;
+    const txn = (postedAt: string, amountCents: number, categoryId: string) =>
+      api('POST', '/transactions', {
+        accountId: card.id,
+        postedAt,
+        amountCents,
+        descriptor: 'X',
+        categoryId,
+      });
+    await txn('2026-08-02', -1_000, pay.id);
+    await txn('2026-08-03', 400, gone.id);
+    const now = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare('UPDATE category SET archived_at = ?2 WHERE id = ?1').bind(gone.id, now),
+      env.DB.prepare('UPDATE category_group SET archived_at = ?2 WHERE id = ?1').bind(old.id, now),
+    ]);
+
+    const r = await api('GET', '/reports/money-flow?month=2026-08');
+    expect(r.json.links).toContainEqual({
+      source: `group:${old.id}`,
+      target: `cat:${gone.id}`,
+      valueCents: 400,
+    });
+    expect(r.json.links).toContainEqual({ source: 'income', target: 'leftover', valueCents: 600 });
+    const cf = await api('GET', '/reports/cash-flow?month=2026-08');
+    expect(cf.json.months.at(-1)).toMatchObject({ expenseCents: 400, incomeCents: 1_000 });
+  });
+
   it('rejects a missing or malformed month', async () => {
     const u = await signedInUser();
     expect((await call('GET', '/reports/money-flow', { access: u.access })).status).toBe(400);

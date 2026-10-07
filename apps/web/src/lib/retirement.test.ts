@@ -40,6 +40,14 @@ describe('retirement view', () => {
     expect(v.gapMonthlyCents).toBeNull();
   });
 
+  it('an age with no years left shows no monthly gap instead of the whole target per month', () => {
+    const v = retirementView(plan, 1_000_000, 50_000, 30);
+    expect(v.neededCents).toBe(171_428_571);
+    expect(v.gapMonthlyCents).toBeNull();
+    // Already there with no years left: on track.
+    expect(retirementView(plan, 200_000_000, 0, 30).gapMonthlyCents).toBe(0);
+  });
+
   it('an age at or before today projects no growth', () => {
     const v = retirementView(plan, 1_000_000, 50_000, 28);
     expect(v.balanceCents).toBe(1_000_000);

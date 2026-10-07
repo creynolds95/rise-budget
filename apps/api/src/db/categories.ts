@@ -72,6 +72,24 @@ export async function listGroups(userId: UserId, db: D1Database): Promise<Catego
   return results.map(toGroup);
 }
 
+/**
+ * Every group, archived ones too: for reports over past months, where an archived group's
+ * money still happened and must still be counted (the cash-flow totals don't filter it).
+ */
+export async function listGroupsWithArchived(
+  userId: UserId,
+  db: D1Database,
+): Promise<CategoryGroup[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, name, kind, sort_order FROM category_group
+       WHERE user_id = ?1 ORDER BY sort_order, name`,
+    )
+    .bind(userId)
+    .all<GroupRow>();
+  return results.map(toGroup);
+}
+
 export async function getGroup(
   userId: UserId,
   db: D1Database,
@@ -208,6 +226,18 @@ export async function listCategories(userId: UserId, db: D1Database): Promise<Ca
     .prepare(
       'SELECT * FROM category WHERE user_id = ?1 AND archived_at IS NULL ORDER BY sort_order, name',
     )
+    .bind(userId)
+    .all<CategoryRow>();
+  return results.map(toCategory);
+}
+
+/** Every category, archived ones too: see `listGroupsWithArchived`. */
+export async function listCategoriesWithArchived(
+  userId: UserId,
+  db: D1Database,
+): Promise<Category[]> {
+  const { results } = await db
+    .prepare('SELECT * FROM category WHERE user_id = ?1 ORDER BY sort_order, name')
     .bind(userId)
     .all<CategoryRow>();
   return results.map(toCategory);

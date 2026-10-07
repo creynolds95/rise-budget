@@ -1,3 +1,4 @@
+import { allocateByWeights } from '../budget/money';
 import { dayNumber } from '../networth';
 
 /**
@@ -47,28 +48,21 @@ export function suggestRefundOriginals(
 
 /**
  * Spreads a refund over the purchase's splits in proportion to each split, so refunding a
- * $100 purchase split 60/40 returns $60/$40. Largest remainder keeps the sum exact; ties go
- * to the earlier split. Returns negative cents per split, summing to `refundCents`.
+ * $100 purchase split 60/40 returns $60/$40. Integer maths (`allocateByWeights`): largest
+ * remainder keeps the sum exact; ties go to the earlier split. A negative split (a discount
+ * line) takes no share: a refund gives money back, it doesn't charge a category. Returns
+ * negative cents per split, summing to `refundCents`.
  */
 export function allocateRefund(
   refundCents: number,
   originalSplits: readonly { categoryId: string; amountCents: number }[],
 ): { categoryId: string; amountCents: number }[] {
-  const total = originalSplits.reduce((s, x) => s + x.amountCents, 0);
-  const share = -refundCents; // positive cents to hand back
-  const exact = originalSplits.map((s) => (s.amountCents * share) / total);
-  const floors = exact.map(Math.floor);
-  let left = share - floors.reduce((s, x) => s + x, 0);
-  const order = exact
-    .map((e, i) => ({ i, r: e - Math.floor(e) }))
-    .sort((a, b) => b.r - a.r || a.i - b.i);
-  for (const { i } of order) {
-    if (left <= 0) break;
-    floors[i] = (floors[i] as number) + 1;
-    left -= 1;
-  }
+  const parts = allocateByWeights(
+    -refundCents, // positive cents to hand back
+    originalSplits.map((s) => Math.max(0, s.amountCents)),
+  );
   return originalSplits.map((s, i) => ({
     categoryId: s.categoryId,
-    amountCents: -(floors[i] as number),
+    amountCents: 0 - (parts[i] as number), // 0 − x, not −x: no negative zero
   }));
 }

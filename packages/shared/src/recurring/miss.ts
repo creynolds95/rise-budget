@@ -1,5 +1,6 @@
 import { dateFromDayNumber, dayNumber } from '../networth';
-import { BROKEN_AFTER_DAYS, INTERVAL_TOLERANCE_DAYS, steadyAmounts, type Cadence } from './detect';
+import { within5Pct } from './amount';
+import { BROKEN_AFTER_DAYS, INTERVAL_TOLERANCE_DAYS, type Cadence } from './detect';
 import type { AccountOccurrence } from './suggest';
 
 /**
@@ -102,7 +103,7 @@ export function continuesElsewhere(
       (o) =>
         Math.abs(dayNumber(o.date) - due) <= INTERVAL_TOLERANCE_DAYS &&
         Math.sign(o.amountCents) === Math.sign(s.expectedAmountCents) &&
-        steadyAmounts([o.amountCents, s.expectedAmountCents]),
+        within5Pct(o.amountCents, s.expectedAmountCents),
     );
     if (hit) return true;
   }
