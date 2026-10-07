@@ -1,37 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { amortize, levelPayment, paidSoFar } from './amortize';
 import { MAX_MONTHS } from './payoff';
-// The servicer's schedule from 11/2026: [principal, interest, ending balance] per payment, cents.
-import statement from './fixtures-mortgage-pdf.json';
+// A level-payment schedule: [principal, interest, ending balance] per payment, cents.
+import schedule from './fixtures-mortgage-schedule.json';
 
 const mortgage = {
-  balanceCents: 33_064_962,
-  aprMilliPct: 5875,
-  paymentCents: 196_811,
+  balanceCents: 25_000_000,
+  aprMilliPct: 6000,
+  paymentCents: 150_800,
   extraMonthlyCents: 0,
   lumps: [],
 };
 
 describe('amortization', () => {
-  it("matches the servicer's schedule to the cent, every one of 354 payments", () => {
+  it('matches the schedule to the cent, every one of 354 payments', () => {
     const a = amortize(mortgage);
     expect(a.rows).toHaveLength(354);
     expect(a.rows.map((r) => [r.principalCents, r.interestCents, r.balanceCents])).toEqual(
-      statement,
+      schedule,
     );
     expect(a.payoffMonth).toBe(354);
-    expect(a.totalInterestCents).toBe(36_605_669); // $366,056.69
+    expect(a.totalInterestCents).toBe(28_382_907); // $283,829.07
     const last = a.rows.at(-1);
-    expect(last?.principalToDateCents).toBe(33_064_962);
-    expect(last?.interestToDateCents).toBe(36_605_669);
+    expect(last?.principalToDateCents).toBe(25_000_000);
+    expect(last?.interestToDateCents).toBe(28_382_907);
   });
 
   it('extra every month finishes sooner and costs less interest', () => {
     const a = amortize({ ...mortgage, extraMonthlyCents: 20_000 });
     expect(a.payoffMonth).toBeLessThan(354);
-    expect(a.totalInterestCents).toBeLessThan(36_605_669);
+    expect(a.totalInterestCents).toBeLessThan(28_382_907);
     expect(a.rows[0]?.extraCents).toBe(20_000);
-    expect(a.rows[0]?.principalCents).toBe(34_930 + 20_000);
+    expect(a.rows[0]?.principalCents).toBe(25_800 + 20_000);
   });
 
   it('a one-time payment lands in its month only; two in one month add up', () => {
@@ -83,21 +83,21 @@ describe('amortization', () => {
     expect(a.rows).toHaveLength(MAX_MONTHS);
     expect(a.rows[0]?.interestCents).toBe(100_000);
     expect(a.rows[0]?.principalCents).toBe(0);
-    expect(a.rows[0]?.balanceCents).toBe(33_064_962 + 161_881 - 100_000);
+    expect(a.rows[0]?.balanceCents).toBe(25_000_000 + 125_000 - 100_000);
   });
 });
 
 describe('paid so far', () => {
-  it("walks back six payments to the statement's principal year to date", () => {
-    // The servicer shows $2,060.38 principal this year; its interest adds the closing's odd days.
-    expect(paidSoFar(33_064_962, 5875, 196_811, 6)).toEqual({
-      principalCents: 206_038,
-      interestCents: 6 * 196_811 - 206_038,
+  it("walks back six payments to the schedule's principal year to date", () => {
+    // Six payments in: principal paid so far, and the rest of the payments went to interest.
+    expect(paidSoFar(25_000_000, 6000, 150_800, 6)).toEqual({
+      principalCents: 152_127,
+      interestCents: 6 * 150_800 - 152_127,
     });
   });
 
   it('no payments, nothing paid', () => {
-    expect(paidSoFar(33_064_962, 5875, 196_811, 0)).toEqual({
+    expect(paidSoFar(25_000_000, 6000, 150_800, 0)).toEqual({
       principalCents: 0,
       interestCents: 0,
     });
@@ -112,13 +112,13 @@ describe('paid so far', () => {
 });
 
 describe('level payment', () => {
-  it("354 payments left on the statement's balance is the statement's payment", () => {
-    expect(levelPayment(33_064_962, 5875, 354)).toBe(196_811);
+  it("354 payments left on the schedule's balance is the schedule's payment", () => {
+    expect(levelPayment(25_000_000, 6000, 354)).toBe(150_800);
   });
 
   it('the payment it returns pays the loan off in that many months', () => {
-    const p = levelPayment(33_064_962, 5875, 360);
-    expect(p).toBe(195_592);
+    const p = levelPayment(25_000_000, 6000, 360);
+    expect(p).toBe(149_888);
     const a = amortize({ ...mortgage, paymentCents: p });
     expect(a.payoffMonth).toBe(360);
   });

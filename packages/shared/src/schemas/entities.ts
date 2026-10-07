@@ -60,7 +60,7 @@ export type RetirementPlan = z.infer<typeof RetirementPlan>;
 /** One account in the payoff plan. Manual and edited by hand; nothing here is guessed. */
 export const DebtLoanPlan = z.object({
   accountId: Id,
-  /** Annual rate in thousandths of a percent: 5.875% is 5875. */
+  /** Annual rate in thousandths of a percent: 6% is 6000. */
   aprMilliPct: z.int().min(0).max(100_000),
   paymentCents: Cents.min(0),
   /** Day of the month the payment is due (clamped to short months). */

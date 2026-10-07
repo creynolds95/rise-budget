@@ -98,7 +98,7 @@ describe('cashMovements', () => {
   it('keeps transfers out to a loan, outside savings, or an unlinked leg', () => {
     const moves = cashMovements(
       new Map([
-        ['THECB', [t('2026-09-14', 106_054, 'loan')]],
+        ['THECB', [t('2026-09-14', 85_000, 'loan')]],
         ['APPLE SAVINGS', [t('2026-09-15', 50_000, null)]],
         ['ACME PAYROLL', [o('2026-09-05', -310_000)]],
       ]),
@@ -145,7 +145,7 @@ describe('likelySameAs', () => {
   it('a different amount, day or direction is its own schedule', () => {
     const at = (cents: number, date: string) =>
       likelySameAs({ expectedAmountCents: cents, nextExpectedDate: date }, mortgage);
-    expect(at(106_054, '2026-11-01')).toBeNull();
+    expect(at(85_000, '2026-11-01')).toBeNull();
     expect(at(245_000, '2026-11-14')).toBeNull();
     expect(at(-245_000, '2026-11-01')).toBeNull();
   });

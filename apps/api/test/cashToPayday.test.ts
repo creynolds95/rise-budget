@@ -229,7 +229,7 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
       s.api('POST', '/cash-to-payday/manual-events', {
         label: 'Church payroll',
         kind: 'income',
-        amountCents: 230_840,
+        amountCents: 230_000,
         cadence: 'semimonthly',
         anchorDate: '2026-10-01',
         anchorDays: [15, 31],
@@ -341,7 +341,7 @@ describe('Surplus counts every non-card dollar leaving checking (owner, 2026-10-
         name: 'Summit Checking',
         reported: '2026-09-25',
         txns: months.flatMap((m, i) => [
-          [`l${i}`, `${m}-14`, 106_054, 'THECB LOAN PYMT'],
+          [`l${i}`, `${m}-14`, 85_000, 'THECB LOAN PYMT'],
           [`s${i}`, `${m}-15`, 25_000, 'SUMMIT FUNDS TRANSFER DB'],
           [`c${i}`, `${m}-10`, 80_000 + i * 13_117, 'CITI CARD PAYMENT'],
         ]) as [string, string, number, string][],
@@ -350,7 +350,7 @@ describe('Surplus counts every non-card dollar leaving checking (owner, 2026-10-
         id: 'loan',
         name: 'THECB Student Loan',
         reported: '2026-09-25',
-        txns: months.map((m, i) => [`L${i}`, `${m}-14`, -106_054, 'PAYMENT RECEIVED']) as [
+        txns: months.map((m, i) => [`L${i}`, `${m}-14`, -85_000, 'PAYMENT RECEIVED']) as [
           string,
           string,
           number,
@@ -439,7 +439,7 @@ describe('Surplus counts every non-card dollar leaving checking (owner, 2026-10-
   it('a tagged loan rule on a transfer advances when its debit posts', async () => {
     const s = await synced();
     await env.DB.batch([
-      upsertManualRuleStmt(s.userId, env.DB, 'THECB LOAN PYMT', 'monthly', 106_054, '2026-09-14'),
+      upsertManualRuleStmt(s.userId, env.DB, 'THECB LOAN PYMT', 'monthly', 85_000, '2026-09-14'),
     ]);
     await refreshRecurring(env.DB, s.userId, TODAY);
     const row = await env.DB.prepare(
@@ -460,14 +460,14 @@ describe('Surplus never drops a schedule whose date has passed', () => {
         env.DB,
         'MORTGAGE SERVICING',
         'monthly',
-        196_811,
+        150_800,
         '2026-10-01',
       ),
     ]);
     await s.api('POST', '/cash-to-payday/manual-events', {
       label: 'Church payroll',
       kind: 'income',
-      amountCents: 230_840,
+      amountCents: 230_000,
       cadence: 'monthly',
       anchorDate: '2026-09-15',
     });
@@ -480,10 +480,10 @@ describe('Surplus never drops a schedule whose date has passed', () => {
     const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-03', 200_000, 0);
     expect(p.points.slice(0, 3)).toEqual([
       { date: '2026-10-03', balanceCents: 200_000, label: 'Today' },
-      { date: '2026-10-03', balanceCents: 3_189, label: 'MORTGAGE SERVICING' },
-      { date: '2026-10-15', balanceCents: 234_029, label: 'Church payroll' },
+      { date: '2026-10-03', balanceCents: 49_200, label: 'MORTGAGE SERVICING' },
+      { date: '2026-10-15', balanceCents: 279_200, label: 'Church payroll' },
     ]);
-    expect(p.freeToMoveCents).toBe(3_189);
+    expect(p.freeToMoveCents).toBe(49_200);
     expect(p.schedules.find((r) => r.isHandAdded)?.nextExpectedDate).toBe('2026-10-15');
   });
 
@@ -492,7 +492,7 @@ describe('Surplus never drops a schedule whose date has passed', () => {
     await s.api('POST', '/cash-to-payday/manual-events', {
       label: 'Church payroll',
       kind: 'income',
-      amountCents: 230_840,
+      amountCents: 230_000,
       cadence: 'semimonthly',
       anchorDate: '2026-10-01',
       anchorDays: [15, 31],
@@ -526,7 +526,7 @@ describe('a paycheck that changes from a date on (owner, 2026-10-05)', () => {
       await s.api('POST', '/cash-to-payday/manual-events', {
         label: 'Payroll',
         kind: 'income',
-        amountCents: 207_000,
+        amountCents: 200_000,
         cadence: 'semimonthly',
         anchorDate: '2026-10-05',
         anchorDays: [5, 20],
@@ -535,12 +535,12 @@ describe('a paycheck that changes from a date on (owner, 2026-10-05)', () => {
     const put = await s.api('PUT', '/cash-to-payday/schedules', {
       id,
       kind: 'income',
-      amountCents: 207_000,
+      amountCents: 200_000,
       cadence: 'semimonthly',
       anchorDate: '2026-10-05',
       anchorDays: [5, 20],
       label: 'Payroll',
-      change: { amountCents: 170_025, on: '2026-11-05' },
+      change: { amountCents: 150_000, on: '2026-11-05' },
     });
     expect(put.status).toBe(200);
     // The route files the next date from the real clock; pin it so the test doesn't rot.
@@ -552,14 +552,14 @@ describe('a paycheck that changes from a date on (owner, 2026-10-05)', () => {
 
     const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-04', 0, 0);
     expect(p.points.slice(1).map((x) => [x.date, x.balanceCents])).toEqual([
-      ['2026-10-05', 207_000],
-      ['2026-10-20', 414_000],
-      ['2026-11-05', 584_025],
+      ['2026-10-05', 200_000],
+      ['2026-10-20', 400_000],
+      ['2026-11-05', 550_000],
     ]);
     expect(p.schedules[0]).toEqual(
       expect.objectContaining({
-        amountCents: 207_000,
-        change: { amountCents: 170_025, on: '2026-11-05' },
+        amountCents: 200_000,
+        change: { amountCents: 150_000, on: '2026-11-05' },
       }),
     );
 
@@ -570,14 +570,14 @@ describe('a paycheck that changes from a date on (owner, 2026-10-05)', () => {
     )
       .bind(s.userId)
       .first<{ a: number; on_: string | null }>();
-    expect(row).toEqual({ a: -207_000, on_: '2026-11-05' });
+    expect(row).toEqual({ a: -200_000, on_: '2026-11-05' });
     await refreshRecurring(env.DB, s.userId, '2026-10-21');
     row = await env.DB.prepare(
       'SELECT expected_amount_cents AS a, amount_changes_on AS on_ FROM recurring_series WHERE user_id = ?1',
     )
       .bind(s.userId)
       .first<{ a: number; on_: string | null }>();
-    expect(row).toEqual({ a: -170_025, on_: null });
+    expect(row).toEqual({ a: -150_000, on_: null });
   });
 
   it('saving without a change clears one', async () => {

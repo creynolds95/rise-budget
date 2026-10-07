@@ -291,7 +291,7 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
   const rule = (over: Partial<ManualRule> = {}): ManualRule => ({
     cadence: 'monthly',
     anchorDays: null,
-    expectedAmountCents: 106_054,
+    expectedAmountCents: 85_000,
     nextExpectedDate: '2026-10-01',
     ...over,
   });
@@ -311,7 +311,7 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
   });
 
   it('a confirming charge rolls the due date to the next month and stays active', () => {
-    const occ: Occurrence[] = [{ date: '2026-10-01', amountCents: 106_054, categoryId: null }];
+    const occ: Occurrence[] = [{ date: '2026-10-01', amountCents: 85_000, categoryId: null }];
     expect(advanceManualRule(rule(), occ, '2026-10-02')).toMatchObject({
       nextExpectedDate: '2026-11-01',
       status: 'active',
@@ -324,19 +324,19 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
   });
 
   it('a charge with the wrong sign does not confirm it', () => {
-    const occ: Occurrence[] = [{ date: '2026-10-01', amountCents: -106_054, categoryId: null }];
+    const occ: Occurrence[] = [{ date: '2026-10-01', amountCents: -85_000, categoryId: null }];
     expect(advanceManualRule(rule(), occ, '2026-10-04').status).toBe('broken');
   });
 
   it('a charge more than a week before a monthly due date is too early to confirm it', () => {
-    const occ: Occurrence[] = [{ date: '2026-09-20', amountCents: 106_054, categoryId: null }];
+    const occ: Occurrence[] = [{ date: '2026-09-20', amountCents: 85_000, categoryId: null }];
     expect(advanceManualRule(rule(), occ, '2026-10-04').status).toBe('broken');
   });
 
   it('rolls through more than one cycle when several charges confirm in order', () => {
     const occ: Occurrence[] = [
-      { date: '2026-10-01', amountCents: 106_054, categoryId: null },
-      { date: '2026-11-02', amountCents: 106_054, categoryId: null },
+      { date: '2026-10-01', amountCents: 85_000, categoryId: null },
+      { date: '2026-11-02', amountCents: 85_000, categoryId: null },
     ];
     // The late Nov 2 charge paid the Nov 1 due date; December stays on the 1st.
     expect(advanceManualRule(rule(), occ, '2026-11-03')).toMatchObject({
@@ -350,9 +350,9 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
     // (sorted first) has already rolled `next` forward to 11-01 — it must be skipped, not
     // treated as confirming yet another cycle.
     const occ: Occurrence[] = [
-      { date: '2026-10-01', amountCents: 106_054, categoryId: null },
-      { date: '2026-10-05', amountCents: 106_054, categoryId: null },
-      { date: '2026-11-01', amountCents: 106_054, categoryId: null },
+      { date: '2026-10-01', amountCents: 85_000, categoryId: null },
+      { date: '2026-10-05', amountCents: 85_000, categoryId: null },
+      { date: '2026-11-01', amountCents: 85_000, categoryId: null },
     ];
     expect(advanceManualRule(rule(), occ, '2026-11-02')).toMatchObject({
       nextExpectedDate: '2026-12-01',
@@ -376,7 +376,7 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
   });
 
   it('a bill paid up to a week early pays that month', () => {
-    const occ: Occurrence[] = [{ date: '2026-09-24', amountCents: 106_054, categoryId: null }];
+    const occ: Occurrence[] = [{ date: '2026-09-24', amountCents: 85_000, categoryId: null }];
     expect(advanceManualRule(rule(), occ, '2026-09-25')).toMatchObject({
       nextExpectedDate: '2026-11-01',
       status: 'active',
@@ -386,7 +386,7 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
   it('a weekly charge only matches up to 3 days early, never the week before', () => {
     const r = rule({ cadence: 'weekly', nextExpectedDate: '2026-10-08' });
     const at = (date: string) =>
-      advanceManualRule(r, [{ date, amountCents: 106_054, categoryId: null }], '2026-10-06')
+      advanceManualRule(r, [{ date, amountCents: 85_000, categoryId: null }], '2026-10-06')
         .nextExpectedDate;
     expect(at('2026-10-05')).toBe('2026-10-15');
     expect(at('2026-10-04')).toBe('2026-10-08');
@@ -394,7 +394,7 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
 
   it('a bill that posts late keeps its due day', () => {
     // Due Friday Oct 2, posted Monday Oct 5: November's is still due the 2nd, not the 5th.
-    const occ: Occurrence[] = [{ date: '2026-10-05', amountCents: 106_054, categoryId: null }];
+    const occ: Occurrence[] = [{ date: '2026-10-05', amountCents: 85_000, categoryId: null }];
     const r = rule({ nextExpectedDate: '2026-10-02' });
     expect(advanceManualRule(r, occ, '2026-10-06').nextExpectedDate).toBe('2026-11-02');
   });
@@ -419,7 +419,7 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
   });
 
   it('an early monthly charge keeps the scheduled day', () => {
-    const occ: Occurrence[] = [{ date: '2026-09-29', amountCents: 106_054, categoryId: null }];
+    const occ: Occurrence[] = [{ date: '2026-09-29', amountCents: 85_000, categoryId: null }];
     expect(advanceManualRule(rule(), occ, '2026-09-30').nextExpectedDate).toBe('2026-11-01');
   });
 

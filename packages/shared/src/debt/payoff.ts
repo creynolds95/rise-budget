@@ -10,7 +10,7 @@ export interface DebtLoan {
   id: string;
   /** What is owed, positive. */
   balanceCents: number;
-  /** Annual rate in thousandths of a percent: 5.875% is 5875. */
+  /** Annual rate in thousandths of a percent: 6% is 6000. */
   aprMilliPct: number;
   paymentCents: number;
 }

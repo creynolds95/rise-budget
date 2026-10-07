@@ -24,7 +24,7 @@ export const DEFAULT_DEBT_PLAN: DebtPlan = {
 /** Liability balances are stored negative; the plan works in what is owed. */
 export const owedCents = (balanceCents: number): number => Math.max(0, -balanceCents);
 
-/** 5.875 on screen, 5875 stored. */
+/** 6.125 on screen, 6125 stored. */
 export const aprToText = (milli: number): string => String(milli / 1000);
 export const aprFromText = (text: string): number | null => {
   const n = Number(text.replace('%', '').trim());

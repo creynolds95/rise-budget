@@ -120,7 +120,7 @@ describe('SimpleFIN adapter (SPEC §6.1, §6.3)', () => {
       kind: 'investment',
       includeInBudget: false,
     });
-    expect(g('403(b)', 'GuideStone Financial Resources', '57227.19')).toMatchObject({
+    expect(g('403(b)', 'GuideStone Financial Resources', '41234.56')).toMatchObject({
       kind: 'investment',
       includeInBudget: false,
     });

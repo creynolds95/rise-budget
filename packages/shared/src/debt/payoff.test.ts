@@ -5,13 +5,13 @@ const plain = { extraCents: 0, strategy: 'snowball', rollForward: true } as cons
 
 describe('monthly interest and balance step', () => {
   it('interest is balance × APR ÷ 12, rounded to the cent', () => {
-    expect(monthlyInterest(33_064_962, 5875)).toBe(161_881); // $330,649.62 at 5.875%
-    expect(monthlyInterest(0, 5875)).toBe(0);
+    expect(monthlyInterest(25_000_000, 6000)).toBe(125_000); // $250,000.00 at 6%
+    expect(monthlyInterest(0, 6000)).toBe(0);
   });
 
   it('one payment moves a balance by interest minus the payment, never below zero', () => {
-    // The mortgage statement: $331,000-ish balance, $1,968.11 principal + interest.
-    expect(stepBalance(33_064_962, 5875, 196_811)).toBe(33_064_962 + 161_881 - 196_811);
+    // A mortgage: $250,000 balance, $1,508.00 principal + interest.
+    expect(stepBalance(25_000_000, 6000, 150_800)).toBe(25_000_000 + 125_000 - 150_800);
     expect(stepBalance(10_000, 6000, 50_000)).toBe(0);
   });
 });

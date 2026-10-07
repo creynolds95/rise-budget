@@ -4,7 +4,7 @@ import { upcomingOccurrences } from './upcoming';
 
 const series = (over: Partial<DetectedSeries>): DetectedSeries => ({
   cadence: 'monthly',
-  expectedAmountCents: 196_811,
+  expectedAmountCents: 150_800,
   lastDate: '2026-09-01',
   nextExpectedDate: '2026-10-01',
   status: 'active',
