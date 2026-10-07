@@ -22,7 +22,9 @@ import {
   owedCents,
   payoffGap,
   planLoans,
+  scenarioView,
   type GroupView,
+  type Scenario,
 } from '../lib/debt';
 import { addMonths, monthName, periodOf } from '../lib/dates';
 import { formatCents } from '../lib/money';
@@ -56,6 +58,221 @@ function Segmented<T extends string>({
           {o.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+const targetValue = (t: Scenario['target']) => (typeof t === 'string' ? t : t.loanId);
+
+/** Side-by-side what-ifs. Local only: Apply copies extra and strategy into the plan, nothing else. */
+function WhatIf({
+  loans,
+  plan,
+  period,
+  onApply,
+}: {
+  loans: { plan: DebtLoanPlan; name: string; owedCents: number }[];
+  plan: DebtPlan;
+  period: string;
+  onApply: (patch: Partial<DebtPlan>) => void;
+}) {
+  const blank = (): Scenario => ({
+    extraCents: plan.extraCents,
+    lumpCents: 0,
+    lumpPeriod: period,
+    target: plan.strategy,
+    payOffIds: [],
+  });
+  const [list, setList] = useState<Scenario[]>(() => [blank()]);
+  const opts = {
+    extraCents: plan.extraCents,
+    strategy: plan.strategy,
+    rollForward: plan.rollForward,
+  };
+  const views = list.map((sc) => scenarioView(loans, opts, sc, period));
+  const patch = (i: number, p: Partial<Scenario>) =>
+    setList((l) => l.map((sc, j) => (j === i ? { ...sc, ...p } : sc)));
+  const open = loans.filter((l) => l.owedCents > 0);
+  return (
+    <div>
+      {list.length > 1 &&
+        views.map((v, i) => (
+          <StaticRow
+            key={i}
+            label={`Scenario ${i + 1}`}
+            value={
+              <span className="money">
+                {v.debtFreePeriod ? monthName(v.debtFreePeriod) : '—'}
+                {v.monthsSooner !== null && v.interestSavedCents !== null && (
+                  <span className="block type-caption text-ink-muted">
+                    {v.monthsSooner} mo sooner · saves{' '}
+                    {formatCents(v.interestSavedCents, { whole: true })}
+                  </span>
+                )}
+              </span>
+            }
+          />
+        ))}
+      {list.map((sc, i) => {
+        const v = views[i];
+        if (!v) return null;
+        const label = (t: string) => `${t} (scenario ${i + 1})`;
+        const changed =
+          sc.extraCents !== plan.extraCents ||
+          (typeof sc.target === 'string' && sc.target !== plan.strategy);
+        return (
+          <div key={i} className={list.length > 1 ? 'mt-4 border-t border-hairline pt-2' : ''}>
+            <EditRow
+              label="Extra per month"
+              field={
+                <MoneyField
+                  label={label('Extra per month')}
+                  cents={sc.extraCents}
+                  onCommit={(c) => patch(i, { extraCents: c })}
+                />
+              }
+            />
+            <EditRow
+              label="One-time payment"
+              field={
+                <MoneyField
+                  label={label('One-time payment')}
+                  cents={sc.lumpCents}
+                  onCommit={(c) => patch(i, { lumpCents: c })}
+                />
+              }
+            />
+            {sc.lumpCents > 0 && (
+              <>
+                <EditRow
+                  label="In"
+                  field={
+                    <input
+                      aria-label={label('Month')}
+                      type="month"
+                      min={period}
+                      value={sc.lumpPeriod}
+                      onChange={(e) =>
+                        /^\d{4}-\d{2}$/.test(e.target.value) &&
+                        patch(i, { lumpPeriod: e.target.value < period ? period : e.target.value })
+                      }
+                      className="min-h-11 rounded-input border border-hairline bg-surface px-3 outline-none focus:border-sage-600"
+                    />
+                  }
+                />
+                <EditRow
+                  label="Goes to"
+                  field={
+                    <select
+                      aria-label={label('Goes to')}
+                      value={targetValue(sc.target)}
+                      onChange={(e) => {
+                        const x = e.target.value;
+                        patch(i, {
+                          target: x === 'snowball' || x === 'avalanche' ? x : { loanId: x },
+                        });
+                      }}
+                      className="min-h-11 max-w-48 rounded-input border border-hairline bg-surface px-3 outline-none focus:border-sage-600"
+                    >
+                      <option value="snowball">Smallest</option>
+                      <option value="avalanche">Highest rate</option>
+                      {open.map((l) => (
+                        <option key={l.plan.accountId} value={l.plan.accountId}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  }
+                />
+              </>
+            )}
+            <div className="py-3">
+              <p className="mb-2 type-caption text-ink-muted">Pay off now</p>
+              <div className="flex flex-wrap gap-2">
+                {open.map((l) => {
+                  const on = sc.payOffIds.includes(l.plan.accountId);
+                  return (
+                    <button
+                      key={l.plan.accountId}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={on}
+                      onClick={() =>
+                        patch(i, {
+                          payOffIds: on
+                            ? sc.payOffIds.filter((id) => id !== l.plan.accountId)
+                            : [...sc.payOffIds, l.plan.accountId],
+                        })
+                      }
+                      className={`min-h-9 rounded-full border px-3 type-caption ${
+                        on ? 'border-gold bg-gold/15 text-ink' : 'border-hairline text-ink-muted'
+                      }`}
+                    >
+                      {l.name} · {formatCents(l.owedCents, { whole: true })}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <StaticRow
+              label="Debt-free"
+              value={
+                <span className="money">
+                  {v.debtFreePeriod ? monthName(v.debtFreePeriod) : '—'}
+                </span>
+              }
+            />
+            {v.monthsSooner !== null && v.interestSavedCents !== null && (
+              <>
+                <StaticRow
+                  label="Sooner by"
+                  value={`${v.monthsSooner} ${v.monthsSooner === 1 ? 'month' : 'months'}`}
+                />
+                <StaticRow
+                  label="Interest saved"
+                  value={<MoneyText cents={v.interestSavedCents} whole />}
+                />
+              </>
+            )}
+            {v.upfrontCents > 0 && (
+              <StaticRow label="Paid up front" value={<MoneyText cents={v.upfrontCents} whole />} />
+            )}
+            {v.payoffs.map((p) => (
+              <StaticRow
+                key={p.name}
+                label={p.name}
+                value={
+                  <span className="money">{p.payoffPeriod ? monthName(p.payoffPeriod) : '—'}</span>
+                }
+              />
+            ))}
+            <div className="flex gap-2 py-3">
+              {changed && (
+                <Button
+                  onClick={() =>
+                    onApply({
+                      extraCents: sc.extraCents,
+                      ...(typeof sc.target === 'string' ? { strategy: sc.target } : {}),
+                    })
+                  }
+                >
+                  Apply extra to plan
+                </Button>
+              )}
+              {list.length > 1 && (
+                <Button variant="quiet" onClick={() => setList((l) => l.filter((_, j) => j !== i))}>
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <div className="py-3">
+        <Button variant="quiet" onClick={() => setList((l) => [...l, blank()])}>
+          Add a scenario
+        </Button>
+      </div>
     </div>
   );
 }
@@ -595,7 +812,20 @@ export function Debt() {
         }
         related={[
           ...(hasStudent
-            ? [{ title: 'Student loans', children: <div>{student.rows.map(loanRow)}</div> }]
+            ? [
+                { title: 'Student loans', children: <div>{student.rows.map(loanRow)}</div> },
+                {
+                  title: 'What if',
+                  children: (
+                    <WhatIf
+                      loans={planLoans(plan, live, 'student')}
+                      plan={plan}
+                      period={period}
+                      onApply={edit}
+                    />
+                  ),
+                },
+              ]
             : []),
         ]}
       />

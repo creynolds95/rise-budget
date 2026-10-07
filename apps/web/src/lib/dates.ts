@@ -59,3 +59,12 @@ export function addMonths(period: string, n: number): string {
 export function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 }
+
+/** Whole months from period a to period b ("2026-10", "2027-01" → 3). */
+export function monthsBetween(a: string, b: string): number {
+  return (
+    (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 +
+    Number(b.slice(5, 7)) -
+    Number(a.slice(5, 7))
+  );
+}

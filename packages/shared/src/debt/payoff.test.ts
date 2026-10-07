@@ -137,3 +137,81 @@ describe('payoff simulation', () => {
     });
   });
 });
+
+describe('one-time lumps', () => {
+  const loans: DebtLoan[] = [
+    { id: 'big', balanceCents: 1_000_000, aprMilliPct: 3000, paymentCents: 20_000 },
+    { id: 'small', balanceCents: 100_000, aprMilliPct: 5000, paymentCents: 5_000 },
+  ];
+  const base = simulatePayoff(loans, plain);
+
+  it('paying a loan off now finishes it at month 0 and its payment moves on', () => {
+    const r = simulatePayoff(loans, {
+      ...plain,
+      lumps: [{ month: 0, cents: 100_000, ids: ['small'] }],
+    });
+    expect(r.loans[1]).toEqual({ id: 'small', payoffMonth: 0, interestCents: 0 });
+    expect(r.totalOwedByMonth[0]).toBe(1_000_000);
+    expect(r.debtFreeMonth).toBeLessThan(base.debtFreeMonth ?? 0);
+    expect(r.totalInterestCents).toBeLessThan(base.totalInterestCents);
+  });
+
+  it('without rollover the freed payment drops out', () => {
+    const roll = simulatePayoff(loans, {
+      ...plain,
+      lumps: [{ month: 0, cents: 100_000, ids: ['small'] }],
+    });
+    const drop = simulatePayoff(loans, {
+      ...plain,
+      rollForward: false,
+      lumps: [{ month: 0, cents: 100_000, ids: ['small'] }],
+    });
+    expect(drop.debtFreeMonth).toBeGreaterThan(roll.debtFreeMonth ?? 0);
+  });
+
+  it('a later lump lands after the month payments', () => {
+    const r = simulatePayoff(loans, {
+      ...plain,
+      lumps: [{ month: 3, cents: 50_000, ids: ['big'] }],
+    });
+    const noLump = simulatePayoff(loans, plain);
+    expect(r.totalOwedByMonth[2]).toBe(noLump.totalOwedByMonth[2]);
+    expect(r.totalOwedByMonth[3]).toBe((noLump.totalOwedByMonth[3] ?? 0) - 50_000);
+  });
+
+  it('what a named loan cannot take spills to the rest by strategy', () => {
+    const r = simulatePayoff(loans, {
+      ...plain,
+      lumps: [{ month: 0, cents: 150_000, ids: ['small'] }],
+    });
+    expect(r.loans[1]?.payoffMonth).toBe(0);
+    expect(r.totalOwedByMonth[0]).toBe(950_000);
+  });
+
+  it('with no named loan the lump goes by the plan strategy, or its own', () => {
+    const smallest = simulatePayoff(loans, { ...plain, lumps: [{ month: 0, cents: 100_000 }] });
+    expect(smallest.loans[1]?.payoffMonth).toBe(0);
+    const highest = simulatePayoff(loans, {
+      ...plain,
+      strategy: 'avalanche',
+      lumps: [{ month: 0, cents: 100_000 }],
+    });
+    expect(highest.loans[1]?.payoffMonth).toBe(0);
+    const own = simulatePayoff(loans, {
+      ...plain,
+      lumps: [{ month: 0, cents: 100_000, strategy: 'avalanche' }],
+    });
+    expect(own.totalOwedByMonth[0]).toBe(1_000_000);
+  });
+
+  it('naming an unknown or finished loan is ignored', () => {
+    const r = simulatePayoff(loans, {
+      ...plain,
+      lumps: [
+        { month: 0, cents: 100_000, ids: ['small'] },
+        { month: 0, cents: 10_000, ids: ['small', 'nope'] },
+      ],
+    });
+    expect(r.totalOwedByMonth[0]).toBe(990_000);
+  });
+});

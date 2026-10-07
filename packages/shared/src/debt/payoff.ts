@@ -15,10 +15,23 @@ export interface DebtLoan {
   paymentCents: number;
 }
 
+/**
+ * One-time extra principal. Month 0 is today, before any payment; month n lands after that
+ * month's payments. It goes to `ids` first, in order, then whatever is left to the rest by
+ * strategy (the lump's own, else the plan's).
+ */
+export interface Lump {
+  month: number;
+  cents: number;
+  ids?: string[];
+  strategy?: Strategy;
+}
+
 export interface PayoffOptions {
   extraCents: number;
   strategy: Strategy;
   rollForward: boolean;
+  lumps?: Lump[];
 }
 
 export interface LoanPayoff {
@@ -57,6 +70,14 @@ interface State {
   interest: number;
 }
 
+const targetOrder = (open: State[], strategy: Strategy): State[] =>
+  [...open].sort((a, b) => {
+    const byBalance = a.owed - b.owed;
+    const first =
+      strategy === 'snowball' ? byBalance : b.loan.aprMilliPct - a.loan.aprMilliPct || byBalance;
+    return first || a.loan.id.localeCompare(b.loan.id);
+  });
+
 export function simulatePayoff(loans: DebtLoan[], opts: PayoffOptions): PayoffResult {
   const states: State[] = loans.map((loan) => ({
     loan,
@@ -68,6 +89,27 @@ export function simulatePayoff(loans: DebtLoan[], opts: PayoffOptions): PayoffRe
     states.filter((s) => s.owed > 0).reduce((n, s) => n + s.loan.paymentCents, 0) + opts.extraCents;
   const totalOwed = () => states.reduce((n, s) => n + s.owed, 0);
   const totalOwedByMonth = [totalOwed()];
+
+  const applyLumps = (at: number) => {
+    for (const lump of opts.lumps ?? []) {
+      if (lump.month !== at) continue;
+      const open = states.filter((s) => s.owed > 0);
+      const named = (lump.ids ?? []).flatMap((id) => open.filter((s) => s.loan.id === id));
+      const rest = targetOrder(
+        open.filter((s) => !named.includes(s)),
+        lump.strategy ?? opts.strategy,
+      );
+      let left = lump.cents;
+      for (const s of [...named, ...rest]) {
+        const paid = Math.min(left, s.owed);
+        s.owed -= paid;
+        left -= paid;
+        if (s.owed === 0) s.payoffMonth = at;
+      }
+    }
+  };
+  applyLumps(0);
+  totalOwedByMonth[0] = totalOwed();
 
   let month = 0;
   while (totalOwed() > 0 && month < MAX_MONTHS) {
@@ -86,22 +128,17 @@ export function simulatePayoff(loans: DebtLoan[], opts: PayoffOptions): PayoffRe
       s.owed -= paid;
       spare -= paid;
     }
-    const order = active
-      .filter((s) => s.owed > 0)
-      .sort((a, b) => {
-        const byBalance = a.owed - b.owed;
-        const first =
-          opts.strategy === 'snowball'
-            ? byBalance
-            : b.loan.aprMilliPct - a.loan.aprMilliPct || byBalance;
-        return first || a.loan.id.localeCompare(b.loan.id);
-      });
+    const order = targetOrder(
+      active.filter((s) => s.owed > 0),
+      opts.strategy,
+    );
     for (const s of order) {
       const paid = Math.min(Math.max(spare, 0), s.owed);
       s.owed -= paid;
       spare -= paid;
     }
     for (const s of active) if (s.owed === 0) s.payoffMonth = month;
+    applyLumps(month);
     totalOwedByMonth.push(totalOwed());
   }
 

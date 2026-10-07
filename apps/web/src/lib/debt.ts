@@ -3,10 +3,11 @@ import {
   monthlyInterest,
   simulatePayoff,
   stepBalance,
+  type Lump,
   type Strategy,
 } from '@rise/shared/debt';
 import type { Account, DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
-import { addMonths } from './dates';
+import { addMonths, monthsBetween } from './dates';
 
 export const DEFAULT_DEBT_PLAN: DebtPlan = {
   loans: [],
@@ -152,3 +153,71 @@ export const payoffGap = (
   r: Pick<LoanRow, 'done' | 'payoffPeriod' | 'plan'>,
 ): 'no-payment' | 'too-low' | null =>
   r.done || r.payoffPeriod !== null ? null : r.plan.paymentCents === 0 ? 'no-payment' : 'too-low';
+
+/** One what-if. Nothing here is saved; only extra and strategy can be applied to the plan. */
+export interface Scenario {
+  extraCents: number;
+  lumpCents: number;
+  /** Month the lump goes in, "2026-11". */
+  lumpPeriod: string;
+  /** Where the lump goes: by rule, or one loan first. */
+  target: Strategy | { loanId: string };
+  /** Loans paid off in full today. */
+  payOffIds: string[];
+}
+
+export interface ScenarioView {
+  debtFreePeriod: string | null;
+  interestCents: number;
+  /** Against the plan as it stands; null when either side never finishes. */
+  monthsSooner: number | null;
+  interestSavedCents: number | null;
+  /** Cash out the door: the lump plus any payoffs. */
+  upfrontCents: number;
+  payoffs: { name: string; payoffPeriod: string | null }[];
+}
+
+export function scenarioView(
+  loans: { plan: DebtLoanPlan; name: string; owedCents: number }[],
+  opts: { extraCents: number; strategy: Strategy; rollForward: boolean },
+  s: Scenario,
+  period: string,
+): ScenarioView {
+  const debtLoans = loans.map((l) => ({
+    id: l.plan.accountId,
+    balanceCents: l.owedCents,
+    aprMilliPct: l.plan.aprMilliPct,
+    paymentCents: l.plan.paymentCents,
+  }));
+  const base = simulatePayoff(debtLoans, opts);
+  const payOffs = loans.filter((l) => s.payOffIds.includes(l.plan.accountId));
+  const payOffCents = payOffs.reduce((n, l) => n + l.owedCents, 0);
+  const lumps: Lump[] = [
+    ...payOffs.map((l) => ({ month: 0, cents: l.owedCents, ids: [l.plan.accountId] })),
+    ...(s.lumpCents > 0
+      ? [
+          {
+            month: Math.max(0, monthsBetween(period, s.lumpPeriod)),
+            cents: s.lumpCents,
+            ...(typeof s.target === 'string' ? { strategy: s.target } : { ids: [s.target.loanId] }),
+          },
+        ]
+      : []),
+  ];
+  const r = simulatePayoff(debtLoans, { ...opts, extraCents: s.extraCents, lumps });
+  const sooner =
+    base.debtFreeMonth !== null && r.debtFreeMonth !== null
+      ? base.debtFreeMonth - r.debtFreeMonth
+      : null;
+  return {
+    debtFreePeriod: r.debtFreeMonth === null ? null : addMonths(period, r.debtFreeMonth),
+    interestCents: r.totalInterestCents,
+    monthsSooner: sooner,
+    interestSavedCents: sooner === null ? null : base.totalInterestCents - r.totalInterestCents,
+    upfrontCents: s.lumpCents + payOffCents,
+    payoffs: loans.map((l, i) => {
+      const m = r.loans[i]?.payoffMonth ?? null;
+      return { name: l.name, payoffPeriod: m === null ? null : addMonths(period, m) };
+    }),
+  };
+}
