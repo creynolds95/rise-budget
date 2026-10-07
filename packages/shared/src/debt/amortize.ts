@@ -3,10 +3,12 @@
  * the scheduled payment covers it and the rest is principal, then any extra goes straight to
  * principal. The last payment is whatever is left.
  */
-import { MAX_MONTHS } from './payoff';
+import { MAX_MONTHS, monthlyInterest, SUB } from './payoff';
 
-/** Balances run in hundredths of a cent, as servicers do; everything reported is whole cents. */
-const SUB = 100;
+/**
+ * Balances run in hundredths of a cent (`SUB`), as servicers do, and as `simulatePayoff`
+ * does; everything reported is whole cents.
+ */
 const toCents = (sub: number): number => Math.round(sub / SUB);
 
 export interface AmortizeInput {
@@ -50,7 +52,7 @@ export function amortize(input: AmortizeInput): Amortization {
   let month = 0;
   while (owed > 0 && month < MAX_MONTHS) {
     month++;
-    const accrued = Math.round((owed * input.aprMilliPct) / 1_200_000);
+    const accrued = monthlyInterest(owed, input.aprMilliPct);
     // A payment under the interest leaves the gap owed, like the bank would.
     const unpaid = Math.max(accrued - payment, 0);
     const interest = accrued - unpaid;

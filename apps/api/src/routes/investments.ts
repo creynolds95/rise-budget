@@ -1,4 +1,4 @@
-import { dayNumber, netWorthSeries } from '@rise/shared/networth';
+import { dayNumber, joinedCents, netWorthSeries } from '@rise/shared/networth';
 import { IsoDate } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -13,7 +13,8 @@ const Query = z.object({ from: IsoDate, to: IsoDate });
 
 /**
  * Investment-account balances over time next to the S&P 500. SimpleFIN reports balances only,
- * so growth here is balance-based: a deposit counts as growth.
+ * so growth here is balance-based: a deposit counts as growth. An account being added does not:
+ * each point says how much joined that day (`joinedCents`) so the line can step over it.
  */
 investments.get('/', async (c) => {
   const q = Query.safeParse(c.req.query());
@@ -34,22 +35,23 @@ investments.get('/', async (c) => {
     (m, s) => (m === null || s.as_of < m ? s.as_of : m),
     null,
   );
-  const series = netWorthSeries(
-    accts.map((a) => ({
-      accountId: a.id,
-      includeInNetWorth: true,
-      snapshots: mine
-        .filter((s) => s.account_id === a.id)
-        .map((s) => ({ asOf: s.as_of, balanceCents: s.balance_cents })),
-    })),
-    from,
-    to,
-  );
-  const points = (first ? series.filter((p) => p.date >= first) : []).map((p) => ({
-    date: p.date,
-    balanceCents: p.netWorthCents,
-    inferred: p.inferred,
+  const series = accts.map((a) => ({
+    accountId: a.id,
+    includeInNetWorth: true,
+    snapshots: mine
+      .filter((s) => s.account_id === a.id)
+      .map((s) => ({ asOf: s.as_of, balanceCents: s.balance_cents })),
   }));
+  // An account's first balance is not growth: the client chain-links over it.
+  const joined = joinedCents(series, from, to);
+  const points = (first ? netWorthSeries(series, from, to).filter((p) => p.date >= first) : []).map(
+    (p) => ({
+      date: p.date,
+      balanceCents: p.netWorthCents,
+      joinedCents: joined.get(p.date) ?? 0,
+      inferred: p.inferred,
+    }),
+  );
   const sp500 = points.length > 0 ? await fetchSp500(from, to) : null;
   return c.json({
     from,

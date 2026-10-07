@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
 import { LockGate } from './components/LockGate';
 import { OfflineBar } from './components/OfflineBar';
@@ -8,11 +9,7 @@ import { useLinkTransitions } from './lib/gestures';
 import { AccountDetail } from './routes/AccountDetail';
 import { Accounts } from './routes/Accounts';
 import { Budget } from './routes/Budget';
-import { Debt } from './routes/Debt';
-import { Mortgage } from './routes/Mortgage';
-import { Savings } from './routes/Savings';
 import { FinancialHealth } from './routes/FinancialHealth';
-import { Retirement } from './routes/Retirement';
 import { CashToPayday } from './routes/CashToPayday';
 import { CategoryDetail } from './routes/CategoryDetail';
 import { Dashboard } from './routes/Dashboard';
@@ -22,6 +19,30 @@ import { Review } from './routes/Review';
 import { Settings, SettingsSection } from './routes/Settings';
 import { TransactionDetail } from './routes/TransactionDetail';
 import { Transactions } from './routes/Transactions';
+
+// The planning pages are rarely opened, so they load on first visit; the service worker
+// precaches their chunks with the rest of the shell, so they still open offline.
+const Retirement = lazy(() =>
+  import('./routes/Retirement').then((m) => ({ default: m.Retirement })),
+);
+const Debt = lazy(() => import('./routes/Debt').then((m) => ({ default: m.Debt })));
+const Mortgage = lazy(() => import('./routes/Mortgage').then((m) => ({ default: m.Mortgage })));
+const Savings = lazy(() => import('./routes/Savings').then((m) => ({ default: m.Savings })));
+
+/** Stand-in while a split-off page's code loads. */
+export function PageFallback() {
+  return (
+    <div className="gutter mx-auto max-w-2xl pt-6">
+      <Skeleton className="h-8 w-40" />
+      <Skeleton className="mt-6 h-24 w-full" />
+      <Skeleton className="mt-4 h-40 w-full" />
+    </div>
+  );
+}
+
+const Later = ({ children }: { children: ReactNode }) => (
+  <Suspense fallback={<PageFallback />}>{children}</Suspense>
+);
 
 export function App() {
   const { status } = useAuth();
@@ -59,10 +80,38 @@ export function App() {
           <Route path="budget/:categoryId" element={<CategoryDetail />} />
           <Route path="cash-to-payday" element={<CashToPayday />} />
           <Route path="financial-health" element={<FinancialHealth />} />
-          <Route path="financial-health/retirement" element={<Retirement />} />
-          <Route path="financial-health/debt" element={<Debt />} />
-          <Route path="financial-health/mortgage" element={<Mortgage />} />
-          <Route path="financial-health/savings" element={<Savings />} />
+          <Route
+            path="financial-health/retirement"
+            element={
+              <Later>
+                <Retirement />
+              </Later>
+            }
+          />
+          <Route
+            path="financial-health/debt"
+            element={
+              <Later>
+                <Debt />
+              </Later>
+            }
+          />
+          <Route
+            path="financial-health/mortgage"
+            element={
+              <Later>
+                <Mortgage />
+              </Later>
+            }
+          />
+          <Route
+            path="financial-health/savings"
+            element={
+              <Later>
+                <Savings />
+              </Later>
+            }
+          />
           <Route path="reports" element={<Navigate to="/settings/reports" replace />} />
           <Route path="settings/:section" element={<SettingsSection />} />
         </Route>

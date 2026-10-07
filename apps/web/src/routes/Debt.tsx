@@ -1,3 +1,4 @@
+import { Loading, PlanUnknown, useSettingsState } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { monthlyInterest } from '@rise/shared/debt';
@@ -16,6 +17,7 @@ import { ApiError, api } from '../lib/api';
 import {
   DEFAULT_DEBT_PLAN,
   aprFromText,
+  chartPoints,
   aprToText,
   dueSuggestions,
   groupView,
@@ -458,27 +460,9 @@ const gapNote = (r: GroupView['rows'][number]) =>
     </span>
   ) : null;
 
-/** Up to ~48 evenly spaced points, always ending at the last month. */
-export function chartPoints(view: GroupView, period: string) {
-  const total = view.rows.length;
-  const owed = view.totalOwedByMonth;
-  const step = Math.max(1, Math.ceil((owed.length - 1) / 48));
-  const idx = Array.from({ length: Math.ceil((owed.length - 1) / step) + 1 }, (_, i) =>
-    Math.min(i * step, owed.length - 1),
-  );
-  return idx.map((i) => ({
-    cents: owed[i] ?? 0,
-    inferred: false,
-    label: `${monthName(addMonths(period, i))} · ${
-      view.rows.filter(
-        (r) => r.done || (r.payoffPeriod !== null && r.payoffPeriod <= addMonths(period, i)),
-      ).length
-    } of ${total} paid off`,
-  }));
-}
-
 export function Debt() {
   const me = useMe().data;
+  const settings = useSettingsState();
   const accounts = useAccounts().data;
   const today = useToday();
   const qc = useQueryClient();
@@ -517,7 +501,16 @@ export function Debt() {
     title: 'Debt',
   };
   if (!me || !accounts) {
-    return <DetailPage header={baseHeader} shape={<Skeleton className="h-64 w-full" />} />;
+    return (
+      <DetailPage
+        header={baseHeader}
+        shape={
+          <Loading>
+            <Skeleton className="h-64 w-full" />
+          </Loading>
+        }
+      />
+    );
   }
 
   const current = plan ?? DEFAULT_DEBT_PLAN;
@@ -619,12 +612,20 @@ export function Debt() {
     </>
   );
 
+  if ((!plan || plan.loans.length === 0) && settings !== 'current') {
+    return <PlanUnknown header={baseHeader} label="Debt" state={settings} />;
+  }
   if (!plan || plan.loans.length === 0 || !student) {
     return (
       <>
         <DetailPage
           header={header}
           identity={{ label: 'Debt', hero: <span className="text-ink-muted">Not set up</span> }}
+          manage={
+            <div className="py-3">
+              <Button onClick={openAdd}>Add a loan</Button>
+            </div>
+          }
         />
         {sheets}
       </>

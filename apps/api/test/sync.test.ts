@@ -2,7 +2,14 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { scheduled } from '../src/index';
 import { centsToDecimal, mockSimpleFin } from '../src/sync/mock';
-import { describeSource, runSync, windowStart } from '../src/sync/run';
+import {
+  cronOverlapDays,
+  DEEP_OVERLAP_DAYS,
+  describeSource,
+  OVERLAP_DAYS,
+  runSync,
+  windowStart,
+} from '../src/sync/run';
 import { httpSimpleFin, sourceFromEnv, type SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
 
@@ -517,6 +524,52 @@ describe('T27 SimpleFIN sync', () => {
       windowStart([a('2026-08-03T12:00:00Z', '2026-07-01T00:00:00Z', '2026-09-01')], '2026-10-24'),
     ).toBe('2026-10-01');
     expect(windowStart([], '2026-09-24', '2026-07-01')).toBe('2026-07-01');
+    // The weekly deep re-read reaches five weeks back, still floored at the first-seen month.
+    expect(windowStart([a('2026-10-20T12:00:00Z')], '2026-10-24', undefined, 35)).toBe(
+      '2026-09-15',
+    );
+    expect(
+      windowStart([a('2026-10-20T12:00:00Z', '2026-10-02T00:00:00Z')], '2026-10-24', undefined, 35),
+    ).toBe('2026-10-01');
+  });
+
+  it('the cron re-reads five weeks once a week: Sunday’s first run', () => {
+    expect(cronOverlapDays(at('2026-10-04T08:00:00Z'))).toBe(DEEP_OVERLAP_DAYS); // Sunday
+    expect(cronOverlapDays(at('2026-10-04T14:00:00Z'))).toBe(OVERLAP_DAYS);
+    expect(cronOverlapDays(at('2026-10-05T08:00:00Z'))).toBe(OVERLAP_DAYS); // Monday
+  });
+
+  it('a row the bank backfills weeks late arrives on the deep re-read, once', async () => {
+    const s = await setup();
+    const rows: FakeTxn[] = [{ id: 'r1', date: '2026-09-28', cents: 4_200, desc: 'KROGER #512' }];
+    // Like the real bridge: only rows posted on or after the start date asked for.
+    const bank: SimpleFinSource = {
+      mode: 'mock',
+      fetchAccounts: async (startSec) => {
+        const all = (await fake([{ id: 'chk', name: 'Checking', txns: rows }]).fetchAccounts(
+          startSec,
+        )) as { accounts: { transactions: { posted: number }[] }[] };
+        for (const a of all.accounts)
+          a.transactions = a.transactions.filter((t) => t.posted >= startSec);
+        return all;
+      },
+    };
+    await runSync(env.DB, s.userId, bank, { now: at('2026-09-30T20:00:00Z'), since: '2026-09-01' });
+    await env.DB.prepare(
+      `UPDATE account SET created_at = '2026-07-01T00:00:00.000Z',
+         last_synced_at = '2026-09-30T20:00:00.000Z' WHERE user_id = ?1`,
+    )
+      .bind(s.userId)
+      .run();
+    rows.push({ id: 'late', date: '2026-09-10', cents: 1_500, desc: 'SHELL OIL 5741' });
+    const now = at('2026-10-02T20:00:00Z');
+    expect((await runSync(env.DB, s.userId, bank, { now })).rowsInserted).toBe(0);
+    const deep = await runSync(env.DB, s.userId, bank, { now, overlapDays: DEEP_OVERLAP_DAYS });
+    expect(deep.rowsInserted).toBe(1);
+    expect((await s.txns()).map((t) => t.source_id)).toEqual(['late', 'r1']);
+    expect(
+      (await runSync(env.DB, s.userId, bank, { now, overlapDays: DEEP_OVERLAP_DAYS })).rowsInserted,
+    ).toBe(0);
   });
 });
 
@@ -562,7 +615,9 @@ describe('T29 transfers', () => {
       review_state: 'needs_review',
     });
     expect(bySource.k1).toMatchObject({ is_transfer: 1, transfer_pair_id: bySource.c1?.id });
-    // Checking → savings is medium confidence: not auto-linked.
+    // Checking → savings, same day, is not auto-linked: an unmatched deposit into a cash account
+    // is filed under the income catch-all (C2), and only rows still on the expense catch-all
+    // (or their own guess) are transfer candidates. The owner files these moves by hand.
     expect(bySource.c2?.is_transfer).toBe(0);
 
     // Even if both legs get a category, only the purchase counts.

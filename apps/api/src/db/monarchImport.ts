@@ -15,7 +15,9 @@ import {
   ensureTransferCategory,
   listCategories,
   listGroups,
+  revertTransferLegStmts,
 } from './categories';
+import type { TxnRow } from './transactions';
 import { AppError } from '../lib/errors';
 import { newId, nowIso, type UserId } from './util';
 
@@ -121,8 +123,10 @@ export async function monarchSetup(
  * date match alone misses it). `?1` must be the user id.
  */
 function coveredByFeed(accountSql: string, dateSql: string): string {
+  // INDEXED BY: through any other index this is a range scan per row (migration 0024). A
+  // planner that drifted back to one would quietly read millions of rows; this fails instead.
   return `EXISTS (
-    SELECT 1 FROM txn f WHERE f.user_id = ?1 AND f.account_id = ${accountSql}
+    SELECT 1 FROM txn f INDEXED BY ix_txn_feed WHERE f.user_id = ?1 AND f.account_id = ${accountSql}
       AND f.source = 'simplefin' AND f.review_state != 'dropped' AND f.posted_at <= ${dateSql})`;
 }
 
@@ -149,9 +153,10 @@ async function presentSourceIds(
 ): Promise<Set<string>> {
   const { results } = await db
     .prepare(
-      `SELECT source_id FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */
-         AND (?3 IS NULL OR import_batch_id = ?3)
-         AND source_id IN (SELECT value FROM json_each(?2))`,
+      `SELECT t.source_id FROM json_each(?2) j
+         CROSS JOIN txn t INDEXED BY ix_txn_csv_source ON t.user_id = ?1 AND t.source = 'csv'
+           AND t.source_id = j.value
+         WHERE (?3 IS NULL OR t.import_batch_id = ?3)`,
     )
     .bind(userId, JSON.stringify(sourceIds), batchId ?? null)
     .all<{ source_id: string }>();
@@ -320,7 +325,14 @@ export async function undoMonarchBatch(
       .bind(userId, batchId)
       .first<{ n: number }>(),
   ]);
+  const unlink = await unlinkSurvivingLegsStmts(
+    userId,
+    db,
+    `SELECT id FROM txn WHERE user_id = ?1 AND source = 'csv' /* scan-ok: one-off Monarch import */ AND import_batch_id = ?2`,
+    [batchId],
+  );
   await db.batch([
+    ...unlink,
     db
       .prepare(
         `DELETE FROM split WHERE user_id = ?1 AND txn_id IN
@@ -354,6 +366,45 @@ function duplicatesLive(liveSql: string): string {
       AND o.posted_at = t.posted_at AND o.amount_cents = t.amount_cents))`;
 }
 
+/**
+ * Imported rows about to be removed may be one leg of a transfer whose other leg stays (linked
+ * by hand, or by sync, to a bank-feed row). The kept leg points at the removed one, and the
+ * foreign key would refuse the delete: it is unlinked first, in the same batch, back in the
+ * review queue to be filed, and — if still on the default Transfer category — on the catch-all
+ * an ordinary row of its direction gets (`fallbackCategoryFor`).
+ */
+async function unlinkSurvivingLegsStmts(
+  userId: UserId,
+  db: D1Database,
+  pickedSql: string,
+  binds: unknown[],
+): Promise<D1PreparedStatement[]> {
+  const { results: legs } = await db
+    .prepare(
+      `SELECT * FROM txn WHERE user_id = ?1 AND transfer_pair_id IS NOT NULL
+         AND transfer_pair_id IN (${pickedSql}) AND id NOT IN (${pickedSql})`,
+    )
+    .bind(userId, ...binds)
+    .all<TxnRow>();
+  if (legs.length === 0) return [];
+  const transferCat = await ensureTransferCategory(userId, db);
+  const now = nowIso();
+  const stmts: D1PreparedStatement[] = [];
+  for (const leg of legs) {
+    stmts.push(
+      ...(await revertTransferLegStmts(userId, db, leg, transferCat.id)),
+      db
+        .prepare(
+          `UPDATE txn SET is_transfer = 0, transfer_pair_id = NULL, updated_at = ?3,
+             review_state = CASE WHEN review_state = 'dropped' THEN 'dropped' ELSE 'needs_review' END
+           WHERE user_id = ?1 AND id = ?2`,
+        )
+        .bind(userId, leg.id, now),
+    );
+  }
+  return stmts;
+}
+
 /** Remove imported transactions picked by `where` (over `txn t`), keeping the spending cache right. */
 async function dropImported(
   userId: UserId,
@@ -370,6 +421,7 @@ async function dropImported(
     .bind(userId, ...binds)
     .all<{ id: string }>();
   return [
+    ...(await unlinkSurvivingLegsStmts(userId, db, picked, binds)),
     db
       .prepare(`DELETE FROM split WHERE user_id = ?1 AND txn_id IN (${picked})`)
       .bind(userId, ...binds),

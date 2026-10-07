@@ -1,4 +1,4 @@
-import { periodOf, validateSplits } from '@rise/shared/budget';
+import { validateSplits } from '@rise/shared/budget';
 import { allocateRefund, normalizeMerchant, refundFits } from '@rise/shared/categorize';
 import { nextScheduled } from '@rise/shared/recurring';
 import {
@@ -14,13 +14,12 @@ import {
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
-  bumpMemoryStmt,
+  acceptSuggestions,
   categoryIdsExist,
   deleteManualRuleStmt,
   deleteTransaction,
   ensureCatchallCategory,
   ensureTransferCategory,
-  flagClosedPeriodStmt,
   getAccount,
   getTransaction,
   getTransactionRow,
@@ -28,10 +27,7 @@ import {
   insertManualTransaction,
   listAcceptable,
   listTransactions,
-  newId,
-  nowIso,
   reassignSplitStmts,
-  refreshAggregateStmts,
   refundedCents,
   seriesId,
   setRefundOf,
@@ -39,6 +35,7 @@ import {
   linkTransferStmts,
   movePostedAtStmts,
   replaceSplits,
+  revertTransferLegStmts,
   splitsFor,
   unlinkTransferStmts,
   markTransferStmt,
@@ -249,80 +246,16 @@ transactions.post('/:id/splits', async (c) => {
  * teaches memory but doesn't count toward a rule offer.
  *
  * `listAcceptable` only ever returns rows with a live suggested category (it joins on
- * `category`), so every row here is accepted. Batched into one `db.batch` plus one
- * `refreshSuggestions` per distinct merchant, instead of ~5 round trips per row — the "accept
- * all confident" tap can cover hundreds of rows. The merchant-meta write `replaceSplits`'s
- * sibling path (`recordManualCategorisation` with `countTowardOffer: false`) would otherwise
- * do is skipped: with `countTowardOffer: false` it always writes back the same meta it read,
- * a no-op.
+ * `category`), so every row here is accepted: one batch (`acceptSuggestions`), then one
+ * `refreshSuggestions` per distinct merchant.
  */
 transactions.post('/bulk-accept', async (c) => {
   const userId = c.get('userId');
   const db = c.env.DB;
   const by = await body(c, BulkAcceptBody);
   const rows = await listAcceptable(userId, db, by);
-  if (rows.length === 0) return c.json({ accepted: [] });
-
-  const oldSplits = await splitsFor(
-    userId,
-    db,
-    rows.map((r) => r.id),
-  );
-  const { results: catRows } = await db
-    .prepare('SELECT id, budgeted FROM category WHERE user_id = ?1')
-    .bind(userId)
-    .all<{ id: string; budgeted: number }>();
-  const budgetedCats = new Set(catRows.filter((r) => r.budgeted === 1).map((r) => r.id));
-  const now = nowIso();
-  const periods = new Set<string>();
-  const merchants = new Set<string>();
-  const stmts: D1PreparedStatement[] = [];
-
-  for (const row of rows) {
-    const categoryId = row.suggested_category_id;
-    if (!categoryId) continue;
-    const periodId = periodOf(row.posted_at);
-    periods.add(periodId);
-    merchants.add(row.merchant_normalized);
-
-    const old = oldSplits.get(row.id) ?? [];
-    const same =
-      old.length === 1 &&
-      old[0]?.category_id === categoryId &&
-      old[0]?.amount_cents === row.amount_cents;
-    if (!same) {
-      const dropped = row.review_state === 'dropped';
-      const newCounted = !dropped && budgetedCats.has(categoryId) ? row.amount_cents : 0;
-      const oldCounted = dropped
-        ? 0
-        : old.reduce((n, s) => n + (budgetedCats.has(s.category_id) ? s.amount_cents : 0), 0);
-      const delta = newCounted - oldCounted;
-      stmts.push(
-        db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, row.id),
-        db
-          .prepare(
-            'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)',
-          )
-          .bind(newId(), userId, row.id, categoryId, row.amount_cents, periodId),
-      );
-      // Flag even at delta = 0 — a same-total recategorization still moves money between two
-      // categories' own carry in a closed period (M2); flagClosedPeriodStmt no-ops if open.
-      stmts.push(flagClosedPeriodStmt(userId, db, periodId, delta));
-    }
-    stmts.push(
-      db
-        .prepare(
-          "UPDATE txn SET review_state = 'reviewed', updated_at = ?3 WHERE user_id = ?1 AND id = ?2",
-        )
-        .bind(userId, row.id, now),
-      bumpMemoryStmt(userId, db, row.merchant_normalized, categoryId),
-    );
-  }
-  for (const periodId of periods) stmts.push(...refreshAggregateStmts(userId, db, periodId));
-
-  await db.batch(stmts);
+  const merchants = await acceptSuggestions(userId, db, rows);
   for (const merchant of merchants) await refreshSuggestions(db, userId, merchant);
-
   return c.json({ accepted: rows.map((r) => r.id) });
 });
 
@@ -441,16 +374,10 @@ transactions.delete('/:id/transfer-link', async (c) => {
   const a = await getTransactionRow(userId, db, c.req.param('id'));
   if (!a) throw notFound();
   const transferCat = await ensureTransferCategory(userId, db);
-  const catchall = await ensureCatchallCategory(userId, db);
   // Only revert a leg's category if it's still the default Transfer category from link time
-  // (A5) — a leg the user has since recategorized (e.g. to "Furniture") keeps that choice.
-  const revertIfDefault = async (leg: TxnRow): Promise<D1PreparedStatement[]> => {
-    const own = (await splitsFor(userId, db, [leg.id])).get(leg.id) ?? [];
-    if (own.length === 1 && own[0]?.category_id === transferCat.id) {
-      return reassignSplitStmts(userId, db, leg, own, catchall.id);
-    }
-    return [];
-  };
+  // (A5) — a leg the user has since recategorized (e.g. to "Furniture") keeps that choice. A
+  // deposit leg into a cash account goes to the income catch-all, like sync would file it (C2).
+  const revertIfDefault = (leg: TxnRow) => revertTransferLegStmts(userId, db, leg, transferCat.id);
   if (a.is_transfer === 1 && !a.transfer_pair_id) {
     await db.batch([...(await revertIfDefault(a)), unmarkTransferStmt(userId, db, a.id)]);
     return c.json({ items: [await getTransaction(userId, db, a.id)] });

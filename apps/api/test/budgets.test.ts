@@ -6,7 +6,7 @@ import { runSync } from '../src/sync/run';
 import type { SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
 import { seedProdShape } from './helpers/prodShape';
-import { bySql, rowsRead } from './helpers/reads';
+import { bySql, rowsRead, rowsTouched, writtenBySql } from './helpers/reads';
 
 /**
  * Rows read per request on a production-sized database (7.4k transactions, 8k splits, daily
@@ -67,6 +67,13 @@ const top = () =>
     .map(([sql, n]) => `${n}: ${sql.replace(/\s+/g, ' ').slice(0, 200)}`)
     .join('\n');
 
+const topWritten = () =>
+  [...writtenBySql]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([sql, n]) => `${n}: ${sql.replace(/\s+/g, ' ').slice(0, 200)}`)
+    .join('\n');
+
 describe('rows read on a production-sized database', () => {
   it('every screen stays within its budget', async () => {
     const s = await signedInUser();
@@ -89,7 +96,7 @@ describe('rows read on a production-sized database', () => {
     expect(failures).toEqual([]);
   }, 60_000);
 
-  it('a sync and the nightly backup stay within theirs', async () => {
+  it('a sync and the nightly backup stay within their read and write budgets', async () => {
     const s = await signedInUser();
     await seedProdShape(s.userId, 'syn');
     const { results: recent } = await env.DB.prepare(
@@ -143,24 +150,33 @@ describe('rows read on a production-sized database', () => {
       .bind(s.userId)
       .run();
     const now = new Date('2026-10-02T22:00:00Z');
-    const runs: [string, () => Promise<unknown>, number][] = [
-      ['sync, nothing new', () => runSync(env.DB, s.userId, source(0), { now }), 50_000],
+    // [label, run, rows-read budget, rows-written budget]. Writes are budgeted too: the free
+    // tier allows 100k a day, and an idle sync used to rewrite every touched month's
+    // aggregates (~1,150 rows) three times a day. Now it writes the balance report, the run
+    // record and whatever actually changed (here: four pending rows posting on the first run).
+    const runs: [string, () => Promise<unknown>, number, number][] = [
+      ['sync, nothing new', () => runSync(env.DB, s.userId, source(0), { now }), 35_000, 150],
       [
         'cron sync, nothing new, later the same day',
         () => runSync(env.DB, s.userId, source(0), { now, skipRecurringWhenIdle: true }),
-        22_000,
+        5_000,
+        40,
       ],
-      ['sync, 2 new per account', () => runSync(env.DB, s.userId, source(2), { now }), 50_000],
+      ['sync, 2 new per account', () => runSync(env.DB, s.userId, source(2), { now }), 35_000, 320],
       // The backup reads every row on purpose. This file's database holds two production-sized
-      // users, so this is ~2× a real nightly cost.
-      ['backup', () => runBackup(env.DB, env.BACKUPS, now), 250_000],
+      // users, so this is ~2× a real nightly cost. Its writes are the retention prunes.
+      ['backup', () => runBackup(env.DB, env.BACKUPS, now), 250_000, 8_000],
     ];
     const failures: string[] = [];
-    for (const [label, run, budget] of runs) {
+    for (const [label, run, budget, writeBudget] of runs) {
       bySql.clear();
-      const reads = await rowsRead(run);
+      writtenBySql.clear();
+      const { read: reads, written } = await rowsTouched(run);
       console.log(`BUDGET ${reads} / ${budget} ${label}`);
+      console.log(`WRITE BUDGET ${written} / ${writeBudget} ${label}`);
       if (reads > budget) failures.push(`${label} read ${reads} rows (budget ${budget})\n${top()}`);
+      if (written > writeBudget)
+        failures.push(`${label} wrote ${written} rows (budget ${writeBudget})\n${topWritten()}`);
     }
     expect(failures).toEqual([]);
   }, 60_000);

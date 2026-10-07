@@ -18,6 +18,8 @@ export const color = {
   gold100: '#F7F0DE',
   clay: '#A8563C',
   clay100: '#F6E7E1',
+  /** Clay for text on the clay-100 tint, where `clay` itself falls short of AA. */
+  clayText: '#97492F',
 } as const;
 
 export type ColorToken = keyof typeof color;
@@ -43,6 +45,7 @@ export const colorDark: Record<ColorToken, string> = {
   gold100: '#2E2712',
   clay: '#D98467',
   clay100: '#3A211A',
+  clayText: '#D98467',
 };
 
 /** Categorical series order for charts (§7). */
@@ -70,6 +73,8 @@ export const textPairs: [fg: ColorToken, bg: ColorToken, use: string][] = [
   ['sage700', 'clay100', 'quiet action on deficit tint'],
   ['ink', 'sage100', 'text on selected rows'],
   ['ink', 'clay100', 'text on deficit tint'],
+  ['clayText', 'clay100', 'overspend figures on deficit tint'],
+  ['clayText', 'canvas', 'overspend figures, darker clay'],
 ];
 
 /**

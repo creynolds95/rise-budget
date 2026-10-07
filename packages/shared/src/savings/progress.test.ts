@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coveredMonths, emergencyTargetCents, goalProgress } from './progress';
+import { coveredMonths, emergencyTargetCents, goalProgress, shareAccountBalance } from './progress';
 
 describe('goal progress', () => {
   it('percent and remaining come from what is saved against the target', () => {
@@ -51,5 +51,29 @@ describe('emergency fund', () => {
   it('no expense figure or a negative balance gives no coverage to speak of', () => {
     expect(coveredMonths(1_000_000, 0)).toBeNull();
     expect(coveredMonths(-100, 400_000)).toBe(0);
+  });
+});
+
+describe('shareAccountBalance', () => {
+  it('one goal with no share set counts the whole balance', () => {
+    expect(shareAccountBalance(40_000, [null])).toEqual([40_000]);
+  });
+
+  it('goals with no share set split the balance evenly instead of each counting all of it', () => {
+    // Was [40_000, 40_000]: $800 of progress out of a $400 account.
+    expect(shareAccountBalance(40_000, [null, null])).toEqual([20_000, 20_000]);
+    // An odd cent goes to the earlier goal.
+    expect(shareAccountBalance(100, [null, null, null])).toEqual([34, 33, 33]);
+  });
+
+  it('set shares come out first, in order, never past what is there; the rest is split', () => {
+    expect(shareAccountBalance(40_000, [25_000, null, null])).toEqual([25_000, 7_500, 7_500]);
+    expect(shareAccountBalance(40_000, [30_000, 30_000, null])).toEqual([30_000, 10_000, 0]);
+    expect(shareAccountBalance(40_000, [90_000])).toEqual([40_000]);
+  });
+
+  it('a negative balance or no goals is nothing to share', () => {
+    expect(shareAccountBalance(-5_000, [null, 1_000])).toEqual([0, 0]);
+    expect(shareAccountBalance(5_000, [])).toEqual([]);
   });
 });

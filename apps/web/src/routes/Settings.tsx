@@ -7,7 +7,7 @@ import type {
   Rule,
 } from '@rise/shared/schemas';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BackLink } from '../components/BackLink';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -27,9 +27,6 @@ import { Icon, IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
 import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Sortable } from '../components/primitives/Sortable';
-import { Investments } from './Investments';
-import { MonarchImport } from './MonarchImport';
-import { Reports } from './Reports';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -48,6 +45,13 @@ import {
   useRules,
   useSyncStatus,
 } from '../lib/queries';
+
+// Heavy, rarely opened sections load on first visit (precached for offline all the same).
+const Investments = lazy(() => import('./Investments').then((m) => ({ default: m.Investments })));
+const MonarchImport = lazy(() =>
+  import('./MonarchImport').then((m) => ({ default: m.MonarchImport })),
+);
+const Reports = lazy(() => import('./Reports').then((m) => ({ default: m.Reports })));
 
 const SECTIONS = {
   appearance: 'Appearance',
@@ -245,21 +249,32 @@ export function SettingsSection() {
         <h1 className="type-body font-semibold">{SECTIONS[s]}</h1>
         <span id="settings-action" className="justify-self-end" />
       </header>
-      {s === 'reports' && <Reports />}
-      {s === 'investments' && (
+      <Suspense fallback={<SectionFallback />}>
+        {s === 'reports' && <Reports />}
+        {s === 'investments' && (
+          <div className="gutter pt-4">
+            <Investments />
+          </div>
+        )}
         <div className="gutter pt-4">
-          <Investments />
+          {s === 'appearance' && <AppearanceSection />}
+          {s === 'budget' && <BudgetSection />}
+          {s === 'categories' && <CategoriesSection />}
+          {s === 'rules' && <RulesSection />}
+          {s === 'sync' && <SyncSection />}
+          {s === 'security' && <SecuritySection />}
+          {s === 'data' && <DataSection />}
         </div>
-      )}
-      <div className="gutter pt-4">
-        {s === 'appearance' && <AppearanceSection />}
-        {s === 'budget' && <BudgetSection />}
-        {s === 'categories' && <CategoriesSection />}
-        {s === 'rules' && <RulesSection />}
-        {s === 'sync' && <SyncSection />}
-        {s === 'security' && <SecuritySection />}
-        {s === 'data' && <DataSection />}
-      </div>
+      </Suspense>
+    </div>
+  );
+}
+
+function SectionFallback() {
+  return (
+    <div className="gutter pt-4">
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="mt-4 h-40 w-full" />
     </div>
   );
 }
@@ -1280,16 +1295,26 @@ function UsageGroup() {
 /** T46. The user can always walk away with their data (ARCHITECTURE §8). */
 function DataSection() {
   const backups = useBackupStatus().data;
+  const { stepUp } = useAuth();
   const [busy, setBusy] = useState<'json' | 'csv' | 'backup' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The import panel's reads (batches, merges, feed overlaps) cost thousands of D1 rows on a
+  // large history, so they load only when it's opened, not on every visit here.
+  const [importOpen, setImportOpen] = useState(false);
 
   const download = async (format: 'json' | 'csv' | 'backup') => {
     setBusy(format);
     setError(null);
     try {
-      await downloadExport(format);
+      // The backup file is the whole database, sign-in records included: confirm with a
+      // passkey first, like adding a sign-in method.
+      await downloadExport(format, format === 'backup' ? { stepUp: await stepUp() } : {});
     } catch {
-      setError("That didn't go through. Try again.");
+      setError(
+        format === 'backup'
+          ? "That didn't go through. Confirm with your passkey to download the backup."
+          : "That didn't go through. Try again.",
+      );
     } finally {
       setBusy(null);
     }
@@ -1350,7 +1375,20 @@ function DataSection() {
         )}
       </Group>
       <UsageGroup />
-      <MonarchImport />
+      {importOpen ? (
+        <MonarchImport />
+      ) : (
+        <Group>
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="flex min-h-13 w-full items-center justify-between px-4 py-3 text-left active:bg-sage-100"
+          >
+            <span className="block">Import from Monarch</span>
+            <Chevron />
+          </button>
+        </Group>
+      )}
     </>
   );
 }

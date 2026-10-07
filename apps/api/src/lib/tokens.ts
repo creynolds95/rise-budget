@@ -1,6 +1,6 @@
 import { sign, verify } from 'hono/jwt';
 import type { Env } from '../env';
-import { b64urlEncode, randomBytes, sha256Hex } from './crypto';
+import { b64urlEncode, hmacSha256, hmacSha256Hex, randomBytes, sha256Hex } from './crypto';
 
 export const ACCESS_TTL_S = 15 * 60;
 export const REFRESH_TTL_S = 30 * 24 * 60 * 60;
@@ -98,3 +98,38 @@ export function parseRefresh(token: string) {
 }
 
 export const hashSecret = sha256Hex;
+
+/**
+ * How long the refresh secret that was current a moment ago still works. Two tabs (or the
+ * installed app and a browser tab sharing cookies) refreshing at once, or a refresh whose
+ * response was lost, present it legitimately; past this, presenting it is treated as theft.
+ */
+export const REFRESH_GRACE_MS = 60_000;
+
+/**
+ * The secret that replaces `secret` on rotation. Derived under JWT_SECRET instead of drawn at
+ * random, so a request inside the grace window presenting the superseded secret is handed the
+ * very same successor: both tabs end on one token and neither strands the other. Nothing about
+ * it is stored; without the server key the successor can't be computed from the old secret.
+ */
+export async function nextRefreshSecret(
+  env: Pick<Env, 'JWT_SECRET'>,
+  sessionId: string,
+  secret: string,
+): Promise<string> {
+  return b64urlEncode(await hmacSha256(env.JWT_SECRET, `refresh:${sessionId}:${secret}`));
+}
+
+/**
+ * Recovery codes are stored as HMAC-SHA-256 under TOTP_KEY (the key that already seals the
+ * TOTP secrets at rest), prefixed so the format is visible. A bare SHA-256 of a 10-character
+ * code could be brute-forced from a leaked backup; this can't be without the Worker secret.
+ */
+export const RECOVERY_HASH_PREFIX = 'h1:';
+
+export async function hashRecoveryCode(
+  env: Pick<Env, 'TOTP_KEY'>,
+  normalized: string,
+): Promise<string> {
+  return RECOVERY_HASH_PREFIX + (await hmacSha256Hex(env.TOTP_KEY, `recovery:${normalized}`));
+}

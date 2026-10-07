@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router';
 import { BackLink } from '../components/BackLink';
 import { Chevron } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
+import { useOfflineGap, useSettingsState } from '../components/Pending';
 import { useSwipeBack } from '../lib/gestures';
 import { formatCents } from '../lib/money';
 import { useAccounts, useMe, useToday } from '../lib/queries';
@@ -40,6 +41,9 @@ export function FinancialHealth() {
   const plan = me?.settings.retirement ?? null;
   const today = useToday();
   const ready = me !== undefined && accounts !== undefined;
+  // "Set up" is a claim about the plan; only make it from settings known to be current.
+  const setUp = useSettingsState() === 'current' ? 'Set up' : '—';
+  const gap = useOfflineGap();
   let state: string | undefined;
   let debtState: string | undefined;
   let savingsState: string | undefined;
@@ -47,13 +51,13 @@ export function FinancialHealth() {
   if (ready) {
     const goals = me.settings.savings?.goals ?? [];
     const fund = goals.find((g) => g.kind === 'emergency');
-    const fundView = fund ? goalView(fund, accounts, periodOf(today)) : null;
+    const fundView = fund ? goalView(fund, accounts, periodOf(today), goals) : null;
     savingsState =
       fundView?.covered != null
         ? `${fundView.covered} months covered`
         : goals.length > 0
           ? `${goals.length} ${goals.length === 1 ? 'goal' : 'goals'}`
-          : 'Set up';
+          : setUp;
     const debt = me.settings.debt;
     const student = debt
       ? groupView(
@@ -67,7 +71,7 @@ export function FinancialHealth() {
         ? student.debtFreePeriod
           ? `Debt-free ${monthName(student.debtFreePeriod)}`
           : 'Add payments'
-        : 'Set up';
+        : setUp;
     const loan = debt?.loans.find((l) => l.group === 'mortgage');
     const acct = loan ? accounts.find((a) => a.id === loan.accountId && !a.archivedAt) : undefined;
     if (debt && loan && acct) {
@@ -80,8 +84,8 @@ export function FinancialHealth() {
           isDue({ ...loan, owedCents: owedCents(acct.balanceCents) }, today),
       );
       mortgageState = v.payoffPeriod ? `Paid off ${monthName(v.payoffPeriod)}` : 'Add payment';
-    } else mortgageState = 'Set up';
-    if (!plan) state = 'Set up';
+    } else mortgageState = setUp;
+    if (!plan) state = setUp;
     else {
       const ids = accounts.filter((a) => a.kind === 'investment' && !a.archivedAt).map((a) => a.id);
       const start = accounts
@@ -90,6 +94,8 @@ export function FinancialHealth() {
       const v = retirementView(plan, start, totalMonthly(plan, ids), plan.goalAge);
       state = `${formatCents(v.incomeCents, { whole: true })}/mo at ${plan.goalAge}`;
     }
+  } else if (gap) {
+    state = debtState = mortgageState = savingsState = '—';
   }
   return (
     <div className="mx-auto max-w-2xl pb-16">

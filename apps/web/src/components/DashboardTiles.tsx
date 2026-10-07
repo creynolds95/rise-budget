@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { isDue } from '@rise/shared/debt';
 import { series } from '../design/tokens';
-import { DEFAULT_DEBT_PLAN, groupView, owedCents, planLoans } from '../lib/debt';
+import { DEFAULT_DEBT_PLAN, chartPoints, groupView, owedCents, planLoans } from '../lib/debt';
 import { addMonths, monthName, periodOf } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { lineSeries, mortgageView } from '../lib/mortgage';
@@ -14,9 +14,8 @@ import { Chart } from './primitives/Chart';
 import { FanChart } from './primitives/FanChart';
 import { MoneyText } from './primitives/MoneyText';
 import { Skeleton } from './primitives/Skeleton';
-import { chartPoints } from '../routes/Debt';
 import { Investments } from '../routes/Investments';
-import { Donut, Legend } from '../routes/Mortgage';
+import { Donut, Legend } from './Donut';
 
 /** A titled tile that opens its page; `to` is where tapping the card goes. */
 function Tile({ title, to, children }: { title: string; to: string; children: ReactNode }) {
@@ -220,6 +219,7 @@ export function SavingsTile() {
           g,
           accounts.filter((a) => !a.archivedAt),
           periodOf(today),
+          goals,
         ),
       )
     : [];

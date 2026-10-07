@@ -7,7 +7,17 @@
  * volatility drag. A month can't lose more than everything.
  */
 
-import { monthlyStep } from './project';
+import { monthlyRateE12 } from './project';
+
+/**
+ * The plain projection's month (`monthlyStep`: the effective monthly rate, rounded to the cent),
+ * in plain float maths. The fan takes millions of steps and multiplies each by a float shock
+ * anyway; the exact integer step costs ~10× more for an answer that differs only when the
+ * product lands within ~1e-11¢ of a half cent. The zero-volatility test holds it to the exact
+ * projection.
+ */
+const fanStep = (balanceCents: number, rateE12: number): number =>
+  balanceCents + Math.round((balanceCents * rateE12) / 1e12);
 
 export const MC_RUNS = 5000;
 export const MC_SEED = 20_261_006;
@@ -66,6 +76,7 @@ export function simulateRetirement(opts: {
   const runs = opts.runs ?? MC_RUNS;
   const rand = seededRandom(opts.seed ?? MC_SEED);
   const sd = volatilityBps / 10_000 / Math.sqrt(12);
+  const rate = monthlyRateE12(realGrowthBps);
   const byYear: number[][] = Array.from({ length: years + 1 }, () => []);
   const record = (y: number, balance: number) => (byYear[y] as number[]).push(balance);
   for (let r = 0; r < runs; r++) {
@@ -74,7 +85,7 @@ export function simulateRetirement(opts: {
     for (let y = 1; y <= years; y++) {
       for (let m = 0; m < 12; m++) {
         balance =
-          Math.round(monthlyStep(balance, realGrowthBps) * Math.exp(sd * gaussian(rand))) +
+          Math.round(fanStep(balance, rate) * Math.exp(sd * gaussian(rand))) +
           monthlyContributionCents;
       }
       record(y, balance);

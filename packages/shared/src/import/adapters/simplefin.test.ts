@@ -86,6 +86,13 @@ describe('SimpleFIN adapter (SPEC §6.1, §6.3)', () => {
     expect(
       toIncomingTxn({ id: 'P', posted: 0, amount: '-1', description: 'x' }, 'UTC').postedAt,
     ).toBe('1970-01-01');
+    expect(
+      toIncomingTxn(
+        { id: 'P', posted: 0, amount: '-1', description: 'x' },
+        'UTC',
+        Date.UTC(2026, 9, 7, 12) / 1000,
+      ).postedAt,
+    ).toBe('2026-10-07');
   });
 
   it('guesses kind for typical accounts; savings stay out of the budget; Apple is monthly', () => {

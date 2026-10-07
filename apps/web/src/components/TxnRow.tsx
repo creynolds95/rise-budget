@@ -53,7 +53,8 @@ export function TxnRow({
               className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
               title="Pending"
             >
-              P
+              <span aria-hidden>P</span>
+              <span className="sr-only">Pending</span>
             </span>
           )}
         </span>
@@ -66,7 +67,7 @@ export function TxnRow({
             type="button"
             aria-label={`Change category for ${merchantName(t)}`}
             onClick={onRecategorize}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700"
+            className="hit-44 flex size-9 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700"
           >
             <svg
               aria-hidden
@@ -83,7 +84,8 @@ export function TxnRow({
             </svg>
           </button>
         ) : (
-          <Link to={to} onClick={transitionClick(navigate, to)}>
+          // The row's own link already goes here; this is the same target, out of the tab order.
+          <Link to={to} onClick={transitionClick(navigate, to)} tabIndex={-1} aria-hidden>
             <Chevron />
           </Link>
         )}

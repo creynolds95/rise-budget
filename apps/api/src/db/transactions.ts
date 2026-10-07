@@ -1,6 +1,7 @@
 import { periodOf } from '@rise/shared/budget';
 import { Transaction, type ReviewState, type TxnSort } from '@rise/shared/schemas';
 import { refreshAggregateStmts } from './aggregates';
+import { bumpMemoryStmt } from './categorize';
 import { newId, nowIso, type UserId } from './util';
 
 export interface TxnRow {
@@ -333,6 +334,22 @@ export async function replaceSplits(
   txn: TxnRow,
   splits: { categoryId: string; amountCents: number }[],
 ): Promise<boolean> {
+  const stmts = await replaceSplitsStmts(userId, db, txn, splits);
+  if (!stmts) return false;
+  await db.batch(stmts);
+  return true;
+}
+
+/**
+ * `replaceSplits` as statements, to batch atomically with whatever else changes alongside.
+ * Null when the split set is already exactly this.
+ */
+async function replaceSplitsStmts(
+  userId: UserId,
+  db: D1Database,
+  txn: TxnRow,
+  splits: { categoryId: string; amountCents: number }[],
+): Promise<D1PreparedStatement[] | null> {
   const periodId = periodOf(txn.posted_at);
   const old = (await splitsFor(userId, db, [txn.id])).get(txn.id) ?? [];
   const same =
@@ -341,7 +358,7 @@ export async function replaceSplits(
       (o, i) =>
         o.category_id === splits[i]?.categoryId && o.amount_cents === splits[i]?.amountCents,
     );
-  if (same) return false;
+  if (same) return null;
   const oldSplits = old.map((o) => ({ categoryId: o.category_id, amountCents: o.amount_cents }));
   const dropped = txn.review_state === 'dropped';
   const [newCounted, oldCounted] = await Promise.all([
@@ -349,7 +366,7 @@ export async function replaceSplits(
     dropped ? 0 : countedSum(userId, db, oldSplits),
   ]);
   const delta = newCounted - oldCounted;
-  await db.batch([
+  return [
     db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, txn.id),
     ...splits.map((s, i) =>
       db
@@ -367,8 +384,7 @@ export async function replaceSplits(
     // is always safe to call; its own SQL no-ops on an open period.
     flagClosedPeriodStmt(userId, db, periodId, delta),
     ...refreshAggregateStmts(userId, db, periodId),
-  ]);
-  return true;
+  ];
 }
 
 /**
@@ -528,17 +544,94 @@ export async function listAcceptable(
 }
 
 /**
- * Remove a transaction. Its splits go first through `replaceSplits` so the aggregates and a
+ * Accept each row's stored suggestion in one batch: its split becomes the suggested category
+ * (unless it already is exactly that), it's marked reviewed, and the merchant memory counts the
+ * choice. Returns the merchants touched, for the caller to refresh their suggestions.
+ *
+ * Batched instead of ~5 round trips per row — "accept all confident" can cover hundreds. The
+ * merchant-meta write that recordManualCategorisation (countTowardOffer: false) would do is
+ * skipped: it always writes back the same meta it read, a no-op.
+ */
+export async function acceptSuggestions(
+  userId: UserId,
+  db: D1Database,
+  rows: TxnRow[],
+): Promise<Set<string>> {
+  const merchants = new Set<string>();
+  if (rows.length === 0) return merchants;
+  const [oldSplits, { results: catRows }] = await Promise.all([
+    splitsFor(
+      userId,
+      db,
+      rows.map((r) => r.id),
+    ),
+    db
+      .prepare('SELECT id, budgeted FROM category WHERE user_id = ?1')
+      .bind(userId)
+      .all<{ id: string; budgeted: number }>(),
+  ]);
+  const budgetedCats = new Set(catRows.filter((r) => r.budgeted === 1).map((r) => r.id));
+  const now = nowIso();
+  const periods = new Set<string>();
+  const stmts: D1PreparedStatement[] = [];
+
+  for (const row of rows) {
+    const categoryId = row.suggested_category_id;
+    if (!categoryId) continue;
+    const periodId = periodOf(row.posted_at);
+    periods.add(periodId);
+    merchants.add(row.merchant_normalized);
+
+    const old = oldSplits.get(row.id) ?? [];
+    const same =
+      old.length === 1 &&
+      old[0]?.category_id === categoryId &&
+      old[0]?.amount_cents === row.amount_cents;
+    if (!same) {
+      const dropped = row.review_state === 'dropped';
+      const newCounted = !dropped && budgetedCats.has(categoryId) ? row.amount_cents : 0;
+      const oldCounted = dropped
+        ? 0
+        : old.reduce((n, s) => n + (budgetedCats.has(s.category_id) ? s.amount_cents : 0), 0);
+      stmts.push(
+        db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, row.id),
+        db
+          .prepare(
+            'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)',
+          )
+          .bind(newId(), userId, row.id, categoryId, row.amount_cents, periodId),
+        // Flag even at delta = 0 — a same-total recategorization still moves money between two
+        // categories' own carry in a closed period (M2); flagClosedPeriodStmt no-ops if open.
+        flagClosedPeriodStmt(userId, db, periodId, newCounted - oldCounted),
+      );
+    }
+    stmts.push(
+      db
+        .prepare(
+          "UPDATE txn SET review_state = 'reviewed', updated_at = ?3 WHERE user_id = ?1 AND id = ?2",
+        )
+        .bind(userId, row.id, now),
+      bumpMemoryStmt(userId, db, row.merchant_normalized, categoryId),
+    );
+  }
+  for (const periodId of periods) stmts.push(...refreshAggregateStmts(userId, db, periodId));
+  await db.batch(stmts);
+  return merchants;
+}
+
+/**
+ * Remove a transaction. Its splits go first (as `replaceSplits` would) so the aggregates and a
  * closed month's recalculation flag stay right; a synced row leaves a tombstone so the next
- * sync doesn't bring it back.
+ * sync doesn't bring it back. One batch: if the row can't go, its splits and the spending
+ * cache stay exactly as they were.
  */
 export async function deleteTransaction(
   userId: UserId,
   db: D1Database,
   txn: TxnRow,
 ): Promise<void> {
-  await replaceSplits(userId, db, txn, []);
   await db.batch([
+    ...((await replaceSplitsStmts(userId, db, txn, [])) ?? []),
     db.prepare('DELETE FROM txn WHERE user_id = ?1 AND id = ?2').bind(userId, txn.id),
     ...(txn.source_id
       ? [

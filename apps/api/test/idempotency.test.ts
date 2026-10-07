@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { sha256Hex } from '../src/lib/crypto';
 import { call, signedInUser } from './helpers/http';
 
 async function setup() {
@@ -63,6 +64,38 @@ describe('T22 idempotency keys', () => {
     expect(again.status).toBe(first.status);
     expect(again.json).toEqual(first.json);
     expect(again.headers.get('idempotent-replay')).toBe('true');
+  });
+
+  it('a claim still "in progress" after a minute was abandoned; the retry takes it over', async () => {
+    const s = await setup();
+    // A worker that died mid-request leaves the pending claim behind.
+    const pending = async (key: string, ageMs: number) => {
+      const fingerprint = await sha256Hex(`POST /api/transactions\n${JSON.stringify(s.txn)}`);
+      await env.DB.prepare(
+        'INSERT INTO idempotency (key, user_id, response_json, created_at) VALUES (?1, ?2, ?3, ?4)',
+      )
+        .bind(
+          `${s.userId}:${key}`,
+          s.userId,
+          JSON.stringify({ fingerprint, status: null, body: null }),
+          new Date(Date.now() - ageMs).toISOString(),
+        )
+        .run();
+    };
+    await pending('fresh', 5_000);
+    const busy = await s.post('fresh', s.txn);
+    expect(busy.status).toBe(409);
+    expect(busy.json.error.code).toBe('IDEMPOTENCY_CONFLICT');
+
+    await pending('stale', 120_000);
+    const retry = await s.post('stale', s.txn);
+    expect(retry.status).toBe(201);
+    expect(await s.count()).toBe(1);
+    // And it is recorded like any other: the next replay returns it.
+    const again = await s.post('stale', s.txn);
+    expect(again.headers.get('idempotent-replay')).toBe('true');
+    expect(again.json).toEqual(retry.json);
+    expect(await s.count()).toBe(1);
   });
 
   it('keys are per user', async () => {

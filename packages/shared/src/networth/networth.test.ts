@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { balanceAt, dateFromDayNumber, dayNumber, netWorthSeries } from './index';
+import { balanceAt, dateFromDayNumber, dayNumber, joinedCents, netWorthSeries } from './index';
 
 describe('day numbers', () => {
   it('round-trips across leap years and eras', () => {
@@ -98,5 +98,43 @@ describe('netWorthSeries', () => {
       [500, true],
       [1_000, false],
     ]);
+  });
+});
+
+describe('joinedCents', () => {
+  const acct = (accountId: string, ...snaps: [string, number][]) => ({
+    accountId,
+    includeInNetWorth: true,
+    snapshots: snaps.map(([asOf, balanceCents]) => ({ asOf, balanceCents })),
+  });
+
+  it('is an account’s first balance, on the day it first appears inside the range', () => {
+    const j = joinedCents(
+      [
+        acct('old', ['2026-08-30', 10_000_00], ['2026-09-05', 10_000_00]),
+        acct('new', ['2026-09-03', 5_000_00], ['2026-09-04', 5_100_00]),
+        acct('late', ['2026-09-20', 1_00]),
+        acct('none'),
+        { ...acct('excluded', ['2026-09-03', 7_00]), includeInNetWorth: false },
+      ],
+      '2026-09-01',
+      '2026-09-10',
+    );
+    expect(j).toEqual(new Map([['2026-09-03', 5_000_00]]));
+  });
+
+  it('the range’s first day is the base, so nothing joins on it', () => {
+    expect(joinedCents([acct('a', ['2026-09-01', 1_00])], '2026-09-01', '2026-09-02')).toEqual(
+      new Map(),
+    );
+  });
+
+  it('sums accounts joining on the same day', () => {
+    const j = joinedCents(
+      [acct('a', ['2026-09-02', 1_00]), acct('b', ['2026-09-02', 2_00])],
+      '2026-09-01',
+      '2026-09-02',
+    );
+    expect(j).toEqual(new Map([['2026-09-02', 3_00]]));
   });
 });

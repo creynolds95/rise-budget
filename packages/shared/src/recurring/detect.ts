@@ -1,4 +1,5 @@
-import { dateFromDayNumber, dayNumber } from '../networth';
+import { dateFromDayNumber, dayNumber, daysFromCivil } from '../networth';
+import { within5Pct } from './amount';
 
 /**
  * Recurring detection (SPEC §7). Pure. A series is ≥ 3 charges from one merchant with
@@ -66,20 +67,52 @@ export function nextDate(cadence: Cadence, from: string, anchorDay?: number): st
   }
 }
 
-/** Total deviation from the cadence, or null if any interval misses it by more than ±4 days. */
-function cadenceFit(dates: string[], cadence: Cadence): number | null {
-  const anchor = parts(dates[0] as string).d;
+/** One charge's date, parsed once per merchant rather than once per start tried. */
+interface Point {
+  day: number;
+  y: number;
+  m: number;
+  d: number;
+}
+
+const toPoint = (date: string): Point => {
+  const { y, m, d } = parts(date);
+  return { day: daysFromCivil(y, m, d), y, m, d };
+};
+
+const daysInMonthN = (y: number, m: number) =>
+  (m === 12 ? daysFromCivil(y + 1, 1, 1) : daysFromCivil(y, m + 1, 1)) - daysFromCivil(y, m, 1);
+
+type FixedCadence = Exclude<Cadence, 'semimonthly'>;
+
+/** `dayNumber(nextDate(cadence, prev, anchor))`, in integers. */
+function expectedAfter(cadence: FixedCadence, prev: Point, anchor: number): number {
+  if (cadence === 'weekly') return prev.day + 7;
+  if (cadence === 'biweekly') return prev.day + 14;
+  const idx = prev.y * 12 + (prev.m - 1) + (cadence === 'monthly' ? 1 : 12);
+  const ny = Math.floor(idx / 12);
+  const nm = (idx % 12) + 1;
+  return daysFromCivil(ny, nm, Math.min(anchor, daysInMonthN(ny, nm)));
+}
+
+/**
+ * Total deviation from the cadence for the run `points[start..]`, or null if any interval
+ * misses it by more than ±4 days — found at the first miss, so a poor fit costs one step.
+ */
+function cadenceFit(points: readonly Point[], start: number, cadence: FixedCadence): number | null {
+  const anchor = (points[start] as Point).d;
   let total = 0;
-  for (let i = 1; i < dates.length; i++) {
-    const expected = nextDate(cadence, dates[i - 1] as string, anchor);
-    const off = Math.abs(dayNumber(dates[i] as string) - dayNumber(expected));
+  for (let i = start + 1; i < points.length; i++) {
+    const off = Math.abs(
+      (points[i] as Point).day - expectedAfter(cadence, points[i - 1] as Point, anchor),
+    );
     if (off > INTERVAL_TOLERANCE_DAYS) return null;
     total += off;
   }
   return total;
 }
 
-const CADENCES: Cadence[] = ['weekly', 'biweekly', 'monthly', 'annual'];
+const CADENCES: FixedCadence[] = ['weekly', 'biweekly', 'monthly', 'annual'];
 
 /** Every amount within 5% of the median (exact integer maths on the doubled median). */
 export function steadyAmounts(amounts: number[]): boolean {
@@ -94,34 +127,64 @@ export function steadyAmounts(amounts: number[]): boolean {
   );
 }
 
-function bestCadence(dates: string[]): Cadence | null {
-  let best: { cadence: Cadence; fit: number } | null = null;
+function bestCadence(points: readonly Point[], start: number): FixedCadence | null {
+  let best: { cadence: FixedCadence; fit: number } | null = null;
   for (const cadence of CADENCES) {
-    const fit = cadenceFit(dates, cadence);
+    const fit = cadenceFit(points, start, cadence);
     if (fit !== null && (best === null || fit < best.fit)) best = { cadence, fit };
   }
   return best?.cadence ?? null;
 }
 
 /**
+ * The most recent charges per merchant that detection looks at: more than three years of weekly
+ * charges (the refresh's lookback), and a hard bound on the work — trying every start of a
+ * long history is quadratic, and a Worker has 10 ms of CPU for a whole sync.
+ */
+export const MAX_SERIES_OCCURRENCES = 160;
+
+/** Oldest first, only the most recent `MAX_SERIES_OCCURRENCES`, each with its parsed date. */
+function recentSorted(occurrences: readonly Occurrence[]): {
+  all: Occurrence[];
+  points: Point[];
+} {
+  const sorted = occurrences
+    .map((o) => ({ o, p: toPoint(o.date) }))
+    .sort((a, b) => a.p.day - b.p.day)
+    .slice(-MAX_SERIES_OCCURRENCES);
+  return { all: sorted.map((x) => x.o), points: sorted.map((x) => x.p) };
+}
+
+/**
+ * The earliest start whose run is all one sign with no zero. A suffix property: any run
+ * starting before it holds a charge the other way (or a zero), so it is never tried.
+ */
+function sameSignFrom(all: readonly Occurrence[]): number {
+  const sign = Math.sign(all.at(-1)?.amountCents ?? 0);
+  if (sign === 0) return all.length;
+  let start = all.length;
+  while (start > 0 && Math.sign((all[start - 1] as Occurrence).amountCents) === sign) start--;
+  return start;
+}
+
+/**
  * The longest run of most-recent charges that forms a series. Older charges that don't fit
- * (a price change long ago, a one-off) are ignored rather than blocking detection.
+ * (a price change long ago, a one-off) are ignored rather than blocking detection. The cheap
+ * check runs first — a cadence check stops at the first gap that misses — so an irregular
+ * merchant costs about one step per start, not a sort.
  */
 export function detectSeries(
   occurrences: readonly Occurrence[],
   today: string,
 ): DetectedSeries | null {
-  const all = [...occurrences].sort((a, b) => a.date.localeCompare(b.date));
-  for (let start = 0; start + MIN_OCCURRENCES <= all.length; start++) {
-    const run = all.slice(start);
-    const amounts = run.map((o) => o.amountCents);
-    if (amounts.some((a) => Math.sign(a) !== Math.sign(amounts[0] as number) || a === 0)) continue;
-    if (!steadyAmounts(amounts)) continue;
-    const dates = run.map((o) => o.date);
-    const cadence = bestCadence(dates);
+  const { all, points } = recentSorted(occurrences);
+  for (let start = sameSignFrom(all); start + MIN_OCCURRENCES <= all.length; start++) {
+    const cadence = bestCadence(points, start);
     if (!cadence) continue;
+    const run = all.slice(start);
+    if (!steadyAmounts(run.map((o) => o.amountCents))) continue;
     const last = run.at(-1) as Occurrence;
-    const nextExpectedDate = nextDate(cadence, last.date, parts(dates[0] as string).d);
+    const nextExpectedDate = nextDate(cadence, last.date, (points[start] as Point).d);
     return {
       cadence,
       expectedAmountCents: last.amountCents,
@@ -191,28 +254,32 @@ export function nextSemimonthlyDate(from: string, anchors: readonly [number, num
 }
 
 /**
- * Consecutive dates space out like semimonthly pay. Whether they actually touch both
- * anchors is already guaranteed by `fitSemimonthly`'s clustering (every date lands in one
- * of exactly two non-empty clusters, each within tolerance of its own anchor), so this only
- * needs to check the gap between charges.
+ * The earliest start from which consecutive dates space out like semimonthly pay (10-20 days
+ * apart). Whether they actually touch both anchors is already guaranteed by
+ * `fitSemimonthly`'s clustering (every date lands in one of exactly two non-empty clusters,
+ * each within tolerance of its own anchor), so only the gaps need checking — and a gap that
+ * misses rules out every run reaching back past it.
  */
-function alternatesAnchors(dates: readonly string[]): boolean {
-  for (let i = 1; i < dates.length; i++) {
-    const gap = dayNumber(dates[i] as string) - dayNumber(dates[i - 1] as string);
-    if (gap < MIN_SEMIMONTHLY_GAP_DAYS || gap > MAX_SEMIMONTHLY_GAP_DAYS) return false;
+function alternatesFrom(points: readonly Point[]): number {
+  let start = points.length - 1;
+  while (start > 0) {
+    const gap = (points[start] as Point).day - (points[start - 1] as Point).day;
+    if (gap < MIN_SEMIMONTHLY_GAP_DAYS || gap > MAX_SEMIMONTHLY_GAP_DAYS) break;
+    start--;
   }
-  return true;
+  return start;
 }
 
 /**
  * Two days-of-month, ~15 days apart (5th & 20th, 1st & 15th, ...), each occurrence within
  * `INTERVAL_TOLERANCE_DAYS` before its anchor — a weekend shift only ever moves a payday
- * earlier, so the largest day seen in a cluster is the true anchor.
+ * earlier, so the largest day seen in a cluster is the true anchor. The gaps between charges
+ * are the caller's check (`alternatesFrom`).
  */
-function fitSemimonthly(dates: readonly string[]): [number, number] | null {
-  const days = dates.map((d) => parts(d).d);
+function fitSemimonthly(run: readonly Point[]): [number, number] | null {
+  const days = run.map((p) => p.d);
   const unique = [...new Set(days)].sort((a, b) => a - b);
-  if (unique.length < 2) return null;
+  // One distinct day leaves `maxGap` at -1: not two anchors.
   let splitAt = -1;
   let maxGap = -1;
   for (let i = 1; i < unique.length; i++) {
@@ -230,9 +297,7 @@ function fitSemimonthly(dates: readonly string[]): [number, number] | null {
   const fitsCluster = (cluster: number[], anchor: number) =>
     cluster.every((d) => anchor - d >= 0 && anchor - d <= INTERVAL_TOLERANCE_DAYS);
   if (!fitsCluster(clusterA, anchorA) || !fitsCluster(clusterB, anchorB)) return null;
-  const anchors: [number, number] = [Math.min(anchorA, anchorB), Math.max(anchorA, anchorB)];
-  if (!alternatesAnchors(dates)) return null;
-  return anchors;
+  return [Math.min(anchorA, anchorB), Math.max(anchorA, anchorB)];
 }
 
 /**
@@ -244,15 +309,13 @@ export function detectSemimonthly(
   occurrences: readonly Occurrence[],
   today: string,
 ): DetectedSeries | null {
-  const all = [...occurrences].sort((a, b) => a.date.localeCompare(b.date));
-  for (let start = 0; start + MIN_SEMIMONTHLY_OCCURRENCES <= all.length; start++) {
-    const run = all.slice(start);
-    const amounts = run.map((o) => o.amountCents);
-    if (amounts.some((a) => Math.sign(a) !== Math.sign(amounts[0] as number) || a === 0)) continue;
-    if (!steadyAmounts(amounts)) continue;
-    const dates = run.map((o) => o.date);
-    const anchors = fitSemimonthly(dates);
+  const { all, points } = recentSorted(occurrences);
+  const from = Math.max(sameSignFrom(all), alternatesFrom(points));
+  for (let start = from; start + MIN_SEMIMONTHLY_OCCURRENCES <= all.length; start++) {
+    const anchors = fitSemimonthly(points.slice(start));
     if (!anchors) continue;
+    const run = all.slice(start);
+    if (!steadyAmounts(run.map((o) => o.amountCents))) continue;
     const last = run.at(-1) as Occurrence;
     const nextExpectedDate = nextSemimonthlyDate(last.date, anchors);
     return {
@@ -402,7 +465,7 @@ export function advanceManualRule(
   const anchorDay = rule.anchorDays?.[0] ?? parts(rule.nextExpectedDate).d;
   const confirming = occurrences
     .filter((o) => Math.sign(o.amountCents) === Math.sign(rule.expectedAmountCents))
-    .filter((o) => steadyAmounts([o.amountCents, rule.expectedAmountCents]))
+    .filter((o) => within5Pct(o.amountCents, rule.expectedAmountCents))
     .filter((o) => dayNumber(o.date) >= dayNumber(rule.nextExpectedDate) - early)
     .sort((a, b) => a.date.localeCompare(b.date));
   const step = (d: string) =>

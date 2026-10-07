@@ -15,14 +15,17 @@ const WIDTH = 640;
 const NODE_WIDTH = 14;
 const INCOME_FILL = 'var(--color-sage-700)';
 const LEFTOVER_FILL = 'var(--color-gold)';
+/** Spending beyond income came from savings or credit: a debt-like flow, so clay, never red. */
+const SHORTFALL_FILL = 'var(--color-clay)';
 
 /** Distinct hues cycle per group and per category, so neighboring flows read apart —
  *  a single flat color per role (the old behavior) made every category node identical. */
 const CATEGORY_FILL = [series[0], series[2], series[1], series[3]] as const;
 
-function roleOf(id: string): 'income' | 'group' | 'category' | 'leftover' {
+function roleOf(id: string): 'income' | 'group' | 'category' | 'leftover' | 'shortfall' {
   if (id === 'income') return 'income';
   if (id === 'leftover') return 'leftover';
+  if (id === 'shortfall') return 'shortfall';
   if (id.startsWith('group:')) return 'group';
   return 'category';
 }
@@ -37,6 +40,7 @@ function buildPalette(nodes: readonly FlowNode[]): Map<string, string> {
     const role = roleOf(n.id);
     if (role === 'income') map.set(n.id, INCOME_FILL);
     else if (role === 'leftover') map.set(n.id, LEFTOVER_FILL);
+    else if (role === 'shortfall') map.set(n.id, SHORTFALL_FILL);
     else if (role === 'group')
       map.set(n.id, CATEGORY_FILL[groupIdx++ % CATEGORY_FILL.length] as string);
     else map.set(n.id, CATEGORY_FILL[catIdx++ % CATEGORY_FILL.length] as string);
@@ -56,14 +60,20 @@ export function MoneyFlowReportView({
   label: string;
 }) {
   const flow = useMoneyFlow(month, from);
-  const leftoverCents =
-    flow.data?.links.find((l) => l.target === 'leftover')?.valueCents ?? (0 as const);
+  const linkTo = (end: 'source' | 'target', id: string) =>
+    flow.data?.links.find((l) => l[end] === id)?.valueCents ?? 0;
+  // Negative when more went out than came in (the "From savings or credit" inflow).
+  const leftoverCents = linkTo('target', 'leftover') - linkTo('source', 'shortfall');
 
   return (
     <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
       <p className="type-label text-ink-muted">Left over, {label}</p>
       <p className="mt-1 type-display">
-        {flow.data ? <MoneyText cents={leftoverCents} /> : <Skeleton className="h-9 w-32" />}
+        {flow.data ? (
+          <MoneyText cents={leftoverCents} tone={leftoverCents < 0 ? 'over' : 'ink'} />
+        ) : (
+          <Skeleton className="h-9 w-32" />
+        )}
       </p>
       <div className="mt-4">
         {!flow.data ? (

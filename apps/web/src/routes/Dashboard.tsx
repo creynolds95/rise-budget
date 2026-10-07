@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import type { RecurringSeries } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { useState, type ReactNode } from 'react';
@@ -97,13 +98,15 @@ export function Dashboard() {
 
   if (!period.data) {
     return (
-      <div className="gutter mx-auto max-w-2xl pt-6">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="mt-3 h-11 w-56" />
-        <Skeleton className="mt-2 h-4 w-64" />
-        <Skeleton className="mt-10 h-12 w-full" />
-        <Skeleton className="mt-2 h-12 w-full" />
-      </div>
+      <Loading>
+        <div className="gutter mx-auto max-w-2xl pt-6">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="mt-3 h-11 w-56" />
+          <Skeleton className="mt-2 h-4 w-64" />
+          <Skeleton className="mt-10 h-12 w-full" />
+          <Skeleton className="mt-2 h-12 w-full" />
+        </div>
+      </Loading>
     );
   }
   const p = period.data;
@@ -155,7 +158,9 @@ export function Dashboard() {
           className="mt-1 block overflow-hidden rounded-card bg-surface p-4 shadow-soft active:bg-sage-100"
         >
           {!surplus.data ? (
-            <Skeleton className="h-11 w-40" />
+            <Loading compact>
+              <Skeleton className="h-11 w-40" />
+            </Loading>
           ) : surplus.data.paySchedules.length === 0 ? (
             <p className="type-display text-ink-muted">Confirm your pay dates</p>
           ) : (
@@ -194,10 +199,10 @@ export function Dashboard() {
         </h2>
         <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           {!txns.data ? (
-            <>
+            <Loading compact>
               <Skeleton className="mt-3 h-12 w-full" />
               <Skeleton className="mt-2 h-12 w-full" />
-            </>
+            </Loading>
           ) : recentTxns.length === 0 ? (
             <p className="py-4 text-ink-muted">No transactions yet.</p>
           ) : (

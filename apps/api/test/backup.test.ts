@@ -284,6 +284,21 @@ describe('T46 export', () => {
     expect(r.latest.date).toBe('2026-09-24');
     expect(r.latest.bytes).toBeGreaterThan(100);
   });
+
+  it('downloading the backup file needs a moments-old passkey step-up', async () => {
+    const s = await setup();
+    await runBackup(env.DB, env.BACKUPS, new Date('2026-09-24T09:30:00Z'));
+    // The whole-database dump holds credential material: an access token alone isn't enough.
+    const bare = await call('GET', '/export/backups/latest', { access: s.access });
+    expect(bare.status).toBe(401);
+    expect(bare.json.error.code).toBe('STEP_UP_REQUIRED');
+    const ok = await exports.default.fetch(`${BASE}/export/backups/latest`, {
+      headers: { authorization: `Bearer ${s.access}`, 'x-step-up': s.stepUp },
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('content-type')).toBe('application/gzip');
+    await ok.arrayBuffer();
+  });
 });
 
 describe('T46 pure helpers', () => {

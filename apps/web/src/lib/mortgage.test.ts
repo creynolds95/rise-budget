@@ -23,6 +23,27 @@ describe('mortgage view', () => {
     expect(v.interestSavedCents).toBeNull();
   });
 
+  it("a pending payment isn't counted in this year's split yet", () => {
+    const owed = 33_064_962;
+    const v = mortgageView(
+      { ...loan, paymentCents: 196_811 },
+      owed,
+      { ...settings, mortgageTermMonths: 370 },
+      '2026-10',
+      true,
+    );
+    // October's payment is still ahead, so January through September: nine.
+    expect(v.ytd).not.toBeNull();
+    expect(v.ytd?.principalCents).toBe(
+      mortgageView(
+        { ...loan, paymentCents: 196_811 },
+        owed,
+        { ...settings, mortgageTermMonths: 370 },
+        '2026-09',
+      ).ytd?.principalCents,
+    );
+  });
+
   it('extra payments move the date and save interest; one-time ones count by month', () => {
     const v = mortgageView(
       loan,

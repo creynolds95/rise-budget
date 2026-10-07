@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import type { RuleOffer, Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -277,9 +278,11 @@ export function Review() {
 
       {!queue.data && (
         <div className="gutter flex flex-col gap-2 pt-4">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-20 w-full" />
-          ))}
+          <Loading>
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-20 w-full" />
+            ))}
+          </Loading>
         </div>
       )}
       {queue.data && items.length === 0 && (

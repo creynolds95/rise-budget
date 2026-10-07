@@ -288,7 +288,7 @@ function Pill({
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`min-h-9 rounded-full px-3.5 type-caption font-medium ${
+      className={`hit-44 min-h-9 rounded-full px-3.5 type-caption font-medium ${
         on ? 'bg-sage-700 text-surface' : 'bg-canvas text-ink ring-1 ring-hairline'
       }`}
     >

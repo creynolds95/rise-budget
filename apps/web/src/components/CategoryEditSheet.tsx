@@ -354,7 +354,6 @@ function Editor({
                     await Promise.all([
                       invalidate(),
                       qc.invalidateQueries({ queryKey: ['rules'] }),
-                      qc.invalidateQueries({ queryKey: ['transactions'] }),
                     ]);
                     onClose();
                     onDeleted?.();

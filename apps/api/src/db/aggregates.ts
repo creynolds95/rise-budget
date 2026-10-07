@@ -8,6 +8,10 @@ import type { UserId } from './util';
  * split filed to the unbudgeted Transfer category doesn't. Every statement batch that changes
  * a split, or a category's `budgeted` flag, must include `refreshAggregateStmts` for each
  * touched period, so the cache never drifts.
+ *
+ * The refresh writes only what moved: a category no longer counting is deleted, and a row is
+ * upserted only when its numbers differ. Refreshing a period nothing changed in writes nothing
+ * (D1 bills rows written, and a sync touches the same months over and over).
  */
 export function refreshAggregateStmts(
   userId: UserId,
@@ -16,7 +20,15 @@ export function refreshAggregateStmts(
 ): D1PreparedStatement[] {
   return [
     db
-      .prepare('DELETE FROM period_aggregate WHERE user_id = ?1 AND period_id = ?2')
+      .prepare(
+        `DELETE FROM period_aggregate WHERE user_id = ?1 AND period_id = ?2
+         AND category_id NOT IN (
+           SELECT s.category_id FROM split s
+           JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
+           JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
+           WHERE s.user_id = ?1 AND s.period_id = ?2 AND c.budgeted = 1
+             AND t.review_state != 'dropped')`,
+      )
       .bind(userId, periodId),
     db
       .prepare(
@@ -26,7 +38,11 @@ export function refreshAggregateStmts(
          JOIN txn t ON t.id = s.txn_id AND t.user_id = s.user_id
          JOIN category c ON c.id = s.category_id AND c.user_id = s.user_id
          WHERE s.user_id = ?1 AND s.period_id = ?2 AND c.budgeted = 1 AND t.review_state != 'dropped'
-         GROUP BY s.category_id`,
+         GROUP BY s.category_id
+         ON CONFLICT (user_id, period_id, category_id) DO UPDATE SET
+           spent_cents = excluded.spent_cents, txn_count = excluded.txn_count
+         WHERE period_aggregate.spent_cents != excluded.spent_cents
+           OR period_aggregate.txn_count != excluded.txn_count`,
       )
       .bind(userId, periodId),
   ];

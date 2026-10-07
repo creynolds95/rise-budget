@@ -3,6 +3,10 @@
  * minimum, and whatever is left of the monthly budget goes to one target loan at a time by
  * strategy. The budget is the sum of the payments plus the extra; when a loan finishes, its
  * payment either stays in the budget (carrying forward) or drops out.
+ *
+ * Balances run in hundredths of a cent (`SUB`), exactly like the mortgage schedule
+ * (`amortize`), so the Debt page and the mortgage page agree on a loan's lifetime interest to
+ * the cent. Everything reported is whole cents.
  */
 export type Strategy = 'snowball' | 'avalanche';
 
@@ -53,6 +57,11 @@ export interface PayoffResult {
 /** Stop here: a payment that can't beat its interest would otherwise run forever. */
 export const MAX_MONTHS = 1200;
 
+/** Hundredths of a cent per cent: the unit balances run in, as servicers do. */
+export const SUB = 100;
+const toCents = (sub: number): number => Math.round(sub / SUB);
+
+/** One month's interest, rounded to the unit `balance` is in (cents here; `SUB` inside). */
 export const monthlyInterest = (balanceCents: number, aprMilliPct: number): number =>
   Math.round((balanceCents * aprMilliPct) / 1_200_000);
 
@@ -79,15 +88,17 @@ const targetOrder = (open: State[], strategy: Strategy): State[] =>
   });
 
 export function simulatePayoff(loans: DebtLoan[], opts: PayoffOptions): PayoffResult {
+  // Every amount below is in SUB units (hundredths of a cent) until it's reported.
   const states: State[] = loans.map((loan) => ({
     loan,
-    owed: loan.balanceCents,
+    owed: loan.balanceCents * SUB,
     payoffMonth: loan.balanceCents > 0 ? null : 0,
     interest: 0,
   }));
-  const carried =
-    states.filter((s) => s.owed > 0).reduce((n, s) => n + s.loan.paymentCents, 0) + opts.extraCents;
-  const totalOwed = () => states.reduce((n, s) => n + s.owed, 0);
+  const pay = (s: State) => s.loan.paymentCents * SUB;
+  const extra = opts.extraCents * SUB;
+  const carried = states.filter((s) => s.owed > 0).reduce((n, s) => n + pay(s), 0) + extra;
+  const totalOwed = () => toCents(states.reduce((n, s) => n + s.owed, 0));
   const totalOwedByMonth = [totalOwed()];
 
   const applyLumps = (at: number) => {
@@ -99,7 +110,7 @@ export function simulatePayoff(loans: DebtLoan[], opts: PayoffOptions): PayoffRe
         open.filter((s) => !named.includes(s)),
         lump.strategy ?? opts.strategy,
       );
-      let left = lump.cents;
+      let left = lump.cents * SUB;
       for (const s of [...named, ...rest]) {
         const paid = Math.min(left, s.owed);
         s.owed -= paid;
@@ -112,19 +123,17 @@ export function simulatePayoff(loans: DebtLoan[], opts: PayoffOptions): PayoffRe
   totalOwedByMonth[0] = totalOwed();
 
   let month = 0;
-  while (totalOwed() > 0 && month < MAX_MONTHS) {
+  while (states.some((s) => s.owed > 0) && month < MAX_MONTHS) {
     month++;
     const active = states.filter((s) => s.owed > 0);
-    let spare = opts.rollForward
-      ? carried
-      : active.reduce((n, s) => n + s.loan.paymentCents, 0) + opts.extraCents;
+    let spare = opts.rollForward ? carried : active.reduce((n, s) => n + pay(s), 0) + extra;
     for (const s of active) {
       const accrued = monthlyInterest(s.owed, s.loan.aprMilliPct);
       s.owed += accrued;
       s.interest += accrued;
     }
     for (const s of active) {
-      const paid = Math.min(s.loan.paymentCents, s.owed);
+      const paid = Math.min(pay(s), s.owed);
       s.owed -= paid;
       spare -= paid;
     }
@@ -145,7 +154,7 @@ export function simulatePayoff(loans: DebtLoan[], opts: PayoffOptions): PayoffRe
   const results = states.map((s) => ({
     id: s.loan.id,
     payoffMonth: s.payoffMonth,
-    interestCents: s.interest,
+    interestCents: toCents(s.interest),
   }));
   const open = results.some((r) => r.payoffMonth === null);
   return {

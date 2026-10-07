@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { app } from '../src/index';
+import { sha256Hex } from '../src/lib/crypto';
 import { signAccess, signRegistration } from '../src/lib/tokens';
 import { totpAt } from '../src/lib/totp';
 import { SoftAuthenticator } from './helpers/authenticator';
@@ -27,10 +28,59 @@ describe('T14 passkeys + sessions', () => {
     expect((await call('POST', '/auth/refresh', { cookie: cookie2 })).status).toBe(401);
   });
 
+  it('two tabs refreshing with the same token both stay signed in (60 s grace)', async () => {
+    const u = await signedInUser();
+    const [a, b] = await Promise.all([
+      call('POST', '/auth/refresh', { cookie: u.cookie }),
+      call('POST', '/auth/refresh', { cookie: u.cookie }),
+    ]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    // Both land on the same new refresh token, so neither tab strands the other.
+    expect(refreshCookie(a.headers)).toBe(refreshCookie(b.headers));
+    expect(refreshCookie(a.headers)).not.toBe(u.cookie);
+    expect((await call('GET', '/me', { access: b.json.access })).status).toBe(200);
+    expect((await call('POST', '/auth/refresh', { cookie: refreshCookie(a.headers) })).status).toBe(
+      200,
+    );
+  });
+
+  it('a lost refresh response can be retried with the old token within the grace window', async () => {
+    const u = await signedInUser();
+    const lost = await call('POST', '/auth/refresh', { cookie: u.cookie });
+    expect(lost.status).toBe(200);
+    // The response never reached the device; it still holds the old cookie.
+    const retry = await call('POST', '/auth/refresh', { cookie: u.cookie });
+    expect(retry.status).toBe(200);
+    expect(refreshCookie(retry.headers)).toBe(refreshCookie(lost.headers));
+    const next = await call('POST', '/auth/refresh', { cookie: refreshCookie(retry.headers) });
+    expect(next.status).toBe(200);
+    const { results } = await env.DB.prepare(
+      "SELECT action FROM audit_log WHERE user_id = ?1 AND action = 'auth.refresh_reuse_detected'",
+    )
+      .bind(u.userId)
+      .all();
+    expect(results).toHaveLength(0);
+  });
+
+  it('a token two rotations old is reuse even inside the grace window', async () => {
+    const u = await signedInUser();
+    const r1 = await call('POST', '/auth/refresh', { cookie: u.cookie });
+    const r2 = await call('POST', '/auth/refresh', { cookie: refreshCookie(r1.headers) });
+    expect(r2.status).toBe(200);
+    expect((await call('POST', '/auth/refresh', { cookie: u.cookie })).status).toBe(401);
+    expect(
+      (await call('POST', '/auth/refresh', { cookie: refreshCookie(r2.headers) })).status,
+    ).toBe(401);
+  });
+
   it('a replayed refresh token revokes the whole session family', async () => {
     const u = await signedInUser();
     const r1 = await call('POST', '/auth/refresh', { cookie: u.cookie });
     const current = refreshCookie(r1.headers);
+    // Past the grace window.
+    await env.DB.prepare('UPDATE session SET rotated_at = ?2 WHERE user_id = ?1')
+      .bind(u.userId, new Date(Date.now() - 120_000).toISOString())
+      .run();
 
     // Attacker replays the superseded token.
     const replay = await call('POST', '/auth/refresh', { cookie: u.cookie });
@@ -178,8 +228,9 @@ describe('T15 TOTP, recovery codes, provisioning', () => {
         })
       ).status,
     ).toBe(200);
+    // The code that confirmed setup is spent; the next one signs in.
     const login = await call('POST', '/auth/totp/verify', {
-      body: { email: u.email, code: await totpAt(secret, Date.now()) },
+      body: { email: u.email, code: await totpAt(secret, Date.now() + 30_000) },
     });
     expect(login.status).toBe(200);
     expect(login.json.access).toBeTruthy();
@@ -188,6 +239,109 @@ describe('T15 TOTP, recovery codes, provisioning', () => {
       .bind(u.userId)
       .first<{ secret_enc: string }>();
     expect(row?.secret_enc).not.toContain(secret);
+  });
+
+  it('TOTP: a code works once, even inside its 30-second window', async () => {
+    const u = await signedInUser();
+    const stepUp = { 'x-step-up': u.stepUp };
+    const { json } = await call('POST', '/auth/totp/setup', { access: u.access, headers: stepUp });
+    await call('POST', '/auth/totp/confirm', {
+      access: u.access,
+      headers: stepUp,
+      body: { code: await totpAt(json.secret, Date.now() - 30_000) },
+    });
+    const code = await totpAt(json.secret, Date.now());
+    const first = await call('POST', '/auth/totp/verify', { body: { email: u.email, code } });
+    expect(first.status).toBe(200);
+    const replay = await call('POST', '/auth/totp/verify', { body: { email: u.email, code } });
+    expect(replay.status).toBe(401);
+    // An earlier step is spent too once a later one has been used.
+    const older = await call('POST', '/auth/totp/verify', {
+      body: { email: u.email, code: await totpAt(json.secret, Date.now() - 30_000) },
+    });
+    expect(older.status).toBe(401);
+  });
+
+  it('TOTP: re-running setup keeps the confirmed authenticator until the new one confirms', async () => {
+    const u = await signedInUser();
+    const stepUp = { 'x-step-up': u.stepUp };
+    const first = (await call('POST', '/auth/totp/setup', { access: u.access, headers: stepUp }))
+      .json.secret as string;
+    await call('POST', '/auth/totp/confirm', {
+      access: u.access,
+      headers: stepUp,
+      body: { code: await totpAt(first, Date.now() - 30_000) },
+    });
+    const second = (await call('POST', '/auth/totp/setup', { access: u.access, headers: stepUp }))
+      .json.secret as string;
+    expect(second).not.toBe(first);
+    // Still the old one until the new one is confirmed.
+    expect(
+      (
+        await call('POST', '/auth/totp/verify', {
+          body: { email: u.email, code: await totpAt(first, Date.now()) },
+        })
+      ).status,
+    ).toBe(200);
+    // Confirming checks the new secret, not the old one.
+    expect(
+      (
+        await call('POST', '/auth/totp/confirm', {
+          access: u.access,
+          headers: stepUp,
+          body: { code: await totpAt(first, Date.now() + 30_000) },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call('POST', '/auth/totp/confirm', {
+          access: u.access,
+          headers: stepUp,
+          body: { code: await totpAt(second, Date.now()) },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call('POST', '/auth/totp/verify', {
+          body: { email: u.email, code: await totpAt(first, Date.now() + 30_000) },
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await call('POST', '/auth/totp/verify', {
+          body: { email: u.email, code: await totpAt(second, Date.now() + 30_000) },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it('fallback lockout holds against attempts sent all at once', async () => {
+    const u = await signedInUser();
+    const tries = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        call('POST', '/auth/recovery/verify', { body: { email: u.email, code: 'AAAAA-BBBBB' } }),
+      ),
+    );
+    const statuses = tries.map((t) => t.status);
+    expect(statuses.filter((s) => s === 401)).toHaveLength(5);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(7);
+  });
+
+  it('a successful fallback sign-in does not count toward the lockout', async () => {
+    const u = await signedInUser();
+    const gen = await call('POST', '/auth/recovery/generate', {
+      access: u.access,
+      headers: { 'x-step-up': u.stepUp },
+    });
+    const codes = gen.json.codes as string[];
+    for (const code of codes.slice(0, 6)) {
+      expect(
+        (await call('POST', '/auth/recovery/verify', { body: { email: u.email, code } })).status,
+      ).toBe(200);
+    }
   });
 
   it('TOTP: locks out after 5 failures in 15 minutes', async () => {
@@ -243,6 +397,19 @@ describe('T15 TOTP, recovery codes, provisioning', () => {
       .all<{ code_hash: string }>();
     const stored = results.map((r) => r.code_hash).join(' ');
     for (const c of codes) expect(stored).not.toContain(c.replace('-', ''));
+    // Keyed, not a bare SHA-256 that a leaked backup could be brute-forced against.
+    for (const c of codes) expect(stored).not.toContain(await sha256Hex(c.replace('-', '')));
+  });
+
+  it('a recovery code stored by the old unkeyed hash still works, once', async () => {
+    const u = await signedInUser();
+    await env.DB.prepare('INSERT INTO recovery_code (id, user_id, code_hash) VALUES (?1, ?2, ?3)')
+      .bind(crypto.randomUUID(), u.userId, await sha256Hex('LEGACY1234'))
+      .run();
+    const use = () =>
+      call('POST', '/auth/recovery/verify', { body: { email: u.email, code: 'legac-y1234' } });
+    expect((await use()).status).toBe(200);
+    expect((await use()).status).toBe(401);
   });
 
   it('unknown emails are rejected without revealing whether the user exists', async () => {
@@ -362,14 +529,28 @@ describe('C17 device management', () => {
     );
   });
 
-  it('signing a device out ends its refresh', async () => {
+  it('signing a device out ends its refresh and its access token at once', async () => {
     const u = await signedInUser();
-    const [s] = (await call('GET', '/devices', { access: u.access })).json.sessions;
-    expect((await call('DELETE', `/devices/sessions/${s.id}`, { access: u.access })).status).toBe(
-      204,
-    );
+    const otherAccess = (await passkeyLogin(u.device)).json.access as string;
+    const sessions = (await call('GET', '/devices', { access: otherAccess })).json.sessions as {
+      id: string;
+      current: boolean;
+    }[];
+    const s = sessions.find((x) => !x.current);
+    expect(
+      (await call('DELETE', `/devices/sessions/${String(s?.id)}`, { access: otherAccess })).status,
+    ).toBe(204);
     expect((await call('POST', '/auth/refresh', { cookie: u.cookie })).status).toBe(401);
-    expect((await call('GET', '/devices', { access: u.access })).json.sessions).toEqual([]);
+    // Not "within 15 minutes": the signed-out session's access token stops working now.
+    expect((await call('GET', '/me', { access: u.access })).status).toBe(401);
+    expect((await call('GET', '/me', { access: otherAccess })).status).toBe(200);
+    expect((await call('GET', '/devices', { access: otherAccess })).json.sessions).toHaveLength(1);
+  });
+
+  it('an access token for a session that does not exist is refused', async () => {
+    const u = await signedInUser();
+    const forged = await signAccess(env, u.userId, crypto.randomUUID());
+    expect((await call('GET', '/me', { access: forged })).status).toBe(401);
   });
 
   it('removing a passkey needs a step-up and never removes the last one', async () => {

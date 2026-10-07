@@ -5,15 +5,21 @@ import { env } from 'cloudflare:workers';
  * cap bills). Installed once per test file; `rowsRead` measures one call.
  */
 let total = 0;
+let totalWritten = 0;
 let installed = false;
 /** Rows read per statement text, for finding which query a budget breach came from. */
 export const bySql = new Map<string, number>();
+/** Rows written per statement text, the same for write budgets. */
+export const writtenBySql = new Map<string, number>();
 
-type Meta = { meta?: { rows_read?: number } };
+type Meta = { meta?: { rows_read?: number; rows_written?: number } };
 const tally = (r: Meta, sql = '?') => {
   const n = r.meta?.rows_read ?? 0;
   total += n;
   bySql.set(sql, (bySql.get(sql) ?? 0) + n);
+  const w = r.meta?.rows_written ?? 0;
+  totalWritten += w;
+  if (w > 0) writtenBySql.set(sql, (writtenBySql.get(sql) ?? 0) + w);
 };
 
 const sqlText = new WeakMap<object, string>();
@@ -67,4 +73,15 @@ export async function rowsRead(fn: () => Promise<unknown>): Promise<number> {
   const before = total;
   await fn();
   return total - before;
+}
+
+/** Rows read and written by one call. */
+export async function rowsTouched(
+  fn: () => Promise<unknown>,
+): Promise<{ read: number; written: number }> {
+  install();
+  const before = total;
+  const beforeWritten = totalWritten;
+  await fn();
+  return { read: total - before, written: totalWritten - beforeWritten };
 }

@@ -1,12 +1,6 @@
 import { dateFromDayNumber, dayNumber } from '../networth';
-import {
-  addMonths,
-  EARLY_MATCH_DAYS,
-  nextSemimonthlyDate,
-  parts,
-  steadyAmounts,
-  type Cadence,
-} from './detect';
+import { within5Pct } from './amount';
+import { addMonths, EARLY_MATCH_DAYS, nextSemimonthlyDate, parts, type Cadence } from './detect';
 import { cashMovements } from './suggest';
 
 /** A Surplus schedule as the transaction page sees it. `amountCents` carries the SPEC §1.1 sign. */
@@ -87,7 +81,7 @@ export function surplusMatch(
   if (moves.size === 0) return { state: 'untracked' };
   const alike = (s: SurplusScheduleShape) =>
     Math.sign(s.amountCents) === Math.sign(t.amountCents) &&
-    steadyAmounts([s.amountCents, t.amountCents]);
+    within5Pct(t.amountCents, s.amountCents);
   const own = schedules.find((s) => !s.isHandAdded && s.merchant === t.merchant);
   if (own) return alike(own) ? { state: 'tracked', name: own.name } : { state: 'untracked' };
   const hand = schedules.find((s) => s.isHandAdded && alike(s) && nearDue(s, t.date));

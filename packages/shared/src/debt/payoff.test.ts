@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { amortize } from './amortize';
 import { MAX_MONTHS, monthlyInterest, simulatePayoff, stepBalance, type DebtLoan } from './payoff';
 
 const plain = { extraCents: 0, strategy: 'snowball', rollForward: true } as const;
@@ -17,15 +18,42 @@ describe('monthly interest and balance step', () => {
 });
 
 describe('payoff simulation', () => {
+  it('works in hundredths of a cent like the mortgage schedule, so both agree on a loan', () => {
+    // The servicer's mortgage: amortize matches its statement to the cent ($366,056.69). The
+    // Debt page must say the same; rounding interest to whole cents monthly drifted ~21¢.
+    const loan = { balanceCents: 33_064_962, aprMilliPct: 5875, paymentCents: 196_811 };
+    const schedule = amortize({ ...loan, extraMonthlyCents: 0, lumps: [] });
+    const r = simulatePayoff([{ id: 'home', ...loan }], plain);
+    expect(schedule.totalInterestCents).toBe(36_605_669);
+    expect(r.totalInterestCents).toBe(schedule.totalInterestCents);
+    expect(r.loans[0]?.payoffMonth).toBe(schedule.payoffMonth);
+    expect(r.totalOwedByMonth.slice(1)).toEqual(schedule.rows.map((x) => x.balanceCents));
+    // With extra principal too.
+    const extra = amortize({ ...loan, extraMonthlyCents: 20_000, lumps: [] });
+    const r2 = simulatePayoff([{ id: 'home', ...loan }], { ...plain, extraCents: 20_000 });
+    expect(r2.totalInterestCents).toBe(extra.totalInterestCents);
+    expect(r2.debtFreeMonth).toBe(extra.payoffMonth);
+  });
+
   it('a single loan amortizes to the month the closed form predicts', () => {
     // $10,000 at 6% with $200/mo: n = -ln(1 - rB/P) / ln(1 + r) = 57.7, so 58 payments.
     const r = simulatePayoff(
       [{ id: 'a', balanceCents: 1_000_000, aprMilliPct: 6000, paymentCents: 20_000 }],
       plain,
     );
-    expect(r.loans).toEqual([{ id: 'a', payoffMonth: 58, interestCents: 153_616 }]);
+    // 153_614: in hundredths of a cent, like the mortgage schedule (was 153_616 rounding monthly).
+    expect(r.loans).toEqual([{ id: 'a', payoffMonth: 58, interestCents: 153_614 }]);
     expect(r.debtFreeMonth).toBe(58);
-    expect(r.totalInterestCents).toBe(153_616);
+    expect(r.totalInterestCents).toBe(153_614);
+    expect(
+      amortize({
+        balanceCents: 1_000_000,
+        aprMilliPct: 6000,
+        paymentCents: 20_000,
+        extraMonthlyCents: 0,
+        lumps: [],
+      }).totalInterestCents,
+    ).toBe(153_614);
   });
 
   it('the total owed starts at today and ends at zero', () => {
@@ -78,13 +106,13 @@ describe('payoff simulation', () => {
   it('snowball sends extra to the smallest balance first', () => {
     const r = simulatePayoff(two, { ...plain, extraCents: 10_000 });
     expect(r.loans.map((l) => l.payoffMonth)).toEqual([6, 22]);
-    expect(r.totalInterestCents).toBe(51_064);
+    expect(r.totalInterestCents).toBe(51_066);
   });
 
   it('avalanche sends extra to the highest APR first and pays less interest', () => {
     const r = simulatePayoff(two, { ...plain, extraCents: 10_000, strategy: 'avalanche' });
     expect(r.loans.map((l) => l.payoffMonth)).toEqual([11, 22]);
-    expect(r.totalInterestCents).toBe(49_848);
+    expect(r.totalInterestCents).toBe(49_850);
   });
 
   it('a finished loan’s payment rolls onto the next one only when carrying forward', () => {

@@ -34,6 +34,21 @@ describe('goal view', () => {
     );
   });
 
+  it('two goals on one account share it instead of each counting the whole balance', () => {
+    const trip = goal({ id: 'trip' });
+    const car = goal({ id: 'car', name: 'Car' });
+    const both = [trip, car];
+    const view = (g: SavingsGoal) => goalView(g, [acct('a', 40_000)], '2026-10', both);
+    expect(view(trip).savedCents).toBe(20_000);
+    expect(view(car).savedCents).toBe(20_000);
+    // A goal with its own share takes it first; the other gets what's left.
+    const claimed = [goal({ id: 'trip', savedCents: 30_000 }), car];
+    expect(goalView(car, [acct('a', 40_000)], '2026-10', claimed).savedCents).toBe(10_000);
+    // A goal on another account doesn't share this one.
+    const elsewhere = [trip, goal({ id: 'car', accountId: 'b' })];
+    expect(goalView(trip, [acct('a', 40_000)], '2026-10', elsewhere).savedCents).toBe(40_000);
+  });
+
   it('an emergency fund derives its target and months covered from expenses', () => {
     const v = goalView(
       goal({ kind: 'emergency', months: 6, monthlyExpenseCents: 400_000 }),

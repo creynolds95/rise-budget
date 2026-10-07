@@ -57,7 +57,8 @@ export function mortgageView(
     a.payoffMonth === null ? null : addMonths(period, a.payoffMonth - lead);
   const paidCount =
     base.payoffMonth === null ? 0 : Math.max(0, settings.mortgageTermMonths - base.payoffMonth);
-  const thisYear = Math.min(paidCount, Number(period.slice(5, 7)));
+  // A pending payment is this month's, not yet made: the year so far is one fewer.
+  const thisYear = Math.min(paidCount, Math.max(0, Number(period.slice(5, 7)) - lead));
   const sooner =
     base.payoffMonth !== null && plan.payoffMonth !== null
       ? base.payoffMonth - plan.payoffMonth

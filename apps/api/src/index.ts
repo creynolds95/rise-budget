@@ -28,7 +28,7 @@ import type { Env } from './env';
 import { BACKUP_CRON, runBackup } from './backup/run';
 import { applyFollows } from './lib/follow';
 import { applyLoanPayments } from './lib/loanPayments';
-import { runSync } from './sync/run';
+import { cronOverlapDays, runSync } from './sync/run';
 import { sourceFromEnv } from './sync/source';
 
 /** Everything is under /api; the rest of the origin is the web app (Workers Static Assets). */
@@ -105,7 +105,12 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
     if (!source || !env.SIMPLEFIN_OWNER_EMAIL) return;
     const userId = await findUserIdByEmail(db, env.SIMPLEFIN_OWNER_EMAIL);
     if (!userId) return;
-    const r = await runSync(db, userId, source);
+    // An idle cron run (nothing new from the bank) skips the CPU-heavy recurring re-detection.
+    // Once a week it re-reads five weeks back, for rows a bank backfills late.
+    const r = await runSync(db, userId, source, {
+      skipRecurringWhenIdle: true,
+      overlapDays: cronOverlapDays(new Date(event.scheduledTime)),
+    });
     if (r.status !== 'failed') {
       // A loan-payment hiccup must not fail the sync; the Debt page still offers Apply by hand.
       await applyLoanPayments(db, userId, new Date(event.scheduledTime)).catch((e: unknown) =>

@@ -5,6 +5,13 @@
 
 export const dayKey = (d: Date) => Number(d.toISOString().slice(0, 10).replaceAll('-', ''));
 
+/**
+ * A request that read fewer rows than this isn't worth its own per-route row: the routes table
+ * is for finding the heavy readers, and upserting it on every small request was a third of the
+ * meter's own writes.
+ */
+export const ROUTE_USAGE_MIN_ROWS = 500;
+
 export async function addUsage(
   db: D1Database,
   now: Date,
@@ -23,7 +30,7 @@ export async function addUsage(
       )
       .bind(day, rowsRead, rowsWritten, requests),
   ];
-  if (route && rowsRead > 0) {
+  if (route && rowsRead >= ROUTE_USAGE_MIN_ROWS) {
     stmts.push(
       db
         .prepare(

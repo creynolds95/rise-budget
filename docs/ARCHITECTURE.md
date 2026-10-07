@@ -419,7 +419,13 @@ stable machine-readable `code`.
 
 **Token model.** Access JWT, 15 min, signed HS256 with a Worker secret. Refresh token is
 opaque, 30 days, stored hashed in `session`, rotated on every use with reuse-detection
-(a replayed refresh revokes the whole session family).
+(a replayed refresh revokes the whole session family). The token current just before the
+last rotation stays good for 60 s and gets the same successor (derived under the Worker
+secret), so two tabs refreshing together or a lost response don't sign the owner out; tabs
+also take turns through a Web Lock. Every authenticated request checks its session row
+(one primary-key read), so a revoked device is out at once, not after 15 minutes. The
+whole-database backup download needs a passkey step-up. TOTP codes are single-use;
+recovery codes are stored as HMAC-SHA-256 under `TOTP_KEY`.
 
 **Web storage.** Refresh token in an `httpOnly; Secure; SameSite=Strict` cookie. Access
 token in memory only — never `localStorage`.
@@ -445,12 +451,14 @@ Cron trigger `0 8,14,22 * * *` (UTC) → 3× daily, plus `POST /sync/run`.
 ```
 for each synced account:
     fetch window = [last_synced_at - 5 days, now]      # overlap absorbs late posts
+                                                       # (35 days on Sunday's 08:00 run: late backfills)
     upsert by (account_id, source, source_id)
     reconcile pending → posted   (SPEC §3.2)
     run transfer detection over the affected window
     run categorisation for new rows
     update account.balance_cents and last_synced_at
-    recompute period_aggregate for touched periods
+    recompute period_aggregate for touched periods     # once each, in the account's batch;
+                                                       # only changed rows are written
 write sync_run
 ```
 

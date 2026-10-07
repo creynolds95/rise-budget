@@ -1,4 +1,5 @@
 import { REFUND_MAX_DAYS, suggestRefundOriginals } from '@rise/shared/categorize';
+import { Loading } from '../components/Pending';
 import { surplusMatch, type Cadence } from '@rise/shared/recurring';
 import type { Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
@@ -95,7 +96,13 @@ export function TransactionDetail() {
         header={{ back, title: '' }}
         identity={{
           label: txn.isError ? 'Not found' : 'Transaction',
-          hero: txn.isError ? '—' : <Skeleton className="h-11 w-40" />,
+          hero: txn.isError ? (
+            '—'
+          ) : (
+            <Loading compact>
+              <Skeleton className="h-11 w-40" />
+            </Loading>
+          ),
         }}
       />
     );

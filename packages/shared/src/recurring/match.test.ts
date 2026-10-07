@@ -38,6 +38,15 @@ describe('surplusMatch', () => {
     expect(match(txn({ amountCents: 4999 }), [sched({})])).toEqual({ state: 'untracked' });
   });
 
+  it('“within 5%” means 5% of the schedule’s amount, not ~10%', () => {
+    const s = [sched({ amountCents: 10000 })];
+    expect(match(txn({ amountCents: 10500 }), s)).toEqual({ state: 'tracked', name: 'Netflix' });
+    expect(match(txn({ amountCents: 9500 }), s)).toEqual({ state: 'tracked', name: 'Netflix' });
+    // 9% off: within 5% of the pair's average, but not within 5% of the schedule.
+    expect(match(txn({ amountCents: 10900 }), s)).toEqual({ state: 'untracked' });
+    expect(match(txn({ amountCents: 9100 }), s)).toEqual({ state: 'untracked' });
+  });
+
   it('a refund from a tagged merchant is not', () => {
     expect(match(txn({ amountCents: -1599 }), [sched({})])).toEqual({ state: 'untracked' });
   });

@@ -1,9 +1,9 @@
 import { dayNumber } from '../networth';
+import { within5Pct } from './amount';
 import {
   detectSemimonthly,
   detectSeries,
   INTERVAL_TOLERANCE_DAYS,
-  steadyAmounts,
   type DetectedSeries,
   type Occurrence,
 } from './detect';
@@ -100,7 +100,7 @@ export function likelySameAs(
   const match = schedules.find(
     (r) =>
       Math.sign(r.expectedAmountCents) === Math.sign(s.expectedAmountCents) &&
-      steadyAmounts([r.expectedAmountCents, s.expectedAmountCents]) &&
+      within5Pct(s.expectedAmountCents, r.expectedAmountCents) &&
       Math.abs(dayNumber(r.nextDate) - dayNumber(s.nextExpectedDate)) <= INTERVAL_TOLERANCE_DAYS,
   );
   return match?.name ?? null;

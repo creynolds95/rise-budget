@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import type { ViewCategory } from '@rise/shared/budget';
 import type { Category, CategoryGroup, Reallocation } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
@@ -51,7 +52,12 @@ export function Budget() {
     </Link>,
   );
 
-  if (!period.data || !groups.data || !categories.data) return <BudgetSkeleton />;
+  if (!period.data || !groups.data || !categories.data)
+    return (
+      <Loading>
+        <BudgetSkeleton />
+      </Loading>
+    );
   const p = period.data;
   const byId = new Map(categories.data.map((c) => [c.id, c]));
   const expenseGroups = groups.data.filter((g) => g.kind === 'expense');
@@ -339,7 +345,7 @@ function MonthSwitcher({
     <nav aria-label="Month" className="gutter pt-1">
       <div className="flex items-center justify-between rounded-card bg-surface p-1 shadow-soft ring-1 ring-hairline">
         <button
-          className="min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70"
+          className="hit-44 min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70"
           onClick={() => onChange(addMonths(month, -1))}
         >
           ‹ {monthName(addMonths(month, -1), false).slice(0, 3)}
@@ -348,7 +354,7 @@ function MonthSwitcher({
           {monthName(month, month.slice(0, 4) !== current.slice(0, 4))}
         </h1>
         <button
-          className="min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70 disabled:opacity-30"
+          className="hit-44 min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70 disabled:opacity-30"
           disabled={month >= furthest}
           onClick={() => onChange(addMonths(month, 1))}
         >
@@ -546,7 +552,7 @@ function BudgetRow({
           <button
             onClick={onEdit}
             aria-label={`Planned for ${category?.name ?? 'category'}: ${formatCents(row.plannedCents)}. Change`}
-            className="flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
+            className="hit-44 flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
           >
             <MoneyText cents={row.plannedCents} whole={row.plannedCents % 100 === 0} />
           </button>
@@ -561,7 +567,7 @@ function BudgetRow({
             balanceIsZero(remainingCents)
               ? 'bg-sage-100 text-ink-muted'
               : over
-                ? 'bg-clay-100 text-clay'
+                ? 'bg-clay-100 text-clay-text'
                 : 'bg-sage-100 text-sage-700'
           }`}
         >

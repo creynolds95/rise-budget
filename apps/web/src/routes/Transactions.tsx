@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { listOrigin } from '../lib/nav';
@@ -244,13 +245,13 @@ export function Transactions() {
       </div>
 
       {active.length > 0 && (
-        <div className="mt-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:px-6">
+        <div className="mt-2 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none] md:px-6">
           {active.map((c) => (
             <button
               key={c.key}
               onClick={() => apply(c.clear(filters))}
               aria-label={`Remove filter: ${c.label}`}
-              className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-sage-100 pr-2.5 pl-3.5 type-caption font-medium text-sage-700 active:bg-sage-300"
+              className="hit-44 flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-sage-100 pr-2.5 pl-3.5 type-caption font-medium text-sage-700 active:bg-sage-300"
             >
               {c.label}
               <svg
@@ -267,7 +268,7 @@ export function Transactions() {
           {active.length > 1 && (
             <button
               onClick={() => apply({ ...parseFilters(new URLSearchParams()), q: filters.q })}
-              className="min-h-9 shrink-0 px-2 type-caption font-medium text-ink-muted"
+              className="hit-44 min-h-9 shrink-0 px-2 type-caption font-medium text-ink-muted"
             >
               Clear all
             </button>
@@ -284,8 +285,13 @@ export function Transactions() {
       )}
 
       <div className="gutter mt-3">
-        {list.isPending &&
-          [0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="mb-2 h-12 w-full" />)}
+        {list.isPending && (
+          <Loading>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="mb-2 h-12 w-full" />
+            ))}
+          </Loading>
+        )}
         {list.data && items.length === 0 && (
           <div className="py-12 text-center">
             <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-sage-100 text-sage-700">

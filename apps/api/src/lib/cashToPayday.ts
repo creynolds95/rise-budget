@@ -117,14 +117,19 @@ export async function buildCashToPaydayProjection(
   // A hand-added schedule has no charge to wait for; a tagged one waits for its real one.
   const upcoming = (rule: (typeof manualRules)[number], series: DetectedSeries, count: number) =>
     withAmountChange(upcomingOccurrences(series, today, count, rule.label == null), changeOf(rule));
-  const payEvents: CashEvent[] = paySchedules.flatMap(({ rule, merchant, series }) =>
+  const payRuns = paySchedules.map(({ rule, merchant, series }) =>
     upcoming(rule, series, PAYCHECK_HORIZON).map((o) => ({
       date: o.date,
       cashDeltaCents: -o.amountCents,
       label: displayNames.get(merchant) ?? merchant,
     })),
   );
-  const horizonEnd = payEvents.reduce((max, e) => (e.date > max ? e.date : max), today);
+  // The horizon ends where the soonest-ending schedule's projected paychecks run out. Past
+  // that, a faster schedule's later paychecks are missing while bills keep landing, which
+  // reads as a shortfall that isn't there.
+  const runEnds = payRuns.flatMap((r) => r.at(-1)?.date ?? []);
+  const horizonEnd = runEnds.length ? runEnds.reduce((a, b) => (b < a ? b : a)) : today;
+  const payEvents: CashEvent[] = payRuns.flat().filter((e) => e.date <= horizonEnd);
 
   const billEvents: CashEvent[] = bills.flatMap(({ rule, merchant, series }) =>
     upcoming(rule, series, MAX_BILL_OCCURRENCES)
