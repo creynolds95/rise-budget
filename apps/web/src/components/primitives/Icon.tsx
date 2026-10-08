@@ -1,5 +1,5 @@
 /** The handful of line icons Rise uses, drawn on a 24px grid at 1.75 stroke. */
-const PATHS = {
+export const PATHS = {
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
   eyeOff:
     'M3 3l18 18M10.6 6.2A9.5 9.5 0 0 1 12 6c5 0 8.5 4 9.5 6a14 14 0 0 1-2.6 3.3M6.7 7.7A14 14 0 0 0 2.5 12c1 2 4.5 6 9.5 6 1.3 0 2.5-.3 3.5-.7M9.9 10a3 3 0 0 0 4.1 4.1',
@@ -17,6 +17,8 @@ const PATHS = {
   car: 'M3 13l2-5a2 2 0 0 1 1.9-1.4h10.2A2 2 0 0 1 19 8l2 5v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-4zM3 13h18M7.5 15.5h.01M16.5 15.5h.01',
   coins:
     'M12 5c-4 0-7 1-7 2.5S8 10 12 10s7-1 7-2.5S16 5 12 5zM5 7.5v4C5 13 8 14 12 14s7-1 7-2.5v-4M5 11.5v4C5 17 8 18 12 18s7-1 7-2.5v-4',
+  // The bottom nav's Budget glyph, shared so Settings matches it.
+  budget: 'M6 20V10M12 20V4M18 20v6',
   chart: 'M4 19V5M4 19h16M8 15l3-4 3 2 5-6',
   briefcase: 'M4 8h16v11H4zM9 8V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M4 13h16',
   cap: 'M2 9l10-5 10 5-10 5-10-5zM6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5M22 9v6',

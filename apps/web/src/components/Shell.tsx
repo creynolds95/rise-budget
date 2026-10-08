@@ -4,7 +4,7 @@ import { Floater } from './Floater';
 import { MENU_ITEMS, NavDrawer } from './NavDrawer';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
-import { Icon } from './primitives/Icon';
+import { Icon, PATHS } from './primitives/Icon';
 import { HeaderActionsContext } from '../lib/headerActions';
 import { useMe } from '../lib/queries';
 import { useScrollMemory } from '../lib/scrollMemory';
@@ -13,9 +13,9 @@ import { TABS, type Tab } from '../routes/table';
 
 const ICON: Record<Tab, string> = {
   dashboard: 'M4 13h6V4H4zm10 7h6v-9h-6zM4 20h6v-4H4zm10-11h6V4h-6z',
-  accounts: 'M3 9l9-5 9 5M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18',
+  accounts: PATHS.bank,
   transactions: 'M5 7h14M5 12h14M5 17h9',
-  budget: 'M6 20V10M12 20V4M18 20v6',
+  budget: PATHS.budget,
 };
 
 /**
