@@ -528,6 +528,20 @@ A series yields `next_expected_date` and `expected_amount_cents`, which feed:
 A series is marked `broken` if an expected occurrence is >7 days late, surfaced as
 "Netflix hasn't charged since July."
 
+### 7.1 Subscription radar
+
+Recurring shows what a year of live recurring charges costs (money out only), and two quiet
+notes per series, each for 60 days after it happened:
+
+- **Price went up**: the latest price is over 5% above the charge before it started.
+- **Charged twice**: two charges within 5% of each other inside a quarter of one cycle
+  (never for weekly series, which sit too close together to tell).
+
+A price change or a double charge is exactly what stops a series fitting detection for a
+while, so the radar reads every known series' own charges, not only the ones detected on this
+refresh. Notes are a gold dot and plain text: never clay, never a badge, never a push unless
+the owner turns that on. Each kind can be turned off in Settings → Alerts.
+
 ---
 
 ## 8. Review queue
@@ -541,6 +555,22 @@ The primary daily interaction. At ~175 transactions/month this must be fast.
 - Transfer pairs render as a single linked row.
 - Splits are reachable in one tap from the row.
 - The queue count is the app's only badge. It should reach zero weekly.
+
+### 8.1 Quiet charge flags
+
+Every charge is reviewed anyway, so a flag is a caption on the row and a line on the
+transaction, not an interruption. Recurring refresh sets at most one flag on a charge still
+waiting for review, posted in the last 10 days, money out, comparing it with the same
+merchant's own history:
+
+- **Possible duplicate**: the same amount at the same account within two days of another
+  charge, $20 or more.
+- **More than usual here**: at least three earlier charges, and this one is over 2.5× their
+  median and at least $50 more.
+- **First charge here**: no earlier charge at this merchant, and $300 or more.
+
+A flag is set once and never recomputed. "Looks fine" clears it for good. Each kind can be
+turned off in Settings → Alerts, which hides it everywhere.
 
 ---
 

@@ -481,6 +481,13 @@ describe('T16 auth middleware + error contract', () => {
       debt: null,
       savings: null,
       follow: { rules: [], log: [] },
+      alerts: {
+        priceUp: true,
+        doubleCharge: true,
+        duplicate: true,
+        unusual: true,
+        firstTime: true,
+      },
     });
   });
 

@@ -10,6 +10,7 @@ import {
   RecurringCadence,
   RecurringStatus,
   ReviewState,
+  ChargeFlag,
   RolloverPolicy,
   RuleMatchField,
   RuleMatchType,
@@ -178,6 +179,23 @@ export const FollowSettings = z.object({
 });
 export type FollowSettings = z.infer<typeof FollowSettings>;
 
+/** Which quiet notices show (SPEC §8.1). Each is the owner's choice; all on to start. */
+export const AlertSettings = z.object({
+  priceUp: z.boolean().default(true),
+  doubleCharge: z.boolean().default(true),
+  duplicate: z.boolean().default(true),
+  unusual: z.boolean().default(true),
+  firstTime: z.boolean().default(true),
+});
+export type AlertSettings = z.infer<typeof AlertSettings>;
+const ALERTS_ON: AlertSettings = {
+  priceUp: true,
+  doubleCharge: true,
+  duplicate: true,
+  unusual: true,
+  firstTime: true,
+};
+
 export const UserSettings = z.object({
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
@@ -204,6 +222,7 @@ export const UserSettings = z.object({
   debt: DebtPlan.nullable().default(null),
   savings: SavingsPlan.nullable().default(null),
   follow: FollowSettings.default({ rules: [], log: [] }),
+  alerts: AlertSettings.default(ALERTS_ON),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 
@@ -377,6 +396,8 @@ export const Transaction = z.object({
   sourceId: z.string().nullable(),
   splits: z.array(Split),
   tagIds: z.array(Id).default([]),
+  /** A quiet flag until the user says it's fine (SPEC §8.1). */
+  flag: ChargeFlag.nullable().default(null),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -422,6 +443,10 @@ export const RecurringSeries = z.object({
   updatedAt: IsoDateTime,
   /** 'manual' = the owner's "Recurring Cash Withdrawal" tag; 'detected' = auto-detected (SPEC §7). */
   source: z.enum(['detected', 'manual']),
+  /** Subscription radar (SPEC §7.1), each only for a while after it happened. */
+  previousAmountCents: Cents.nullable().default(null),
+  priceChangedOn: IsoDate.nullable().default(null),
+  doubleChargedOn: IsoDate.nullable().default(null),
 });
 export type RecurringSeries = z.infer<typeof RecurringSeries>;
 

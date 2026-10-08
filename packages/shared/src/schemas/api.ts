@@ -12,6 +12,7 @@ import {
 } from './enums';
 import {
   AccountBadgeStyle,
+  AlertSettings,
   DashboardTile,
   DebtPlan,
   FollowRule,
@@ -79,6 +80,7 @@ export const PatchSettingsBody = z.object({
   savings: SavingsPlan.nullable().optional(),
   /** Rules only: the log is the server's. */
   follow: z.object({ rules: z.array(FollowRule).max(20) }).optional(),
+  alerts: AlertSettings.optional(),
 });
 
 export const FollowUndoBody = z.object({ txnId: Id });
@@ -127,6 +129,8 @@ export const PatchTransactionBody = z.object({
   // M1: past months are editable, not frozen — moving a transaction's date moves its splits
   // to the new period and flags either side if closed (SPEC §2.5).
   postedAt: IsoDate.optional(),
+  /** "Looks fine": clears a quiet flag for good (SPEC §8.1). */
+  clearFlag: z.literal(true).optional(),
 });
 
 export const CreateTransactionBody = z.object({

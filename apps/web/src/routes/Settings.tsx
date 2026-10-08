@@ -1,5 +1,6 @@
 import { isTransfersGroup } from '@rise/shared/categorize';
 import type {
+  AlertSettings,
   AppLock,
   Category,
   CategoryGroup,
@@ -27,6 +28,7 @@ import { Icon, IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
 import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Sortable } from '../components/primitives/Sortable';
+import { Toggle } from '../components/primitives/Toggle';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -57,6 +59,7 @@ const TagsSection = lazy(() => import('./Tags').then((m) => ({ default: m.TagsSe
 const SECTIONS = {
   appearance: 'Appearance',
   budget: 'Budget settings',
+  alerts: 'Alerts',
   categories: 'Categories',
   investments: 'Investments',
   reports: 'Reports',
@@ -115,6 +118,15 @@ export function Settings() {
               ? me.settings.planChangesApplyToFuture
                 ? 'Plans carry to future months'
                 : 'Plans change one month at a time'
+              : undefined
+          }
+        />
+        <Card
+          to="/settings/alerts"
+          title="Alerts"
+          state={
+            me
+              ? `${Object.values(me.settings.alerts).filter(Boolean).length} of ${ALERT_ROWS.length} on`
               : undefined
           }
         />
@@ -261,6 +273,7 @@ export function SettingsSection() {
         <div className="gutter pt-4">
           {s === 'appearance' && <AppearanceSection />}
           {s === 'budget' && <BudgetSection />}
+          {s === 'alerts' && <AlertsSection />}
           {s === 'categories' && <CategoriesSection />}
           {s === 'rules' && <RulesSection />}
           {s === 'tags' && <TagsSection />}
@@ -354,6 +367,48 @@ function BudgetSection() {
         </Link>
       </Group>
     </>
+  );
+}
+
+const ALERT_ROWS: { key: keyof AlertSettings; label: string; hint: string }[] = [
+  { key: 'priceUp', label: 'Price went up', hint: 'A recurring charge costs more than last time' },
+  {
+    key: 'doubleCharge',
+    label: 'Charged twice',
+    hint: 'A recurring charge landed twice in one cycle',
+  },
+  {
+    key: 'duplicate',
+    label: 'Possible duplicate',
+    hint: 'Same amount, same place, within two days',
+  },
+  { key: 'unusual', label: 'More than usual', hint: 'Well above what this place usually charges' },
+  { key: 'firstTime', label: 'Large first charge', hint: '$300 or more somewhere new' },
+];
+
+/** Which quiet notices show (SPEC §8.1). Recurring and Review show them; nothing interrupts. */
+function AlertsSection() {
+  const me = useMe().data;
+  const qc = useQueryClient();
+  const patch = useMutation({
+    mutationFn: (alerts: AlertSettings) => api('PATCH', '/me/settings', { alerts }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+  if (!me) return null;
+  const alerts = me.settings.alerts;
+  return (
+    <Group title="Show me">
+      {ALERT_ROWS.map((r) => (
+        <GroupRow key={r.key} label={r.label} hint={r.hint}>
+          <Toggle
+            label={r.label}
+            on={alerts[r.key]}
+            disabled={patch.isPending}
+            onChange={(on) => patch.mutate({ ...alerts, [r.key]: on })}
+          />
+        </GroupRow>
+      ))}
+    </Group>
   );
 }
 

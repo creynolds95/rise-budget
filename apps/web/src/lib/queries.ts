@@ -235,6 +235,7 @@ export function usePatchTransaction() {
       notes?: string | null;
       reviewState?: 'reviewed' | 'needs_review';
       postedAt?: string;
+      clearFlag?: true;
     }) => api<PatchedTransaction>('PATCH', `/transactions/${id}`, body),
     onSuccess: async (_, { id, ...body }) => {
       // This edit reached the server; an older offline edit to the same field must not

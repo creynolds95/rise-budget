@@ -28,6 +28,7 @@ export interface TxnRow {
   suggestion_confidence: number;
   source: string;
   source_id: string | null;
+  flag?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -60,6 +61,7 @@ const toTransaction = (r: TxnRow, splits: SplitRow[], tagIds: string[] = []): Tr
     suggestionConfidence: r.suggestion_confidence,
     source: r.source,
     sourceId: r.source_id,
+    flag: r.flag === 'cleared' ? null : (r.flag ?? null),
     splits: splits.map((s) => ({
       id: s.id,
       txnId: s.txn_id,
@@ -368,6 +370,7 @@ export async function updateTransactionFields(
     notes?: string | null | undefined;
     merchantDisplay?: string | null | undefined;
     reviewState?: ReviewState | undefined;
+    clearFlag?: true | undefined;
   },
 ): Promise<void> {
   await db
@@ -376,6 +379,7 @@ export async function updateTransactionFields(
          notes = CASE WHEN ?3 THEN ?4 ELSE notes END,
          merchant_display = CASE WHEN ?5 THEN ?6 ELSE merchant_display END,
          review_state = COALESCE(?7, review_state),
+         flag = CASE WHEN ?9 AND flag IS NOT NULL THEN 'cleared' ELSE flag END,
          updated_at = ?8
        WHERE user_id = ?1 AND id = ?2`,
     )
@@ -388,6 +392,7 @@ export async function updateTransactionFields(
       f.merchantDisplay ?? null,
       f.reviewState ?? null,
       nowIso(),
+      f.clearFlag ? 1 : 0,
     )
     .run();
 }

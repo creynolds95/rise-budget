@@ -21,6 +21,9 @@ export const SpendShape = z.enum(['linear', 'fixed']);
 export type SpendShape = z.infer<typeof SpendShape>;
 
 export const ReviewState = z.enum(['needs_review', 'reviewed', 'dropped']);
+/** Quiet flags on a charge (SPEC §8.1). */
+export const ChargeFlag = z.enum(['duplicate', 'unusual', 'first_time']);
+export type ChargeFlag = z.infer<typeof ChargeFlag>;
 export type ReviewState = z.infer<typeof ReviewState>;
 
 export const TxnSource = z.enum(['simplefin', 'ofx', 'csv', 'manual']);

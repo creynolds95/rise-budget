@@ -32,6 +32,7 @@ import {
   useCashToPayday,
   useCategories,
   useInvalidateMoney,
+  useMe,
   usePatchTransaction,
   useRecurring,
   useTags,
@@ -41,6 +42,7 @@ import {
 import { draftFrom, schedulePayload, type ScheduleDraft } from '../lib/schedule';
 import { splitProblem, withRemainder, type DraftSplit } from '../lib/splits';
 import { spreadMonths } from '../lib/spread';
+import { flagText } from '../lib/alerts';
 import type { MerchantView, TransactionPage } from '../lib/types';
 
 const isAmazon = (m: string) => /AMAZON|AMZN/.test(m.toUpperCase());
@@ -54,6 +56,7 @@ export function TransactionDetail() {
   const accounts = useAccounts().data ?? [];
   const categories = useCategories().data ?? [];
   const patch = usePatchTransaction();
+  const me = useMe();
   const invalidate = useInvalidateMoney();
   const qc = useQueryClient();
   const [picking, setPicking] = useState(false);
@@ -176,6 +179,7 @@ export function TransactionDetail() {
   );
   const needsCategory = !t.isTransfer && t.splits.length === 0;
   const spread = spreadMonths(t);
+  const flag = flagText(t.flag, me.data?.settings.alerts);
   const oneCategory = new Set(t.splits.map((s) => s.categoryId)).size === 1;
   const amazon = isAmazon(t.merchantNormalized);
   const others = (same.data?.pages.flatMap((p) => p.items) ?? []).filter(
@@ -350,6 +354,21 @@ export function TransactionDetail() {
               <span className="break-all">{t.descriptorRaw}</span>
             </ValueRow>
             <ValueRow label="Account">{account?.name ?? '—'}</ValueRow>
+            {flag && (
+              <div className="flex min-h-12 items-center justify-between gap-4 border-b border-hairline py-0.5">
+                <span className="flex items-center gap-2">
+                  <span aria-hidden className="size-2 shrink-0 rounded-full bg-gold" />
+                  {flag}
+                </span>
+                <button
+                  type="button"
+                  className="-mr-2 min-h-11 shrink-0 px-2 font-semibold text-sage-700"
+                  onClick={() => void save({ id, clearFlag: true })}
+                >
+                  Looks fine
+                </button>
+              </div>
+            )}
             {t.isTransfer ? (
               <ValueRow label="Category" muted>
                 Transfer, not spending

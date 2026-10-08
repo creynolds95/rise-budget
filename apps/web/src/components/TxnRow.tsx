@@ -1,7 +1,9 @@
 import type { Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { Link, useNavigate } from 'react-router';
+import { flagText } from '../lib/alerts';
 import { shortDate } from '../lib/dates';
+import { useMe } from '../lib/queries';
 import { spreadMonths, spreadPart } from '../lib/spread';
 import { transitionClick } from '../lib/transition';
 import { TxnAmount } from './TxnAmount';
@@ -28,6 +30,7 @@ export function TxnRow({
   periodId?: string | undefined;
 }) {
   const navigate = useNavigate();
+  const alerts = useMe().data?.settings.alerts;
   const part = periodId ? spreadPart(t, periodId) : null;
   const months = spreadMonths(t);
   const caption = [
@@ -42,6 +45,7 @@ export function TxnRow({
             ? 'Split'
             : null,
     t.reviewState === 'needs_review' ? 'To review' : null,
+    flagText(t.flag, alerts),
   ]
     .filter(Boolean)
     .join(' · ');
