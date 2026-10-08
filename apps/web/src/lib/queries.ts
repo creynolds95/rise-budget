@@ -151,6 +151,7 @@ export type TxnFilters = Partial<
     | 'account'
     | 'category'
     | 'tag'
+    | 'period'
     | 'reviewState'
     | 'from'
     | 'to'

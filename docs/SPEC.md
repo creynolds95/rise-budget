@@ -306,6 +306,24 @@ mechanism that makes Amazon usable.
 A split inherits the parent's `posted_at` and `account_id`. Reporting always reads splits,
 never transactions — a transaction without explicit splits is treated as one implicit split.
 
+### 3.6 Spreading one charge across months
+
+A charge in one category can be spread evenly over 2–12 months, starting with its own month,
+so a yearly bill draws on a rollover category a month at a time. It is stored as one split per
+month (same category, `period_id` set to each month); the cents that don't divide evenly land
+on the first month, so the parts always sum exactly. The budget, carry and reports read each
+part in its own month; the transaction keeps its real date and amount everywhere else.
+
+- Spreading is always the user's explicit choice; nothing spreads on its own. "None" undoes it.
+- Changing the category, or accepting a review suggestion, keeps the spread under the new
+  category. Moving the date shifts every part by the same number of months.
+- A pending charge that posts is re-spread at its posted amount from its posted month; one
+  that is dropped stops counting in every month.
+- Transfers can't be spread, and linking or marking one as a transfer puts it back in one
+  month. A charge split across categories can't be spread; the split editor is hidden while
+  a charge is spread.
+- A category's month shows the spread charges drawing on it that month, with their part.
+
 ---
 
 ## 4. Categorisation

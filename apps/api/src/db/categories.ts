@@ -602,7 +602,7 @@ export async function reassignOpenCategoryStmts(
   const stmts: D1PreparedStatement[] = [];
   for (const t of rows) {
     stmts.push(
-      ...(await reassignSplitStmts(userId, db, t, oldSplits.get(t.id) ?? [], toCategoryId)),
+      ...(await reassignSplitStmts(userId, db, t, oldSplits.get(t.id) ?? [], toCategoryId, true)),
     );
     stmts.push(
       db

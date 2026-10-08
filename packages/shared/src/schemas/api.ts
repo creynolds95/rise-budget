@@ -115,6 +115,10 @@ export type SplitInput = z.infer<typeof SplitInput>;
 
 export const ReplaceSplitsBody = z.object({ splits: z.array(SplitInput).min(1) });
 
+/** Spread one charge evenly over this many months from its own (SPEC §3.6); 1 undoes it. */
+export const SpreadBody = z.object({ months: z.number().int().min(1).max(12) });
+export type SpreadBody = z.infer<typeof SpreadBody>;
+
 export const PatchTransactionBody = z.object({
   categoryId: Id.optional(),
   notes: z.string().nullable().optional(),
@@ -296,6 +300,8 @@ export const TransactionQuery = z.object({
   notAccount: IdList.optional(),
   notCategory: IdList.optional(),
   tag: IdList.optional(),
+  /** With `category`: its splits in this month, so a spread charge shows in each month. */
+  period: PeriodId.optional(),
   q: z.string().optional(),
   reviewState: ReviewState.optional(),
   /** `out` is spending (positive), `in` is money arriving (negative). */

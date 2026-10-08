@@ -9,6 +9,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { RuleOfferSheet } from '../components/RuleOfferSheet';
 import { RuleSheet } from '../components/RuleSheet';
+import { SpreadSheet } from '../components/SpreadSheet';
 import { TagSheet } from '../components/TagSheet';
 import { ScheduleFields } from '../components/ScheduleFields';
 import { TxnAmount } from '../components/TxnAmount';
@@ -39,6 +40,7 @@ import {
 } from '../lib/queries';
 import { draftFrom, schedulePayload, type ScheduleDraft } from '../lib/schedule';
 import { splitProblem, withRemainder, type DraftSplit } from '../lib/splits';
+import { spreadMonths } from '../lib/spread';
 import type { MerchantView, TransactionPage } from '../lib/types';
 
 const isAmazon = (m: string) => /AMAZON|AMZN/.test(m.toUpperCase());
@@ -63,6 +65,7 @@ export function TransactionDetail() {
   const [taggingWithdrawal, setTaggingWithdrawal] = useState(false);
   const [ruling, setRuling] = useState(false);
   const [tagging, setTagging] = useState(false);
+  const [spreading, setSpreading] = useState(false);
   const allTags = useTags().data ?? [];
   const [offer, setOffer] = useState<Parameters<typeof RuleOfferSheet>[0]['offer']>(null);
   const [error, setError] = useState<string | null>(null);
@@ -172,6 +175,8 @@ export function TransactionDetail() {
     categories.some((x) => x.id === c),
   );
   const needsCategory = !t.isTransfer && t.splits.length === 0;
+  const spread = spreadMonths(t);
+  const oneCategory = new Set(t.splits.map((s) => s.categoryId)).size === 1;
   const amazon = isAmazon(t.merchantNormalized);
   const others = (same.data?.pages.flatMap((p) => p.items) ?? []).filter(
     (x) => x.id !== id && x.merchantNormalized === t.merchantNormalized,
@@ -187,12 +192,21 @@ export function TransactionDetail() {
             <Menu
               label="Transaction options"
               items={[
-                ...(!t.isTransfer
+                ...(!t.isTransfer && spread === 1
                   ? [
                       {
                         label: t.splits.length > 1 ? 'Edit split' : 'Split transaction',
                         icon: 'sliders' as const,
                         onSelect: () => setSplitting(true),
+                      },
+                    ]
+                  : []),
+                ...(!t.isTransfer && t.reviewState !== 'dropped' && oneCategory
+                  ? [
+                      {
+                        label: spread > 1 ? 'Change spread' : 'Spread over months',
+                        icon: 'calendar' as const,
+                        onSelect: () => setSpreading(true),
                       },
                     ]
                   : []),
@@ -340,6 +354,18 @@ export function TransactionDetail() {
               <ValueRow label="Category" muted>
                 Transfer, not spending
               </ValueRow>
+            ) : spread > 1 ? (
+              <>
+                <ValueRow label="Category" onClick={() => setPicking(true)}>
+                  {catName(t.splits[0]?.categoryId ?? '')}
+                </ValueRow>
+                <ValueRow label="Spread" onClick={() => setSpreading(true)}>
+                  <span className="tabular-nums">
+                    {spread} months · <MoneyText cents={Math.trunc(t.amountCents / spread)} /> a
+                    month
+                  </span>
+                </ValueRow>
+              </>
             ) : t.splits.length > 1 ? (
               t.splits.map((s) => (
                 <ValueRow
@@ -513,6 +539,9 @@ export function TransactionDetail() {
             onSaved={refresh}
           />
         )}
+      </Leaving>
+      <Leaving>
+        {spreading && <SpreadSheet t={t} onClose={() => setSpreading(false)} onSaved={refresh} />}
       </Leaving>
       <RuleOfferSheet offer={offer} onClose={() => setOffer(null)} />
     </>

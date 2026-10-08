@@ -44,6 +44,7 @@ import {
   useToday,
   useTransactions,
 } from '../lib/queries';
+import { spreadMonths } from '../lib/spread';
 
 const RECENT_TXNS = 4;
 
@@ -208,7 +209,9 @@ export function Dashboard() {
           ) : (
             recentTxns.map((tx) => {
               const c =
-                tx.splits.length === 1 ? byId.get(tx.splits[0]?.categoryId ?? '') : undefined;
+                spreadMonths(tx) > 1 || tx.splits.length === 1
+                  ? byId.get(tx.splits[0]?.categoryId ?? '')
+                  : undefined;
               return <TxnRow key={tx.id} t={tx} categoryEmoji={c?.emoji} from="Dashboard|/" />;
             })
           )}

@@ -40,6 +40,7 @@ import {
   parseFilters,
   type Filters,
 } from '../lib/txnFilters';
+import { spreadMonths } from '../lib/spread';
 
 /** The Transactions tab: everything, searchable, filterable. Filters live in the URL. */
 export function Transactions() {
@@ -109,7 +110,8 @@ export function Transactions() {
   };
 
   const row = (t: (typeof items)[number]) => {
-    const c = t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
+    const c =
+      spreadMonths(t) > 1 || t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
     return (
       <TxnRow
         key={t.id}
@@ -138,7 +140,8 @@ export function Transactions() {
       </thead>
       <tbody>
         {items.map((t) => {
-          const c = t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
+          const c =
+            spreadMonths(t) > 1 || t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
           const to = `/transactions/${t.id}?from=${encodeURIComponent(back)}`;
           return (
             <tr

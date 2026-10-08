@@ -82,7 +82,7 @@ function CategoryDetailBody({
     queryKey: ['category-history', categoryId, 13],
     queryFn: () => get<MonthSpend[]>(`/categories/${categoryId}/history?months=13`),
   });
-  const txns = useTransactions({ category: categoryId, from: `${month}-01`, to: monthEnd(month) });
+  const txns = useTransactions({ category: categoryId, period: month });
   const [forgiving, setForgiving] = useState(false);
   const [editingCat, setEditingCat] = useState(false);
   const groups = useGroups();
@@ -194,7 +194,12 @@ function CategoryDetailBody({
             <>
               {list.length === 0 && <p className="py-3 text-ink-muted">Nothing filed here yet.</p>}
               {list.slice(0, 5).map((t) => (
-                <TxnRow key={t.id} t={t} from={`${cat.name}|/budget/${categoryId}?m=${month}`} />
+                <TxnRow
+                  key={t.id}
+                  t={t}
+                  periodId={month}
+                  from={`${cat.name}|/budget/${categoryId}?m=${month}`}
+                />
               ))}
               {list.length > 5 && (
                 <NavRow

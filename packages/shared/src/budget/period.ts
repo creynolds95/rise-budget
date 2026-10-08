@@ -45,6 +45,13 @@ export function addPeriods(id: PeriodId, n: number): PeriodId {
   return makePeriodId(Math.floor(idx / 12), (idx % 12) + 1);
 }
 
+/** Whole months from one period to another (negative when `to` is earlier). */
+export function monthsBetween(from: PeriodId, to: PeriodId): number {
+  const a = parsePeriodId(from);
+  const b = parsePeriodId(to);
+  return (b.year - a.year) * 12 + (b.month - a.month);
+}
+
 export const nextPeriod = (id: PeriodId): PeriodId => addPeriods(id, 1);
 export const prevPeriod = (id: PeriodId): PeriodId => addPeriods(id, -1);
 
