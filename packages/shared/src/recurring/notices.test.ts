@@ -76,7 +76,10 @@ describe('notices', () => {
     expect(n[3]?.body).toBe('It was due 10/01.');
     expect(n[6]).toMatchObject({ title: 'Large first charge', url: '/transactions/t3' });
     expect(n[7]).toMatchObject({ body: '$1,234.56 spent · 3 to review', url: '/review' });
-    expect(n[8]).toMatchObject({ title: 'Surplus is going negative', body: '$250.50 short around 10/12.' });
+    expect(n[8]).toMatchObject({
+      title: 'Surplus is going negative',
+      body: '$250.50 short around 10/12.',
+    });
     expect(n[9]).toMatchObject({ title: '12 to review', url: '/review' });
   });
 

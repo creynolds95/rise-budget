@@ -118,7 +118,10 @@ const ALL_ON = Object.fromEntries(Object.keys(PUSH_DEFAULTS).map((k) => [k, true
 export async function markCurrentAsSent(userId: UserId, db: D1Database, now: Date): Promise<void> {
   const user = await getUser(userId, db);
   if (!user) return;
-  const all = notices(await gather(userId, db, user, localToday(user.timezone, now), ALL_ON), ALL_ON);
+  const all = notices(
+    await gather(userId, db, user, localToday(user.timezone, now), ALL_ON),
+    ALL_ON,
+  );
   const sent = await sentKeys(
     userId,
     db,

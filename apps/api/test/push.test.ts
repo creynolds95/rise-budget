@@ -133,8 +133,7 @@ describe('push notifications (SPEC §8.2)', () => {
     await s.api('POST', '/push/subscriptions', await device());
     pushService();
     expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
-    for (const d of ['2026-10-06', '2026-10-07', '2026-10-07'])
-      await s.add(d, 1_000, `SHOP ${d}`);
+    for (const d of ['2026-10-06', '2026-10-07', '2026-10-07']) await s.add(d, 1_000, `SHOP ${d}`);
     await env.DB.prepare("UPDATE txn SET review_state = 'needs_review' WHERE user_id = ?1")
       .bind(s.userId)
       .run();
