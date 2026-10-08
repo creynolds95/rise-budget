@@ -37,14 +37,18 @@ jobs:
           sed -i "s/00000000-0000-0000-0000-000000000000/$D1_DATABASE_ID/" wrangler.toml
         env:
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
-      # The dump holds credential material (sessions, passkeys, sealed TOTP secrets), so it only
-      # ever goes to R2: never printed, never uploaded as a workflow artifact.
+      # The dump is the owner's whole financial history, so it only ever goes to R2: never printed,
+      # never uploaded as a workflow artifact. `wrangler d1 export` also prints a pre-signed
+      # download link for the dump, valid an hour; this repo's Actions logs are public, so its
+      # output goes to a file, and only a failure prints it, with every URL removed.
       - name: Export D1 and upload to R2
         working-directory: apps/api
         run: |
           day=$(date -u +%F)
           dump="$RUNNER_TEMP/rise.sql"
-          npx wrangler d1 export rise --remote --output="$dump"
+          npx wrangler d1 export rise --remote --output="$dump" > "$RUNNER_TEMP/export.log" 2>&1 \
+            || { sed -E 's#[a-z]+://[^[:space:]]+#<url removed>#g' "$RUNNER_TEMP/export.log"; exit 1; }
+          rm -f "$RUNNER_TEMP/export.log"
           grep -q 'CREATE TABLE' "$dump" || { echo "Export looks empty"; exit 1; }
           gzip -9 -n "$dump"
           npx wrangler r2 object put "rise-backups/backups/$day.sql.gz" --remote \
