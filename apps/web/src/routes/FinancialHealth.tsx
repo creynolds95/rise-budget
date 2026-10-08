@@ -1,6 +1,7 @@
 import { isDue } from '@rise/shared/debt';
 import { Link, useNavigate } from 'react-router';
-import { BackLink } from '../components/BackLink';
+import { IconBadge } from '../components/PageHeader';
+import { Icon, type IconName } from '../components/primitives/Icon';
 import { Chevron } from '../components/primitives/Rows';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { useOfflineGap, useSettingsState } from '../components/Pending';
@@ -15,20 +16,61 @@ import { defaultTaxYear } from '../lib/tax';
 import { retirementView, totalMonthly } from '../lib/retirement';
 import { transitionClick } from '../lib/transition';
 
-function Tile({ to, title, state }: { to: string; title: string; state: string | undefined }) {
+function Tile({
+  to,
+  title,
+  icon,
+  state,
+  cta = false,
+  bar,
+}: {
+  to: string;
+  title: string;
+  icon: IconName;
+  state: string | undefined;
+  /** An area not started yet: the state becomes a gold button, since it wants a look. */
+  cta?: boolean;
+  bar?: { pct: number; caption: string } | undefined;
+}) {
   const navigate = useNavigate();
   return (
-    <li className="border-b border-hairline">
+    <li>
       <Link
         to={to}
         onClick={transitionClick(navigate, to)}
-        className="grid min-h-16 grid-cols-[6.5rem_1fr_auto] items-center gap-x-4 py-3.5 active:bg-sage-100 sm:grid-cols-[9rem_1fr_auto]"
+        className="block rounded-card bg-surface p-4 shadow-soft active:bg-sage-100"
       >
-        <span className="type-label text-ink-muted">{title}</span>
-        <span className="min-w-0 font-medium money">
-          {state ?? <Skeleton className="h-5 w-24" />}
+        <span className="flex items-center gap-3">
+          <IconBadge>
+            <Icon name={icon} size={18} />
+          </IconBadge>
+          <span className="min-w-0 flex-1">
+            <span className="block type-label text-ink-muted">{title}</span>
+            {!cta && (
+              <span className="block truncate font-medium money">
+                {state ?? <Skeleton className="h-5 w-24" />}
+              </span>
+            )}
+          </span>
+          {cta ? (
+            <span className="rounded-button bg-gold-100 px-4 py-2 font-medium text-gold-text">
+              {state}
+            </span>
+          ) : (
+            <Chevron />
+          )}
         </span>
-        <Chevron />
+        {bar && (
+          <span className="mt-3 block">
+            <span className="block h-2 overflow-hidden rounded-full bg-hairline">
+              <span
+                className="block h-full rounded-full bg-sage-600"
+                style={{ width: `${Math.min(100, Math.max(0, bar.pct))}%` }}
+              />
+            </span>
+            <span className="mt-1.5 block type-caption text-ink-muted money">{bar.caption}</span>
+          </span>
+        )}
       </Link>
     </li>
   );
@@ -52,6 +94,8 @@ export function FinancialHealth() {
   let debtState: string | undefined;
   let savingsState: string | undefined;
   let mortgageState: string | undefined;
+  let mortgageBar: { pct: number; caption: string } | undefined;
+  let retireBar: { pct: number; caption: string } | undefined;
   if (ready) {
     const goals = me.settings.savings?.goals ?? [];
     const fund = goals.find((g) => g.kind === 'emergency');
@@ -87,6 +131,12 @@ export function FinancialHealth() {
         acct.source === 'manual' &&
           isDue({ ...loan, owedCents: owedCents(acct.balanceCents) }, today),
       );
+      const term = debt.mortgageTermMonths;
+      if (term > 0)
+        mortgageBar = {
+          pct: Math.round((v.paidCount * 100) / term),
+          caption: `${Math.round((v.paidCount * 100) / term)}% paid`,
+        };
       mortgageState = v.payoffPeriod ? `Paid off ${monthName(v.payoffPeriod)}` : 'Add payment';
     } else mortgageState = setUp;
     if (!plan) state = setUp;
@@ -97,31 +147,61 @@ export function FinancialHealth() {
         .reduce((n, a) => n + a.balanceCents, 0);
       const v = retirementView(plan, start, totalMonthly(plan, ids), plan.goalAge);
       state = `${formatCents(v.incomeCents, { whole: true })}/mo at ${plan.goalAge}`;
+      if (v.pctOfGoal !== null)
+        retireBar = {
+          pct: v.pctOfGoal,
+          caption: v.pctOfGoal >= 100 ? 'On track for your goal' : `${v.pctOfGoal}% of your goal`,
+        };
     }
   } else if (gap) {
     state = debtState = mortgageState = savingsState = '—';
   }
+  const todo = (v: string | undefined) => v === 'Set up' || v === 'Start one';
   return (
     <div className="mx-auto max-w-2xl pb-16">
-      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft">
-        <BackLink to="/" label="Dashboard" />
-        <h1 className="type-body font-semibold">Financial health</h1>
-        <span />
-      </header>
-      <ul className="gutter pt-4">
-        <Tile to="/financial-health/retirement" title="Retirement" state={state} />
-        <Tile to="/financial-health/debt" title="Debt" state={debtState} />
-        <Tile to="/financial-health/mortgage" title="Mortgage" state={mortgageState} />
-        <Tile to="/financial-health/savings" title="Savings" state={savingsState} />
+      <ul className="gutter pt-4 space-y-3">
+        <Tile
+          to="/financial-health/retirement"
+          title="Retirement"
+          icon="chart"
+          state={state}
+          cta={todo(state)}
+          bar={retireBar}
+        />
+        <Tile
+          to="/financial-health/debt"
+          title="Debt"
+          icon="cap"
+          state={debtState}
+          cta={todo(debtState)}
+        />
+        <Tile
+          to="/financial-health/mortgage"
+          title="Mortgage"
+          icon="home"
+          state={mortgageState}
+          cta={todo(mortgageState)}
+          bar={mortgageBar}
+        />
+        <Tile
+          to="/financial-health/savings"
+          title="Savings"
+          icon="piggy"
+          state={savingsState}
+          cta={todo(savingsState)}
+        />
         <Tile
           to="/financial-health/taxes"
           title="Taxes"
+          icon="doc"
           state={`${defaultTaxYear(today)} tax year`}
         />
         <Tile
           to="/financial-health/binder"
           title="Binder"
+          icon="briefcase"
           state={ready ? binderState(me.settings.binder.entries.length) : undefined}
+          cta={ready && me.settings.binder.entries.length === 0}
         />
       </ul>
     </div>

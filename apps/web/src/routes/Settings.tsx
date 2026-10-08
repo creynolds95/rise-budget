@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BackLink } from '../components/BackLink';
+import { GroupHeading, IconBadge, PageHeader } from '../components/PageHeader';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { CategoryEditSheet } from '../components/CategoryEditSheet';
@@ -25,7 +26,7 @@ import { getThemeSetting, setThemeSetting, type ThemeSetting } from '../lib/them
 import { RULE_FIELD as FIELD, RULE_TYPE as TYPE, RuleSheet } from '../components/RuleSheet';
 import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
-import { Icon, IconButton } from '../components/primitives/Icon';
+import { Icon, IconButton, type IconName } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
 import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Sortable } from '../components/primitives/Sortable';
@@ -100,84 +101,126 @@ export function Settings() {
   const backups = useBackupStatus().data;
   const appearance = getThemeSetting();
 
+  const syncTone =
+    lastRun?.status === 'failed'
+      ? 'text-clay-text'
+      : lastRun?.status === 'partial'
+        ? 'text-gold-text'
+        : sync?.mode === 'live'
+          ? 'text-sage-700'
+          : '';
   return (
-    <div className="gutter mx-auto max-w-2xl pt-4 pb-12">
-      <h1 className="type-title">{me?.displayName ?? 'Settings'}</h1>
-      <p className="text-ink-muted">{me?.email}</p>
+    <div className="mx-auto max-w-2xl pb-12">
+      <PageHeader title={me?.displayName ?? 'Settings'} subtitle={me?.email} />
+      <div className="gutter">
+        <GroupHeading>Data</GroupHeading>
+        <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+          <Card
+            to="/settings/sync"
+            icon="refresh"
+            title="Bank sync"
+            state={sync ? MODE[sync.mode] : undefined}
+            tone={syncTone}
+          >
+            {lastRun
+              ? `Last run ${shortDate(localToday(me?.timezone, new Date(lastRun.startedAt)))} · ${lastRun.status}`
+              : 'No runs yet'}
+          </Card>
+          <Card
+            to="/accounts"
+            icon="wallet"
+            title="Accounts"
+            state={
+              accounts ? `${accounts.filter((a) => !a.archivedAt).length} accounts` : undefined
+            }
+          />
+          <Card
+            to="/settings/investments"
+            icon="chart"
+            title="Investments"
+            state="Portfolio vs S&P 500"
+          />
+          <Card to="/settings/reports" icon="flow" title="Reports" state="Cash flow and spending" />
+          <Card
+            to="/settings/data"
+            icon="doc"
+            title="Your data"
+            state={
+              backups
+                ? backups.latest
+                  ? `Backed up ${shortDate(backups.latest.date)}`
+                  : 'No backup yet'
+                : undefined
+            }
+          />
+        </ul>
 
-      <ul className="mt-6 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-        <Card to="/settings/appearance" title="Appearance" state={THEME_LABEL[appearance]} />
-        <Card to="/settings/sync" title="Bank sync" state={sync ? MODE[sync.mode] : undefined}>
-          {lastRun
-            ? `Last run ${shortDate(localToday(me?.timezone, new Date(lastRun.startedAt)))} · ${lastRun.status}`
-            : 'No runs yet'}
-        </Card>
-        <Card
-          to="/settings/budget"
-          title="Budget"
-          state={
-            me
-              ? me.settings.planChangesApplyToFuture
-                ? 'Plans carry to future months'
-                : 'Plans change one month at a time'
-              : undefined
-          }
-        />
-        <Card
-          to="/settings/alerts"
-          title="Alerts"
-          state={
-            me
-              ? `${Object.values(me.settings.alerts).filter(Boolean).length} of ${ALERT_ROWS.length} on`
-              : undefined
-          }
-        />
-        <Card
-          to="/settings/categories"
-          title="Categories"
-          state={categories ? `${categories.length} in use` : undefined}
-        />
-        <Card to="/settings/investments" title="Investments" state="Portfolio vs S&P 500" />
-        <Card to="/settings/reports" title="Reports" state="Cash flow and spending" />
-        <Card
-          to="/settings/rules"
-          title="Rules"
-          state={rules ? `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}` : undefined}
-        />
-        <Card
-          to="/accounts"
-          title="Accounts"
-          state={accounts ? `${accounts.filter((a) => !a.archivedAt).length} accounts` : undefined}
-        />
-        <Card
-          to="/settings/security"
-          title="Security"
-          state={
-            me
-              ? me.settings.appLock === 'off'
-                ? 'App lock off'
-                : `Locks ${{ immediate: 'immediately', '5m': 'after 5 min', '1h': 'after 1 hour' }[me.settings.appLock]}`
-              : undefined
-          }
-        />
-        <Card
-          to="/settings/data"
-          title="Your data"
-          state={
-            backups
-              ? backups.latest
-                ? `Backed up ${shortDate(backups.latest.date)}`
-                : 'No backup yet'
-              : undefined
-          }
-        />
-      </ul>
+        <GroupHeading>Budget</GroupHeading>
+        <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+          <Card
+            to="/settings/budget"
+            icon="sliders"
+            title="Budget"
+            state={
+              me
+                ? me.settings.planChangesApplyToFuture
+                  ? 'Plans carry forward'
+                  : 'One month at a time'
+                : undefined
+            }
+          />
+          <Card
+            to="/settings/categories"
+            icon="grid"
+            title="Categories"
+            state={categories ? `${categories.length} in use` : undefined}
+          />
+          <Card
+            to="/settings/rules"
+            icon="filter"
+            title="Rules"
+            state={rules ? `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}` : undefined}
+          />
+          <Card
+            to="/settings/alerts"
+            icon="bell"
+            title="Alerts"
+            state={
+              me
+                ? `${Object.values(me.settings.alerts).filter(Boolean).length} of ${ALERT_ROWS.length} on`
+                : undefined
+            }
+          />
+        </ul>
 
-      <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
-        Sign out
-      </Button>
-      {/* Which build is running, so a deploy that never went out is visible (C20). */}
-      <AppVersion timeZone={me?.timezone} />
+        <GroupHeading>Preferences</GroupHeading>
+        <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+          <Card
+            to="/settings/appearance"
+            icon="sun"
+            title="Appearance"
+            state={THEME_LABEL[appearance]}
+          />
+          <Card
+            to="/settings/security"
+            icon="lock"
+            title="Security"
+            state={
+              me
+                ? me.settings.appLock === 'off'
+                  ? 'App lock off'
+                  : `Locks ${{ immediate: 'immediately', '5m': 'after 5 min', '1h': 'after 1 hour' }[me.settings.appLock]}`
+                : undefined
+            }
+          />
+        </ul>
+
+        <Button variant="quiet" className="-ml-4 mt-8" onClick={() => void signOut()}>
+          Sign out
+        </Button>
+        {/* Which build is running, so a deploy that never went out is visible (C20). */}
+        <AppVersion timeZone={me?.timezone} />
+      </div>
     </div>
   );
 }
@@ -223,25 +266,34 @@ function AppVersion({ timeZone }: { timeZone: string | undefined }) {
 function Card({
   to,
   title,
+  icon,
   state,
+  tone = '',
   children,
 }: {
   to: string;
   title: string;
+  icon: IconName;
   state?: string | undefined;
+  tone?: string;
   children?: string;
 }) {
   const navigate = useNavigate();
   return (
-    <li className="border-b border-hairline">
+    <li className="border-b border-hairline last:border-b-0">
       <Link
         to={to}
         onClick={transitionClick(navigate, to)}
-        className="grid min-h-16 grid-cols-[6.5rem_1fr_auto] items-center gap-x-4 py-3.5 active:bg-sage-100 sm:grid-cols-[9rem_1fr_auto]"
+        className="flex min-h-16 items-center gap-3 py-3 active:bg-sage-100"
       >
-        <span className="type-label text-ink-muted">{title}</span>
-        <span className="min-w-0">
-          <span className="block font-medium">{state ?? <Skeleton className="h-5 w-24" />}</span>
+        <IconBadge>
+          <Icon name={icon} size={18} />
+        </IconBadge>
+        <span className="min-w-0 flex-1">
+          <span className="block type-label text-ink-muted">{title}</span>
+          <span className={`block truncate font-medium ${tone}`}>
+            {state ?? <Skeleton className="h-5 w-24" />}
+          </span>
           {children && <span className="block type-caption text-ink-faint">{children}</span>}
         </span>
         <Chevron />
