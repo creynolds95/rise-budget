@@ -164,8 +164,12 @@ single month, which trains the user to ignore the indicator.
 (`account.sync_cadence_hours`), never a global threshold. An account is stale when:
 
 ```
-last_synced_at < now - (sync_cadence_hours * 1.5)
+last_synced_at < now - max(sync_cadence_hours * 1.5, 96 hours)
 ```
+
+The 4-day floor exists because SimpleFIN re-polls each bank about once a day, some lag more,
+and a connection needing re-auth stays quiet until the owner fixes it. The Dashboard note is
+dismissible per account until that account's next sync moves its last-synced time.
 
 This distinction matters. Apple Card updates **monthly by design** — a global 48-hour rule
 would mark it permanently stale, and a warning that is always on is a warning the user
