@@ -651,11 +651,61 @@ function RulesSection() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Rule | 'new' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const groups = useGroups().data ?? [];
   const catName = (id: string) => categories.find((c) => c.id === id)?.name ?? 'Unknown';
+  // Same split as the Categories tabs; a rule on an unknown category goes under Expenses.
+  const ruleSection = (r: Rule): 'income' | 'expense' | 'transfer' => {
+    const g = groups.find((g) => g.id === categories.find((c) => c.id === r.categoryId)?.groupId);
+    return !g
+      ? 'expense'
+      : g.kind === 'income'
+        ? 'income'
+        : isTransfersGroup(g.name)
+          ? 'transfer'
+          : 'expense';
+  };
+  const SECTIONS = [
+    { key: 'income', label: 'Income' },
+    { key: 'expense', label: 'Expenses' },
+    { key: 'transfer', label: 'Transfers' },
+  ] as const;
   const refresh = () =>
     Promise.all(
       ['rules', 'review-queue', 'queue-count'].map((k) => qc.invalidateQueries({ queryKey: [k] })),
     );
+  const renderRule = (r: Rule) => (
+    <li
+      key={r.id}
+      className="flex min-h-14 items-center justify-between gap-2 border-b border-hairline py-2"
+    >
+      <button className="min-w-0 flex-1 text-left" onClick={() => setEditing(r)}>
+        <span className="block truncate">
+          {FIELD[r.matchField]} {TYPE[r.matchType]}{' '}
+          <strong className="font-semibold">{r.matchValue}</strong>
+        </span>
+        <span className="block type-caption text-ink-faint">→ {catName(r.categoryId)}</span>
+      </button>
+      <Button
+        variant="danger"
+        onClick={async () => {
+          if (
+            !window.confirm(
+              `Delete the rule for ${r.matchValue}? Past transactions keep their categories.`,
+            )
+          )
+            return;
+          try {
+            await api('DELETE', `/rules/${r.id}`);
+            await refresh();
+          } catch (e) {
+            setError(e instanceof ApiError ? e.message : 'Could not delete.');
+          }
+        }}
+      >
+        Delete
+      </Button>
+    </li>
+  );
   return (
     <>
       <p className="text-ink-muted">
@@ -670,41 +720,18 @@ function RulesSection() {
           one.
         </p>
       )}
-      <ul className="mt-4 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-        {rules.data?.map((r) => (
-          <li
-            key={r.id}
-            className="flex min-h-14 items-center justify-between gap-2 border-b border-hairline py-2"
-          >
-            <button className="min-w-0 flex-1 text-left" onClick={() => setEditing(r)}>
-              <span className="block truncate">
-                {FIELD[r.matchField]} {TYPE[r.matchType]}{' '}
-                <strong className="font-semibold">{r.matchValue}</strong>
-              </span>
-              <span className="block type-caption text-ink-faint">→ {catName(r.categoryId)}</span>
-            </button>
-            <Button
-              variant="danger"
-              onClick={async () => {
-                if (
-                  !window.confirm(
-                    `Delete the rule for ${r.matchValue}? Past transactions keep their categories.`,
-                  )
-                )
-                  return;
-                try {
-                  await api('DELETE', `/rules/${r.id}`);
-                  await refresh();
-                } catch (e) {
-                  setError(e instanceof ApiError ? e.message : 'Could not delete.');
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </li>
-        ))}
-      </ul>
+      {SECTIONS.map(({ key, label }) => {
+        const rows = (rules.data ?? []).filter((r) => ruleSection(r) === key);
+        if (!rows.length) return null;
+        return (
+          <section key={key} className="mt-4">
+            <h2 className="type-label text-ink-muted">{label}</h2>
+            <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+              {rows.map(renderRule)}
+            </ul>
+          </section>
+        );
+      })}
       <Button variant="quiet" className="-ml-4 mt-4" onClick={() => setEditing('new')}>
         Add a rule
       </Button>
