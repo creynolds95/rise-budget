@@ -55,6 +55,13 @@ export function paceFor(input: PaceInput, p: Pace): PaceResult {
 
 const HOUR_MS = 3_600_000;
 
+/**
+ * Floor on the staleness threshold. SimpleFIN re-polls each bank about once a day, some banks
+ * lag further, and a connection that needs re-auth stays quiet until the owner fixes it, so a
+ * daily account only counts as stale after this long.
+ */
+export const MIN_STALE_HOURS = 96;
+
 /** Default cadences, in hours. Real values are learned per account (SPEC §5.1). */
 export const SYNC_CADENCE_HOURS = { daily: 24, monthly: 720 } as const;
 
@@ -72,7 +79,8 @@ export type Staleness =
   | { stale: true; reason: 'overdue'; lastSyncedAtMs: number; overdueByMs: number };
 
 /**
- * An account is stale once it has gone 1.5× its *own* expected cadence without reporting.
+ * An account is stale once it has gone 1.5× its *own* expected cadence without reporting,
+ * and never sooner than MIN_STALE_HOURS (4 days).
  * A monthly account at 20 days is fresh (edge 10); at 45 days it is stale (edge 10b).
  * The threshold is inclusive: at exactly 1.5× cadence we warn — the conservative reading.
  * Never estimates what is missing; only says that it is.
@@ -81,7 +89,7 @@ export function staleness(input: StalenessInput, nowMs: number): Staleness {
   if (input.source === 'manual') return { stale: false };
   if (input.lastSyncedAtMs === null) return { stale: true, reason: 'never_synced' };
   const cadence = input.syncCadenceHours ?? SYNC_CADENCE_HOURS.daily;
-  const threshold = (cadence * 3 * HOUR_MS) / 2;
+  const threshold = Math.max((cadence * 3 * HOUR_MS) / 2, MIN_STALE_HOURS * HOUR_MS);
   const age = nowMs - input.lastSyncedAtMs;
   if (age < threshold) return { stale: false };
   return {

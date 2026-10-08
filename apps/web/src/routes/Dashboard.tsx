@@ -270,7 +270,9 @@ export function Dashboard() {
         usage={usage.data}
         dismissible
       />
-      {accounts.data && <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} />}
+      {accounts.data && (
+        <StaleNotes accounts={accounts.data} today={today} tz={me?.timezone} dismissible />
+      )}
       <div className="flex flex-col gap-8">
         {visible.map((id) => (
           <div key={id}>{tiles[id]}</div>

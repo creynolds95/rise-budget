@@ -68,11 +68,12 @@ describe('staleness', () => {
   it('defaults to a daily cadence', () => {
     const s = { source: 'simplefin' as const, syncCadenceHours: null };
     expect(staleness({ ...s, lastSyncedAtMs: now - DAY }, now)).toEqual({ stale: false });
-    expect(staleness({ ...s, lastSyncedAtMs: now - 2 * DAY }, now)).toEqual({
+    expect(staleness({ ...s, lastSyncedAtMs: now - 3 * DAY }, now)).toEqual({ stale: false });
+    expect(staleness({ ...s, lastSyncedAtMs: now - 4 * DAY }, now)).toEqual({
       stale: true,
       reason: 'overdue',
-      lastSyncedAtMs: now - 2 * DAY,
-      overdueByMs: DAY / 2,
+      lastSyncedAtMs: now - 4 * DAY,
+      overdueByMs: 0,
     });
   });
 

@@ -1,7 +1,8 @@
+import type { AccountWithStaleness } from '../lib/types';
 import { describe, expect, it } from 'vitest';
 import type { SyncStatus } from '../lib/types';
 import { healthNotes, usageNote } from './HealthNotes';
-import { quietInstitutions, quietWhenStale } from './StaleNotes';
+import { quietInstitutions, quietWhenStale, staleKey } from './StaleNotes';
 
 const run = (status: string, message?: string, account?: string): SyncStatus['runs'][number] => ({
   id: 'r',
@@ -117,5 +118,23 @@ describe('usageNote', () => {
     expect(usageNote(usage(2_600_000, []), '2026-10-03')?.text).toBe(
       'Database use today is 52% of the free limit.',
     );
+  });
+});
+
+describe('staleKey', () => {
+  const base = { id: 'a1' } as AccountWithStaleness;
+  it('changes when the account syncs, so a dismissal ends at its next sync', () => {
+    const a = {
+      ...base,
+      staleness: { stale: true, reason: 'overdue', lastSyncedAtMs: 1, overdueByMs: 0 },
+    } as AccountWithStaleness;
+    const b = { ...a, staleness: { ...a.staleness, lastSyncedAtMs: 2 } } as AccountWithStaleness;
+    expect(staleKey(a)).not.toBe(staleKey(b));
+    expect(
+      staleKey({
+        ...base,
+        staleness: { stale: true, reason: 'never_synced' },
+      } as AccountWithStaleness),
+    ).toBe('a1@never');
   });
 });
