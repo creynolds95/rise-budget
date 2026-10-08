@@ -5,6 +5,7 @@ import {
   type CategoryGroupKind,
   type RolloverPolicy,
   type SpendShape,
+  type TaxKind,
 } from '@rise/shared/schemas';
 import { refreshCategoryAggregateStmts } from './aggregates';
 import { reassignSplitStmts, splitsFor, type TxnRow } from './transactions';
@@ -32,6 +33,7 @@ interface CategoryRow {
   plan_default_from: string | null;
   is_catchall: number;
   budgeted: number;
+  tax_kind: string | null;
 }
 
 const toGroup = (r: GroupRow): CategoryGroup =>
@@ -53,6 +55,7 @@ const toCategory = (r: CategoryRow): Category =>
     planDefaultFrom: r.plan_default_from,
     isCatchall: r.is_catchall === 1,
     budgeted: r.budgeted === 1,
+    taxKind: r.tax_kind,
   });
 
 /** The category's plan default in the engine's shape, if it has one (SPEC §2.9). */
@@ -465,6 +468,7 @@ export interface CategoryPatch {
   spendShape?: SpendShape | undefined;
   isBill?: boolean | undefined;
   budgeted?: boolean | undefined;
+  taxKind?: TaxKind | null | undefined;
   sortOrder?: number | undefined;
 }
 
@@ -476,6 +480,7 @@ const COLS: Record<keyof CategoryPatch, string> = {
   spendShape: 'spend_shape',
   isBill: 'is_bill',
   budgeted: 'budgeted',
+  taxKind: 'tax_kind',
   sortOrder: 'sort_order',
 };
 
@@ -597,7 +602,7 @@ export async function reassignOpenCategoryStmts(
   const stmts: D1PreparedStatement[] = [];
   for (const t of rows) {
     stmts.push(
-      ...(await reassignSplitStmts(userId, db, t, oldSplits.get(t.id) ?? [], toCategoryId)),
+      ...(await reassignSplitStmts(userId, db, t, oldSplits.get(t.id) ?? [], toCategoryId, true)),
     );
     stmts.push(
       db

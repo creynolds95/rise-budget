@@ -1,4 +1,4 @@
-import { validateSplits } from '@rise/shared/budget';
+import { periodOf, spreadMonthsOf, spreadParts, validateSplits } from '@rise/shared/budget';
 import { allocateRefund, normalizeMerchant, refundFits } from '@rise/shared/categorize';
 import { nextScheduled } from '@rise/shared/recurring';
 import {
@@ -9,6 +9,8 @@ import {
   ReplaceSplitsBody,
   TransactionQuery,
   RefundLinkBody,
+  SetTagsBody,
+  SpreadBody,
   TransferLinkBody,
   type RuleOffer,
 } from '@rise/shared/schemas';
@@ -16,6 +18,7 @@ import { Hono } from 'hono';
 import {
   acceptSuggestions,
   categoryIdsExist,
+  countOwnTags,
   deleteManualRuleStmt,
   deleteTransaction,
   ensureCatchallCategory,
@@ -31,12 +34,15 @@ import {
   refundedCents,
   seriesId,
   setRefundOf,
+  setTxnTags,
   sortKey,
+  totalTransactions,
   linkTransferStmts,
   movePostedAtStmts,
   replaceSplits,
   revertTransferLegStmts,
   splitsFor,
+  spreadStmts,
   unlinkTransferStmts,
   markTransferStmt,
   unmarkTransferStmt,
@@ -71,28 +77,35 @@ function decodeCursor(cursor: string | undefined) {
 const encodeCursor = (key: string, id: string) =>
   b64urlEncode(new TextEncoder().encode(`${key}|${id}`));
 
-transactions.get('/', async (c) => {
-  const q = TransactionQuery.safeParse(c.req.query());
+const parseQuery = (raw: Record<string, string>) => {
+  const q = TransactionQuery.safeParse(raw);
   if (!q.success) throw new AppError(400, 'BAD_REQUEST', 'Invalid query', q.error.issues);
-  const f = q.data;
+  return q.data;
+};
+
+const filtersOf = (f: ReturnType<typeof parseQuery>) => ({
+  from: f.from,
+  to: f.to,
+  accountIds: f.account,
+  categoryIds: f.category,
+  notAccountIds: f.notAccount,
+  notCategoryIds: f.notCategory,
+  tagIds: f.tag,
+  period: f.period,
+  q: f.q,
+  reviewState: f.reviewState,
+  direction: f.direction,
+  minCents: f.min,
+  maxCents: f.max,
+  sort: f.sort,
+});
+
+transactions.get('/', async (c) => {
+  const f = parseQuery(c.req.query());
   const items = await listTransactions(
     c.get('userId'),
     c.env.DB,
-    {
-      from: f.from,
-      to: f.to,
-      accountIds: f.account,
-      categoryIds: f.category,
-      notAccountIds: f.notAccount,
-      notCategoryIds: f.notCategory,
-      q: f.q,
-      reviewState: f.reviewState,
-      direction: f.direction,
-      minCents: f.min,
-      maxCents: f.max,
-      sort: f.sort,
-      after: decodeCursor(f.cursor),
-    },
+    { ...filtersOf(f), after: decodeCursor(f.cursor) },
     PAGE + 1,
   );
   const page = items.slice(0, PAGE);
@@ -101,6 +114,12 @@ transactions.get('/', async (c) => {
     items: page,
     nextCursor: items.length > PAGE && last ? encodeCursor(sortKey(last, f.sort), last.id) : null,
   });
+});
+
+/** Running totals for the same filter as the list (Copilot-style). */
+transactions.get('/totals', async (c) => {
+  const f = parseQuery(c.req.query());
+  return c.json(await totalTransactions(c.get('userId'), c.env.DB, filtersOf(f)));
 });
 
 transactions.get('/:id', async (c) => {
@@ -172,9 +191,18 @@ transactions.patch('/:id', async (c) => {
   if (b.categoryId) {
     if (!(await categoryIdsExist(userId, c.env.DB, [b.categoryId])))
       throw new AppError(400, 'BAD_REQUEST', 'Unknown category');
-    const changed = await replaceSplits(userId, c.env.DB, row, [
-      { categoryId: b.categoryId, amountCents: row.amount_cents },
-    ]);
+    // A spread charge keeps its months under the new category (SPEC §3.6).
+    const own = (await splitsFor(userId, c.env.DB, [id])).get(id) ?? [];
+    const months = spreadMonthsOf(
+      periodOf(row.posted_at),
+      own.map((s) => ({ categoryId: s.category_id, periodId: s.period_id })),
+    );
+    const changed = await replaceSplits(
+      userId,
+      c.env.DB,
+      row,
+      spreadParts(row.amount_cents, months, periodOf(row.posted_at), b.categoryId),
+    );
     if (changed || row.review_state === 'needs_review') {
       ruleOffer = await recordManualCategorisation(c.env.DB, userId, txnRef(row), b.categoryId);
     }
@@ -185,6 +213,42 @@ transactions.patch('/:id', async (c) => {
   }
   await updateTransactionFields(userId, c.env.DB, id, b);
   return c.json({ ...(await getTransaction(userId, c.env.DB, id)), ruleOffer });
+});
+
+/**
+ * Spread one charge evenly over 1..12 months from its own (SPEC §3.6), so a yearly bill draws
+ * on a rollover category a month at a time. One category only; transfers have no budget to
+ * spread over. `months: 1` puts it back in its own month.
+ */
+transactions.post('/:id/spread', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  const row = await getTransactionRow(userId, c.env.DB, id);
+  if (!row) throw notFound();
+  const { months } = await body(c, SpreadBody);
+  if (row.is_transfer) throw new AppError(409, 'CONFLICT', 'A transfer can’t be spread');
+  if (row.review_state === 'dropped')
+    throw new AppError(409, 'CONFLICT', 'This pending charge no longer counts');
+  const own = (await splitsFor(userId, c.env.DB, [id])).get(id) ?? [];
+  const cats = new Set(own.map((s) => s.category_id));
+  const [categoryId] = cats;
+  if (cats.size !== 1 || !categoryId)
+    throw new AppError(409, 'CONFLICT', 'Only a charge in one category can be spread');
+  const stmts = await spreadStmts(userId, c.env.DB, row, categoryId, months);
+  if (stmts) await c.env.DB.batch(stmts);
+  return c.json(await getTransaction(userId, c.env.DB, id));
+});
+
+/** Replace a transaction's tags. Labels only: no money moves. */
+transactions.put('/:id/tags', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  if (!(await getTransactionRow(userId, c.env.DB, id))) throw notFound();
+  const tagIds = [...new Set((await body(c, SetTagsBody)).tagIds)];
+  if ((await countOwnTags(userId, c.env.DB, tagIds)) !== tagIds.length)
+    throw new AppError(400, 'BAD_REQUEST', 'Unknown tag');
+  await setTxnTags(userId, c.env.DB, id, tagIds);
+  return c.json(await getTransaction(userId, c.env.DB, id));
 });
 
 /** Remove a transaction for good. A linked transfer must be unlinked first. */

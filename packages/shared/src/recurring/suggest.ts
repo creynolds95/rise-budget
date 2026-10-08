@@ -14,6 +14,9 @@ export interface AccountOccurrence extends Occurrence {
   isTransfer?: boolean;
   /** The other leg's account, when the transfer is linked. */
   pairAccountId?: string | null;
+  /** The transaction, for quiet charge flags (SPEC §8.1). */
+  id?: string;
+  needsReview?: boolean;
 }
 
 /**

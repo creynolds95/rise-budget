@@ -28,6 +28,8 @@ const Retirement = lazy(() =>
 const Debt = lazy(() => import('./routes/Debt').then((m) => ({ default: m.Debt })));
 const Mortgage = lazy(() => import('./routes/Mortgage').then((m) => ({ default: m.Mortgage })));
 const Savings = lazy(() => import('./routes/Savings').then((m) => ({ default: m.Savings })));
+const Binder = lazy(() => import('./routes/Binder').then((m) => ({ default: m.Binder })));
+const Taxes = lazy(() => import('./routes/Taxes').then((m) => ({ default: m.Taxes })));
 
 /** Stand-in while a split-off page's code loads. */
 export function PageFallback() {
@@ -109,6 +111,22 @@ export function App() {
             element={
               <Later>
                 <Savings />
+              </Later>
+            }
+          />
+          <Route
+            path="financial-health/binder"
+            element={
+              <Later>
+                <Binder />
+              </Later>
+            }
+          />
+          <Route
+            path="financial-health/taxes"
+            element={
+              <Later>
+                <Taxes />
               </Later>
             }
           />

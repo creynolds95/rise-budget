@@ -3,6 +3,8 @@ import {
   advanceManualRule,
   amountOn,
   cashMovements,
+  chargeFlags,
+  seriesRadar,
   detectSemimonthly,
   firstUpcoming,
   detectSeries,
@@ -23,6 +25,8 @@ import {
   listDetectedStatuses,
   manualRuleMerchants,
   replaceSuggestionsStmts,
+  setChargeFlagStmt,
+  setSeriesRadarStmt,
   setSeriesStatusStmt,
   setTypicalPostDayStmt,
   upsertSeriesStmt,
@@ -145,26 +149,59 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
           today,
         )
       : [];
+  // Quiet flags on new charges (SPEC §8.1): compared against each merchant's own history.
+  const flags = [...byMerchant.values()].flatMap((occ) => [
+    ...chargeFlags(
+      occ.flatMap((o) =>
+        o.id
+          ? [
+              {
+                id: o.id,
+                date: o.date,
+                amountCents: o.amountCents,
+                accountId: o.accountId,
+                needsReview: o.needsReview ?? false,
+              },
+            ]
+          : [],
+      ),
+      today,
+    ),
+  ]);
   // A series that no longer fits keeps its last prediction; only its status moves on.
   const detected = new Set(found.map(([merchant]) => merchant));
   const stale = existing.flatMap((r) => {
     if (r.source !== 'detected' || r.status === 'ended' || !r.next_expected_date) return [];
     if (detected.has(r.merchant_normalized)) return [];
+    // A price hike or a double charge is exactly what stops a series fitting for a while, so
+    // the radar reads every known series' own charges, not only the ones detected this time.
+    const radar = seriesRadar(byMerchant.get(r.merchant_normalized) ?? [], r.cadence, today);
+    const radarStmt =
+      radar.previousAmountCents === r.previous_amount_cents &&
+      radar.priceChangedOn === r.price_changed_on &&
+      radar.doubleChargedOn === r.double_charged_on
+        ? []
+        : [setSeriesRadarStmt(userId, db, r.id, radar)];
     const next = stateOf(
       r.merchant_normalized,
       r.cadence,
       r.next_expected_date,
       r.expected_amount_cents,
     );
-    return next === r.status ? [] : [setSeriesStatusStmt(userId, db, r.id, next)];
+    return [
+      ...radarStmt,
+      ...(next === r.status ? [] : [setSeriesStatusStmt(userId, db, r.id, next)]),
+    ];
   });
   await db.batch([
     ...found.map(([merchant, s]) =>
       upsertSeriesStmt(userId, db, merchant, {
         ...s,
         status: stateOf(merchant, s.cadence, s.nextExpectedDate, s.expectedAmountCents),
+        ...seriesRadar(byMerchant.get(merchant) ?? [], s.cadence, today),
       }),
     ),
+    ...flags.map(([id, flag]) => setChargeFlagStmt(userId, db, id, flag)),
     ...manualUpdates,
     ...stale,
     ...[...billDay].map(([categoryId, b]) => setTypicalPostDayStmt(userId, db, categoryId, b.day)),

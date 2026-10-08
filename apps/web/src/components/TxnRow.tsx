@@ -1,7 +1,10 @@
 import type { Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { Link, useNavigate } from 'react-router';
+import { flagText } from '../lib/alerts';
 import { shortDate } from '../lib/dates';
+import { useMe } from '../lib/queries';
+import { spreadMonths, spreadPart } from '../lib/spread';
 import { transitionClick } from '../lib/transition';
 import { TxnAmount } from './TxnAmount';
 import { Chevron } from './primitives/Rows';
@@ -13,6 +16,7 @@ export function TxnRow({
   from,
   hideDate = false,
   onRecategorize,
+  periodId,
 }: {
   t: Transaction;
   /** Shown before the merchant name; the category's name isn't repeated on the row. */
@@ -22,12 +26,26 @@ export function TxnRow({
   hideDate?: boolean;
   /** Batch review: a tap on the category opens a picker here instead of navigating away. */
   onRecategorize?: (() => void) | undefined;
+  /** In one month's list, a spread charge shows the part it draws that month. */
+  periodId?: string | undefined;
 }) {
   const navigate = useNavigate();
+  const alerts = useMe().data?.settings.alerts;
+  const part = periodId ? spreadPart(t, periodId) : null;
+  const months = spreadMonths(t);
   const caption = [
     hideDate ? null : shortDate(t.postedAt),
-    t.isTransfer ? 'Transfer' : t.splits.length > 1 ? 'Split' : null,
+    t.isTransfer
+      ? 'Transfer'
+      : part
+        ? `Spread, ${part.index} of ${part.months}`
+        : months > 1
+          ? `Spread over ${months} months`
+          : t.splits.length > 1
+            ? 'Split'
+            : null,
     t.reviewState === 'needs_review' ? 'To review' : null,
+    flagText(t.flag, alerts),
   ]
     .filter(Boolean)
     .join(' · ');
@@ -61,7 +79,7 @@ export function TxnRow({
         {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
       </Link>
       <span className="flex items-center gap-2">
-        <TxnAmount t={t} />
+        <TxnAmount t={part ? { ...t, amountCents: part.amountCents } : t} />
         {onRecategorize ? (
           <button
             type="button"

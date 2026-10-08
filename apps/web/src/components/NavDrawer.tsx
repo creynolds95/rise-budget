@@ -13,6 +13,7 @@ export const MENU_ITEMS: { label: string; to: string }[] = [
   { label: 'Investments', to: '/settings/investments?from=Dashboard|/' },
   { label: 'Categories', to: '/settings/categories?from=Dashboard|/' },
   { label: 'Rules', to: '/settings/rules?from=Dashboard|/' },
+  { label: 'Tags', to: '/settings/tags?from=Dashboard|/' },
   { label: 'Settings', to: '/settings' },
 ];
 

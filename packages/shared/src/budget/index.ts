@@ -10,3 +10,4 @@ export * from './reallocation';
 export * from './forgive';
 export * from './view';
 export * from './plan-default';
+export * from './spread';

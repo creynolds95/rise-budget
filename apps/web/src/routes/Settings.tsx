@@ -1,12 +1,14 @@
 import { isTransfersGroup } from '@rise/shared/categorize';
 import type {
+  AlertSettings,
+  PushSettings,
   AppLock,
   Category,
   CategoryGroup,
   CategoryGroupKind,
   Rule,
 } from '@rise/shared/schemas';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BackLink } from '../components/BackLink';
@@ -27,11 +29,13 @@ import { Icon, IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
 import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Sortable } from '../components/primitives/Sortable';
+import { Toggle } from '../components/primitives/Toggle';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, downloadExport } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncOutcome';
 import { localToday, shortDate } from '../lib/dates';
+import { currentSubscription, disablePush, enablePush, pushSupport } from '../lib/push';
 import { isStale, RUNNING, updateApp, useLatestBuild } from '../lib/version';
 import {
   useAccounts,
@@ -52,14 +56,17 @@ const MonarchImport = lazy(() =>
   import('./MonarchImport').then((m) => ({ default: m.MonarchImport })),
 );
 const Reports = lazy(() => import('./Reports').then((m) => ({ default: m.Reports })));
+const TagsSection = lazy(() => import('./Tags').then((m) => ({ default: m.TagsSection })));
 
 const SECTIONS = {
   appearance: 'Appearance',
   budget: 'Budget settings',
+  alerts: 'Alerts',
   categories: 'Categories',
   investments: 'Investments',
   reports: 'Reports',
   rules: 'Rules',
+  tags: 'Tags',
   sync: 'Bank sync',
   security: 'Security',
   data: 'Your data',
@@ -113,6 +120,15 @@ export function Settings() {
               ? me.settings.planChangesApplyToFuture
                 ? 'Plans carry to future months'
                 : 'Plans change one month at a time'
+              : undefined
+          }
+        />
+        <Card
+          to="/settings/alerts"
+          title="Alerts"
+          state={
+            me
+              ? `${Object.values(me.settings.alerts).filter(Boolean).length} of ${ALERT_ROWS.length} on`
               : undefined
           }
         />
@@ -259,8 +275,10 @@ export function SettingsSection() {
         <div className="gutter pt-4">
           {s === 'appearance' && <AppearanceSection />}
           {s === 'budget' && <BudgetSection />}
+          {s === 'alerts' && <AlertsSection />}
           {s === 'categories' && <CategoriesSection />}
           {s === 'rules' && <RulesSection />}
+          {s === 'tags' && <TagsSection />}
           {s === 'sync' && <SyncSection />}
           {s === 'security' && <SecuritySection />}
           {s === 'data' && <DataSection />}
@@ -349,6 +367,145 @@ function BudgetSection() {
           <span>Categories and groups</span>
           <Chevron />
         </Link>
+      </Group>
+    </>
+  );
+}
+
+const ALERT_ROWS: { key: keyof AlertSettings; label: string; hint: string }[] = [
+  { key: 'priceUp', label: 'Price went up', hint: 'A recurring charge costs more than last time' },
+  {
+    key: 'doubleCharge',
+    label: 'Charged twice',
+    hint: 'A recurring charge landed twice in one cycle',
+  },
+  {
+    key: 'duplicate',
+    label: 'Possible duplicate',
+    hint: 'Same amount, same place, within two days',
+  },
+  { key: 'unusual', label: 'More than usual', hint: 'Well above what this place usually charges' },
+  { key: 'firstTime', label: 'Large first charge', hint: '$300 or more somewhere new' },
+];
+
+/** Which quiet notices show (SPEC §8.1), and which also push to a device (SPEC §8.2). */
+function AlertsSection() {
+  const me = useMe().data;
+  const qc = useQueryClient();
+  const patch = useMutation({
+    mutationFn: (alerts: AlertSettings) => api('PATCH', '/me/settings', { alerts }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+  if (!me) return null;
+  const alerts = me.settings.alerts;
+  return (
+    <>
+      <Group title="Show me">
+        {ALERT_ROWS.map((r) => (
+          <GroupRow key={r.key} label={r.label} hint={r.hint}>
+            <Toggle
+              label={r.label}
+              on={alerts[r.key]}
+              disabled={patch.isPending}
+              onChange={(on) => patch.mutate({ ...alerts, [r.key]: on })}
+            />
+          </GroupRow>
+        ))}
+      </Group>
+      <PushGroup push={me.settings.push} />
+    </>
+  );
+}
+
+const PUSH_ROWS: { key: keyof PushSettings; label: string }[] = [
+  { key: 'recap', label: 'Weekly recap' },
+  { key: 'missedBill', label: 'Bill didn’t charge' },
+  { key: 'bankTrouble', label: 'Bank sync needs a look' },
+  ...ALERT_ROWS.map(({ key, label }) => ({ key, label })),
+];
+
+function PushGroup({ push }: { push: PushSettings }) {
+  const qc = useQueryClient();
+  const support = pushSupport();
+  const [on, setOn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (support !== 'ok') return;
+    void currentSubscription()
+      .then((s) => setOn(s !== null))
+      .catch(() => setOn(false));
+  }, [support]);
+  const patch = useMutation({
+    mutationFn: (p: PushSettings) => api('PATCH', '/me/settings', { push: p }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+  const flip = async (want: boolean) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      if (want) {
+        const ok = await enablePush();
+        if (!ok) setNote('Notifications are blocked for Rise in this device’s settings.');
+        setOn(ok);
+      } else {
+        await disablePush();
+        setOn(false);
+      }
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.message : 'Couldn’t change notifications.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const test = async () => {
+    setNote(null);
+    try {
+      await api('POST', '/push/test');
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.message : 'The test didn’t send.');
+    }
+  };
+  return (
+    <>
+      <Group
+        title="Push to this device"
+        footer={
+          note ??
+          (support === 'install'
+            ? 'Add Rise to your Home Screen, then open it from there to turn this on.'
+            : support === 'no'
+              ? 'This browser can’t receive notifications.'
+              : undefined)
+        }
+      >
+        <GroupRow label="Notifications">
+          <Toggle
+            label="Notifications"
+            on={on === true}
+            disabled={support !== 'ok' || on === null || busy}
+            onChange={(want) => void flip(want)}
+          />
+        </GroupRow>
+        {on && (
+          <div className="px-4 py-2">
+            <Button variant="quiet" className="-ml-4" onClick={() => void test()}>
+              Send a test
+            </Button>
+          </div>
+        )}
+      </Group>
+      <Group title="Push me about">
+        {PUSH_ROWS.map((r) => (
+          <GroupRow key={r.key} label={r.label}>
+            <Toggle
+              label={r.label}
+              on={push[r.key]}
+              disabled={patch.isPending}
+              onChange={(v) => patch.mutate({ ...push, [r.key]: v })}
+            />
+          </GroupRow>
+        ))}
       </Group>
     </>
   );
@@ -1375,6 +1532,7 @@ function DataSection() {
         )}
       </Group>
       <UsageGroup />
+      <ClaudeGroup />
       {importOpen ? (
         <MonarchImport />
       ) : (
@@ -1390,5 +1548,73 @@ function DataSection() {
         </Group>
       )}
     </>
+  );
+}
+
+/** The optional, read-only Claude connector (SPEC §12.3). Off by default; Rise never needs it. */
+function ClaudeGroup() {
+  const qc = useQueryClient();
+  const { stepUp } = useAuth();
+  const state = useQuery({
+    queryKey: ['connector'],
+    queryFn: () => api<{ on: boolean; createdAt: string | null }>('GET', '/connector'),
+  });
+  const [url, setUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const flip = async (on: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (on) {
+        const r = await api<{ url: string }>('POST', '/connector', undefined, {
+          stepUp: await stepUp(),
+        });
+        setUrl(r.url);
+      } else {
+        await api('DELETE', '/connector');
+        setUrl(null);
+      }
+      await qc.invalidateQueries({ queryKey: ['connector'] });
+    } catch {
+      setError("That didn't go through. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Group
+      title="Claude"
+      footer={
+        url
+          ? 'In Claude: Settings › Connectors › Add custom connector, and paste this link. It’s shown once.'
+          : error
+      }
+    >
+      <GroupRow label="Read-only connector">
+        <Toggle
+          label="Read-only connector"
+          on={state.data?.on === true}
+          disabled={!state.data || busy}
+          onChange={(on) => void flip(on)}
+        />
+      </GroupRow>
+      {url && (
+        <button
+          type="button"
+          onClick={() =>
+            void navigator.clipboard.writeText(url).then(
+              () => setCopied(true),
+              () => setCopied(false),
+            )
+          }
+          className="flex min-h-13 w-full items-center justify-between gap-4 px-4 py-3 text-left active:bg-sage-100"
+        >
+          <span className="min-w-0 truncate text-ink-muted">{url}</span>
+          <span className="shrink-0">{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      )}
+    </Group>
   );
 }

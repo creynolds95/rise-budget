@@ -1,7 +1,9 @@
 import type {
   AccountOccurrence,
   AmountChange,
+  ChargeFlag,
   DetectedSeries,
+  Radar,
   SurplusSuggestion,
 } from '@rise/shared/recurring';
 import { RecurringSeries } from '@rise/shared/schemas';
@@ -24,7 +26,8 @@ export async function listOccurrences(
   // their other leg's account: a transfer out to savings or a loan is real cash for Surplus.
   const { results } = await db
     .prepare(
-      `SELECT t.merchant_normalized, t.account_id, t.posted_at, t.amount_cents, t.is_transfer,
+      `SELECT t.id, t.review_state, t.flag, t.merchant_normalized, t.account_id, t.posted_at,
+         t.amount_cents, t.is_transfer,
          CASE WHEN t.review_state = 'reviewed' THEN
            (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(s.category_id) END FROM split s
              WHERE s.user_id = ?1 AND s.txn_id = t.id)
@@ -38,6 +41,9 @@ export async function listOccurrences(
     )
     .bind(userId, from)
     .all<{
+      id: string;
+      review_state: string;
+      flag: string | null;
       merchant_normalized: string;
       account_id: string;
       posted_at: string;
@@ -55,6 +61,9 @@ export async function listOccurrences(
       accountId: r.account_id,
       isTransfer: r.is_transfer === 1,
       pairAccountId: r.pair_account_id,
+      id: r.id,
+      // Already flagged (or cleared) rows are history to compare against, never re-flagged.
+      needsReview: r.review_state === 'needs_review' && r.flag === null,
     };
     out.set(r.merchant_normalized, [...(out.get(r.merchant_normalized) ?? []), o]);
   }
@@ -285,25 +294,32 @@ export function upsertSeriesStmt(
   userId: UserId,
   db: D1Database,
   merchant: string,
-  s: Omit<DetectedSeries, 'status'> & { status: 'active' | 'broken' | 'lapsed' },
+  s: Omit<DetectedSeries, 'status'> & { status: 'active' | 'broken' | 'lapsed' } & Radar,
 ): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO recurring_series (id, user_id, merchant_normalized, category_id, cadence,
-         expected_amount_cents, next_expected_date, status, updated_at)
-       VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         expected_amount_cents, next_expected_date, status, updated_at, previous_amount_cents,
+         price_changed_on, double_charged_on)
+       VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
        ON CONFLICT (id) DO UPDATE SET
          category_id = excluded.category_id, cadence = excluded.cadence,
          expected_amount_cents = excluded.expected_amount_cents,
          next_expected_date = excluded.next_expected_date,
          status = CASE WHEN recurring_series.status = 'ended' THEN 'ended' ELSE excluded.status END,
+         previous_amount_cents = excluded.previous_amount_cents,
+         price_changed_on = excluded.price_changed_on,
+         double_charged_on = excluded.double_charged_on,
          updated_at = excluded.updated_at
        WHERE recurring_series.user_id = ?1 AND (
          recurring_series.category_id IS NOT excluded.category_id
          OR recurring_series.cadence IS NOT excluded.cadence
          OR recurring_series.expected_amount_cents IS NOT excluded.expected_amount_cents
          OR recurring_series.next_expected_date IS NOT excluded.next_expected_date
-         OR recurring_series.status NOT IN ('ended', excluded.status))`,
+         OR recurring_series.status NOT IN ('ended', excluded.status)
+         OR recurring_series.previous_amount_cents IS NOT excluded.previous_amount_cents
+         OR recurring_series.price_changed_on IS NOT excluded.price_changed_on
+         OR recurring_series.double_charged_on IS NOT excluded.double_charged_on)`,
     )
     .bind(
       userId,
@@ -315,7 +331,38 @@ export function upsertSeriesStmt(
       s.nextExpectedDate,
       s.status,
       nowIso(),
+      s.previousAmountCents,
+      s.priceChangedOn,
+      s.doubleChargedOn,
     );
+}
+
+/** The radar's view of a series refresh no longer detects (SPEC §7.1). */
+export function setSeriesRadarStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  r: Radar,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE recurring_series SET previous_amount_cents = ?3, price_changed_on = ?4,
+         double_charged_on = ?5
+       WHERE user_id = ?1 AND id = ?2`,
+    )
+    .bind(userId, id, r.previousAmountCents, r.priceChangedOn, r.doubleChargedOn);
+}
+
+/** Set a quiet flag once (SPEC §8.1); a row already flagged or cleared keeps what it has. */
+export function setChargeFlagStmt(
+  userId: UserId,
+  db: D1Database,
+  txnId: string,
+  flag: ChargeFlag,
+): D1PreparedStatement {
+  return db
+    .prepare('UPDATE txn SET flag = ?3 WHERE user_id = ?1 AND id = ?2 AND flag IS NULL')
+    .bind(userId, txnId, flag);
 }
 
 /**
@@ -341,7 +388,7 @@ export async function listDetectedStatuses(userId: UserId, db: D1Database) {
   const { results } = await db
     .prepare(
       `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date, status,
-         source
+         source, previous_amount_cents, price_changed_on, double_charged_on
        FROM recurring_series WHERE user_id = ?1`,
     )
     .bind(userId)
@@ -353,6 +400,9 @@ export async function listDetectedStatuses(userId: UserId, db: D1Database) {
       next_expected_date: string | null;
       status: string;
       source: string;
+      previous_amount_cents: number | null;
+      price_changed_on: string | null;
+      double_charged_on: string | null;
     }>();
   return results;
 }
@@ -367,6 +417,9 @@ interface SeriesRow {
   status: string;
   updated_at: string;
   source: string;
+  previous_amount_cents: number | null;
+  price_changed_on: string | null;
+  double_charged_on: string | null;
 }
 
 export async function listSeries(userId: UserId, db: D1Database): Promise<RecurringSeries[]> {
@@ -387,6 +440,9 @@ export async function listSeries(userId: UserId, db: D1Database): Promise<Recurr
       status: r.status,
       source: r.source,
       updatedAt: r.updated_at,
+      previousAmountCents: r.previous_amount_cents,
+      priceChangedOn: r.price_changed_on,
+      doubleChargedOn: r.double_charged_on,
     }),
   );
 }

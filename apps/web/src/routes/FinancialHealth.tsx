@@ -11,6 +11,7 @@ import { groupView, owedCents, planLoans } from '../lib/debt';
 import { mortgageView } from '../lib/mortgage';
 import { monthName, periodOf } from '../lib/dates';
 import { goalView } from '../lib/savings';
+import { defaultTaxYear } from '../lib/tax';
 import { retirementView, totalMonthly } from '../lib/retirement';
 import { transitionClick } from '../lib/transition';
 
@@ -32,6 +33,9 @@ function Tile({ to, title, state }: { to: string; title: string; state: string |
     </li>
   );
 }
+
+const binderState = (n: number) =>
+  n === 0 ? 'Start one' : `${n} ${n === 1 ? 'entry' : 'entries'}`;
 
 /** The hub: one tile per area of financial health, each opening its own page. */
 export function FinancialHealth() {
@@ -109,6 +113,16 @@ export function FinancialHealth() {
         <Tile to="/financial-health/debt" title="Debt" state={debtState} />
         <Tile to="/financial-health/mortgage" title="Mortgage" state={mortgageState} />
         <Tile to="/financial-health/savings" title="Savings" state={savingsState} />
+        <Tile
+          to="/financial-health/taxes"
+          title="Taxes"
+          state={`${defaultTaxYear(today)} tax year`}
+        />
+        <Tile
+          to="/financial-health/binder"
+          title="Binder"
+          state={ready ? binderState(me.settings.binder.entries.length) : undefined}
+        />
       </ul>
     </div>
   );

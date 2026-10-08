@@ -120,3 +120,18 @@ describe('successRate', () => {
     expect(successRate([], 1)).toBe(0);
   });
 });
+
+describe('one-time amounts in the fan', () => {
+  it('moves every run by the year’s amount', () => {
+    const { fan } = simulateRetirement({
+      startCents: 100_000,
+      monthlyContributionCents: 0,
+      years: 1,
+      realGrowthBps: 0,
+      volatilityBps: 0,
+      lumps: [-30_000],
+      runs: 3,
+    });
+    expect(fan[1]?.p50).toBe(70_000);
+  });
+});

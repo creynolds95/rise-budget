@@ -3,14 +3,16 @@ import { DetailPage } from '../components/detail/DetailPage';
 import { dueDate, MissedRow, useMissed, useSetSeriesStatus } from '../components/MissedCharges';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
+import { radarNotes, yearlyCost } from '../lib/alerts';
 import { shortDate } from '../lib/dates';
 import { merchantName } from '../lib/merchant';
-import { useCategories, useRecurring, useToday } from '../lib/queries';
+import { useCategories, useMe, useRecurring, useToday } from '../lib/queries';
 
 /** Every active recurring charge, soonest first. Pushed from the Dashboard menu. */
 export function Recurring() {
   const today = useToday();
   const recurring = useRecurring();
+  const alerts = useMe().data?.settings.alerts;
   const categories = useCategories();
   const back = { label: 'Dashboard', to: '/' };
   const broken = useMissed(recurring.data);
@@ -39,6 +41,11 @@ export function Recurring() {
   return (
     <DetailPage
       header={{ back, title: 'Recurring' }}
+      identity={
+        rows.length > 0
+          ? { label: 'A year of recurring charges', hero: <MoneyText cents={yearlyCost(all)} /> }
+          : undefined
+      }
       facts={
         rows.length === 0 && stopped.length === 0 ? (
           <p className="py-4 text-ink-muted">Nothing recurring yet.</p>
@@ -58,6 +65,12 @@ export function Recurring() {
                       ? ` · ${categories.data?.find((c) => c.id === s.categoryId)?.name ?? ''}`
                       : ''}
                   </span>
+                  {radarNotes(s, alerts).map((n) => (
+                    <span key={n} className="flex items-center gap-2 type-caption text-ink">
+                      <span aria-hidden className="size-2 shrink-0 rounded-full bg-gold" />
+                      {n}
+                    </span>
+                  ))}
                 </span>
                 <MoneyText cents={s.expectedAmountCents} />
               </li>

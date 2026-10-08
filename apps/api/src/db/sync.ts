@@ -1,4 +1,4 @@
-import { periodOf } from '@rise/shared/budget';
+import { periodOf, spreadMonthsOf, spreadParts } from '@rise/shared/budget';
 import type { IncomingAccount, IncomingTxn } from '@rise/shared/import';
 import type { StoredTxn } from '@rise/shared/sync';
 import { putSnapshotStmts } from './accounts';
@@ -286,20 +286,35 @@ export function updateSyncedTxnStmts(
         nowIso(),
       ),
   ];
+  // A spread charge is re-spread over the same number of months from its new month, at its
+  // new amount (SPEC §3.6); anything else moves whole and the last split absorbs the drift.
+  const months = spreadMonthsOf(
+    oldPeriod,
+    splits.map((s) => ({ categoryId: s.category_id, periodId: s.period_id })),
+  );
+  const parts =
+    months > 1
+      ? spreadParts(incoming.amountCents, months, newPeriod, splits[0]?.category_id ?? '')
+      : null;
   const last = splits.at(-1);
-  for (const s of splits) {
+  const next = splits.map((s, i) => ({
+    id: s.id,
+    category_id: s.category_id,
+    amount_cents: parts?.[i]?.amountCents ?? s.amount_cents + (s === last ? drift : 0),
+    period_id: parts?.[i]?.periodId ?? newPeriod,
+  }));
+  for (const s of next) {
     stmts.push(
       db
         .prepare(
           'UPDATE split SET amount_cents = ?3, period_id = ?4 WHERE user_id = ?1 AND id = ?2',
         )
-        .bind(userId, s.id, s.amount_cents + (s === last ? drift : 0), newPeriod),
+        .bind(userId, s.id, s.amount_cents, s.period_id),
     );
   }
-  const newSplits = splits.map((s) => ({
-    category_id: s.category_id,
-    amount_cents: s.amount_cents + (s === last ? drift : 0),
-  }));
+  for (const s of splits) touched.add(s.period_id);
+  for (const s of next) touched.add(s.period_id);
+  const newSplits = next;
   stmts.push(
     ...splitEffectStmts(
       userId,
@@ -324,6 +339,7 @@ export function dropPendingStmts(
 ): D1PreparedStatement[] {
   const period = periodOf(row.posted_at);
   const beforeCounted = countedWith(budgeted, splits, row.review_state);
+  for (const s of splits) touched.add(s.period_id);
   return [
     db
       .prepare(

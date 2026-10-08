@@ -8,9 +8,13 @@ import {
   RuleMatchField,
   RuleMatchType,
   SpendShape,
+  TaxKind,
 } from './enums';
 import {
   AccountBadgeStyle,
+  AlertSettings,
+  Binder,
+  PushSettings,
   DashboardTile,
   DebtPlan,
   FollowRule,
@@ -78,7 +82,18 @@ export const PatchSettingsBody = z.object({
   savings: SavingsPlan.nullable().optional(),
   /** Rules only: the log is the server's. */
   follow: z.object({ rules: z.array(FollowRule).max(20) }).optional(),
+  alerts: AlertSettings.optional(),
+  binder: Binder.optional(),
+  push: PushSettings.optional(),
 });
+
+/** A push service only ever speaks https. */
+const PushEndpoint = z.url({ protocol: /^https$/ }).max(1000);
+export const PushSubscriptionBody = z.object({
+  endpoint: PushEndpoint,
+  keys: z.object({ p256dh: z.string().min(40).max(200), auth: z.string().min(10).max(100) }),
+});
+export const PushUnsubscribeBody = z.object({ endpoint: PushEndpoint });
 
 export const FollowUndoBody = z.object({ txnId: Id });
 
@@ -114,6 +129,10 @@ export type SplitInput = z.infer<typeof SplitInput>;
 
 export const ReplaceSplitsBody = z.object({ splits: z.array(SplitInput).min(1) });
 
+/** Spread one charge evenly over this many months from its own (SPEC §3.6); 1 undoes it. */
+export const SpreadBody = z.object({ months: z.number().int().min(1).max(12) });
+export type SpreadBody = z.infer<typeof SpreadBody>;
+
 export const PatchTransactionBody = z.object({
   categoryId: Id.optional(),
   notes: z.string().nullable().optional(),
@@ -122,6 +141,8 @@ export const PatchTransactionBody = z.object({
   // M1: past months are editable, not frozen — moving a transaction's date moves its splits
   // to the new period and flags either side if closed (SPEC §2.5).
   postedAt: IsoDate.optional(),
+  /** "Looks fine": clears a quiet flag for good (SPEC §8.1). */
+  clearFlag: z.literal(true).optional(),
 });
 
 export const CreateTransactionBody = z.object({
@@ -242,6 +263,7 @@ export const PatchCategoryBody = z.object({
   spendShape: SpendShape.optional(),
   isBill: z.boolean().optional(),
   budgeted: z.boolean().optional(),
+  taxKind: TaxKind.nullable().optional(),
   /** L6: manual drag-reorder within (or across) a group. */
   sortOrder: z.int().optional(),
 });
@@ -293,6 +315,9 @@ export const TransactionQuery = z.object({
   /** Same lists, flipped: everything except these. */
   notAccount: IdList.optional(),
   notCategory: IdList.optional(),
+  tag: IdList.optional(),
+  /** With `category`: its splits in this month, so a spread charge shows in each month. */
+  period: PeriodId.optional(),
   q: z.string().optional(),
   reviewState: ReviewState.optional(),
   /** `out` is spending (positive), `in` is money arriving (negative). */
@@ -303,6 +328,54 @@ export const TransactionQuery = z.object({
   sort: TxnSort.default('date_desc'),
   cursor: z.string().optional(),
 });
+
+/** Totals of everything a filter matches (transfers and dropped rows left out). */
+export const TransactionTotals = z.object({
+  outCents: Cents,
+  inCents: Cents,
+  count: z.int().nonnegative(),
+});
+export type TransactionTotals = z.infer<typeof TransactionTotals>;
+
+// ── tags ──────────────────────────────────────────────────────────────────────
+
+export const CreateTagBody = z.object({
+  name: z.string().trim().min(1).max(40),
+  taxKind: TaxKind.nullable().default(null),
+});
+export const PatchTagBody = z.object({
+  name: z.string().trim().min(1).max(40).optional(),
+  taxKind: TaxKind.nullable().optional(),
+});
+export const SetTagsBody = z.object({ tagIds: z.array(Id).max(20) });
+
+/** A tag with what's filed under it, all time. */
+export const TagSummary = z.object({
+  id: Id,
+  name: z.string(),
+  taxKind: TaxKind.nullable(),
+  count: z.int().nonnegative(),
+  netCents: Cents,
+});
+export type TagSummary = z.infer<typeof TagSummary>;
+
+// ── tax pack ──────────────────────────────────────────────────────────────────
+
+export const TaxYearQuery = z.object({ year: z.coerce.number().int().min(2000).max(2100) });
+
+/** One transaction in the tax pack, under the heading its category or tag gave it. */
+export const TaxLine = z.object({
+  txnId: Id,
+  postedAt: IsoDate,
+  merchant: z.string(),
+  accountId: Id,
+  /** The part that counts: the split for a category, the whole transaction for a tag. */
+  amountCents: Cents,
+  kind: TaxKind,
+  /** The category or tag that put it here. */
+  source: z.string(),
+});
+export type TaxLine = z.infer<typeof TaxLine>;
 
 export const PeriodParam = z.object({ id: PeriodId });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { merchantName } from './merchant';
+import { merchantName } from './merchantName';
 
 const m = (merchantNormalized: string, merchantDisplay: string | null = null) =>
   merchantName({ merchantNormalized, merchantDisplay });

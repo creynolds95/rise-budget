@@ -10,12 +10,14 @@ import {
   RecurringCadence,
   RecurringStatus,
   ReviewState,
+  ChargeFlag,
   RolloverPolicy,
   RuleMatchField,
   RuleMatchType,
   SnapshotSource,
   SpendShape,
   SyncRunStatus,
+  TaxKind,
   TxnSource,
 } from './enums';
 
@@ -54,6 +56,31 @@ export const RetirementPlan = z.object({
   withdrawalBps: z.int().min(100).max(1000).default(350),
   /** Yearly swing in returns for the Monte Carlo fan, basis points. */
   volatilityBps: z.int().min(0).max(5000).default(1500),
+  /** Monthly benefit at full retirement age (67) from the owner's ssa.gov statement; 0 = none. */
+  ssBenefitCents: Cents.min(0).default(0),
+  ssClaimAge: z.int().min(62).max(70).default(67),
+  /** A spouse's own age and statement, for their check (or half the owner's, if more). */
+  spouse: z
+    .object({
+      age: z.int().min(18).max(100),
+      ssBenefitCents: Cents.min(0).default(0),
+      ssClaimAge: z.int().min(62).max(70).default(67),
+    })
+    .nullable()
+    .default(null),
+  /** Share of promised benefits to count on, for anyone who'd rather plan on a cut. */
+  ssHaircutPct: z.int().min(0).max(100).default(100),
+  /** One-time money in (positive) or out (negative) at the owner's age, today's dollars. */
+  lifeEvents: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(60),
+        age: z.int().min(18).max(100),
+        cents: Cents,
+      }),
+    )
+    .max(30)
+    .default([]),
 });
 export type RetirementPlan = z.infer<typeof RetirementPlan>;
 
@@ -177,6 +204,80 @@ export const FollowSettings = z.object({
 });
 export type FollowSettings = z.infer<typeof FollowSettings>;
 
+/**
+ * The household binder (SPEC §12.2): who to call and where things are, for whoever has to
+ * step in. Never a password, a full account number or a PIN: only where passwords live and
+ * the last four digits.
+ */
+export const BinderEntry = z.object({
+  id: z.string().min(1).max(40),
+  kind: z.enum(['account', 'insurance', 'person', 'document', 'other']),
+  title: z.string().trim().min(1).max(80),
+  /** A Rise account this is about, when there is one. */
+  accountId: Id.nullable().default(null),
+  last4: z
+    .string()
+    .regex(/^\d{4}$/)
+    .nullable()
+    .default(null),
+  phone: z.string().trim().max(40).default(''),
+  website: z.string().trim().max(200).default(''),
+  /** Where the paper copy or the file is. */
+  location: z.string().trim().max(200).default(''),
+  notes: z.string().trim().max(1000).default(''),
+});
+export type BinderEntry = z.infer<typeof BinderEntry>;
+
+export const Binder = z.object({
+  /** "1Password", "the notebook in the safe": where, never what. */
+  passwordsLiveIn: z.string().trim().max(200).default(''),
+  entries: z.array(BinderEntry).max(150).default([]),
+});
+export type Binder = z.infer<typeof Binder>;
+
+/** Which quiet notices show (SPEC §8.1). Each is the owner's choice; all on to start. */
+export const AlertSettings = z.object({
+  priceUp: z.boolean().default(true),
+  doubleCharge: z.boolean().default(true),
+  duplicate: z.boolean().default(true),
+  unusual: z.boolean().default(true),
+  firstTime: z.boolean().default(true),
+});
+export type AlertSettings = z.infer<typeof AlertSettings>;
+const ALERTS_ON: AlertSettings = {
+  priceUp: true,
+  doubleCharge: true,
+  duplicate: true,
+  unusual: true,
+  firstTime: true,
+};
+
+/**
+ * What may interrupt with a push notification (SPEC §8.2). The weekly recap, a missed bill
+ * and bank trouble start on; the quiet notices start off and stay in the app unless chosen.
+ */
+export const PushSettings = z.object({
+  recap: z.boolean().default(true),
+  missedBill: z.boolean().default(true),
+  bankTrouble: z.boolean().default(true),
+  priceUp: z.boolean().default(false),
+  doubleCharge: z.boolean().default(false),
+  duplicate: z.boolean().default(false),
+  unusual: z.boolean().default(false),
+  firstTime: z.boolean().default(false),
+});
+export type PushSettings = z.infer<typeof PushSettings>;
+export const PUSH_DEFAULTS: PushSettings = {
+  recap: true,
+  missedBill: true,
+  bankTrouble: true,
+  priceUp: false,
+  doubleCharge: false,
+  duplicate: false,
+  unusual: false,
+  firstTime: false,
+};
+
 export const UserSettings = z.object({
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
@@ -203,6 +304,9 @@ export const UserSettings = z.object({
   debt: DebtPlan.nullable().default(null),
   savings: SavingsPlan.nullable().default(null),
   follow: FollowSettings.default({ rules: [], log: [] }),
+  alerts: AlertSettings.default(ALERTS_ON),
+  binder: Binder.default({ passwordsLiveIn: '', entries: [] }),
+  push: PushSettings.default(PUSH_DEFAULTS),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 
@@ -306,8 +410,19 @@ export const Category = z.object({
   /** Whether a split filed here counts as spending (pre-deploy-todo A4). Transfer-like
    * categories default to false; everything else defaults to true. */
   budgeted: z.boolean(),
+  /** Totals into the year-end tax pack under this heading. */
+  taxKind: TaxKind.nullable().default(null),
 });
 export type Category = z.infer<typeof Category>;
+
+/** A label that cuts across categories: a trip, a project, a side gig. */
+export const Tag = z.object({
+  id: Id,
+  name: z.string().min(1).max(40),
+  taxKind: TaxKind.nullable(),
+  createdAt: IsoDateTime,
+});
+export type Tag = z.infer<typeof Tag>;
 
 export const Period = z.object({
   id: PeriodId,
@@ -364,6 +479,9 @@ export const Transaction = z.object({
   source: TxnSource,
   sourceId: z.string().nullable(),
   splits: z.array(Split),
+  tagIds: z.array(Id).default([]),
+  /** A quiet flag until the user says it's fine (SPEC §8.1). */
+  flag: ChargeFlag.nullable().default(null),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -409,6 +527,10 @@ export const RecurringSeries = z.object({
   updatedAt: IsoDateTime,
   /** 'manual' = the owner's "Recurring Cash Withdrawal" tag; 'detected' = auto-detected (SPEC §7). */
   source: z.enum(['detected', 'manual']),
+  /** Subscription radar (SPEC §7.1), each only for a while after it happened. */
+  previousAmountCents: Cents.nullable().default(null),
+  priceChangedOn: IsoDate.nullable().default(null),
+  doubleChargedOn: IsoDate.nullable().default(null),
 });
 export type RecurringSeries = z.infer<typeof RecurringSeries>;
 

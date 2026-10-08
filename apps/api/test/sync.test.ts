@@ -858,3 +858,46 @@ describe('lone transfer legs', () => {
     );
   });
 });
+
+describe('spread charges and sync (SPEC §3.6)', () => {
+  it('a spread pending row is re-spread at its posted amount; a drop clears every month', async () => {
+    const s = await setup();
+    const card = (txns: FakeTxn[]) => fake([{ id: 'card', name: 'Metro Credit', txns }]);
+    await runSync(
+      env.DB,
+      s.userId,
+      card([{ id: 'p', date: '2026-10-30', cents: 30_000, desc: 'TIRE SHOP', pending: true }]),
+      { now: at('2026-10-30T20:00:00Z') },
+    );
+    const id = String((await s.txns())[0]?.id);
+    await s.api('PATCH', `/transactions/${id}`, { categoryId: s.gas.id });
+    await s.api('POST', `/transactions/${id}/spread`, { months: 3 });
+    expect(await s.spent('2026-12', s.gas.id)).toBe(10_000);
+
+    // Posts a day later, into November, for a little more: same three months' shape, moved.
+    await runSync(
+      env.DB,
+      s.userId,
+      card([{ id: 'q', date: '2026-11-01', cents: 30_001, desc: 'TIRE SHOP' }]),
+      { now: at('2026-11-02T20:00:00Z') },
+    );
+    expect(await s.spent('2026-10', s.gas.id)).toBe(0);
+    expect(await s.spent('2026-11', s.gas.id)).toBe(10_001);
+    expect(await s.spent('2026-12', s.gas.id)).toBe(10_000);
+    expect(await s.spent('2027-01', s.gas.id)).toBe(10_000);
+
+    // A second spread pending row that vanishes: every month it drew on lets go.
+    await runSync(
+      env.DB,
+      s.userId,
+      card([{ id: 'p2', date: '2026-11-03', cents: 2_000, desc: 'OIL CHANGE', pending: true }]),
+      { now: at('2026-11-03T20:00:00Z') },
+    );
+    const id2 = String((await s.txns()).find((t) => t.source_id === 'p2')?.id);
+    await s.api('PATCH', `/transactions/${id2}`, { categoryId: s.gas.id });
+    await s.api('POST', `/transactions/${id2}/spread`, { months: 2 });
+    expect(await s.spent('2026-12', s.gas.id)).toBe(11_000);
+    await runSync(env.DB, s.userId, card([]), { now: at('2026-11-20T20:00:00Z') });
+    expect(await s.spent('2026-12', s.gas.id)).toBe(10_000);
+  });
+});

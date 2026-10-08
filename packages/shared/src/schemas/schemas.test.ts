@@ -61,6 +61,24 @@ describe('schemas', () => {
       debt: null,
       savings: null,
       follow: { rules: [], log: [] },
+      alerts: {
+        priceUp: true,
+        doubleCharge: true,
+        duplicate: true,
+        unusual: true,
+        firstTime: true,
+      },
+      binder: { passwordsLiveIn: '', entries: [] },
+      push: {
+        recap: true,
+        missedBill: true,
+        bankTrouble: true,
+        priceUp: false,
+        doubleCharge: false,
+        duplicate: false,
+        unusual: false,
+        firstTime: false,
+      },
     });
     expect(u.timezone).toBe('America/Chicago');
   });

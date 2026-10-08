@@ -58,7 +58,8 @@ export function DetailPage(p: DetailPageProps) {
         </section>
       )}
       {p.facts && (
-        <section data-zone="facts" className="gutter">
+        // Alone under the sticky header (no identity or shape above), it needs the same room.
+        <section data-zone="facts" className={`gutter ${p.identity || p.shape ? '' : 'pt-4'}`}>
           {p.factsTitle && (
             <h2 className="mb-2 type-label font-semibold text-ink-muted">{p.factsTitle}</h2>
           )}
