@@ -13,7 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BackLink } from '../components/BackLink';
-import { GroupHeading, IconBadge, PageHeader } from '../components/PageHeader';
+import { GroupHeading, PageHeader } from '../components/PageHeader';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
 import { CategoryEditSheet } from '../components/CategoryEditSheet';
@@ -27,7 +27,7 @@ import { getThemeSetting, setThemeSetting, type ThemeSetting } from '../lib/them
 import { RULE_FIELD as FIELD, RULE_TYPE as TYPE, RuleSheet } from '../components/RuleSheet';
 import { Button } from '../components/primitives/Button';
 import { Chevron } from '../components/primitives/Rows';
-import { Icon, IconButton, type IconName } from '../components/primitives/Icon';
+import { Icon, IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
 import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Sortable } from '../components/primitives/Sortable';
@@ -94,9 +94,6 @@ const THEME_LABEL: Record<ThemeSetting, string> = {
 export function Settings() {
   const me = useMe().data;
   const { signOut } = useAuth();
-  const rules = useRules().data;
-  const categories = useCategories().data;
-  const accounts = useAccounts().data;
   const sync = useSyncStatus().data;
   const lastRun = sync?.runs[0];
   const backups = useBackupStatus().data;
@@ -118,33 +115,12 @@ export function Settings() {
         <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <Card
             to="/settings/sync"
-            icon="refresh"
             title="Bank sync"
             state={sync ? MODE[sync.mode] : undefined}
             tone={syncTone}
-          >
-            {lastRun
-              ? `Last run ${shortDate(localToday(me?.timezone, new Date(lastRun.startedAt)))} · ${lastRun.status}`
-              : 'No runs yet'}
-          </Card>
-          <Card
-            to="/accounts"
-            icon="bank"
-            title="Accounts"
-            state={
-              accounts ? `${accounts.filter((a) => !a.archivedAt).length} accounts` : undefined
-            }
           />
-          <Card
-            to="/settings/investments"
-            icon="chart"
-            title="Investments"
-            state="Portfolio vs S&P 500"
-          />
-          <Card to="/settings/reports" icon="flow" title="Reports" state="Cash flow and spending" />
           <Card
             to="/settings/data"
-            icon="doc"
             title="Your data"
             state={
               backups
@@ -160,7 +136,6 @@ export function Settings() {
         <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <Card
             to="/settings/budget"
-            icon="budget"
             title="Budget"
             state={
               me
@@ -170,25 +145,12 @@ export function Settings() {
                 : undefined
             }
           />
-          <Card
-            to="/settings/categories"
-            icon="grid"
-            title="Categories"
-            state={categories ? `${categories.length} in use` : undefined}
-          />
-          <Card
-            to="/settings/rules"
-            icon="filter"
-            title="Rules"
-            state={rules ? `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}` : undefined}
-          />
         </ul>
 
         <GroupHeading>Preferences</GroupHeading>
         <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <Card
             to="/settings/alerts"
-            icon="bell"
             title="Alerts"
             state={
               me
@@ -196,15 +158,9 @@ export function Settings() {
                 : undefined
             }
           />
-          <Card
-            to="/settings/appearance"
-            icon="sun"
-            title="Appearance"
-            state={THEME_LABEL[appearance]}
-          />
+          <Card to="/settings/appearance" title="Appearance" state={THEME_LABEL[appearance]} />
           <Card
             to="/settings/security"
-            icon="lock"
             title="Security"
             state={
               me
@@ -267,17 +223,13 @@ function AppVersion({ timeZone }: { timeZone: string | undefined }) {
 function Card({
   to,
   title,
-  icon,
   state,
   tone = '',
-  children,
 }: {
   to: string;
   title: string;
-  icon: IconName;
   state?: string | undefined;
   tone?: string;
-  children?: string;
 }) {
   const navigate = useNavigate();
   return (
@@ -285,17 +237,11 @@ function Card({
       <Link
         to={to}
         onClick={transitionClick(navigate, to)}
-        className="flex min-h-16 items-center gap-3 py-3 active:bg-sage-100"
+        className="flex min-h-12 items-center gap-3 py-3 active:bg-sage-100"
       >
-        <IconBadge>
-          <Icon name={icon} size={18} />
-        </IconBadge>
-        <span className="min-w-0 flex-1">
-          <span className="block type-label text-ink-muted">{title}</span>
-          <span className={`block truncate font-medium ${tone}`}>
-            {state ?? <Skeleton className="h-5 w-24" />}
-          </span>
-          {children && <span className="block type-caption text-ink-faint">{children}</span>}
+        <span className="min-w-0 flex-1 font-semibold">{title}</span>
+        <span className={`min-w-0 truncate type-caption text-ink-muted ${tone}`}>
+          {state ?? <Skeleton className="h-4 w-20" />}
         </span>
         <Chevron />
       </Link>
