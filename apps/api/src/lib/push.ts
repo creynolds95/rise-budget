@@ -72,6 +72,7 @@ async function gather(
   user: PushUser,
   today: string,
   prefs: PushSettings,
+  runId?: string,
 ): Promise<NoticeInputs & { surplusChecked: boolean }> {
   const [series, flags, runs] = await Promise.all([
     listSeries(userId, db),
@@ -97,7 +98,7 @@ async function gather(
   return {
     surplusChecked,
     surplusNegative,
-    review: prefs.toReview ? { day: today, count: toReview } : null,
+    review: prefs.toReview && runId ? { runId, count: toReview } : null,
     series: series.map((s) => ({
       ...s,
       name: merchantName({ merchantNormalized: s.merchantNormalized }),
@@ -162,6 +163,7 @@ export async function runPush(
   userId: UserId,
   db: D1Database,
   now: Date,
+  newRunId?: string,
 ): Promise<{ sent: number; notices: number }> {
   const subs = await listPushSubscriptions(userId, db);
   if (subs.length === 0) return { sent: 0, notices: 0 };
@@ -177,7 +179,7 @@ export async function runPush(
     unusual: push.unusual && alerts.unusual,
     firstTime: push.firstTime && alerts.firstTime,
   };
-  const inputs = await gather(userId, db, user, localToday(user.timezone, now), prefs);
+  const inputs = await gather(userId, db, user, localToday(user.timezone, now), prefs, newRunId);
   // Recovered: the next dip is a new one and may be told again.
   if (inputs.surplusChecked && !inputs.surplusNegative)
     await clearSentKey(userId, db, SURPLUS_NEGATIVE_KEY);

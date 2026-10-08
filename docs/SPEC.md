@@ -587,7 +587,7 @@ server works out what is new and pushes it:
 - **Off by default**: price went up, charged twice, and the three charge flags of §8.1. A kind
   turned off under "Show me" never pushes either. Also off by default: Surplus going negative
   (once when the projected lowest point first goes under zero, again only after it has
-  recovered and dipped anew) and transactions to review (one count a day, never one per
+  recovered and dipped anew) and transactions to review (one count per sync that brings in new rows, never one per
   transaction, nothing at zero).
 
 Every notice has a key and is told once; at most five go out per run and the rest wait in the

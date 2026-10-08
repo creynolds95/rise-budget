@@ -42,13 +42,13 @@ const input: NoticeInputs = {
   bankTrouble: { key: 'acct1', message: 'Example Bank needs you to sign in again.' },
   recap: { weekOf: '2026-10-04', spentCents: 123_456, toReview: 3 },
   surplusNegative: { shortfallCents: 25_050, date: '2026-10-12' },
-  review: { day: '2026-10-08', count: 12 },
+  review: { runId: 'run1', count: 12 },
 };
 
 describe('notices', () => {
   it('skips the review count at zero and the Surplus alert when fine', () => {
     const n = notices(
-      { ...input, surplusNegative: null, review: { day: 'd', count: 0 } },
+      { ...input, surplusNegative: null, review: { runId: 'r', count: 0 } },
       { ...ALL, recap: false },
     ).map((x) => x.key);
     expect(n).not.toContain('surplus:negative');
@@ -70,7 +70,7 @@ describe('notices', () => {
       'flag:t3',
       'recap:2026-10-04',
       'surplus:negative',
-      'review:2026-10-08',
+      'review:run1',
     ]);
     expect(n[1]).toMatchObject({ title: 'Streamflix went up', body: 'Now $17.99, was $15.99.' });
     expect(n[3]?.body).toBe('It was due 10/01.');

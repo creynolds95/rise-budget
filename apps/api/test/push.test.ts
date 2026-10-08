@@ -127,20 +127,21 @@ describe('push notifications (SPEC §8.2)', () => {
     expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 1, notices: 1 });
   });
 
-  it('sends one review count a day, never per transaction, and none at zero', async () => {
+  it('sends one review count per sync that brought in rows, never per transaction, none at zero', async () => {
     const s = await setup();
     await s.api('PATCH', '/me/settings', { push: { toReview: true } });
     await s.api('POST', '/push/subscriptions', await device());
     pushService();
-    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+    expect(await runPush(s.userId, env.DB, NOW, 'run-0')).toEqual({ sent: 0, notices: 0 });
     for (const d of ['2026-10-06', '2026-10-07', '2026-10-07']) await s.add(d, 1_000, `SHOP ${d}`);
     await env.DB.prepare("UPDATE txn SET review_state = 'needs_review' WHERE user_id = ?1")
       .bind(s.userId)
       .run();
-    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 1, notices: 1 });
+    // A run with nothing new says nothing, even with items waiting.
     expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
-    const next = new Date('2026-10-09T15:00:00Z');
-    expect(await runPush(s.userId, env.DB, next)).toEqual({ sent: 1, notices: 1 });
+    expect(await runPush(s.userId, env.DB, NOW, 'run-1')).toEqual({ sent: 1, notices: 1 });
+    expect(await runPush(s.userId, env.DB, NOW, 'run-1')).toEqual({ sent: 0, notices: 0 });
+    expect(await runPush(s.userId, env.DB, NOW, 'run-2')).toEqual({ sent: 1, notices: 1 });
   });
 
   it('sends nothing, and reads nothing more, with no device signed up', async () => {

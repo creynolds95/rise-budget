@@ -36,7 +36,7 @@ export interface NoticeInputs {
   /** Surplus's projected lowest point when it is under zero, else null. */
   surplusNegative: { shortfallCents: number; date: string } | null;
   /** How many wait for review today; null when not looked up. */
-  review: { day: string; count: number } | null;
+  review: { runId: string; count: number } | null;
 }
 
 /** One standing key: told once per dip, and cleared by the caller when Surplus recovers. */
@@ -122,10 +122,10 @@ export function notices(input: NoticeInputs, prefs: PushSettings): Notice[] {
       url: '/cash',
     });
   }
-  // Once a day at most, and only a count: never one per transaction.
+  // One per sync run that brought in new rows, and only a count: never one per transaction.
   if (input.review && input.review.count > 0 && prefs.toReview)
     out.push({
-      key: `review:${input.review.day}`,
+      key: `review:${input.review.runId}`,
       title: `${input.review.count} to review`,
       body: 'Transactions are waiting for a look.',
       url: '/review',

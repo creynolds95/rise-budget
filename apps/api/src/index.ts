@@ -154,7 +154,12 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
       );
     }
     // After every sync, failed ones too: a bank needing a look is itself an alert.
-    await runPush(userId, db, new Date(event.scheduledTime)).catch((e: unknown) =>
+    await runPush(
+      userId,
+      db,
+      new Date(event.scheduledTime),
+      r.rowsInserted > 0 ? r.id : undefined,
+    ).catch((e: unknown) =>
       log({ job, ok: false, step: 'push', error: e instanceof Error ? e.message : String(e) }),
     );
     log({ job, ok: r.status !== 'failed', ms: Date.now() - started, status: r.status });
