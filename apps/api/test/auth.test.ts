@@ -488,6 +488,7 @@ describe('T16 auth middleware + error contract', () => {
         unusual: true,
         firstTime: true,
       },
+      binder: { passwordsLiveIn: '', entries: [] },
     });
   });
 
@@ -504,7 +505,15 @@ describe('T16 auth middleware + error contract', () => {
     };
     await call('PATCH', '/me/settings', { access: u.access, body: { retirement: plan } });
     const res = await call('PATCH', '/me/settings', { access: u.access, body: { appLock: '5m' } });
-    expect(res.json.retirement).toEqual(plan);
+    // A plan saved before Social Security existed reads back with it off.
+    expect(res.json.retirement).toEqual({
+      ...plan,
+      ssBenefitCents: 0,
+      ssClaimAge: 67,
+      spouse: null,
+      ssHaircutPct: 100,
+      lifeEvents: [],
+    });
   });
 });
 

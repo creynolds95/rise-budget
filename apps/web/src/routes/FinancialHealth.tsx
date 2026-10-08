@@ -34,6 +34,9 @@ function Tile({ to, title, state }: { to: string; title: string; state: string |
   );
 }
 
+const binderState = (n: number) =>
+  n === 0 ? 'Start one' : `${n} ${n === 1 ? 'entry' : 'entries'}`;
+
 /** The hub: one tile per area of financial health, each opening its own page. */
 export function FinancialHealth() {
   useSwipeBack('/');
@@ -114,6 +117,11 @@ export function FinancialHealth() {
           to="/financial-health/taxes"
           title="Taxes"
           state={`${defaultTaxYear(today)} tax year`}
+        />
+        <Tile
+          to="/financial-health/binder"
+          title="Binder"
+          state={ready ? binderState(me.settings.binder.entries.length) : undefined}
         />
       </ul>
     </div>

@@ -68,6 +68,7 @@ describe('schemas', () => {
         unusual: true,
         firstTime: true,
       },
+      binder: { passwordsLiveIn: '', entries: [] },
     });
     expect(u.timezone).toBe('America/Chicago');
   });

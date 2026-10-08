@@ -650,3 +650,12 @@ Everything is in today's dollars and the owner's own numbers; nothing is fetched
 - **Life events.** One-time money in or out at the owner's age. Before retiring, each lands
   in the projection (and the range of outcomes) at the end of its year. At or after
   retiring, money out adds to what savings must hold and money in reduces it.
+
+### 12.2 Household binder
+
+One place for whoever has to step in: who to call and where things are. Every open account
+is listed automatically so none is forgotten; insurance, people to call, documents and
+anything else are added by hand. Each entry holds a name, the last four digits, a phone, a
+website, where the paper copy is, and notes. It never holds a password, a full account
+number or a PIN: the binder records only where passwords live. It is stored with the
+owner's settings and is part of the data export.

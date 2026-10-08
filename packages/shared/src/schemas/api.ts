@@ -13,6 +13,7 @@ import {
 import {
   AccountBadgeStyle,
   AlertSettings,
+  Binder,
   DashboardTile,
   DebtPlan,
   FollowRule,
@@ -81,6 +82,7 @@ export const PatchSettingsBody = z.object({
   /** Rules only: the log is the server's. */
   follow: z.object({ rules: z.array(FollowRule).max(20) }).optional(),
   alerts: AlertSettings.optional(),
+  binder: Binder.optional(),
 });
 
 export const FollowUndoBody = z.object({ txnId: Id });

@@ -204,6 +204,37 @@ export const FollowSettings = z.object({
 });
 export type FollowSettings = z.infer<typeof FollowSettings>;
 
+/**
+ * The household binder (SPEC §12.2): who to call and where things are, for whoever has to
+ * step in. Never a password, a full account number or a PIN: only where passwords live and
+ * the last four digits.
+ */
+export const BinderEntry = z.object({
+  id: z.string().min(1).max(40),
+  kind: z.enum(['account', 'insurance', 'person', 'document', 'other']),
+  title: z.string().trim().min(1).max(80),
+  /** A Rise account this is about, when there is one. */
+  accountId: Id.nullable().default(null),
+  last4: z
+    .string()
+    .regex(/^\d{4}$/)
+    .nullable()
+    .default(null),
+  phone: z.string().trim().max(40).default(''),
+  website: z.string().trim().max(200).default(''),
+  /** Where the paper copy or the file is. */
+  location: z.string().trim().max(200).default(''),
+  notes: z.string().trim().max(1000).default(''),
+});
+export type BinderEntry = z.infer<typeof BinderEntry>;
+
+export const Binder = z.object({
+  /** "1Password", "the notebook in the safe": where, never what. */
+  passwordsLiveIn: z.string().trim().max(200).default(''),
+  entries: z.array(BinderEntry).max(150).default([]),
+});
+export type Binder = z.infer<typeof Binder>;
+
 /** Which quiet notices show (SPEC §8.1). Each is the owner's choice; all on to start. */
 export const AlertSettings = z.object({
   priceUp: z.boolean().default(true),
@@ -248,6 +279,7 @@ export const UserSettings = z.object({
   savings: SavingsPlan.nullable().default(null),
   follow: FollowSettings.default({ rules: [], log: [] }),
   alerts: AlertSettings.default(ALERTS_ON),
+  binder: Binder.default({ passwordsLiveIn: '', entries: [] }),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 
