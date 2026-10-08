@@ -181,6 +181,10 @@ export function Settings() {
             title="Rules"
             state={rules ? `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}` : undefined}
           />
+        </ul>
+
+        <GroupHeading>Preferences</GroupHeading>
+        <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <Card
             to="/settings/alerts"
             icon="bell"
@@ -191,10 +195,6 @@ export function Settings() {
                 : undefined
             }
           />
-        </ul>
-
-        <GroupHeading>Preferences</GroupHeading>
-        <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <Card
             to="/settings/appearance"
             icon="sun"
