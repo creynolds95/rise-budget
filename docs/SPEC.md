@@ -572,6 +572,22 @@ merchant's own history:
 A flag is set once and never recomputed. "Looks fine" clears it for good. Each kind can be
 turned off in Settings → Alerts, which hides it everywhere.
 
+### 8.2 Push notifications
+
+Optional, per device: Settings → Alerts → Push to this device asks the browser, then signs the
+device up (on iPhone, only from the app added to the Home Screen). After each scheduled sync the
+server works out what is new and pushes it:
+
+- **On by default**: the weekly recap (Sunday: last week's money out and how many to review),
+  a bill that didn't charge (a recurring series gone broken), and a bank sync needing a look.
+- **Off by default**: price went up, charged twice, and the three charge flags of §8.1. A kind
+  turned off under "Show me" never pushes either.
+
+Every notice has a key and is told once; at most five go out per run and the rest wait in the
+app. A device signing up starts from now, not with a backlog. A device the browser has dropped
+is removed on the next send. The sender's key pair is made on first use and never rotated,
+since a new one would orphan every device.
+
 ---
 
 ## 9. Auth & security

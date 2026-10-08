@@ -14,6 +14,7 @@ import {
   AccountBadgeStyle,
   AlertSettings,
   Binder,
+  PushSettings,
   DashboardTile,
   DebtPlan,
   FollowRule,
@@ -83,7 +84,16 @@ export const PatchSettingsBody = z.object({
   follow: z.object({ rules: z.array(FollowRule).max(20) }).optional(),
   alerts: AlertSettings.optional(),
   binder: Binder.optional(),
+  push: PushSettings.optional(),
 });
+
+/** A push service only ever speaks https. */
+const PushEndpoint = z.url({ protocol: /^https$/ }).max(1000);
+export const PushSubscriptionBody = z.object({
+  endpoint: PushEndpoint,
+  keys: z.object({ p256dh: z.string().min(40).max(200), auth: z.string().min(10).max(100) }),
+});
+export const PushUnsubscribeBody = z.object({ endpoint: PushEndpoint });
 
 export const FollowUndoBody = z.object({ txnId: Id });
 

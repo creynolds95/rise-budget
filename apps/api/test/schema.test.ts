@@ -32,6 +32,9 @@ const TABLES = [
   'usage_route',
   'tag',
   'txn_tag',
+  'push_vapid',
+  'push_subscription',
+  'push_sent',
 ];
 
 const INDEXES = [
@@ -61,6 +64,8 @@ const INDEXES = [
   // 0027
   'ux_tag_name',
   'ix_txn_tag_tag',
+  // 0029
+  'ux_push_subscription',
 ];
 
 describe('migration 0001', () => {

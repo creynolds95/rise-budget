@@ -489,6 +489,16 @@ describe('T16 auth middleware + error contract', () => {
         firstTime: true,
       },
       binder: { passwordsLiveIn: '', entries: [] },
+      push: {
+        recap: true,
+        missedBill: true,
+        bankTrouble: true,
+        priceUp: false,
+        doubleCharge: false,
+        duplicate: false,
+        unusual: false,
+        firstTime: false,
+      },
     });
   });
 

@@ -252,6 +252,32 @@ const ALERTS_ON: AlertSettings = {
   firstTime: true,
 };
 
+/**
+ * What may interrupt with a push notification (SPEC §8.2). The weekly recap, a missed bill
+ * and bank trouble start on; the quiet notices start off and stay in the app unless chosen.
+ */
+export const PushSettings = z.object({
+  recap: z.boolean().default(true),
+  missedBill: z.boolean().default(true),
+  bankTrouble: z.boolean().default(true),
+  priceUp: z.boolean().default(false),
+  doubleCharge: z.boolean().default(false),
+  duplicate: z.boolean().default(false),
+  unusual: z.boolean().default(false),
+  firstTime: z.boolean().default(false),
+});
+export type PushSettings = z.infer<typeof PushSettings>;
+export const PUSH_DEFAULTS: PushSettings = {
+  recap: true,
+  missedBill: true,
+  bankTrouble: true,
+  priceUp: false,
+  doubleCharge: false,
+  duplicate: false,
+  unusual: false,
+  firstTime: false,
+};
+
 export const UserSettings = z.object({
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
@@ -280,6 +306,7 @@ export const UserSettings = z.object({
   follow: FollowSettings.default({ rules: [], log: [] }),
   alerts: AlertSettings.default(ALERTS_ON),
   binder: Binder.default({ passwordsLiveIn: '', entries: [] }),
+  push: PushSettings.default(PUSH_DEFAULTS),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 

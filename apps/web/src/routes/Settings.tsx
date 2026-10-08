@@ -1,6 +1,7 @@
 import { isTransfersGroup } from '@rise/shared/categorize';
 import type {
   AlertSettings,
+  PushSettings,
   AppLock,
   Category,
   CategoryGroup,
@@ -34,6 +35,7 @@ import { ApiError, api, downloadExport } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncOutcome';
 import { localToday, shortDate } from '../lib/dates';
+import { currentSubscription, disablePush, enablePush, pushSupport } from '../lib/push';
 import { isStale, RUNNING, updateApp, useLatestBuild } from '../lib/version';
 import {
   useAccounts,
@@ -386,7 +388,7 @@ const ALERT_ROWS: { key: keyof AlertSettings; label: string; hint: string }[] = 
   { key: 'firstTime', label: 'Large first charge', hint: '$300 or more somewhere new' },
 ];
 
-/** Which quiet notices show (SPEC §8.1). Recurring and Review show them; nothing interrupts. */
+/** Which quiet notices show (SPEC §8.1), and which also push to a device (SPEC §8.2). */
 function AlertsSection() {
   const me = useMe().data;
   const qc = useQueryClient();
@@ -397,18 +399,115 @@ function AlertsSection() {
   if (!me) return null;
   const alerts = me.settings.alerts;
   return (
-    <Group title="Show me">
-      {ALERT_ROWS.map((r) => (
-        <GroupRow key={r.key} label={r.label} hint={r.hint}>
+    <>
+      <Group title="Show me">
+        {ALERT_ROWS.map((r) => (
+          <GroupRow key={r.key} label={r.label} hint={r.hint}>
+            <Toggle
+              label={r.label}
+              on={alerts[r.key]}
+              disabled={patch.isPending}
+              onChange={(on) => patch.mutate({ ...alerts, [r.key]: on })}
+            />
+          </GroupRow>
+        ))}
+      </Group>
+      <PushGroup push={me.settings.push} />
+    </>
+  );
+}
+
+const PUSH_ROWS: { key: keyof PushSettings; label: string }[] = [
+  { key: 'recap', label: 'Weekly recap' },
+  { key: 'missedBill', label: 'Bill didn’t charge' },
+  { key: 'bankTrouble', label: 'Bank sync needs a look' },
+  ...ALERT_ROWS.map(({ key, label }) => ({ key, label })),
+];
+
+function PushGroup({ push }: { push: PushSettings }) {
+  const qc = useQueryClient();
+  const support = pushSupport();
+  const [on, setOn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (support !== 'ok') return;
+    void currentSubscription()
+      .then((s) => setOn(s !== null))
+      .catch(() => setOn(false));
+  }, [support]);
+  const patch = useMutation({
+    mutationFn: (p: PushSettings) => api('PATCH', '/me/settings', { push: p }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+  const flip = async (want: boolean) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      if (want) {
+        const ok = await enablePush();
+        if (!ok) setNote('Notifications are blocked for Rise in this device’s settings.');
+        setOn(ok);
+      } else {
+        await disablePush();
+        setOn(false);
+      }
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.message : 'Couldn’t change notifications.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const test = async () => {
+    setNote(null);
+    try {
+      await api('POST', '/push/test');
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.message : 'The test didn’t send.');
+    }
+  };
+  return (
+    <>
+      <Group
+        title="Push to this device"
+        footer={
+          note ??
+          (support === 'install'
+            ? 'Add Rise to your Home Screen, then open it from there to turn this on.'
+            : support === 'no'
+              ? 'This browser can’t receive notifications.'
+              : undefined)
+        }
+      >
+        <GroupRow label="Notifications">
           <Toggle
-            label={r.label}
-            on={alerts[r.key]}
-            disabled={patch.isPending}
-            onChange={(on) => patch.mutate({ ...alerts, [r.key]: on })}
+            label="Notifications"
+            on={on === true}
+            disabled={support !== 'ok' || on === null || busy}
+            onChange={(want) => void flip(want)}
           />
         </GroupRow>
-      ))}
-    </Group>
+        {on && (
+          <div className="px-4 py-2">
+            <Button variant="quiet" className="-ml-4" onClick={() => void test()}>
+              Send a test
+            </Button>
+          </div>
+        )}
+      </Group>
+      <Group title="Push me about">
+        {PUSH_ROWS.map((r) => (
+          <GroupRow key={r.key} label={r.label}>
+            <Toggle
+              label={r.label}
+              on={push[r.key]}
+              disabled={patch.isPending}
+              onChange={(v) => patch.mutate({ ...push, [r.key]: v })}
+            />
+          </GroupRow>
+        ))}
+      </Group>
+    </>
   );
 }
 

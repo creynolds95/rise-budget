@@ -19,6 +19,7 @@ import { cashToPayday } from './routes/cashToPayday';
 import { recurring } from './routes/recurring';
 import { reports } from './routes/reports';
 import { tags } from './routes/tags';
+import { push } from './routes/push';
 import { review } from './routes/review';
 import { sync } from './routes/sync';
 import { transactions } from './routes/transactions';
@@ -29,6 +30,7 @@ import type { Env } from './env';
 import { HOUSEKEEPING_CRON, runHousekeeping } from './backup/run';
 import { applyFollows } from './lib/follow';
 import { applyLoanPayments } from './lib/loanPayments';
+import { runPush } from './lib/push';
 import { cronOverlapDays, runSync } from './sync/run';
 import { sourceFromEnv } from './sync/source';
 
@@ -68,6 +70,7 @@ app.route('/periods', periods);
 app.route('/allocations', allocations);
 app.route('/transactions', transactions);
 app.route('/tags', tags);
+app.route('/push', push);
 app.route('/sync', sync);
 app.route('/recurring', recurring);
 app.route('/cash-to-payday', cashToPayday);
@@ -131,6 +134,10 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
         }),
       );
     }
+    // After every sync, failed ones too: a bank needing a look is itself an alert.
+    await runPush(userId, db, new Date(event.scheduledTime)).catch((e: unknown) =>
+      log({ job, ok: false, step: 'push', error: e instanceof Error ? e.message : String(e) }),
+    );
     log({ job, ok: r.status !== 'failed', ms: Date.now() - started, status: r.status });
   } catch (e) {
     // Rethrown so the Cron Trigger is marked failed in Cloudflare too; the Dashboard flags a

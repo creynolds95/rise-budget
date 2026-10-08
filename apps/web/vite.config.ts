@@ -61,6 +61,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
+        // Push and notification taps (SPEC §8.2); a plain file in public/.
+        importScripts: ['push-sw.js'],
         // Fonts come from Google; keep a copy so the app looks right offline.
         runtimeCaching: [
           {

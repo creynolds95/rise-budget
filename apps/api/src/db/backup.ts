@@ -220,7 +220,12 @@ export async function transactionsCsv(userId: UserId, db: D1Database): Promise<s
 }
 
 /** How long operational rows are kept (C19). Money history — txns, splits, money audit — is never pruned. */
-export const RETENTION = { idempotencyDays: 30, syncRunDays: 90, authAuditDays: 90 } as const;
+export const RETENTION = {
+  idempotencyDays: 30,
+  syncRunDays: 90,
+  authAuditDays: 90,
+  pushSentDays: 120,
+} as const;
 
 /**
  * Nightly housekeeping before the backup, across all users like the dump itself: replay
@@ -243,6 +248,9 @@ export async function pruneOperational(db: D1Database, now: Date): Promise<numbe
         "DELETE FROM audit_log WHERE created_at < ?1 AND action LIKE 'auth.%' /* system:backup */",
       )
       .bind(before(RETENTION.authAuditDays)),
+    db
+      .prepare('DELETE FROM push_sent WHERE sent_at < ?1 /* system:backup */')
+      .bind(before(RETENTION.pushSentDays)),
     ...pruneUsageStmts(db, now),
   ]);
   return results.reduce((n, r) => n + (r.meta.changes ?? 0), 0);

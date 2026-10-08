@@ -45,6 +45,7 @@ const GROWING = new Set([
   'sync_run',
   'idempotency',
   'merchant_memory',
+  'push_sent',
 ]);
 
 const catalog = (): string[] => [
