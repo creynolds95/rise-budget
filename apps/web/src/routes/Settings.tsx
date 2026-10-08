@@ -128,7 +128,7 @@ export function Settings() {
           </Card>
           <Card
             to="/accounts"
-            icon="wallet"
+            icon="bank"
             title="Accounts"
             state={
               accounts ? `${accounts.filter((a) => !a.archivedAt).length} accounts` : undefined
@@ -159,7 +159,7 @@ export function Settings() {
         <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <Card
             to="/settings/budget"
-            icon="sliders"
+            icon="budget"
             title="Budget"
             state={
               me
@@ -181,6 +181,10 @@ export function Settings() {
             title="Rules"
             state={rules ? `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}` : undefined}
           />
+        </ul>
+
+        <GroupHeading>Preferences</GroupHeading>
+        <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <Card
             to="/settings/alerts"
             icon="bell"
@@ -191,10 +195,6 @@ export function Settings() {
                 : undefined
             }
           />
-        </ul>
-
-        <GroupHeading>Preferences</GroupHeading>
-        <ul className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
           <Card
             to="/settings/appearance"
             icon="sun"
