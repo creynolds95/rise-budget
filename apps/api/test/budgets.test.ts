@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
-import { runBackup } from '../src/backup/run';
+import { runHousekeeping } from '../src/backup/run';
 import { centsToDecimal } from '../src/sync/mock';
 import { runSync } from '../src/sync/run';
 import type { SimpleFinSource } from '../src/sync/source';
@@ -163,9 +163,9 @@ describe('rows read on a production-sized database', () => {
         40,
       ],
       ['sync, 2 new per account', () => runSync(env.DB, s.userId, source(2), { now }), 35_000, 320],
-      // The backup reads every row on purpose. This file's database holds two production-sized
-      // users, so this is ~2× a real nightly cost. Its writes are the retention prunes.
-      ['backup', () => runBackup(env.DB, env.BACKUPS, now), 250_000, 8_000],
+      // Nightly cleanup; the backup itself is the GitHub workflow's `wrangler d1 export`. Its
+      // writes are the retention prunes.
+      ['housekeeping', () => runHousekeeping(env.DB, env.BACKUPS, now), 25_000, 8_000],
     ];
     const failures: string[] = [];
     for (const [label, run, budget, writeBudget] of runs) {

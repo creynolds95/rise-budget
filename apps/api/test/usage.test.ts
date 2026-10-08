@@ -1,8 +1,7 @@
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it, vi } from 'vitest';
-import { runBackup } from '../src/backup/run';
-import { gunzip } from '../src/backup/sql';
-import { addUsage, listRouteUsage, listUsage, ROUTE_USAGE_MIN_ROWS } from '../src/db';
+import { backupKey, gunzip, gzip } from '../src/backup/sql';
+import { addUsage, dumpDatabase, listRouteUsage, listUsage, ROUTE_USAGE_MIN_ROWS } from '../src/db';
 import { meterDb, type Tally } from '../src/lib/usage';
 import { call, signedInUser } from './helpers/http';
 import { seedProdShape } from './helpers/prodShape';
@@ -88,7 +87,9 @@ describe('latest backup download', () => {
     expect(
       (await call('GET', '/export/backups/latest', { access: u.access, headers: stepUp })).status,
     ).toBe(404);
-    await runBackup(env.DB, env.BACKUPS, new Date());
+    // What the `backup` workflow uploads.
+    const now = new Date();
+    await env.BACKUPS.put(backupKey(now), await gzip(await dumpDatabase(env.DB, now)));
     const res = await exports.default.fetch('https://rise.test/api/export/backups/latest', {
       headers: { authorization: `Bearer ${u.access}`, ...stepUp },
     });

@@ -1,0 +1,63 @@
+name: backup
+# The nightly backup (ARCHITECTURE §8). A whole-database dump doesn't fit a free-plan Worker's
+# CPU limit, so it runs here with Cloudflare's own `wrangler d1 export` and lands in R2 under the
+# same key the app reads: backups/YYYY-MM-DD.sql.gz. The Worker's 09:30 UTC cron prunes old
+# operational rows first, and drops backups past 90 days.
+#
+# If a night is missed, the Dashboard says so once the newest backup is two days old (C6).
+on:
+  schedule:
+    - cron: '15 10 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write # the keep-alive step below
+concurrency:
+  group: backup
+  cancel-in-progress: false
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # wrangler.toml holds a placeholder so this public repo carries no deployment details.
+      - name: Configure wrangler.toml
+        working-directory: apps/api
+        run: |
+          : "${D1_DATABASE_ID:?set the D1_DATABASE_ID repo secret}"
+          printf '%s' "$D1_DATABASE_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' \
+            || { echo "D1_DATABASE_ID must be a bare UUID"; exit 1; }
+          sed -i "s/00000000-0000-0000-0000-000000000000/$D1_DATABASE_ID/" wrangler.toml
+        env:
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      # The dump holds credential material (sessions, passkeys, sealed TOTP secrets), so it only
+      # ever goes to R2: never printed, never uploaded as a workflow artifact.
+      - name: Export D1 and upload to R2
+        working-directory: apps/api
+        run: |
+          day=$(date -u +%F)
+          dump="$RUNNER_TEMP/rise.sql"
+          npx wrangler d1 export rise --remote --output="$dump"
+          grep -q 'CREATE TABLE' "$dump" || { echo "Export looks empty"; exit 1; }
+          gzip -9 -n "$dump"
+          npx wrangler r2 object put "rise-backups/backups/$day.sql.gz" --remote \
+            --file="$dump.gz" --content-type=application/sql --content-encoding=gzip
+          echo "backups/$day.sql.gz: $(stat -c %s "$dump.gz") bytes"
+          rm -f "$dump.gz"
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # GitHub pauses a scheduled workflow after 60 days without commits to the repo. Re-enabling
+      # it through the API resets that clock, so backups keep running while the code sits still.
+      - name: Keep the schedule alive
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/backup.yml/enable"

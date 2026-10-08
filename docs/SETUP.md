@@ -71,7 +71,8 @@ pnpm --filter @rise/api migrate:remote
 pnpm --filter @rise/api run deploy     # `run` matters: plain `deploy` is a pnpm built-in
 ```
 
-The cron schedule (sync 3×/day, nightly backup) deploys with it.
+The cron schedule (sync 3×/day, nightly housekeeping) deploys with it. The nightly backup is
+the `backup` GitHub workflow; it uses the same repo secrets, so it needs nothing extra.
 
 ## 5. Create your user and passkey
 

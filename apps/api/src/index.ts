@@ -25,7 +25,7 @@ import { dataExport } from './routes/export';
 import { devices } from './routes/devices';
 import { findUserIdByEmail } from './db';
 import type { Env } from './env';
-import { BACKUP_CRON, runBackup } from './backup/run';
+import { HOUSEKEEPING_CRON, runHousekeeping } from './backup/run';
 import { applyFollows } from './lib/follow';
 import { applyLoanPayments } from './lib/loanPayments';
 import { cronOverlapDays, runSync } from './sync/run';
@@ -80,23 +80,22 @@ app.notFound((c) =>
 app.onError(renderError);
 
 /**
- * Crons: SimpleFIN sync 3× daily (ARCHITECTURE §6), and the nightly backup (§8) at 09:30 UTC
- * (early morning Central), well after the evening sync. Single-user, so sync runs for the configured owner.
+ * Crons: SimpleFIN sync 3× daily (ARCHITECTURE §6), and nightly housekeeping (§8) at 09:30 UTC
+ * (early morning Central), well after the evening sync and before the GitHub backup job. Single-user, so sync runs for the configured owner.
  */
 export async function scheduled(event: ScheduledController, env: Env): Promise<void> {
-  const job = event.cron === BACKUP_CRON ? 'backup' : 'sync';
+  const job = event.cron === HOUSEKEEPING_CRON ? 'housekeeping' : 'sync';
   const started = Date.now();
   const tally: Tally = { read: 0, written: 0 };
   const db = meterDb(env.DB, tally);
   try {
-    if (job === 'backup') {
-      const r = await runBackup(db, env.BACKUPS, new Date(event.scheduledTime));
+    if (job === 'housekeeping') {
+      const r = await runHousekeeping(db, env.BACKUPS, new Date(event.scheduledTime));
       log({
         job,
         ok: true,
         ms: Date.now() - started,
-        key: r.key,
-        bytes: r.bytes,
+        backupsPruned: r.pruned.length,
         rowsPruned: r.rowsPruned,
       });
       return;
