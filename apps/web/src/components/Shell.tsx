@@ -94,7 +94,8 @@ export function Shell() {
   const isActiveTab = (path: string) =>
     path === '/' ? onDashboard || fromDashboard : location.pathname.startsWith(path);
   // Pushed screens bring their own banner; the tab title bar is only for the tab roots.
-  const showTabHead = onTabRoot || location.pathname === '/settings';
+  const showTabHead =
+    onTabRoot || location.pathname === '/settings' || location.pathname === '/financial-health';
   // Screens that pin something under the tab title (the Transactions search) need its height.
   const head = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -185,7 +186,9 @@ export function Shell() {
           className={`gutter sticky top-[var(--banner-h,0px)] z-20 mx-auto flex max-w-2xl items-center justify-between banner bg-banner text-banner-ink shadow-soft lg:hidden ${showTabHead ? '' : 'hidden!'}`}
         >
           <div className={`flex items-center gap-1 ${onTabRoot ? '-ml-2' : ''}`}>
-            {location.pathname === '/settings' && <BackLink to="/" label="Dashboard" />}
+            {(location.pathname === '/settings' || location.pathname === '/financial-health') && (
+              <BackLink to="/" label="Dashboard" />
+            )}
             {onTabRoot && (
               <button
                 type="button"
@@ -197,7 +200,12 @@ export function Shell() {
               </button>
             )}
             <span className="type-page">
-              {currentTab?.label ?? (location.pathname === '/settings' ? 'Settings' : 'Rise')}
+              {currentTab?.label ??
+                (location.pathname === '/settings'
+                  ? 'Settings'
+                  : location.pathname === '/financial-health'
+                    ? 'Financial health'
+                    : 'Rise')}
             </span>
           </div>
           <div className="-mr-2 flex items-center">{actions}</div>
