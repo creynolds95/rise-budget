@@ -477,8 +477,12 @@ is recorded in `sync_run.error_json` with `status = partial`.
 
 ## 8. Backups
 
-Nightly cron: `wrangler d1 export` equivalent via the D1 REST API → gzip → R2, keyed
-`backups/YYYY-MM-DD.sql.gz`, 90-day retention. `GET /export` gives the user the same dump
+Nightly GitHub workflow (`.github/workflows/backup.yml`, 10:15 UTC): `wrangler d1 export`
+→ gzip → R2, keyed `backups/YYYY-MM-DD.sql.gz`. A whole-database dump doesn't fit a free-plan
+Worker's 10 ms CPU limit, so it doesn't run in the Worker. The Worker's 09:30 UTC cron does the
+housekeeping before it: prunes operational rows (C19) and drops backups past 90 days. The
+workflow re-enables its own schedule each run, so GitHub's 60-day inactivity pause never
+stops it; a missed night shows on the Dashboard once the newest backup is two days old. `GET /export` gives the user the same dump
 on demand. The user must always be able to walk away with their data.
 
 ## 9. CI/CD

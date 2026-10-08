@@ -1,6 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { BACKUP_CRON, runBackup } from '../src/backup/run';
+import { HOUSEKEEPING_CRON, runHousekeeping } from '../src/backup/run';
 import { backupKey, expiredBackups, gunzip, gzip, splitSql } from '../src/backup/sql';
 import { dumpDatabase } from '../src/db';
 import { scheduled as handler } from '../src/index';
@@ -32,6 +32,15 @@ async function setup() {
     descriptor: 'PAYROLL',
   });
   return { ...u, api, food, cash };
+}
+
+/** What the `backup` workflow uploads: the dump, gzipped, under the day's key. */
+async function putBackup(now: Date) {
+  const key = backupKey(now);
+  await env.BACKUPS.put(key, await gzip(await dumpDatabase(env.DB, now)), {
+    httpMetadata: { contentType: 'application/sql', contentEncoding: 'gzip' },
+  });
+  return key;
 }
 
 async function tableRows(db: D1Database) {
@@ -77,10 +86,10 @@ describe('T46 backup and restore', () => {
   it('a restore from the R2 backup into a fresh D1 reproduces the data exactly', async () => {
     await setup();
     const now = new Date('2026-09-24T09:30:00Z');
-    const r = await runBackup(env.DB, env.BACKUPS, now);
-    expect(r.key).toBe('backups/2026-09-24.sql.gz');
+    const key = await putBackup(now);
+    expect(key).toBe('backups/2026-09-24.sql.gz');
 
-    const obj = await env.BACKUPS.get(r.key);
+    const obj = await env.BACKUPS.get(key);
     expect(obj?.httpMetadata?.contentEncoding).toBe('gzip');
     const sql = await gunzip(await (obj as R2ObjectBody).arrayBuffer());
 
@@ -126,12 +135,11 @@ describe('T46 backup and restore', () => {
       put('backups/notes.txt'),
       put('other/2020-01-01.sql.gz'),
     ]);
-    const r = await runBackup(env.DB, env.BACKUPS, new Date('2026-09-24T09:30:00Z'));
+    const r = await runHousekeeping(env.DB, env.BACKUPS, new Date('2026-09-24T09:30:00Z'));
     expect(r.pruned).toEqual(['backups/2026-06-01.sql.gz']);
     const keys = (await env.BACKUPS.list()).objects.map((o) => o.key).sort();
     expect(keys).toEqual([
       'backups/2026-06-26.sql.gz',
-      'backups/2026-09-24.sql.gz',
       'backups/notes.txt',
       'other/2020-01-01.sql.gz',
     ]);
@@ -152,7 +160,7 @@ describe('T46 backup and restore', () => {
         "INSERT INTO audit_log (id, user_id, action, created_at) VALUES ('a-auth', ?1, 'auth.login_failed', ?2), ('a-money', ?1, 'txn.recategorized', ?2)",
       ).bind(u.userId, old),
     ]);
-    const r = await runBackup(env.DB, env.BACKUPS, new Date('2026-09-24T09:30:00Z'));
+    const r = await runHousekeeping(env.DB, env.BACKUPS, new Date('2026-09-24T09:30:00Z'));
     expect(r.rowsPruned).toBeGreaterThanOrEqual(3);
     const ids = async (sql: string) =>
       (await env.DB.prepare(sql).bind(u.userId).all<{ id: string }>()).results.map((x) => x.id);
@@ -163,7 +171,8 @@ describe('T46 backup and restore', () => {
     ]);
   });
 
-  it('runs from the nightly cron and not from the sync crons', async () => {
+  it('housekeeping runs from the nightly cron and not from the sync crons', async () => {
+    await env.BACKUPS.put('backups/2026-01-01.sql.gz', 'x');
     await handler(
       {
         cron: '0 8,14,22 * * *',
@@ -171,17 +180,16 @@ describe('T46 backup and restore', () => {
       } as ScheduledController,
       env as never,
     );
-    expect((await env.BACKUPS.list({ prefix: 'backups/' })).objects).toHaveLength(0);
+    expect((await env.BACKUPS.list({ prefix: 'backups/' })).objects).toHaveLength(1);
     await handler(
       {
-        cron: BACKUP_CRON,
+        cron: HOUSEKEEPING_CRON,
         scheduledTime: Date.parse('2026-09-24T09:30:00Z'),
       } as ScheduledController,
       env as never,
     );
-    expect((await env.BACKUPS.list({ prefix: 'backups/' })).objects.map((o) => o.key)).toEqual([
-      'backups/2026-09-24.sql.gz',
-    ]);
+    // It prunes; it never writes a backup of its own.
+    expect((await env.BACKUPS.list({ prefix: 'backups/' })).objects).toHaveLength(0);
   });
 });
 
@@ -277,8 +285,8 @@ describe('T46 export', () => {
   it('reports the latest backup without exposing it', async () => {
     const s = await setup();
     expect((await s.api('GET', '/export/backups')).json).toEqual({ latest: null, count: 0 });
-    await runBackup(env.DB, env.BACKUPS, new Date('2026-09-23T09:30:00Z'));
-    await runBackup(env.DB, env.BACKUPS, new Date('2026-09-24T09:30:00Z'));
+    await putBackup(new Date('2026-09-23T10:15:00Z'));
+    await putBackup(new Date('2026-09-24T10:15:00Z'));
     const r = (await s.api('GET', '/export/backups')).json;
     expect(r.count).toBe(2);
     expect(r.latest.date).toBe('2026-09-24');
@@ -287,7 +295,7 @@ describe('T46 export', () => {
 
   it('downloading the backup file needs a moments-old passkey step-up', async () => {
     const s = await setup();
-    await runBackup(env.DB, env.BACKUPS, new Date('2026-09-24T09:30:00Z'));
+    await putBackup(new Date('2026-09-24T10:15:00Z'));
     // The whole-database dump holds credential material: an access token alone isn't enough.
     const bare = await call('GET', '/export/backups/latest', { access: s.access });
     expect(bare.status).toBe(401);

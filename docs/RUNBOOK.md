@@ -27,6 +27,11 @@ GitHub → the last merged PR → **Revert** → merge. Deploy runs on its own. 
    Then point `database_id` in `apps/api/wrangler.toml` at the new database and deploy.
 3. Rise's own exports (Settings → Your data → CSV / JSON) are readable in any spreadsheet if everything else is gone.
 
+## Dashboard says the last backup is old
+Open GitHub → Actions → **backup** and read the failed run. Usually the Cloudflare API token
+expired or lost its D1/R2 permission: make a new one (see `SETUP.md`) and update the
+`CLOUDFLARE_API_TOKEN` repo secret, then **Run workflow** to take a backup now.
+
 ## Bank sync stopped
 - Dashboard says "needs attention / auth required": sign in to SimpleFIN Bridge and re-authorize that bank. Rise needs nothing.
 - Nothing new but no error: SimpleFIN itself refreshes a bank about once a day.
