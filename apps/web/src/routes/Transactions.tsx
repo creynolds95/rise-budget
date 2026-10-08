@@ -12,6 +12,7 @@ import { TxnAmount } from '../components/TxnAmount';
 import { TxnRow } from '../components/TxnRow';
 import { Button } from '../components/primitives/Button';
 import { Icon, IconButton } from '../components/primitives/Icon';
+import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { api } from '../lib/api';
 import { shortDate } from '../lib/dates';
@@ -24,8 +25,10 @@ import {
   useCategories,
   useGroups,
   useInvalidateMoney,
+  useTags,
   useToday,
   useTransactions,
+  useTxnTotals,
 } from '../lib/queries';
 import {
   apiQuery,
@@ -33,6 +36,7 @@ import {
   dayLabel,
   filtersToParams,
   groupByDay,
+  isFiltered,
   parseFilters,
   type Filters,
 } from '../lib/txnFilters';
@@ -69,12 +73,17 @@ export function Transactions() {
     return () => clearTimeout(h);
   }, [q]);
 
-  const list = useTransactions(apiQuery(filters, today));
+  const tags = useTags().data ?? [];
+  const query = apiQuery(filters, today);
+  const list = useTransactions(query);
+  const filtered = isFiltered(filters);
+  const totals = useTxnTotals(query, filtered);
   const items = list.data?.pages.flatMap((p) => p.items) ?? [];
   const cat = (id: string | undefined) => categories.find((c) => c.id === id);
   const active = chips(filters, {
     account: (id) => accounts.find((a) => a.id === id)?.name ?? 'Account',
     category: (id) => cat(id)?.name ?? 'Category',
+    tag: (id) => tags.find((t) => t.id === id)?.name ?? 'Tag',
   });
   const back = `Transactions|/transactions${params.size ? `?${params}` : ''}`;
   const byDate = filters.sort.startsWith('date');
@@ -276,6 +285,36 @@ export function Transactions() {
         </div>
       )}
 
+      {filtered && totals.data && totals.data.count > 0 && (
+        <div
+          className="gutter mt-2 flex flex-wrap items-baseline gap-x-5 gap-y-1 type-caption text-ink-muted"
+          aria-label="Totals for these filters"
+        >
+          <span>
+            {totals.data.count} {totals.data.count === 1 ? 'transaction' : 'transactions'}
+          </span>
+          {totals.data.outCents > 0 && (
+            <span>
+              Out <MoneyText cents={totals.data.outCents} className="font-medium" />
+            </span>
+          )}
+          {totals.data.inCents > 0 && (
+            <span>
+              In <MoneyText cents={totals.data.inCents} tone="in" className="font-medium" />
+            </span>
+          )}
+          {totals.data.outCents > 0 && totals.data.inCents > 0 && (
+            <span>
+              Net{' '}
+              <MoneyText
+                cents={totals.data.outCents - totals.data.inCents}
+                className="font-medium"
+              />
+            </span>
+          )}
+        </div>
+      )}
+
       {batchReview && items.length > 0 && (
         <div className="gutter mt-3">
           <Button className="w-full" onClick={() => void markAllReviewed()} disabled={marking}>
@@ -356,6 +395,7 @@ export function Transactions() {
         accounts={accounts}
         categories={categories}
         groups={groups}
+        tags={tags}
         onClose={() => setSheet(false)}
         onApply={(f) => {
           apply({ ...f, q: q.trim() });

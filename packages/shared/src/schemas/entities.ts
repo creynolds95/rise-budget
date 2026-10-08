@@ -16,6 +16,7 @@ import {
   SnapshotSource,
   SpendShape,
   SyncRunStatus,
+  TaxKind,
   TxnSource,
 } from './enums';
 
@@ -306,8 +307,19 @@ export const Category = z.object({
   /** Whether a split filed here counts as spending (pre-deploy-todo A4). Transfer-like
    * categories default to false; everything else defaults to true. */
   budgeted: z.boolean(),
+  /** Totals into the year-end tax pack under this heading. */
+  taxKind: TaxKind.nullable().default(null),
 });
 export type Category = z.infer<typeof Category>;
+
+/** A label that cuts across categories: a trip, a project, a side gig. */
+export const Tag = z.object({
+  id: Id,
+  name: z.string().min(1).max(40),
+  taxKind: TaxKind.nullable(),
+  createdAt: IsoDateTime,
+});
+export type Tag = z.infer<typeof Tag>;
 
 export const Period = z.object({
   id: PeriodId,
@@ -364,6 +376,7 @@ export const Transaction = z.object({
   source: TxnSource,
   sourceId: z.string().nullable(),
   splits: z.array(Split),
+  tagIds: z.array(Id).default([]),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

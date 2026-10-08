@@ -11,6 +11,7 @@ import { groupView, owedCents, planLoans } from '../lib/debt';
 import { mortgageView } from '../lib/mortgage';
 import { monthName, periodOf } from '../lib/dates';
 import { goalView } from '../lib/savings';
+import { defaultTaxYear } from '../lib/tax';
 import { retirementView, totalMonthly } from '../lib/retirement';
 import { transitionClick } from '../lib/transition';
 
@@ -109,6 +110,11 @@ export function FinancialHealth() {
         <Tile to="/financial-health/debt" title="Debt" state={debtState} />
         <Tile to="/financial-health/mortgage" title="Mortgage" state={mortgageState} />
         <Tile to="/financial-health/savings" title="Savings" state={savingsState} />
+        <Tile
+          to="/financial-health/taxes"
+          title="Taxes"
+          state={`${defaultTaxYear(today)} tax year`}
+        />
       </ul>
     </div>
   );

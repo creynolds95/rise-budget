@@ -9,6 +9,7 @@ import {
   ReplaceSplitsBody,
   TransactionQuery,
   RefundLinkBody,
+  SetTagsBody,
   TransferLinkBody,
   type RuleOffer,
 } from '@rise/shared/schemas';
@@ -16,6 +17,7 @@ import { Hono } from 'hono';
 import {
   acceptSuggestions,
   categoryIdsExist,
+  countOwnTags,
   deleteManualRuleStmt,
   deleteTransaction,
   ensureCatchallCategory,
@@ -31,7 +33,9 @@ import {
   refundedCents,
   seriesId,
   setRefundOf,
+  setTxnTags,
   sortKey,
+  totalTransactions,
   linkTransferStmts,
   movePostedAtStmts,
   replaceSplits,
@@ -71,28 +75,34 @@ function decodeCursor(cursor: string | undefined) {
 const encodeCursor = (key: string, id: string) =>
   b64urlEncode(new TextEncoder().encode(`${key}|${id}`));
 
-transactions.get('/', async (c) => {
-  const q = TransactionQuery.safeParse(c.req.query());
+const parseQuery = (raw: Record<string, string>) => {
+  const q = TransactionQuery.safeParse(raw);
   if (!q.success) throw new AppError(400, 'BAD_REQUEST', 'Invalid query', q.error.issues);
-  const f = q.data;
+  return q.data;
+};
+
+const filtersOf = (f: ReturnType<typeof parseQuery>) => ({
+  from: f.from,
+  to: f.to,
+  accountIds: f.account,
+  categoryIds: f.category,
+  notAccountIds: f.notAccount,
+  notCategoryIds: f.notCategory,
+  tagIds: f.tag,
+  q: f.q,
+  reviewState: f.reviewState,
+  direction: f.direction,
+  minCents: f.min,
+  maxCents: f.max,
+  sort: f.sort,
+});
+
+transactions.get('/', async (c) => {
+  const f = parseQuery(c.req.query());
   const items = await listTransactions(
     c.get('userId'),
     c.env.DB,
-    {
-      from: f.from,
-      to: f.to,
-      accountIds: f.account,
-      categoryIds: f.category,
-      notAccountIds: f.notAccount,
-      notCategoryIds: f.notCategory,
-      q: f.q,
-      reviewState: f.reviewState,
-      direction: f.direction,
-      minCents: f.min,
-      maxCents: f.max,
-      sort: f.sort,
-      after: decodeCursor(f.cursor),
-    },
+    { ...filtersOf(f), after: decodeCursor(f.cursor) },
     PAGE + 1,
   );
   const page = items.slice(0, PAGE);
@@ -101,6 +111,12 @@ transactions.get('/', async (c) => {
     items: page,
     nextCursor: items.length > PAGE && last ? encodeCursor(sortKey(last, f.sort), last.id) : null,
   });
+});
+
+/** Running totals for the same filter as the list (Copilot-style). */
+transactions.get('/totals', async (c) => {
+  const f = parseQuery(c.req.query());
+  return c.json(await totalTransactions(c.get('userId'), c.env.DB, filtersOf(f)));
 });
 
 transactions.get('/:id', async (c) => {
@@ -185,6 +201,18 @@ transactions.patch('/:id', async (c) => {
   }
   await updateTransactionFields(userId, c.env.DB, id, b);
   return c.json({ ...(await getTransaction(userId, c.env.DB, id)), ruleOffer });
+});
+
+/** Replace a transaction's tags. Labels only: no money moves. */
+transactions.put('/:id/tags', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  if (!(await getTransactionRow(userId, c.env.DB, id))) throw notFound();
+  const tagIds = [...new Set((await body(c, SetTagsBody)).tagIds)];
+  if ((await countOwnTags(userId, c.env.DB, tagIds)) !== tagIds.length)
+    throw new AppError(400, 'BAD_REQUEST', 'Unknown tag');
+  await setTxnTags(userId, c.env.DB, id, tagIds);
+  return c.json(await getTransaction(userId, c.env.DB, id));
 });
 
 /** Remove a transaction for good. A linked transfer must be unlinked first. */

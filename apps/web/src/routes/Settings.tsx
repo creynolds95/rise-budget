@@ -52,6 +52,7 @@ const MonarchImport = lazy(() =>
   import('./MonarchImport').then((m) => ({ default: m.MonarchImport })),
 );
 const Reports = lazy(() => import('./Reports').then((m) => ({ default: m.Reports })));
+const TagsSection = lazy(() => import('./Tags').then((m) => ({ default: m.TagsSection })));
 
 const SECTIONS = {
   appearance: 'Appearance',
@@ -60,6 +61,7 @@ const SECTIONS = {
   investments: 'Investments',
   reports: 'Reports',
   rules: 'Rules',
+  tags: 'Tags',
   sync: 'Bank sync',
   security: 'Security',
   data: 'Your data',
@@ -261,6 +263,7 @@ export function SettingsSection() {
           {s === 'budget' && <BudgetSection />}
           {s === 'categories' && <CategoriesSection />}
           {s === 'rules' && <RulesSection />}
+          {s === 'tags' && <TagsSection />}
           {s === 'sync' && <SyncSection />}
           {s === 'security' && <SecuritySection />}
           {s === 'data' && <DataSection />}

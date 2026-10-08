@@ -35,7 +35,7 @@ export interface SplitRow {
   sort_order: number;
 }
 
-const toTransaction = (r: TxnRow, splits: SplitRow[]): Transaction =>
+const toTransaction = (r: TxnRow, splits: SplitRow[], tagIds: string[] = []): Transaction =>
   Transaction.parse({
     id: r.id,
     accountId: r.account_id,
@@ -62,6 +62,7 @@ const toTransaction = (r: TxnRow, splits: SplitRow[]): Transaction =>
       periodId: s.period_id,
       sortOrder: s.sort_order,
     })),
+    tagIds,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });
@@ -96,6 +97,7 @@ export interface TxnFilters {
   categoryIds?: string[] | undefined;
   notAccountIds?: string[] | undefined;
   notCategoryIds?: string[] | undefined;
+  tagIds?: string[] | undefined;
   q?: string | undefined;
   reviewState?: ReviewState | undefined;
   direction?: 'in' | 'out' | undefined;
@@ -135,15 +137,12 @@ const SORTS: Record<TxnSort, { order: string; after: string }> = {
 export const sortKey = (t: Transaction, sort: TxnSort): string =>
   sort.startsWith('amount') ? String(Math.abs(t.amountCents)) : t.postedAt;
 
-export async function listTransactions(
-  userId: UserId,
-  db: D1Database,
-  f: TxnFilters,
-  limit: number,
-): Promise<Transaction[]> {
-  const sort = SORTS[f.sort ?? 'date_desc'];
-  // Only the filters in use go into the SQL: an always-present "?n IS NULL OR …" clause
-  // stops SQLite using an index, so every list read and sorted the whole history.
+/**
+ * The WHERE clauses for a filter, each bound in order. Only the filters in use go into the
+ * SQL: an always-present "?n IS NULL OR …" clause stops SQLite using an index, so every list
+ * read and sorted the whole history.
+ */
+function txnWhere(f: TxnFilters, sort: { after: string }): { where: string[]; binds: unknown[] } {
   const where: string[] = [];
   const binds: unknown[] = [];
   const add = (sql: string, ...values: unknown[]) => {
@@ -169,6 +168,12 @@ export async function listTransactions(
          AND s.category_id IN (SELECT value FROM json_each(?)))`,
       JSON.stringify(f.notCategoryIds),
     );
+  if (f.tagIds?.length)
+    add(
+      `EXISTS (SELECT 1 FROM txn_tag tt WHERE tt.user_id = t.user_id AND tt.txn_id = t.id
+         AND tt.tag_id IN (SELECT value FROM json_each(?)))`,
+      JSON.stringify(f.tagIds),
+    );
   if (f.q) {
     const like = `%${f.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
     add(
@@ -186,6 +191,17 @@ export async function listTransactions(
   if (f.direction === 'in') add('t.amount_cents < 0');
   if (f.minCents != null) add('ABS(t.amount_cents) >= ?', f.minCents);
   if (f.maxCents != null) add('ABS(t.amount_cents) <= ?', f.maxCents);
+  return { where, binds };
+}
+
+export async function listTransactions(
+  userId: UserId,
+  db: D1Database,
+  f: TxnFilters,
+  limit: number,
+): Promise<Transaction[]> {
+  const sort = SORTS[f.sort ?? 'date_desc'];
+  const { where, binds } = txnWhere(f, sort);
   const { results } = await db
     .prepare(
       `SELECT * FROM txn t WHERE t.user_id = ?${where.map((w) => ` AND ${w}`).join('')}
@@ -193,12 +209,65 @@ export async function listTransactions(
     )
     .bind(userId, ...binds, limit)
     .all<TxnRow>();
-  const splits = await splitsFor(
-    userId,
-    db,
-    results.map((r) => r.id),
-  );
-  return results.map((r) => toTransaction(r, splits.get(r.id) ?? []));
+  return withSplitsAndTags(userId, db, results);
+}
+
+/** Rows as transactions, with their splits and tags read in one round trip. */
+export async function withSplitsAndTags(
+  userId: UserId,
+  db: D1Database,
+  rows: TxnRow[],
+): Promise<Transaction[]> {
+  const ids = rows.map((r) => r.id);
+  const [splits, tags] = await Promise.all([
+    splitsFor(userId, db, ids),
+    tagIdsFor(userId, db, ids),
+  ]);
+  return rows.map((r) => toTransaction(r, splits.get(r.id) ?? [], tags.get(r.id) ?? []));
+}
+
+/**
+ * What a filter matches, summed: money out, money in, and how many. Transfers and dropped
+ * pending rows are left out, the same as spending everywhere else. Only asked for when a
+ * filter is on; with a search and no dates it reads the user's history once.
+ */
+export async function totalTransactions(
+  userId: UserId,
+  db: D1Database,
+  f: TxnFilters,
+): Promise<{ outCents: number; inCents: number; count: number }> {
+  const { where, binds } = txnWhere({ ...f, after: undefined }, SORTS.date_desc);
+  const row = await db
+    .prepare(
+      `SELECT COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents END), 0) AS out_cents,
+              COALESCE(-SUM(CASE WHEN t.amount_cents < 0 THEN t.amount_cents END), 0) AS in_cents,
+              COUNT(*) AS n
+       FROM txn t WHERE t.user_id = ? AND t.is_transfer = 0 AND t.review_state != 'dropped'${where
+         .map((w) => ` AND ${w}`)
+         .join('')} /* scan-ok: one pass over the filtered rows, on demand */`,
+    )
+    .bind(userId, ...binds)
+    .first<{ out_cents: number; in_cents: number; n: number }>();
+  return { outCents: row?.out_cents ?? 0, inCents: row?.in_cents ?? 0, count: row?.n ?? 0 };
+}
+
+/** Tag ids per transaction, driven from the id list like `splitsFor`. */
+export async function tagIdsFor(
+  userId: UserId,
+  db: D1Database,
+  txnIds: string[],
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (txnIds.length === 0) return out;
+  const { results } = await db
+    .prepare(
+      `SELECT tt.txn_id, tt.tag_id FROM json_each(?2) j CROSS JOIN txn_tag tt ON tt.txn_id = j.value
+       WHERE tt.user_id = ?1`,
+    )
+    .bind(userId, JSON.stringify(txnIds))
+    .all<{ txn_id: string; tag_id: string }>();
+  for (const r of results) out.set(r.txn_id, [...(out.get(r.txn_id) ?? []), r.tag_id]);
+  return out;
 }
 
 /** How many transactions wait for review, read straight from the review index. */
@@ -228,7 +297,7 @@ export async function getTransaction(
 ): Promise<Transaction | null> {
   const row = await getTransactionRow(userId, db, id);
   if (!row) return null;
-  return toTransaction(row, (await splitsFor(userId, db, [id])).get(id) ?? []);
+  return (await withSplitsAndTags(userId, db, [row]))[0] ?? null;
 }
 
 export async function insertManualTransaction(

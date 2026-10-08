@@ -108,6 +108,8 @@ export const EXPORT_TABLES = [
   'reallocation',
   'txn',
   'split',
+  'tag',
+  'txn_tag',
   'rule',
   'merchant_memory',
   'merchant_meta',

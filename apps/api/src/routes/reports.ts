@@ -1,9 +1,10 @@
 import { addPeriods } from '@rise/shared/budget';
-import { buildMoneyFlow, monthlySeries } from '@rise/shared/reports';
+import { buildMoneyFlow, monthlySeries, taxLines } from '@rise/shared/reports';
 import {
   CashFlowReportQuery,
   MoneyFlowReportQuery,
   SpendingReportQuery,
+  TaxYearQuery,
   type CashFlowReport,
   type MoneyFlowReport,
   type SpendingReport,
@@ -16,6 +17,7 @@ import {
   listGroupsWithArchived,
   spendingByDay,
   spendingByPeriod,
+  taxRows,
 } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
@@ -98,4 +100,13 @@ reports.get('/cash-flow', async (c) => {
     })),
   };
   return c.json(body);
+});
+
+/** The year-end tax pack: every line a category or tag with a tax heading marked, by date. */
+reports.get('/tax', async (c) => {
+  const q = TaxYearQuery.safeParse(c.req.query());
+  if (!q.success) throw new AppError(400, 'BAD_REQUEST', 'year is required');
+  const { year } = q.data;
+  const rows = await taxRows(c.get('userId'), c.env.DB, `${year}-01-01`, `${year}-12-31`);
+  return c.json({ year, lines: taxLines(rows.byCategory, rows.byTag) });
 });

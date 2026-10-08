@@ -8,6 +8,7 @@ import {
   RuleMatchField,
   RuleMatchType,
   SpendShape,
+  TaxKind,
 } from './enums';
 import {
   AccountBadgeStyle,
@@ -242,6 +243,7 @@ export const PatchCategoryBody = z.object({
   spendShape: SpendShape.optional(),
   isBill: z.boolean().optional(),
   budgeted: z.boolean().optional(),
+  taxKind: TaxKind.nullable().optional(),
   /** L6: manual drag-reorder within (or across) a group. */
   sortOrder: z.int().optional(),
 });
@@ -293,6 +295,7 @@ export const TransactionQuery = z.object({
   /** Same lists, flipped: everything except these. */
   notAccount: IdList.optional(),
   notCategory: IdList.optional(),
+  tag: IdList.optional(),
   q: z.string().optional(),
   reviewState: ReviewState.optional(),
   /** `out` is spending (positive), `in` is money arriving (negative). */
@@ -303,6 +306,54 @@ export const TransactionQuery = z.object({
   sort: TxnSort.default('date_desc'),
   cursor: z.string().optional(),
 });
+
+/** Totals of everything a filter matches (transfers and dropped rows left out). */
+export const TransactionTotals = z.object({
+  outCents: Cents,
+  inCents: Cents,
+  count: z.int().nonnegative(),
+});
+export type TransactionTotals = z.infer<typeof TransactionTotals>;
+
+// ── tags ──────────────────────────────────────────────────────────────────────
+
+export const CreateTagBody = z.object({
+  name: z.string().trim().min(1).max(40),
+  taxKind: TaxKind.nullable().default(null),
+});
+export const PatchTagBody = z.object({
+  name: z.string().trim().min(1).max(40).optional(),
+  taxKind: TaxKind.nullable().optional(),
+});
+export const SetTagsBody = z.object({ tagIds: z.array(Id).max(20) });
+
+/** A tag with what's filed under it, all time. */
+export const TagSummary = z.object({
+  id: Id,
+  name: z.string(),
+  taxKind: TaxKind.nullable(),
+  count: z.int().nonnegative(),
+  netCents: Cents,
+});
+export type TagSummary = z.infer<typeof TagSummary>;
+
+// ── tax pack ──────────────────────────────────────────────────────────────────
+
+export const TaxYearQuery = z.object({ year: z.coerce.number().int().min(2000).max(2100) });
+
+/** One transaction in the tax pack, under the heading its category or tag gave it. */
+export const TaxLine = z.object({
+  txnId: Id,
+  postedAt: IsoDate,
+  merchant: z.string(),
+  accountId: Id,
+  /** The part that counts: the split for a category, the whole transaction for a tag. */
+  amountCents: Cents,
+  kind: TaxKind,
+  /** The category or tag that put it here. */
+  source: z.string(),
+});
+export type TaxLine = z.infer<typeof TaxLine>;
 
 export const PeriodParam = z.object({ id: PeriodId });
 

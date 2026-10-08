@@ -7,6 +7,7 @@ import {
   dayLabel,
   filtersToParams,
   groupByDay,
+  isFiltered,
   parseFilters,
   type Filters,
 } from './txnFilters';
@@ -49,6 +50,25 @@ describe('transaction filters', () => {
     expect(cs.map((c) => c.label)).toEqual(['Not acct:a', 'Not cat:c +1']);
     expect(cs[1]?.clear(f)).toMatchObject({ categories: [], notCategories: false });
     expect(cs[0]?.clear(f)).toMatchObject({ accounts: [], notAccounts: false });
+  });
+
+  it('carries tags to the URL, the API and a chip', () => {
+    const f: Filters = { ...EMPTY, tags: ['t1', 't2'] };
+    const p = filtersToParams(f);
+    expect(p.toString()).toBe('tag=t1%2Ct2');
+    expect(parseFilters(p)).toEqual(f);
+    expect(apiQuery(f, '2026-09-24')).toEqual({ tag: 't1,t2' });
+    const [chip] = chips(f, { ...names, tag: (id) => `tag:${id}` });
+    expect(chip?.label).toBe('tag:t1 +1');
+    expect(chip?.clear(f).tags).toEqual([]);
+    expect(chips(f, names)[0]?.label).toBe('Tag +1');
+  });
+
+  it('counts as filtered for any narrowing, but not for a sort alone', () => {
+    expect(isFiltered(EMPTY)).toBe(false);
+    expect(isFiltered({ ...EMPTY, sort: 'amount_desc' })).toBe(false);
+    expect(isFiltered({ ...EMPTY, q: 'target' })).toBe(true);
+    expect(isFiltered({ ...EMPTY, range: 'ytd' })).toBe(true);
   });
 
   it('treats old links with from/to as a custom range, and ignores junk', () => {

@@ -28,6 +28,8 @@ const PATHS = {
   check: 'M5 12l5 5L20 7',
   close: 'M6 6l12 12M18 6L6 18',
   chevronDown: 'M6 9l6 6 6-6',
+  chevronLeft: 'M15 6l-6 6 6 6',
+  chevronRight: 'M9 6l6 6-6 6',
   sort: 'M7 4v16M4 17l3 3 3-3M17 20V4M14 7l3-3 3 3',
   wallet: 'M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4zM4 7V6a2 2 0 0 1 2-2h10M16 13.5h.01',
   flow: 'M4 6h4v4H4zM4 14h4v4H4zM16 10h4v4h-4zM8 8h4a4 4 0 0 1 4 4M8 16h4a4 4 0 0 1 4-4',

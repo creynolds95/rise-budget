@@ -30,6 +30,8 @@ const TABLES = [
   'surplus_suggestion',
   'usage_day',
   'usage_route',
+  'tag',
+  'txn_tag',
 ];
 
 const INDEXES = [
@@ -56,6 +58,9 @@ const INDEXES = [
   'ix_txn_csv_source',
   // 0025
   'ix_txn_open_pending',
+  // 0027
+  'ux_tag_name',
+  'ix_txn_tag_tag',
 ];
 
 describe('migration 0001', () => {

@@ -9,6 +9,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { RuleOfferSheet } from '../components/RuleOfferSheet';
 import { RuleSheet } from '../components/RuleSheet';
+import { TagSheet } from '../components/TagSheet';
 import { ScheduleFields } from '../components/ScheduleFields';
 import { TxnAmount } from '../components/TxnAmount';
 import { TxnRow } from '../components/TxnRow';
@@ -32,6 +33,7 @@ import {
   useInvalidateMoney,
   usePatchTransaction,
   useRecurring,
+  useTags,
   useTransaction,
   useTransactions,
 } from '../lib/queries';
@@ -60,6 +62,8 @@ export function TransactionDetail() {
   const [refunding, setRefunding] = useState(false);
   const [taggingWithdrawal, setTaggingWithdrawal] = useState(false);
   const [ruling, setRuling] = useState(false);
+  const [tagging, setTagging] = useState(false);
+  const allTags = useTags().data ?? [];
   const [offer, setOffer] = useState<Parameters<typeof RuleOfferSheet>[0]['offer']>(null);
   const [error, setError] = useState<string | null>(null);
   const recurring = useRecurring();
@@ -351,6 +355,14 @@ export function TransactionDetail() {
                 {t.splits[0] ? catName(t.splits[0].categoryId) : 'Choose…'}
               </ValueRow>
             )}
+            <ValueRow label="Tags" onClick={() => setTagging(true)}>
+              {t.tagIds.length
+                ? t.tagIds
+                    .map((tid) => allTags.find((x) => x.id === tid)?.name)
+                    .filter(Boolean)
+                    .join(', ')
+                : 'None'}
+            </ValueRow>
             <label className="relative block">
               <ValueRow label="Date" onClick={() => {}}>
                 {longDate(t.postedAt)}
@@ -488,6 +500,17 @@ export function TransactionDetail() {
                 ),
               )
             }
+          />
+        )}
+      </Leaving>
+      <Leaving>
+        {tagging && (
+          <TagSheet
+            open
+            txnId={t.id}
+            selected={t.tagIds}
+            onClose={() => setTagging(false)}
+            onSaved={refresh}
           />
         )}
       </Leaving>

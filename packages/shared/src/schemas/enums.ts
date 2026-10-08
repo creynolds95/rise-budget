@@ -39,6 +39,23 @@ export const ImportFormat = z.enum(['csv', 'ofx', 'qfx']);
 export const SnapshotSource = z.enum(['manual', 'sync']);
 
 export const AppLock = z.enum(['off', 'immediate', '5m', '1h']);
+
+/**
+ * What a category or tag means at tax time. Rise only totals these for the year; it never
+ * computes a deduction or a tax owed.
+ */
+export const TaxKind = z.enum([
+  'income_1099',
+  'income_other',
+  'charity',
+  'medical',
+  'dependent_care',
+  'education',
+  'mortgage_interest',
+  'property_tax',
+  'business_expense',
+]);
+export type TaxKind = z.infer<typeof TaxKind>;
 export type AppLock = z.infer<typeof AppLock>;
 
 export const AuditAction = z.enum([

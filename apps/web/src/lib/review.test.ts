@@ -28,6 +28,7 @@ const txn = (p: Partial<QueueItem>): QueueItem => ({
   source: 'simplefin',
   sourceId: null,
   splits: [],
+  tagIds: [],
   createdAt: '2026-09-10T00:00:00Z',
   updatedAt: '2026-09-10T00:00:00Z',
   topCategoryIds: [],
