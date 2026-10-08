@@ -20,6 +20,8 @@ import { recurring } from './routes/recurring';
 import { reports } from './routes/reports';
 import { tags } from './routes/tags';
 import { push } from './routes/push';
+import { connector } from './routes/connector';
+import { mcp } from './routes/mcp';
 import { review } from './routes/review';
 import { sync } from './routes/sync';
 import { transactions } from './routes/transactions';
@@ -52,6 +54,8 @@ app.use('*', meter);
 // Public: health and the auth handshake. There is no signup route (SPEC §9).
 app.get('/health', (c) => c.json({ ok: true as const }));
 app.route('/auth', auth);
+// The optional Claude connector: its link carries its own secret (SPEC §12.3).
+app.route('/mcp', mcp);
 
 // Everything else requires a valid access token (T16).
 app.use('*', requireAuth);
@@ -71,6 +75,7 @@ app.route('/allocations', allocations);
 app.route('/transactions', transactions);
 app.route('/tags', tags);
 app.route('/push', push);
+app.route('/connector', connector);
 app.route('/sync', sync);
 app.route('/recurring', recurring);
 app.route('/cash-to-payday', cashToPayday);

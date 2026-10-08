@@ -35,6 +35,7 @@ const TABLES = [
   'push_vapid',
   'push_subscription',
   'push_sent',
+  'mcp_token',
 ];
 
 const INDEXES = [

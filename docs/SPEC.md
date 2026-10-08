@@ -675,3 +675,12 @@ anything else are added by hand. Each entry holds a name, the last four digits, 
 website, where the paper copy is, and notes. It never holds a password, a full account
 number or a PIN: the binder records only where passwords live. It is stored with the
 owner's settings and is part of the data export.
+
+### 12.3 Claude connector
+
+Optional and off by default; nothing in Rise depends on it. Settings › Your data › Claude
+turns on a read-only MCP server after a passkey check and shows its link once. The link
+carries a 32-byte secret, stored only as a hash; turning it on again replaces the link, and
+turning it off deletes it. Its tools read through the app's own GET routes (budget month,
+transactions and their totals, accounts, categories, recurring, Surplus, net worth). There is
+no tool that writes.

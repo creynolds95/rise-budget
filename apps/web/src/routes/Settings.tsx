@@ -8,7 +8,7 @@ import type {
   CategoryGroupKind,
   Rule,
 } from '@rise/shared/schemas';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BackLink } from '../components/BackLink';
@@ -1532,6 +1532,7 @@ function DataSection() {
         )}
       </Group>
       <UsageGroup />
+      <ClaudeGroup />
       {importOpen ? (
         <MonarchImport />
       ) : (
@@ -1547,5 +1548,73 @@ function DataSection() {
         </Group>
       )}
     </>
+  );
+}
+
+/** The optional, read-only Claude connector (SPEC §12.3). Off by default; Rise never needs it. */
+function ClaudeGroup() {
+  const qc = useQueryClient();
+  const { stepUp } = useAuth();
+  const state = useQuery({
+    queryKey: ['connector'],
+    queryFn: () => api<{ on: boolean; createdAt: string | null }>('GET', '/connector'),
+  });
+  const [url, setUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const flip = async (on: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (on) {
+        const r = await api<{ url: string }>('POST', '/connector', undefined, {
+          stepUp: await stepUp(),
+        });
+        setUrl(r.url);
+      } else {
+        await api('DELETE', '/connector');
+        setUrl(null);
+      }
+      await qc.invalidateQueries({ queryKey: ['connector'] });
+    } catch {
+      setError("That didn't go through. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Group
+      title="Claude"
+      footer={
+        url
+          ? 'In Claude: Settings › Connectors › Add custom connector, and paste this link. It’s shown once.'
+          : error
+      }
+    >
+      <GroupRow label="Read-only connector">
+        <Toggle
+          label="Read-only connector"
+          on={state.data?.on === true}
+          disabled={!state.data || busy}
+          onChange={(on) => void flip(on)}
+        />
+      </GroupRow>
+      {url && (
+        <button
+          type="button"
+          onClick={() =>
+            void navigator.clipboard.writeText(url).then(
+              () => setCopied(true),
+              () => setCopied(false),
+            )
+          }
+          className="flex min-h-13 w-full items-center justify-between gap-4 px-4 py-3 text-left active:bg-sage-100"
+        >
+          <span className="min-w-0 truncate text-ink-muted">{url}</span>
+          <span className="shrink-0">{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      )}
+    </Group>
   );
 }
