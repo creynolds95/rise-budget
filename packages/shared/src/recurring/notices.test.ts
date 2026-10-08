@@ -11,6 +11,8 @@ const ALL: PushSettings = {
   duplicate: true,
   unusual: true,
   firstTime: true,
+  surplusNegative: true,
+  toReview: true,
 };
 const series = (p: Partial<NoticeInputs['series'][number]> = {}) => ({
   id: 's1',
@@ -39,9 +41,23 @@ const input: NoticeInputs = {
   ],
   bankTrouble: { key: 'acct1', message: 'Example Bank needs you to sign in again.' },
   recap: { weekOf: '2026-10-04', spentCents: 123_456, toReview: 3 },
+  surplusNegative: { shortfallCents: 25_050, date: '2026-10-12' },
+  review: { day: '2026-10-08', count: 12 },
 };
 
 describe('notices', () => {
+  it('skips the review count at zero and the Surplus alert when fine', () => {
+    const n = notices(
+      { ...input, surplusNegative: null, review: { day: 'd', count: 0 } },
+      { ...ALL, recap: false },
+    ).map((x) => x.key);
+    expect(n).not.toContain('surplus:negative');
+    expect(n.some((k) => k.startsWith('review:'))).toBe(false);
+    expect(notices({ ...input, review: null }, ALL).some((x) => x.key.startsWith('review:'))).toBe(
+      false,
+    );
+  });
+
   it('words every kind the owner allows', () => {
     const n = notices(input, ALL);
     expect(n.map((x) => x.key)).toEqual([
@@ -53,11 +69,18 @@ describe('notices', () => {
       'flag:t2',
       'flag:t3',
       'recap:2026-10-04',
+      'surplus:negative',
+      'review:2026-10-08',
     ]);
     expect(n[1]).toMatchObject({ title: 'Streamflix went up', body: 'Now $17.99, was $15.99.' });
     expect(n[3]?.body).toBe('It was due 10/01.');
     expect(n[6]).toMatchObject({ title: 'Large first charge', url: '/transactions/t3' });
-    expect(n.at(-1)).toMatchObject({ body: '$1,234.56 spent · 3 to review', url: '/review' });
+    expect(n[7]).toMatchObject({ body: '$1,234.56 spent · 3 to review', url: '/review' });
+    expect(n[8]).toMatchObject({
+      title: 'Surplus is going negative',
+      body: '$250.50 short around 10/12.',
+    });
+    expect(n[9]).toMatchObject({ title: '12 to review', url: '/review' });
   });
 
   it('keeps the quiet kinds off by default', () => {

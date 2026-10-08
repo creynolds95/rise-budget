@@ -111,6 +111,38 @@ describe('push notifications (SPEC §8.2)', () => {
     expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
   });
 
+  it('tells a Surplus dip once, and again only after it recovers', async () => {
+    const s = await setup();
+    await s.api('POST', '/accounts', { name: 'Checking', kind: 'depository' });
+    await s.api('PATCH', '/me/settings', { push: { surplusNegative: true }, cushionCents: 0 });
+    await s.api('POST', '/push/subscriptions', await device());
+    pushService();
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+    await s.api('PATCH', '/me/settings', { cushionCents: 50_000 });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 1, notices: 1 });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+    await s.api('PATCH', '/me/settings', { cushionCents: 0 });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+    await s.api('PATCH', '/me/settings', { cushionCents: 50_000 });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 1, notices: 1 });
+  });
+
+  it('sends one review count a day, never per transaction, and none at zero', async () => {
+    const s = await setup();
+    await s.api('PATCH', '/me/settings', { push: { toReview: true } });
+    await s.api('POST', '/push/subscriptions', await device());
+    pushService();
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+    for (const d of ['2026-10-06', '2026-10-07', '2026-10-07']) await s.add(d, 1_000, `SHOP ${d}`);
+    await env.DB.prepare("UPDATE txn SET review_state = 'needs_review' WHERE user_id = ?1")
+      .bind(s.userId)
+      .run();
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 1, notices: 1 });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+    const next = new Date('2026-10-09T15:00:00Z');
+    expect(await runPush(s.userId, env.DB, next)).toEqual({ sent: 1, notices: 1 });
+  });
+
   it('sends nothing, and reads nothing more, with no device signed up', async () => {
     const s = await setup();
     const service = pushService();

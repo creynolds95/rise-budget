@@ -78,6 +78,8 @@ describe('schemas', () => {
         duplicate: false,
         unusual: false,
         firstTime: false,
+        surplusNegative: false,
+        toReview: false,
       },
     });
     expect(u.timezone).toBe('America/Chicago');

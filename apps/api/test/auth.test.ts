@@ -498,6 +498,8 @@ describe('T16 auth middleware + error contract', () => {
         duplicate: false,
         unusual: false,
         firstTime: false,
+        surplusNegative: false,
+        toReview: false,
       },
     });
   });

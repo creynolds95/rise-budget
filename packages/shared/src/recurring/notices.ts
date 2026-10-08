@@ -33,7 +33,14 @@ export interface NoticeInputs {
   bankTrouble: { key: string; message: string } | null;
   /** Only on the recap's run. */
   recap: { weekOf: string; spentCents: number; toReview: number } | null;
+  /** Surplus's projected lowest point when it is under zero, else null. */
+  surplusNegative: { shortfallCents: number; date: string } | null;
+  /** How many wait for review today; null when not looked up. */
+  review: { day: string; count: number } | null;
 }
+
+/** One standing key: told once per dip, and cleared by the caller when Surplus recovers. */
+export const SURPLUS_NEGATIVE_KEY = 'surplus:negative';
 
 /** At most this many in one run; the rest are marked sent and wait in the app. */
 export const MAX_NOTICES_PER_RUN = 5;
@@ -106,6 +113,23 @@ export function notices(input: NoticeInputs, prefs: PushSettings): Notice[] {
       url: r.toReview > 0 ? '/review' : '/',
     });
   }
+  if (input.surplusNegative && prefs.surplusNegative) {
+    const d = input.surplusNegative;
+    out.push({
+      key: SURPLUS_NEGATIVE_KEY,
+      title: 'Surplus is going negative',
+      body: `${dollars(d.shortfallCents)} short around ${d.date.slice(5).replace('-', '/')}.`,
+      url: '/cash',
+    });
+  }
+  // Once a day at most, and only a count: never one per transaction.
+  if (input.review && input.review.count > 0 && prefs.toReview)
+    out.push({
+      key: `review:${input.review.day}`,
+      title: `${input.review.count} to review`,
+      body: 'Transactions are waiting for a look.',
+      url: '/review',
+    });
   return out;
 }
 

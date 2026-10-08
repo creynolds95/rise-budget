@@ -474,6 +474,8 @@ const PUSH_ROWS: { key: keyof PushSettings; label: string }[] = [
   { key: 'missedBill', label: 'Bill didn’t charge' },
   { key: 'bankTrouble', label: 'Bank sync needs a look' },
   ...ALERT_ROWS.map(({ key, label }) => ({ key, label })),
+  { key: 'surplusNegative', label: 'Surplus going negative' },
+  { key: 'toReview', label: 'Transactions to review' },
 ];
 
 function PushGroup({ push }: { push: PushSettings }) {

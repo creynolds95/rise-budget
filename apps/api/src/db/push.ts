@@ -146,3 +146,17 @@ export async function weekSummary(
   ]);
   return { spentCents: spent?.results[0]?.n ?? 0, toReview: review?.results[0]?.n ?? 0 };
 }
+
+/** Forget one told key, so the next time it applies it is told again. */
+export async function clearSentKey(userId: UserId, db: D1Database, key: string): Promise<void> {
+  await db.prepare('DELETE FROM push_sent WHERE user_id = ?1 AND key = ?2').bind(userId, key).run();
+}
+
+/** How many transactions wait for review. */
+export async function reviewCount(userId: UserId, db: D1Database): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS n FROM txn WHERE user_id = ?1 AND review_state = 'needs_review'")
+    .bind(userId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
