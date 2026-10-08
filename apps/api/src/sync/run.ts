@@ -52,10 +52,6 @@ export const OVERLAP_DAYS = 5;
  */
 export const DEEP_OVERLAP_DAYS = 35;
 
-/** The cron's overlap: the deep re-read once a week (Sunday's first run, 08:00 UTC). */
-export const cronOverlapDays = (scheduled: Date): number =>
-  scheduled.getUTCDay() === 0 && scheduled.getUTCHours() === 8 ? DEEP_OVERLAP_DAYS : OVERLAP_DAYS;
-
 const Envelope = z.object({
   errors: z.array(z.string()).default([]),
   accounts: z.array(z.unknown()),

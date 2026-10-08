@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { SYNC_CRON } from '../src/sync/schedule';
 import { HOUSEKEEPING_CRON, runHousekeeping } from '../src/backup/run';
 import { backupKey, expiredBackups, gunzip, gzip, splitSql } from '../src/backup/sql';
 import { dumpDatabase } from '../src/db';
@@ -175,7 +176,7 @@ describe('T46 backup and restore', () => {
     await env.BACKUPS.put('backups/2026-01-01.sql.gz', 'x');
     await handler(
       {
-        cron: '0 8,14,22 * * *',
+        cron: SYNC_CRON,
         scheduledTime: Date.parse('2026-09-24T08:00:00Z'),
       } as ScheduledController,
       env as never,

@@ -7,12 +7,23 @@ import { applyFollows } from '../lib/follow';
 import { applyLoanPayments } from '../lib/loanPayments';
 import { body } from '../lib/validate';
 import { runSync } from '../sync/run';
+import { SYNC_DAILY_LIMIT } from '../sync/schedule';
 import { sourceFromEnv } from '../sync/source';
 
 export const sync = new Hono<AppEnv>();
 
 /** Manual trigger (SPEC §6.1). Read-only by protocol: SimpleFIN cannot move money. */
 sync.post('/run', async (c) => {
+  // SimpleFIN allows 24 requests a day; scheduled syncs share them with manual ones.
+  const recent = await listSyncRuns(c.get('userId'), c.env.DB, SYNC_DAILY_LIMIT);
+  const dayAgo = Date.now() - 86_400_000;
+  const oldest = recent[SYNC_DAILY_LIMIT - 1];
+  if (oldest && Date.parse(oldest.started_at) > dayAgo)
+    throw new AppError(
+      429,
+      'RATE_LIMITED',
+      'Rise has synced 20 times in the last day. SimpleFIN allows 24 a day, so try again later.',
+    );
   const source = sourceFromEnv(c.env);
   if (!source) throw new AppError(409, 'CONFLICT', 'SimpleFIN is not connected yet');
   const { since } = await body(c, RunSyncBody);

@@ -446,12 +446,12 @@ full descriptors, or amounts joined to identity.
 
 ## 6. Sync
 
-Cron trigger `0 8,14,22 * * *` (UTC) → 3× daily, plus `POST /sync/run`.
+Hourly cron `0 * * * *`; a tick syncs only in the owner's chosen hours (`syncHours`, default every 2 h from 5am to 11pm local, max 12), skipped ticks write nothing. Weekly deep re-read at the first chosen hour on Sunday. Manual `POST /sync/run` is refused after 20 runs in 24 h (SimpleFIN allows 24).
 
 ```
 for each synced account:
     fetch window = [last_synced_at - 5 days, now]      # overlap absorbs late posts
-                                                       # (35 days on Sunday's 08:00 run: late backfills)
+                                                       # (35 days on Sunday's first run: late backfills)
     upsert by (account_id, source, source_id)
     reconcile pending → posted   (SPEC §3.2)
     run transfer detection over the affected window

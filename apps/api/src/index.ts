@@ -27,13 +27,14 @@ import { sync } from './routes/sync';
 import { transactions } from './routes/transactions';
 import { dataExport } from './routes/export';
 import { devices } from './routes/devices';
-import { findUserIdByEmail } from './db';
+import { findUserIdByEmail, getUser } from './db';
 import type { Env } from './env';
 import { HOUSEKEEPING_CRON, runHousekeeping } from './backup/run';
 import { applyFollows } from './lib/follow';
 import { applyLoanPayments } from './lib/loanPayments';
 import { runPush } from './lib/push';
-import { cronOverlapDays, runSync } from './sync/run';
+import { DEEP_OVERLAP_DAYS, OVERLAP_DAYS, runSync } from './sync/run';
+import { SYNC_CRON, syncSlot } from './sync/schedule';
 import { sourceFromEnv } from './sync/source';
 
 /** Everything is under /api; the rest of the origin is the web app (Workers Static Assets). */
@@ -114,11 +115,24 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
     if (!source || !env.SIMPLEFIN_OWNER_EMAIL) return;
     const userId = await findUserIdByEmail(db, env.SIMPLEFIN_OWNER_EMAIL);
     if (!userId) return;
+    let deep = false;
+    if (event.cron === SYNC_CRON) {
+      // The hourly tick only syncs in the owner's chosen hours. Skipped ticks write nothing
+      // (not even the usage row), so the idle hours cost one small read each.
+      const user = await getUser(userId, env.DB);
+      if (!user) return;
+      const slot = syncSlot(user.settings.syncHours, user.timezone, new Date(event.scheduledTime));
+      if (!slot.due) {
+        tally.read = tally.written = 0;
+        return;
+      }
+      deep = slot.deep;
+    }
     // An idle cron run (nothing new from the bank) skips the CPU-heavy recurring re-detection.
     // Once a week it re-reads five weeks back, for rows a bank backfills late.
     const r = await runSync(db, userId, source, {
       skipRecurringWhenIdle: true,
-      overlapDays: cronOverlapDays(new Date(event.scheduledTime)),
+      overlapDays: deep ? DEEP_OVERLAP_DAYS : OVERLAP_DAYS,
     });
     if (r.status !== 'failed') {
       // A loan-payment hiccup must not fail the sync; the Debt page still offers Apply by hand.

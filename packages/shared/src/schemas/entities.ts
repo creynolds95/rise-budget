@@ -282,7 +282,18 @@ export const PUSH_DEFAULTS: PushSettings = {
   toReview: false,
 };
 
+/** Hours of the day (the owner's timezone) when the bank sync runs on its own. SimpleFIN allows
+ * 24 requests a day; the cap on picks leaves room for manual syncs. */
+export const SYNC_HOURS_MAX = 12;
+export const SYNC_HOURS_DEFAULT = [5, 7, 9, 11, 13, 15, 17, 19, 21, 23];
+export const SyncHours = z
+  .array(z.number().int().min(0).max(23))
+  .min(1)
+  .max(SYNC_HOURS_MAX)
+  .refine((h) => new Set(h).size === h.length, 'Pick each hour once');
+
 export const UserSettings = z.object({
+  syncHours: SyncHours.default(SYNC_HOURS_DEFAULT),
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
   planChangesApplyToFuture: z.boolean().default(false),

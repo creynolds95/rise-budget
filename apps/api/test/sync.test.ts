@@ -2,14 +2,8 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { scheduled } from '../src/index';
 import { centsToDecimal, mockSimpleFin } from '../src/sync/mock';
-import {
-  cronOverlapDays,
-  DEEP_OVERLAP_DAYS,
-  describeSource,
-  OVERLAP_DAYS,
-  runSync,
-  windowStart,
-} from '../src/sync/run';
+import { DEEP_OVERLAP_DAYS, describeSource, runSync, windowStart } from '../src/sync/run';
+import { SYNC_CRON, syncSlot } from '../src/sync/schedule';
 import { httpSimpleFin, sourceFromEnv, type SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
 
@@ -533,10 +527,44 @@ describe('T27 SimpleFIN sync', () => {
     ).toBe('2026-10-01');
   });
 
-  it('the cron re-reads five weeks once a week: Sunday’s first run', () => {
-    expect(cronOverlapDays(at('2026-10-04T08:00:00Z'))).toBe(DEEP_OVERLAP_DAYS); // Sunday
-    expect(cronOverlapDays(at('2026-10-04T14:00:00Z'))).toBe(OVERLAP_DAYS);
-    expect(cronOverlapDays(at('2026-10-05T08:00:00Z'))).toBe(OVERLAP_DAYS); // Monday
+  it('the weekly deep re-read is the first chosen hour on Sunday, local time', () => {
+    const hours = [5, 7, 9];
+    const tz = 'America/Chicago';
+    expect(syncSlot(hours, tz, at('2026-10-04T10:00:00Z'))).toEqual({ due: true, deep: true }); // Sun 5am
+    expect(syncSlot(hours, tz, at('2026-10-04T12:00:00Z'))).toEqual({ due: true, deep: false });
+    expect(syncSlot(hours, tz, at('2026-10-05T10:00:00Z'))).toEqual({ due: true, deep: false }); // Mon
+    expect(syncSlot(hours, tz, at('2026-10-04T11:00:00Z'))).toEqual({ due: false, deep: false });
+  });
+
+  it('the hourly tick syncs only in the chosen hours and writes nothing otherwise', async () => {
+    const s = await setup();
+    await s.api('PATCH', '/me/settings', { syncHours: [5] });
+    const e = { ...env, SIMPLEFIN_MOCK: '1', SIMPLEFIN_OWNER_EMAIL: s.email };
+    const tick = (iso: string) =>
+      scheduled({ cron: SYNC_CRON, scheduledTime: Date.parse(iso) } as ScheduledController, e);
+    await tick('2026-10-05T14:00:00Z'); // 9am Central: not chosen
+    expect((await s.api('GET', '/accounts')).json).toEqual([]);
+    expect((await s.api('GET', '/sync/status')).json.runs).toHaveLength(0);
+    await tick('2026-10-05T10:00:00Z'); // 5am Central
+    expect((await s.api('GET', '/accounts')).json).toHaveLength(7);
+  });
+
+  it('settings reject duplicate, out-of-range and too many sync hours', async () => {
+    const s = await setup();
+    for (const syncHours of [[], [5, 5], [24], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]])
+      expect((await s.api('PATCH', '/me/settings', { syncHours })).status).toBe(400);
+  });
+
+  it('manual sync is refused after 20 runs in a day', async () => {
+    const s = await setup();
+    const now = new Date().toISOString();
+    for (let i = 0; i < 20; i++)
+      await env.DB.prepare(
+        "INSERT INTO sync_run (id, user_id, started_at, status, accounts_touched, rows_inserted, rows_updated) VALUES (?1, ?2, ?3, 'ok', 0, 0, 0)",
+      )
+        .bind(`r${i}`, s.userId, now)
+        .run();
+    expect((await s.api('POST', '/sync/run', {})).status).toBe(429);
   });
 
   it('a row the bank backfills weeks late arrives on the deep re-read, once', async () => {

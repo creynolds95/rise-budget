@@ -20,6 +20,7 @@ import {
   FollowRule,
   RetirementPlan,
   SavingsPlan,
+  SyncHours,
 } from './entities';
 
 export const ManualCadence = z.enum(['weekly', 'biweekly', 'monthly', 'semimonthly', 'annual']);
@@ -65,6 +66,7 @@ export type ApiError = z.infer<typeof ApiError>;
 // PATCH bodies are written out without `.default()`s: `.partial()` on a defaulted field
 // re-applies the default when the key is absent, silently resetting the user's choice.
 export const PatchSettingsBody = z.object({
+  syncHours: SyncHours.optional(),
   appLock: AppLock.optional(),
   planChangesApplyToFuture: z.boolean().optional(),
   cushionCents: Cents.optional(),
