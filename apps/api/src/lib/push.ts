@@ -137,6 +137,7 @@ export async function deliver(
   db: D1Database,
   notice: Pick<Notice, 'title' | 'body' | 'url'>,
   now: Date,
+  badge?: number,
 ): Promise<number> {
   const [subs, keys, user] = await Promise.all([
     listPushSubscriptions(userId, db),
@@ -144,7 +145,7 @@ export async function deliver(
     getUser(userId, db),
   ]);
   if (!user) return 0;
-  const payload = JSON.stringify(notice);
+  const payload = JSON.stringify(badge === undefined ? notice : { ...notice, badge });
   let sent = 0;
   for (const s of subs) {
     const outcome = await sendPush(keys, s, payload, `mailto:${user.email}`, now).catch(
@@ -192,6 +193,6 @@ export async function runPush(
   // Remembered before sending: a failure part-way never repeats a notice on the next run.
   if (mark.length > 0) await db.batch(markSentStmts(userId, db, mark));
   let sent = 0;
-  for (const n of send) sent += await deliver(userId, db, n, now);
+  for (const n of send) sent += await deliver(userId, db, n, now, inputs.review?.count);
   return { sent, notices: send.length };
 }

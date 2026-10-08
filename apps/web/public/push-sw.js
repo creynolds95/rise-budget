@@ -7,12 +7,22 @@ self.addEventListener('push', (event) => {
   } catch {
     n = { body: event.data ? event.data.text() : '' };
   }
+  // The home-screen badge follows the number waiting for review when the server sends it.
+  const badge =
+    typeof n.badge === 'number' && self.navigator.setAppBadge
+      ? n.badge > 0
+        ? self.navigator.setAppBadge(n.badge)
+        : self.navigator.clearAppBadge()
+      : undefined;
   event.waitUntil(
-    self.registration.showNotification(n.title || 'Rise', {
-      body: n.body || '',
-      icon: '/icon-192.png',
-      data: { url: n.url || '/' },
-    }),
+    Promise.all([
+      Promise.resolve(badge).catch(() => {}),
+      self.registration.showNotification(n.title || 'Rise', {
+        body: n.body || '',
+        icon: '/icon-192.png',
+        data: { url: n.url || '/' },
+      }),
+    ]),
   );
 });
 

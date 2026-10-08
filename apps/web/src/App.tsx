@@ -5,6 +5,7 @@ import { OfflineBar } from './components/OfflineBar';
 import { Shell } from './components/Shell';
 import { Skeleton } from './components/primitives/Skeleton';
 import { useAuth } from './lib/auth';
+import { useAppBadge } from './lib/badge';
 import { useLinkTransitions } from './lib/gestures';
 import { AccountDetail } from './routes/AccountDetail';
 import { Accounts } from './routes/Accounts';
@@ -46,6 +47,12 @@ const Later = ({ children }: { children: ReactNode }) => (
   <Suspense fallback={<PageFallback />}>{children}</Suspense>
 );
 
+/** Mounted only when signed in, so the badge query never fires on the login screen. */
+function BadgeKeeper() {
+  useAppBadge();
+  return null;
+}
+
 export function App() {
   const { status } = useAuth();
   useLinkTransitions();
@@ -67,6 +74,7 @@ export function App() {
   }
   return (
     <LockGate>
+      <BadgeKeeper />
       <OfflineBar />
       <Routes>
         <Route element={<Shell />}>
