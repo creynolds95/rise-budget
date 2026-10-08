@@ -39,6 +39,7 @@ RP_NAME = "Rise"
 # `wrangler secret put`, or .dev.vars locally. SIMPLEFIN_MOCK=1 belongs in .dev.vars only.
 
 [triggers]
-# SimpleFIN sync 3× daily (ARCHITECTURE §6); nightly housekeeping (§8, HOUSEKEEPING_CRON in
+# SimpleFIN sync: an hourly tick that syncs in the owner's chosen hours (Settings → Bank sync,
+# ARCHITECTURE §6); nightly housekeeping (§8, HOUSEKEEPING_CRON in
 # src/backup/run.ts). The backup itself runs in the `backup` GitHub workflow.
-crons = ["0 8,14,22 * * *", "30 9 * * *"]
+crons = ["0 * * * *", "30 9 * * *"]

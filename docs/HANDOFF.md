@@ -26,7 +26,7 @@ Rise is a single-user budgeting PWA: a rollover (envelope-style) budget fed by b
 | Bank data | SimpleFIN Bridge | Read-only bank feed, polled ~once a day by SimpleFIN | ~$15/yr |
 | Code + deploys | GitHub + Actions | `ci.yml` tests, `deploy.yml` ships `main` | Free on a public repo |
 
-No other servers. Cron (in `wrangler.toml`): bank sync 08:00, 14:00, 22:00 UTC; backup 09:30 UTC.
+No other servers. Cron (in `wrangler.toml`): bank sync hourly tick, syncing in the hours chosen in Settings; backup 09:30 UTC.
 
 **Secrets** (Worker secrets, never in the repo): `JWT_SECRET`, `TOTP_KEY` (never change it), `SIMPLEFIN_ACCESS_URL`, `SIMPLEFIN_OWNER_EMAIL`. **Deploy-time GitHub secrets:** `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `D1_DATABASE_ID`, `RISE_HOST`. The repo ships placeholders; the deploy job swaps in the real values.
 

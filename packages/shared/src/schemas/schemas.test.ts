@@ -50,6 +50,7 @@ describe('schemas', () => {
       createdAt: '2026-09-23T20:00:00Z',
     });
     expect(u.settings).toEqual({
+      syncHours: [5, 7, 9, 11, 13, 15, 17, 19, 21, 23],
       appLock: 'off',
       planChangesApplyToFuture: false,
       cushionCents: 50_000,

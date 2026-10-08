@@ -1,4 +1,5 @@
 import { isTransfersGroup } from '@rise/shared/categorize';
+import { SYNC_HOURS_DEFAULT, SYNC_HOURS_MAX } from '@rise/shared/schemas';
 import type {
   AlertSettings,
   PushSettings,
@@ -974,6 +975,86 @@ function RulesSection() {
   );
 }
 
+const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'a' : 'p'}`;
+
+/** Which hours the automatic sync runs. SimpleFIN allows 24 requests a day, so at most 12. */
+function SyncSchedule() {
+  const me = useMe().data;
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const hours = me?.settings.syncHours ?? SYNC_HOURS_DEFAULT;
+  const patch = useMutation({
+    mutationFn: (syncHours: number[]) => api('PATCH', '/me/settings', { syncHours }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+    onError: (e) => setError(e instanceof ApiError ? e.message : 'Could not save.'),
+  });
+  const toggle = (h: number) => {
+    setError(null);
+    const next = hours.includes(h) ? hours.filter((x) => x !== h) : [...hours, h];
+    if (next.length < 1 || next.length > SYNC_HOURS_MAX) {
+      setError(next.length < 1 ? 'Keep at least one hour.' : `At most ${SYNC_HOURS_MAX} hours.`);
+      return;
+    }
+    patch.mutate(next.sort((a, b) => a - b));
+  };
+  return (
+    <>
+      <h2 className="mt-8 type-label text-ink-muted">Sync at</h2>
+      <div className="mt-2 grid grid-cols-6 gap-2">
+        {Array.from({ length: 24 }, (_, h) => (
+          <button
+            key={h}
+            type="button"
+            aria-pressed={hours.includes(h)}
+            onClick={() => toggle(h)}
+            className={`min-h-11 rounded-input border tabular-nums ${
+              hours.includes(h)
+                ? 'border-sage-500 bg-sage-100 font-semibold'
+                : 'border-hairline bg-surface text-ink-muted'
+            }`}
+          >
+            {hourLabel(h)}
+          </button>
+        ))}
+      </div>
+      {error && <p className="mt-2 text-clay">{error}</p>}
+    </>
+  );
+}
+
+/** When each bank last reported to SimpleFIN. Banks refresh on their own schedules. */
+function BanksReported({ tz }: { tz: string | undefined }) {
+  const accounts = useAccounts().data ?? [];
+  const byBank = new Map<string, number>();
+  for (const a of accounts) {
+    if (a.source !== 'simplefin' || a.archivedAt || !a.lastSyncedAt) continue;
+    const bank = a.institutionName ?? a.name;
+    byBank.set(bank, Math.max(byBank.get(bank) ?? 0, Date.parse(a.lastSyncedAt)));
+  }
+  if (byBank.size === 0) return null;
+  const rows = [...byBank].sort((x, y) => y[1] - x[1]);
+  return (
+    <>
+      <h2 className="mt-8 type-label text-ink-muted">Banks last reported</h2>
+      <ul className="mt-1 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        {rows.map(([bank, ms]) => (
+          <li key={bank} className="flex justify-between border-b border-hairline py-2">
+            <span>{bank}</span>
+            <span className="text-ink-muted tabular-nums">
+              {shortDate(localToday(tz, new Date(ms)))} ·{' '}
+              {new Date(ms).toLocaleTimeString([], {
+                hour: 'numeric',
+                minute: '2-digit',
+                ...(tz ? { timeZone: tz } : {}),
+              })}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function SyncSection() {
   const status = useSyncStatus();
   const tz = useMe().data?.timezone;
@@ -999,8 +1080,8 @@ function SyncSection() {
       <p className="mt-1 font-semibold">{mode ? MODE[mode] : '…'}</p>
       <p className="mt-1 text-ink-muted">
         {mode === 'off'
-          ? 'Rise will pull from your banks three times a day once SimpleFIN is connected. It can only read; it can never move money.'
-          : 'Rise syncs automatically three times a day. It can only read; it can never move money.'}
+          ? 'Rise will pull from your banks on a schedule once SimpleFIN is connected. It can only read; it can never move money.'
+          : 'Rise syncs automatically at the hours below. It can only read; it can never move money.'}
       </p>
       {mode !== 'off' && (
         <Button className="mt-4" disabled={run.isPending || !mode} onClick={() => run.mutate()}>
@@ -1026,6 +1107,8 @@ function SyncSection() {
             </p>
           );
         })()}
+      {mode !== 'off' && <SyncSchedule />}
+      <BanksReported tz={tz} />
       <h2 className="mt-8 type-label text-ink-muted">Recent runs</h2>
       {status.data?.runs.length === 0 && <p className="mt-2 text-ink-muted">None yet.</p>}
       <ul className="mt-1 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
