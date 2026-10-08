@@ -1,7 +1,11 @@
 import { Loading, PlanUnknown, useSettingsState } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { monthlyIncomeFor } from '@rise/shared/retirement';
 import type { RetirementPlan } from '@rise/shared/schemas';
+
+type LifeEvent = RetirementPlan['lifeEvents'][number];
+const clampClaim = (n: number) => Math.min(70, Math.max(62, n));
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { FanChart } from '../components/primitives/FanChart';
@@ -11,6 +15,7 @@ import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow, StaticRow } from '../components/primitives/Rows';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
+import { Toggle } from '../components/primitives/Toggle';
 import { api } from '../lib/api';
 import { formatCents } from '../lib/money';
 import { useAccounts, useMe } from '../lib/queries';
@@ -84,6 +89,7 @@ export function Retirement() {
   const [age, setAge] = useState<number | null>(null);
   const shownAge = Math.min(AGE_MAX, Math.max(AGE_MIN, age ?? plan?.goalAge ?? 65));
   const [managing, setManaging] = useState(false);
+  const [event, setEvent] = useState<{ index: number | null; e: LifeEvent } | null>(null);
 
   const header = {
     back: { label: 'Financial health', to: '/financial-health' },
@@ -183,6 +189,10 @@ export function Retirement() {
                   label="Range of projected balances"
                   fan={f}
                   withdrawalBps={plan.withdrawalBps}
+                  income={(b) =>
+                    monthlyIncomeFor(Math.max(0, b - v.setAsideCents), plan.withdrawalBps) +
+                    v.ssMonthlyCents
+                  }
                 />
               </div>
             )}
@@ -195,6 +205,18 @@ export function Retirement() {
               label={`At ${shownAge}`}
               value={<MoneyText cents={v.balanceCents} whole />}
             />
+            {v.ssMonthlyCents > 0 && (
+              <StaticRow
+                label="Social Security a month"
+                value={<MoneyText cents={v.ssMonthlyCents} whole />}
+              />
+            )}
+            {v.setAsideCents > 0 && (
+              <StaticRow
+                label="Set aside until checks start"
+                value={<MoneyText cents={v.setAsideCents} whole />}
+              />
+            )}
             {v.neededCents !== null && (
               <StaticRow
                 label="Needed for goal"
@@ -215,7 +237,67 @@ export function Retirement() {
             )}
           </>
         }
+        related={{
+          title: 'Life events',
+          children: (
+            <>
+              {plan.lifeEvents.map((e, i) => (
+                <button
+                  key={`${e.label}-${i}`}
+                  type="button"
+                  onClick={() => setEvent({ index: i, e })}
+                  className="flex min-h-12 w-full items-center justify-between gap-4 border-b border-hairline py-3 text-left active:bg-sage-100"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate">{e.label}</span>
+                    <span className="block type-caption text-ink-faint money">Age {e.age}</span>
+                  </span>
+                  {e.cents > 0 ? (
+                    <span className="money text-sage-700">
+                      +<MoneyText cents={e.cents} tone="in" whole />
+                    </span>
+                  ) : (
+                    <MoneyText cents={-e.cents} whole />
+                  )}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() =>
+                  setEvent({
+                    index: null,
+                    e: { label: '', age: Math.max(plan.currentAge, 18) + 5, cents: 0 },
+                  })
+                }
+                className="flex min-h-12 w-full items-center py-3 font-semibold text-sage-700"
+              >
+                Add a life event
+              </button>
+            </>
+          ),
+        }}
       />
+      {event && (
+        <LifeEventSheet
+          initial={event.e}
+          onClose={() => setEvent(null)}
+          onSave={(e) => {
+            const list = [...plan.lifeEvents];
+            if (event.index === null) list.push(e);
+            else list[event.index] = e;
+            edit({ lifeEvents: list });
+            setEvent(null);
+          }}
+          onDelete={
+            event.index === null
+              ? undefined
+              : () => {
+                  edit({ lifeEvents: plan.lifeEvents.filter((_, i) => i !== event.index) });
+                  setEvent(null);
+                }
+          }
+        />
+      )}
       <Sheet open={managing} title="Retirement settings" onClose={() => setManaging(false)}>
         <div className="overflow-hidden rounded-card bg-surface px-4">
           <EditRow
@@ -262,6 +344,92 @@ export function Retirement() {
             />
           ))}
           <EditRow
+            label="Social Security at 67"
+            field={
+              <MoneyField
+                label="Your Social Security at 67"
+                cents={plan.ssBenefitCents}
+                onCommit={(c) => edit({ ssBenefitCents: c })}
+              />
+            }
+          />
+          <EditRow
+            label="You claim at"
+            field={
+              <NumberField
+                label="Your claiming age"
+                value={plan.ssClaimAge}
+                onCommit={(n) => edit({ ssClaimAge: clampClaim(n) })}
+              />
+            }
+          />
+          <EditRow
+            label="Spouse"
+            field={
+              <Toggle
+                label="Plan for a spouse"
+                on={plan.spouse !== null}
+                onChange={(on) =>
+                  edit({
+                    spouse: on ? { age: plan.currentAge, ssBenefitCents: 0, ssClaimAge: 67 } : null,
+                  })
+                }
+              />
+            }
+          />
+          {plan.spouse && (
+            <>
+              <EditRow
+                label="Spouse’s age"
+                field={
+                  <NumberField
+                    label="Spouse’s age"
+                    value={plan.spouse.age}
+                    onCommit={(n) =>
+                      plan.spouse &&
+                      edit({ spouse: { ...plan.spouse, age: Math.min(100, Math.max(18, n)) } })
+                    }
+                  />
+                }
+              />
+              <EditRow
+                label="Spouse’s Social Security at 67"
+                field={
+                  <MoneyField
+                    label="Spouse’s Social Security at 67"
+                    cents={plan.spouse.ssBenefitCents}
+                    onCommit={(c) =>
+                      plan.spouse && edit({ spouse: { ...plan.spouse, ssBenefitCents: c } })
+                    }
+                  />
+                }
+              />
+              <EditRow
+                label="Spouse claims at"
+                field={
+                  <NumberField
+                    label="Spouse’s claiming age"
+                    value={plan.spouse.ssClaimAge}
+                    onCommit={(n) =>
+                      plan.spouse && edit({ spouse: { ...plan.spouse, ssClaimAge: clampClaim(n) } })
+                    }
+                  />
+                }
+              />
+            </>
+          )}
+          <EditRow
+            label="Count on Social Security"
+            field={
+              <NumberField
+                label="Share of Social Security to count on"
+                value={plan.ssHaircutPct}
+                suffix="%"
+                onCommit={(n) => edit({ ssHaircutPct: Math.min(100, n) })}
+              />
+            }
+          />
+          <EditRow
             label="Growth after inflation"
             field={
               <NumberField
@@ -300,5 +468,94 @@ export function Retirement() {
         </div>
       </Sheet>
     </>
+  );
+}
+
+/** Add or change one life event: money in or out at an age, in today's dollars. */
+function LifeEventSheet({
+  initial,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  initial: LifeEvent;
+  onClose: () => void;
+  onSave: (e: LifeEvent) => void;
+  onDelete: (() => void) | undefined;
+}) {
+  const [label, setLabel] = useState(initial.label);
+  const [age, setAge] = useState(initial.age);
+  const [cents, setCents] = useState(Math.abs(initial.cents));
+  const [moneyIn, setMoneyIn] = useState(initial.cents > 0);
+  const valid = label.trim().length > 0 && cents > 0;
+  return (
+    <Sheet
+      open
+      title={onDelete ? 'Life event' : 'New life event'}
+      onClose={onClose}
+      action={{
+        label: 'Save',
+        disabled: !valid,
+        onClick: () => onSave({ label: label.trim(), age, cents: moneyIn ? cents : -cents }),
+      }}
+    >
+      <div
+        role="radiogroup"
+        aria-label="Direction"
+        className="flex gap-1 rounded-card bg-surface p-1"
+      >
+        {[
+          { on: false, text: 'Money out' },
+          { on: true, text: 'Money in' },
+        ].map((o) => (
+          <button
+            key={o.text}
+            type="button"
+            role="radio"
+            aria-checked={moneyIn === o.on}
+            onClick={() => setMoneyIn(o.on)}
+            className={`min-h-10 flex-1 rounded-input font-medium ${
+              moneyIn === o.on ? 'bg-sage-600 text-surface' : 'text-ink-muted'
+            }`}
+          >
+            {o.text}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        <EditRow
+          label="What"
+          field={
+            <input
+              aria-label="What"
+              value={label}
+              maxLength={60}
+              placeholder="College, a new roof…"
+              onChange={(e) => setLabel(e.target.value)}
+              className="min-h-11 min-w-0 flex-1 bg-transparent text-right outline-none"
+            />
+          }
+        />
+        <EditRow
+          label="Your age"
+          field={
+            <NumberField
+              label="Your age then"
+              value={age}
+              onCommit={(n) => setAge(Math.min(100, Math.max(18, n)))}
+            />
+          }
+        />
+        <EditRow
+          label="Amount"
+          field={<MoneyField label="Amount" cents={cents} draft onCommit={setCents} />}
+        />
+      </div>
+      {onDelete && (
+        <Button variant="danger" className="-ml-4 mt-6" onClick={onDelete}>
+          Delete
+        </Button>
+      )}
+    </Sheet>
   );
 }

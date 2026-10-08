@@ -25,12 +25,15 @@ export function FanChart({
   fan,
   withdrawalBps,
   interactive = true,
+  income = (balance) => monthlyIncomeFor(balance, withdrawalBps),
 }: {
   label: string;
   fan: FanBand[];
   /** What each balance supports per month at this withdrawal rate, shown above the balance. */
   withdrawalBps: number;
   interactive?: boolean;
+  /** Monthly income a balance supports; the plan's view adds Social Security to it. */
+  income?: (balanceCents: number) => number;
 }) {
   const [active, setActive] = useState<number | null>(null);
   if (fan.length < 2) return null;
@@ -111,7 +114,7 @@ export function FanChart({
             <span key={name}>
               <span className="block">{name}</span>
               <span className="block type-body font-semibold text-ink">
-                {formatCents(monthlyIncomeFor(balance, withdrawalBps), { whole: true })}/mo
+                {formatCents(income(balance), { whole: true })}/mo
               </span>
               <span className="block text-ink-faint">{formatCents(balance, { whole: true })}</span>
             </span>

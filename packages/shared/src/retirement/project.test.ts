@@ -88,3 +88,19 @@ describe('retirement projection (integer cents, real dollars)', () => {
     expect(requiredMonthlyContribution(100_000, 100_000, 0, 400)).toBe(0);
   });
 });
+
+describe('one-time amounts in the projection', () => {
+  it('lands each year’s amount at that year’s end', () => {
+    const plain = projectSeries(100_000, 0, 2, 0);
+    const lumped = projectSeries(100_000, 0, 2, 0, [5_000, -20_000]);
+    expect(plain.map((p) => p.balanceCents)).toEqual([100_000, 100_000, 100_000]);
+    expect(lumped.map((p) => p.balanceCents)).toEqual([100_000, 105_000, 85_000]);
+    expect(projectBalance(100_000, 0, 2, 0, [5_000, -20_000])).toBe(85_000);
+  });
+
+  it('finds the contribution that covers a big expense on the way', () => {
+    const need = requiredMonthlyContribution(0, 1_000, 1, 0, [-1_000_000]);
+    expect(need).toBe(Math.ceil(1_001_000 / 12));
+    expect(requiredMonthlyContribution(0, 0, 1, 0, [5])).toBe(0);
+  });
+});

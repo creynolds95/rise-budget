@@ -69,6 +69,8 @@ export function simulateRetirement(opts: {
   years: number;
   realGrowthBps: number;
   volatilityBps: number;
+  /** One-time amounts at each year's end, as in `projectSeries`. */
+  lumps?: readonly number[];
   runs?: number;
   seed?: number;
 }): MonteCarloResult {
@@ -88,6 +90,7 @@ export function simulateRetirement(opts: {
           Math.round(fanStep(balance, rate) * Math.exp(sd * gaussian(rand))) +
           monthlyContributionCents;
       }
+      balance += opts.lumps?.[y - 1] ?? 0;
       record(y, balance);
     }
   }

@@ -628,3 +628,25 @@ The PWA must be readable offline — the user checks it at arbitrary times.
 | 13 | Refund posted to a category | Reduces `spent`; may push `remaining` positive |
 | 14 | Period with no allocations | Pool equals expected income; no divide-by-zero in pace |
 | 15 | Offline mutation replayed twice | Idempotency key prevents double-apply |
+
+---
+
+## 12. Planning tools
+
+### 12.1 Retirement: Social Security and life events
+
+Everything is in today's dollars and the owner's own numbers; nothing is fetched or guessed.
+
+- **Social Security.** The owner types each person's monthly benefit at full retirement age
+  (67) from their ssa.gov statement, and the age each will claim (62–70). Rise applies SSA's
+  rules: 5/9 of 1% off a month for the first 36 months early and 5/12 of 1% beyond (30% off
+  at 62), and 2/3 of 1% more a month after 67 (124% at 70). Each person gets their own
+  check or half the other's full benefit, whichever is more; the spousal half is cut 25/36 of
+  1% a month early (35% at 62) and never grows by waiting. A "count on" share (default 100%)
+  plans for a cut to benefits.
+- **What it changes.** The monthly goal less the household's checks is what savings must pay.
+  Until each check starts, savings stand in for it: the months between retiring and that
+  claim, times the check, are set aside on top of what the goal needs.
+- **Life events.** One-time money in or out at the owner's age. Before retiring, each lands
+  in the projection (and the range of outcomes) at the end of its year. At or after
+  retiring, money out adds to what savings must hold and money in reduces it.

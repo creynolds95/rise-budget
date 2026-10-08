@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PLAN, fanView, retirementView, totalMonthly } from './retirement';
+import { claimants, DEFAULT_PLAN, fanView, retirementView, totalMonthly } from './retirement';
 
 const plan = { ...DEFAULT_PLAN, currentAge: 30, goalAge: 65, spendTargetCents: 500_000 };
 
@@ -64,5 +64,50 @@ describe('fan view', () => {
 
   it('a retirement age before today gives a single point', () => {
     expect(fanView(plan, 1_000, 0, 20)).toHaveLength(1);
+  });
+});
+
+describe('Social Security and life events', () => {
+  it('lowers what the portfolio must cover, and sets aside the years before claiming', () => {
+    const p = { ...plan, ssBenefitCents: 200_000, ssClaimAge: 67 };
+    const plain = retirementView(plan, 10_000_000, 100_000, 65);
+    const v = retirementView(p, 10_000_000, 100_000, 65);
+    expect(v.ssMonthlyCents).toBe(200_000);
+    expect(v.setAsideCents).toBe(2 * 12 * 200_000);
+    // $3,000 a month from savings plus two years of checks held back.
+    expect(v.neededCents).toBe(102_857_143 + 4_800_000);
+    expect(v.incomeCents).toBe(
+      Math.round(((v.balanceCents - 4_800_000) * 350) / 10_000 / 12) + 200_000,
+    );
+    expect(v.balanceCents).toBe(plain.balanceCents);
+  });
+
+  it('counts a spouse, starting when they reach their own claim age', () => {
+    const p = {
+      ...plan,
+      ssBenefitCents: 200_000,
+      spouse: { age: 28, ssBenefitCents: 0, ssClaimAge: 67 },
+    };
+    expect(claimants(p)).toEqual([
+      { fraCents: 200_000, claimAge: 67, startsAtOwnerAge: 67 },
+      { fraCents: 0, claimAge: 67, startsAtOwnerAge: 69 },
+    ]);
+    expect(retirementView(p, 0, 0, 70).ssMonthlyCents).toBe(300_000);
+    expect(claimants(plan)).toEqual([]);
+  });
+
+  it('moves the projection for events before retiring and the need for events after', () => {
+    const p = {
+      ...plan,
+      lifeEvents: [
+        { label: 'Inheritance', age: 40, cents: 5_000_000 },
+        { label: 'Roof', age: 70, cents: -2_000_000 },
+      ],
+    };
+    const plain = retirementView(plan, 10_000_000, 100_000, 65);
+    const v = retirementView(p, 10_000_000, 100_000, 65);
+    expect(v.balanceCents).toBeGreaterThan(plain.balanceCents + 5_000_000);
+    expect(v.neededCents).toBe((plain.neededCents ?? 0) + 2_000_000);
+    expect(fanView(p, 10_000_000, 100_000, 65)).toHaveLength(36);
   });
 });

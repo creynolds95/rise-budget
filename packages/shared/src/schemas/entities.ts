@@ -56,6 +56,31 @@ export const RetirementPlan = z.object({
   withdrawalBps: z.int().min(100).max(1000).default(350),
   /** Yearly swing in returns for the Monte Carlo fan, basis points. */
   volatilityBps: z.int().min(0).max(5000).default(1500),
+  /** Monthly benefit at full retirement age (67) from the owner's ssa.gov statement; 0 = none. */
+  ssBenefitCents: Cents.min(0).default(0),
+  ssClaimAge: z.int().min(62).max(70).default(67),
+  /** A spouse's own age and statement, for their check (or half the owner's, if more). */
+  spouse: z
+    .object({
+      age: z.int().min(18).max(100),
+      ssBenefitCents: Cents.min(0).default(0),
+      ssClaimAge: z.int().min(62).max(70).default(67),
+    })
+    .nullable()
+    .default(null),
+  /** Share of promised benefits to count on, for anyone who'd rather plan on a cut. */
+  ssHaircutPct: z.int().min(0).max(100).default(100),
+  /** One-time money in (positive) or out (negative) at the owner's age, today's dollars. */
+  lifeEvents: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(60),
+        age: z.int().min(18).max(100),
+        cents: Cents,
+      }),
+    )
+    .max(30)
+    .default([]),
 });
 export type RetirementPlan = z.infer<typeof RetirementPlan>;
 

@@ -67,13 +67,42 @@ function grow(
   return balance;
 }
 
+/**
+ * Year by year, each year's one-time amount (a life event, in today's dollars) landing at its
+ * end: `lumps[y - 1]` at the end of year y. Missing years add nothing.
+ */
+function growYears(
+  startCents: number,
+  monthlyContributionCents: number,
+  years: number,
+  rateE12: number,
+  lumps: readonly number[],
+): number[] {
+  const out = [startCents];
+  let balance = startCents;
+  for (let y = 1; y <= years; y++) {
+    balance = grow(balance, monthlyContributionCents, 12, rateE12) + (lumps[y - 1] ?? 0);
+    out.push(balance);
+  }
+  return out;
+}
+
 export function projectBalance(
   startCents: number,
   monthlyContributionCents: number,
   years: number,
   realGrowthBps: number,
+  lumps: readonly number[] = [],
 ): number {
-  return grow(startCents, monthlyContributionCents, years * 12, monthlyRateE12(realGrowthBps));
+  if (lumps.length === 0)
+    return grow(startCents, monthlyContributionCents, years * 12, monthlyRateE12(realGrowthBps));
+  return growYears(
+    startCents,
+    monthlyContributionCents,
+    years,
+    monthlyRateE12(realGrowthBps),
+    lumps,
+  ).at(-1) as number;
 }
 
 export interface SeriesPoint {
@@ -87,15 +116,15 @@ export function projectSeries(
   monthlyContributionCents: number,
   years: number,
   realGrowthBps: number,
+  lumps: readonly number[] = [],
 ): SeriesPoint[] {
-  const points: SeriesPoint[] = [{ year: 0, balanceCents: startCents }];
-  const rate = monthlyRateE12(realGrowthBps);
-  let balance = startCents;
-  for (let y = 1; y <= years; y++) {
-    balance = grow(balance, monthlyContributionCents, 12, rate);
-    points.push({ year: y, balanceCents: balance });
-  }
-  return points;
+  return growYears(
+    startCents,
+    monthlyContributionCents,
+    years,
+    monthlyRateE12(realGrowthBps),
+    lumps,
+  ).map((balanceCents, year) => ({ year, balanceCents }));
 }
 
 /** What a balance supports per month at a safe-withdrawal rate. */
@@ -119,16 +148,22 @@ export function requiredMonthlyContribution(
   targetCents: number,
   years: number,
   realGrowthBps: number,
+  lumps: readonly number[] = [],
 ): number | null {
-  const months = years * 12;
   const rate = monthlyRateE12(realGrowthBps);
-  if (grow(startCents, 0, months, rate) >= targetCents) return 0;
-  if (months <= 0) return null;
+  const at = (monthly: number) =>
+    lumps.length === 0
+      ? grow(startCents, monthly, years * 12, rate)
+      : (growYears(startCents, monthly, years, rate, lumps).at(-1) as number);
+  if (at(0) >= targetCents) return 0;
+  if (years <= 0) return null;
+  // A big enough expense can outrun any contribution up to the target itself; search higher.
+  let hi = Math.max(targetCents, 1);
+  while (at(hi) < targetCents) hi *= 2;
   let lo = 0;
-  let hi = targetCents;
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
-    if (grow(startCents, mid, months, rate) >= targetCents) hi = mid;
+    if (at(mid) >= targetCents) hi = mid;
     else lo = mid + 1;
   }
   return lo;
