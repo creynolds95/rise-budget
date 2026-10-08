@@ -265,6 +265,8 @@ export const PushSettings = z.object({
   duplicate: z.boolean().default(false),
   unusual: z.boolean().default(false),
   firstTime: z.boolean().default(false),
+  surplusNegative: z.boolean().default(false),
+  toReview: z.boolean().default(false),
 });
 export type PushSettings = z.infer<typeof PushSettings>;
 export const PUSH_DEFAULTS: PushSettings = {
@@ -276,6 +278,8 @@ export const PUSH_DEFAULTS: PushSettings = {
   duplicate: false,
   unusual: false,
   firstTime: false,
+  surplusNegative: false,
+  toReview: false,
 };
 
 export const UserSettings = z.object({

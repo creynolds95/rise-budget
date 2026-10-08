@@ -1,20 +1,30 @@
 import { merchantName } from '@rise/shared/categorize';
-import { notices, toSend, type Notice, type NoticeInputs } from '@rise/shared/recurring';
+import {
+  notices,
+  SURPLUS_NEGATIVE_KEY,
+  toSend,
+  type Notice,
+  type NoticeInputs,
+} from '@rise/shared/recurring';
 import { PUSH_DEFAULTS, type PushSettings } from '@rise/shared/schemas';
 import {
+  clearSentKey,
   deletePushSubscription,
   flaggedForReview,
   getUser,
   getVapid,
+  listAccounts,
   listPushSubscriptions,
   listSeries,
   listSyncRuns,
   markSentStmts,
+  reviewCount,
   saveVapid,
   sentKeys,
   weekSummary,
 } from '../db';
 import type { UserId } from '../db/util';
+import { buildCashToPaydayProjection, cashAccountsOf } from './cashToPayday';
 import { localToday } from './dates';
 import { generateVapidKeys, sendPush, type VapidKeys } from './webpush';
 
@@ -31,7 +41,38 @@ export async function vapidKeys(userId: UserId, db: D1Database): Promise<VapidKe
 const shiftDay = (day: string, by: number): string =>
   new Date(Date.parse(`${day}T00:00:00Z`) + by * 86_400_000).toISOString().slice(0, 10);
 
-async function gather(userId: UserId, db: D1Database, today: string): Promise<NoticeInputs> {
+type PushUser = NonNullable<Awaited<ReturnType<typeof getUser>>>;
+
+/** Surplus's lowest point when it is under zero; null when fine. Only worked out when wanted. */
+async function surplusShortfall(
+  userId: UserId,
+  db: D1Database,
+  user: PushUser,
+  today: string,
+): Promise<{ shortfallCents: number; date: string } | null> {
+  const accounts = await listAccounts(userId, db);
+  const { cushionCents, dismissedPayMerchants } = user.settings;
+  const start = cashAccountsOf(user.settings, accounts).reduce((sum, a) => sum + a.balanceCents, 0);
+  const p = await buildCashToPaydayProjection(
+    db,
+    userId,
+    today,
+    start,
+    cushionCents,
+    dismissedPayMerchants.map((d) => d.merchant),
+  );
+  return p.freeToMoveCents < 0
+    ? { shortfallCents: -p.freeToMoveCents, date: p.lowestPoint.date }
+    : null;
+}
+
+async function gather(
+  userId: UserId,
+  db: D1Database,
+  user: PushUser,
+  today: string,
+  prefs: PushSettings,
+): Promise<NoticeInputs & { surplusChecked: boolean }> {
   const [series, flags, runs] = await Promise.all([
     listSeries(userId, db),
     flaggedForReview(userId, db),
@@ -48,7 +89,15 @@ async function gather(userId: UserId, db: D1Database, today: string): Promise<No
   const week = sunday
     ? await weekSummary(userId, db, shiftDay(today, -7), shiftDay(today, -1))
     : null;
+  const surplusChecked = prefs.surplusNegative;
+  const [surplusNegative, toReview] = await Promise.all([
+    surplusChecked ? surplusShortfall(userId, db, user, today) : null,
+    prefs.toReview ? reviewCount(userId, db) : 0,
+  ]);
   return {
+    surplusChecked,
+    surplusNegative,
+    review: prefs.toReview ? { day: today, count: toReview } : null,
     series: series.map((s) => ({
       ...s,
       name: merchantName({ merchantNormalized: s.merchantNormalized }),
@@ -69,7 +118,7 @@ const ALL_ON = Object.fromEntries(Object.keys(PUSH_DEFAULTS).map((k) => [k, true
 export async function markCurrentAsSent(userId: UserId, db: D1Database, now: Date): Promise<void> {
   const user = await getUser(userId, db);
   if (!user) return;
-  const all = notices(await gather(userId, db, localToday(user.timezone, now)), ALL_ON);
+  const all = notices(await gather(userId, db, user, localToday(user.timezone, now), ALL_ON), ALL_ON);
   const sent = await sentKeys(
     userId,
     db,
@@ -124,7 +173,11 @@ export async function runPush(
     unusual: push.unusual && alerts.unusual,
     firstTime: push.firstTime && alerts.firstTime,
   };
-  const all = notices(await gather(userId, db, localToday(user.timezone, now)), prefs);
+  const inputs = await gather(userId, db, user, localToday(user.timezone, now), prefs);
+  // Recovered: the next dip is a new one and may be told again.
+  if (inputs.surplusChecked && !inputs.surplusNegative)
+    await clearSentKey(userId, db, SURPLUS_NEGATIVE_KEY);
+  const all = notices(inputs, prefs);
   const { send, mark } = toSend(
     all,
     await sentKeys(
