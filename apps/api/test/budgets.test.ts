@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { runHousekeeping } from '../src/backup/run';
 import { centsToDecimal } from '../src/sync/mock';
+import { refreshRecurring } from '../src/lib/recurring';
 import { runSync } from '../src/sync/run';
 import type { SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
@@ -43,6 +44,18 @@ const BUDGETS: [path: string, rows: number][] = [
   ['/transactions?q=MERCHANT%2012', 3_000],
   ['/transactions?direction=in', 3_500],
   ['/transactions/TXN', 50],
+  // Tags and taxes (SPEC §3.7): a tag drives its own read, so a rare one is cheap.
+  ['/transactions?tag=TAG', 250],
+  ['/transactions?category=CAT&period=2026-09', 100],
+  // A search can't use an index, so its totals read the history once.
+  ['/transactions/totals?q=MERCHANT%2012', 11_000],
+  ['/transactions/totals?direction=out&from=2026-09-01&to=2026-09-30', 300],
+  ['/transactions/totals?account=ACCT', 1_600],
+  ['/transactions/totals?category=CAT', 650],
+  ['/transactions/totals?category=CAT&from=2026-01-01&to=2026-10-31', 200],
+  ['/transactions/totals?tag=TAG', 60],
+  ['/reports/tax?year=2026', 5_000],
+  ['/reports/tax?year=2025', 6_500],
   ['/sync/status', 100],
   ['/recurring', 150],
   ['/cash-to-payday', 150],
@@ -78,12 +91,26 @@ describe('rows read on a production-sized database', () => {
   it('every screen stays within its budget', async () => {
     const s = await signedInUser();
     const ids = await seedProdShape(s.userId, 'bud');
+    // A rare tag: 15 of the 7.4k transactions.
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO tag (id, user_id, name, created_at) VALUES ('budtag', ?1, 'Trip', ?2)",
+      ).bind(s.userId, '2026-10-01T00:00:00.000Z'),
+      env.DB.prepare(
+        `INSERT INTO txn_tag (txn_id, tag_id, user_id)
+         SELECT id, 'budtag', user_id FROM txn WHERE user_id = ?1 AND id LIKE 'budt%'
+         ORDER BY id LIMIT 15 OFFSET 3000`,
+      ).bind(s.userId),
+      // A tax heading on a busy category, for the tax pack.
+      env.DB.prepare("UPDATE category SET tax_kind = 'business_expense' WHERE id = 'budc3'"),
+    ]);
     const failures: string[] = [];
     for (const [template, budget] of BUDGETS) {
       const path = template
         .replace('ACCT', ids.accountId)
         .replace('CAT', ids.categoryId)
-        .replace('TXN', ids.txnId);
+        .replace('TXN', ids.txnId)
+        .replace('TAG', 'budtag');
       bySql.clear();
       let status = 0;
       const reads = await rowsRead(async () => {
@@ -163,6 +190,15 @@ describe('rows read on a production-sized database', () => {
         40,
       ],
       ['sync, 2 new per account', () => runSync(env.DB, s.userId, source(2), { now }), 35_000, 320],
+      // Radar and charge flags (SPEC §7.1, §8.1) write only what changed: a second refresh
+      // over the same data writes nothing.
+      ['recurring refresh', () => refreshRecurring(env.DB, s.userId, '2026-10-02'), 28_000, 50],
+      [
+        'recurring refresh again, nothing changed',
+        () => refreshRecurring(env.DB, s.userId, '2026-10-02'),
+        28_000,
+        0,
+      ],
       // Nightly cleanup; the backup itself is the GitHub workflow's `wrangler d1 export`. Its
       // writes are the retention prunes.
       ['housekeeping', () => runHousekeeping(env.DB, env.BACKUPS, now), 25_000, 8_000],

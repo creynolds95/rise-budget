@@ -148,6 +148,63 @@ export const sortKey = (t: Transaction, sort: TxnSort): string =>
   sort.startsWith('amount') ? String(Math.abs(t.amountCents)) : t.postedAt;
 
 /**
+ * Where the rows come from. A narrow filter (a tag, or a category in one month) drives the read
+ * from its own index and looks each transaction up by id, so a rare tag reads its few rows
+ * instead of walking the whole history by date looking for them. CROSS JOIN pins that order.
+ */
+interface Driver {
+  from: string;
+  binds: unknown[];
+  /** The filter this driver already applies, left out of the WHERE. */
+  covers: 'tag' | 'category';
+}
+
+const driven = (sub: string) => `(${sub}) d CROSS JOIN txn t ON t.id = d.id`;
+
+function txnDriver(userId: UserId, f: TxnFilters, forTotals: boolean): Driver | null {
+  if (f.tagIds?.length)
+    return {
+      from: driven(
+        `SELECT DISTINCT tt.txn_id AS id FROM txn_tag tt INDEXED BY ix_txn_tag_tag
+         WHERE tt.user_id = ? AND tt.tag_id IN (SELECT value FROM json_each(?))`,
+      ),
+      binds: [userId, JSON.stringify(f.tagIds)],
+      covers: 'tag',
+    };
+  // A category in a month reads its splits there, spread parts included (SPEC §3.6).
+  if (f.categoryIds?.length && f.period)
+    return {
+      from: driven(
+        `SELECT DISTINCT s.txn_id AS id FROM split s INDEXED BY ix_split_period_cat
+         WHERE s.user_id = ? AND s.period_id = ? AND s.category_id IN (SELECT value FROM json_each(?))`,
+      ),
+      binds: [userId, f.period, JSON.stringify(f.categoryIds)],
+      covers: 'category',
+    };
+  // Totals sum every match, so they read a category's splits month by month off the
+  // (user, period, category) index rather than test every transaction. A split is never in a
+  // month before its transaction's, nor more than 11 after (a spread), so the dates bound it.
+  if (forTotals && f.categoryIds?.length)
+    return {
+      from: driven(
+        `WITH RECURSIVE m(id) AS (
+           SELECT COALESCE(substr(?, 1, 7),
+             (SELECT substr(MIN(posted_at), 1, 7) FROM txn WHERE user_id = ?))
+           UNION ALL SELECT strftime('%Y-%m', id || '-01', '+1 month') FROM m
+           WHERE id < COALESCE(strftime('%Y-%m', ?, '+11 months'),
+             (SELECT strftime('%Y-%m', MAX(posted_at), '+11 months') FROM txn WHERE user_id = ?)))
+         SELECT DISTINCT s.txn_id AS id FROM m
+         CROSS JOIN split s INDEXED BY ix_split_period_cat
+           ON s.user_id = ? AND s.period_id = m.id
+             AND s.category_id IN (SELECT value FROM json_each(?))`,
+      ),
+      binds: [f.from ?? null, userId, f.to ?? null, userId, userId, JSON.stringify(f.categoryIds)],
+      covers: 'category',
+    };
+  return null;
+}
+
+/**
  * The WHERE clauses for a filter, each bound in order. Only the filters in use go into the
  * SQL: an always-present "?n IS NULL OR …" clause stops SQLite using an index, so every list
  * read and sorted the whole history.
@@ -156,6 +213,7 @@ function txnWhere(
   userId: UserId,
   f: TxnFilters,
   sort: { after: string },
+  driver: Driver | null,
 ): { where: string[]; binds: unknown[] } {
   const where: string[] = [];
   const binds: unknown[] = [];
@@ -168,22 +226,22 @@ function txnWhere(
   if (f.accountIds?.length === 1) add('t.account_id = ?', f.accountIds[0]);
   else if (f.accountIds?.length)
     add('t.account_id IN (SELECT value FROM json_each(?))', JSON.stringify(f.accountIds));
-  // With a month, a category reads its splits in that month — a spread charge shows in every
-  // month it draws on (SPEC §3.6), straight off the (user, period, category) index.
-  if (f.categoryIds?.length && f.period)
-    add(
-      `t.id IN (SELECT s.txn_id FROM split s WHERE s.user_id = ? AND s.period_id = ?
-         AND s.category_id IN (SELECT value FROM json_each(?)))`,
-      userId,
-      f.period,
-      JSON.stringify(f.categoryIds),
-    );
-  else if (f.categoryIds?.length)
-    add(
-      `EXISTS (SELECT 1 FROM split s WHERE s.user_id = t.user_id AND s.txn_id = t.id
-         AND s.category_id IN (SELECT value FROM json_each(?)))`,
-      JSON.stringify(f.categoryIds),
-    );
+  if (driver?.covers !== 'category') {
+    if (f.categoryIds?.length && f.period)
+      add(
+        `t.id IN (SELECT s.txn_id FROM split s WHERE s.user_id = ? AND s.period_id = ?
+           AND s.category_id IN (SELECT value FROM json_each(?)))`,
+        userId,
+        f.period,
+        JSON.stringify(f.categoryIds),
+      );
+    else if (f.categoryIds?.length)
+      add(
+        `EXISTS (SELECT 1 FROM split s WHERE s.user_id = t.user_id AND s.txn_id = t.id
+           AND s.category_id IN (SELECT value FROM json_each(?)))`,
+        JSON.stringify(f.categoryIds),
+      );
+  }
   if (f.notAccountIds?.length)
     add('t.account_id NOT IN (SELECT value FROM json_each(?))', JSON.stringify(f.notAccountIds));
   if (f.notCategoryIds?.length)
@@ -191,12 +249,6 @@ function txnWhere(
       `NOT EXISTS (SELECT 1 FROM split s WHERE s.user_id = t.user_id AND s.txn_id = t.id
          AND s.category_id IN (SELECT value FROM json_each(?)))`,
       JSON.stringify(f.notCategoryIds),
-    );
-  if (f.tagIds?.length)
-    add(
-      `EXISTS (SELECT 1 FROM txn_tag tt WHERE tt.user_id = t.user_id AND tt.txn_id = t.id
-         AND tt.tag_id IN (SELECT value FROM json_each(?)))`,
-      JSON.stringify(f.tagIds),
     );
   if (f.q) {
     const like = `%${f.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
@@ -225,13 +277,16 @@ export async function listTransactions(
   limit: number,
 ): Promise<Transaction[]> {
   const sort = SORTS[f.sort ?? 'date_desc'];
-  const { where, binds } = txnWhere(userId, f, sort);
+  const driver = txnDriver(userId, f, false);
+  const { where, binds } = txnWhere(userId, f, sort, driver);
   const { results } = await db
     .prepare(
-      `SELECT * FROM txn t WHERE t.user_id = ?${where.map((w) => ` AND ${w}`).join('')}
-       ORDER BY ${sort.order} LIMIT ?`,
+      `SELECT t.* FROM ${driver?.from ?? 'txn t'} WHERE t.user_id = ?${where
+        .map((w) => ` AND ${w}`)
+        .join('')}
+       ORDER BY ${sort.order}${driver ? ' /* scan-ok: sorts only the driven rows */' : ''} LIMIT ?`,
     )
-    .bind(userId, ...binds, limit)
+    .bind(...(driver?.binds ?? []), userId, ...binds, limit)
     .all<TxnRow>();
   return withSplitsAndTags(userId, db, results);
 }
@@ -260,17 +315,18 @@ export async function totalTransactions(
   db: D1Database,
   f: TxnFilters,
 ): Promise<{ outCents: number; inCents: number; count: number }> {
-  const { where, binds } = txnWhere(userId, { ...f, after: undefined }, SORTS.date_desc);
+  const driver = txnDriver(userId, f, true);
+  const { where, binds } = txnWhere(userId, { ...f, after: undefined }, SORTS.date_desc, driver);
   const row = await db
     .prepare(
       `SELECT COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents END), 0) AS out_cents,
               COALESCE(-SUM(CASE WHEN t.amount_cents < 0 THEN t.amount_cents END), 0) AS in_cents,
               COUNT(*) AS n
-       FROM txn t WHERE t.user_id = ? AND t.is_transfer = 0 AND t.review_state != 'dropped'${where
+       FROM ${driver?.from ?? 'txn t'} WHERE t.user_id = ? AND t.is_transfer = 0 AND t.review_state != 'dropped'${where
          .map((w) => ` AND ${w}`)
          .join('')} /* scan-ok: one pass over the filtered rows, on demand */`,
     )
-    .bind(userId, ...binds)
+    .bind(...(driver?.binds ?? []), userId, ...binds)
     .first<{ out_cents: number; in_cents: number; n: number }>();
   return { outCents: row?.out_cents ?? 0, inCents: row?.in_cents ?? 0, count: row?.n ?? 0 };
 }
@@ -285,8 +341,9 @@ export async function tagIdsFor(
   if (txnIds.length === 0) return out;
   const { results } = await db
     .prepare(
-      `SELECT tt.txn_id, tt.tag_id FROM json_each(?2) j CROSS JOIN txn_tag tt ON tt.txn_id = j.value
-       WHERE tt.user_id = ?1`,
+      `SELECT tt.txn_id, tt.tag_id FROM json_each(?2) j
+       CROSS JOIN txn_tag tt INDEXED BY sqlite_autoindex_txn_tag_1
+         ON tt.user_id = ?1 AND tt.txn_id = j.value`,
     )
     .bind(userId, JSON.stringify(txnIds))
     .all<{ txn_id: string; tag_id: string }>();

@@ -124,9 +124,10 @@ export async function setTxnTags(
 
 /**
  * The year's tax rows: splits filed to a category with a tax heading, and whole transactions
- * carrying a tag with one. Read from the year's transactions by date, so it costs one year of
- * rows however long the history. CROSS JOIN pins that order: left free, the planner walked
- * every split the user has.
+ * carrying a tag with one. Driven from the few tax categories and tags: each tax category's
+ * splits month by month off the (user, period, category) index, from the year's first month to
+ * 11 past its last (a spread part is never earlier than its charge, nor more than 11 later),
+ * then each transaction by id. CROSS JOIN pins that order.
  */
 export async function taxRows(
   userId: UserId,
@@ -146,13 +147,19 @@ export async function taxRows(
   const [cats, tags] = await db.batch<Row>([
     db
       .prepare(
-        `SELECT t.id AS txn_id, t.posted_at, COALESCE(t.merchant_display, t.merchant_normalized) AS merchant,
+        `WITH RECURSIVE m(id) AS (
+           SELECT substr(?2, 1, 7)
+           UNION ALL SELECT strftime('%Y-%m', id || '-01', '+1 month') FROM m
+           WHERE id < strftime('%Y-%m', ?3, '+11 months'))
+         SELECT t.id AS txn_id, t.posted_at, COALESCE(t.merchant_display, t.merchant_normalized) AS merchant,
                 t.account_id, s.amount_cents, c.tax_kind AS kind, c.name AS source
-         FROM txn t
-         CROSS JOIN split s ON s.user_id = t.user_id AND s.txn_id = t.id
-         JOIN category c ON c.user_id = s.user_id AND c.id = s.category_id
-         WHERE t.user_id = ?1 AND t.posted_at BETWEEN ?2 AND ?3
-           AND t.review_state != 'dropped' AND c.tax_kind IS NOT NULL`,
+         FROM category c
+         CROSS JOIN m
+         CROSS JOIN split s INDEXED BY ix_split_period_cat
+           ON s.user_id = c.user_id AND s.period_id = m.id AND s.category_id = c.id
+         CROSS JOIN txn t ON t.id = s.txn_id
+         WHERE c.user_id = ?1 AND c.tax_kind IS NOT NULL AND t.user_id = ?1
+           AND t.posted_at BETWEEN ?2 AND ?3 AND t.review_state != 'dropped'`,
       )
       .bind(userId, from, to),
     db
