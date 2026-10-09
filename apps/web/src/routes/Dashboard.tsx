@@ -8,7 +8,7 @@ import { Link, useNavigate } from 'react-router';
 import { NetWorthSection } from './Accounts';
 import { surplusTone } from '../lib/surplus';
 import { SummaryCard } from './Budget';
-import { SpendingSection } from '../components/SpendingSection';
+import { SpendingSection, WhereItWent } from '../components/SpendingSection';
 import { HealthNotes } from '../components/HealthNotes';
 import { quietInstitutions, StaleNotes } from '../components/StaleNotes';
 import { MissedRow, useMissed } from '../components/MissedCharges';
@@ -184,10 +184,11 @@ export function Dashboard() {
       </section>
     ),
     spending: (
-      <SpendingSection
+      <SpendingSection month={month} spentCents={t.spentCents} elapsedDays={p.pace.elapsedDays} />
+    ),
+    whereItWent: (
+      <WhereItWent
         month={month}
-        spentCents={t.spentCents}
-        elapsedDays={p.pace.elapsedDays}
         categories={p.categories}
         lastCategories={last.data?.categories}
         names={categories.data}
