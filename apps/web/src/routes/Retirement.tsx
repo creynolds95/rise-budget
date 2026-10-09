@@ -1,14 +1,12 @@
 import { Loading, PlanUnknown, useSettingsState } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { monthlyIncomeFor } from '@rise/shared/retirement';
 import type { RetirementPlan } from '@rise/shared/schemas';
 
 type LifeEvent = RetirementPlan['lifeEvents'][number];
 const clampClaim = (n: number) => Math.min(70, Math.max(62, n));
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
-import { FanChart } from '../components/primitives/FanChart';
 import { IconButton } from '../components/primitives/Icon';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -19,14 +17,7 @@ import { Toggle } from '../components/primitives/Toggle';
 import { api } from '../lib/api';
 import { formatCents } from '../lib/money';
 import { useAccounts, useMe } from '../lib/queries';
-import {
-  AGE_MAX,
-  AGE_MIN,
-  DEFAULT_PLAN,
-  fanView,
-  retirementView,
-  totalMonthly,
-} from '../lib/retirement';
+import { AGE_MAX, AGE_MIN, DEFAULT_PLAN, retirementView, totalMonthly } from '../lib/retirement';
 
 /** A whole-number or percent box that commits on blur, reverting what it can't read. */
 function NumberField({
@@ -136,7 +127,6 @@ export function Retirement() {
   const edit = (patch: Partial<RetirementPlan>) => save.mutate({ ...plan, ...patch });
   const monthly = totalMonthly(plan, ids);
   const v = retirementView(plan, start, monthly, shownAge);
-  const f = fanView(plan, start, monthly, shownAge);
   const contributionOf = (id: string) =>
     plan.contributions.find((c) => c.accountId === id)?.monthlyCents ?? 0;
   const setContribution = (id: string, monthlyCents: number) =>
@@ -183,19 +173,6 @@ export function Retirement() {
               <span>Age {shownAge}</span>
               <span>{AGE_MAX}</span>
             </div>
-            {f.length > 1 && (
-              <div className="mt-4">
-                <FanChart
-                  label="Range of projected balances"
-                  fan={f}
-                  withdrawalBps={plan.withdrawalBps}
-                  income={(b) =>
-                    monthlyIncomeFor(Math.max(0, b - v.setAsideCents), plan.withdrawalBps) +
-                    v.ssMonthlyCents
-                  }
-                />
-              </div>
-            )}
           </>
         }
         facts={
