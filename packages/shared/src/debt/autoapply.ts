@@ -8,6 +8,8 @@ export interface AutoLoan {
   accountId: string;
   aprMilliPct: number;
   paymentCents: number;
+  /** Part of the payment that never reduces the balance (taxes and insurance). */
+  escrowCents?: number;
   dueDay: number;
   /** The last month ("2026-10") whose payment is already in the balance. */
   appliedThrough: string;
@@ -105,7 +107,7 @@ export function planAutoApply(loans: AutoLoan[], txns: AutoTxn[], today: string)
       out.push({
         accountId: l.accountId,
         beforeCents: l.owedCents,
-        afterCents: stepBalance(l.owedCents, l.aprMilliPct, l.paymentCents),
+        afterCents: stepBalance(l.owedCents, l.aprMilliPct, l.paymentCents - (l.escrowCents ?? 0)),
         asOf: t.postedAt,
         txnId: t.id,
       });

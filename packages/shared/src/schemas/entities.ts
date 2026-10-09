@@ -90,6 +90,8 @@ export const DebtLoanPlan = z.object({
   /** Annual rate in thousandths of a percent: 5.875% is 5875. */
   aprMilliPct: z.int().min(0).max(100_000),
   paymentCents: Cents.min(0),
+  /** Taxes, insurance and mortgage insurance inside `paymentCents`; the schedule skips it. */
+  escrowCents: Cents.min(0).default(0),
   /** Day of the month the payment is due (clamped to short months). */
   dueDay: z.int().min(1).max(31),
   /** Student loans pool together; the mortgage never joins them. */
