@@ -350,6 +350,11 @@ export const PatchTagBody = z.object({
   taxKind: TaxKind.nullable().optional(),
 });
 export const SetTagsBody = z.object({ tagIds: z.array(Id).max(20) });
+/** Add these tags to these transactions; tags they already have are left alone. */
+export const BulkTagBody = z.object({
+  ids: z.array(Id).min(1).max(1000),
+  tagIds: z.array(Id).min(1).max(20),
+});
 
 /** A tag with what's filed under it, all time. */
 export const TagSummary = z.object({

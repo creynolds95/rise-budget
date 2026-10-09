@@ -115,3 +115,32 @@ describe('tax pack', () => {
     expect((await s.api('GET', '/reports/tax')).status).toBe(400);
   });
 });
+
+describe('bulk tags', () => {
+  it('adds tags to many transactions, keeps existing ones, and refuses foreign ids or tags', async () => {
+    const s = await setup();
+    const a = await s.add('2026-09-02', 35_500, 'LIONHEART ACADEMY', s.food.id);
+    const b = await s.add('2026-09-09', 35_500, 'LIONHEART ACADEMY', s.food.id);
+    const school = (await s.api('POST', '/tags', { name: 'School' })).json;
+    const kids = (await s.api('POST', '/tags', { name: 'Kids' })).json;
+    await s.api('PUT', `/transactions/${a.id}/tags`, { tagIds: [school.id] });
+    const r = await s.api('POST', '/transactions/bulk-tags', {
+      ids: [a.id, b.id],
+      tagIds: [school.id, kids.id],
+    });
+    expect(r.status).toBe(200);
+    for (const id of [a.id, b.id]) {
+      const t = (await s.api('GET', `/transactions/${id}`)).json;
+      expect(t.tagIds.slice().sort()).toEqual([kids.id, school.id].sort());
+    }
+    expect(
+      (await s.api('POST', '/transactions/bulk-tags', { ids: [a.id], tagIds: ['nope'] })).status,
+    ).toBe(400);
+    const other = await signedInUser();
+    const theirs = await call('POST', '/transactions/bulk-tags', {
+      access: other.access,
+      body: { ids: [a.id], tagIds: [school.id] },
+    });
+    expect(theirs.status).toBe(400);
+  });
+});
