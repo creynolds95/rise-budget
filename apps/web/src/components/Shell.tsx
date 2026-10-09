@@ -120,11 +120,12 @@ export function Shell() {
     .toUpperCase();
   return (
     <PageBarSlotContext.Provider value={barSlot}>
-      <div className="flex max-lg:fixed max-lg:inset-x-0 max-lg:top-[var(--banner-h,0px)] max-lg:h-[calc(var(--app-h,100dvh)-var(--banner-h,0px))] min-h-0 flex-col lg:block lg:min-h-dvh lg:pl-72">
+      <div className="flex max-lg:h-full min-h-0 flex-col lg:block lg:min-h-dvh lg:pl-72">
         {/* Desktop sidebar is `fixed` so it can never be scrolled past; the content column gets
-          matching `lg:pl-72` padding. The phone tab bar is deliberately NOT fixed: it is the
-          last item of a full-height column and `sticky`, because iOS can leave a
-          fixed-position bar stranded mid-screen after a long session. */}
+          matching `lg:pl-72` padding. The phone tab bar is deliberately neither fixed nor sticky:
+          it is the last item of a full-height column (html/body/#root at 100%, styles.css), so it
+          ends where the window does. iOS can leave a fixed-position bar stranded mid-screen after
+          a long session. */}
         <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72 lg:flex-col lg:justify-between lg:gap-6 lg:overflow-y-auto lg:border-r lg:border-hairline lg:bg-surface lg:px-4 lg:py-6">
           <div className="flex flex-col gap-7">
             <span className="px-3 font-serif text-xl tracking-tight text-sage-700">Rise</span>
@@ -240,9 +241,9 @@ export function Shell() {
 
         <nav
           aria-label="Tabs"
-          className="sticky bottom-0 z-20 border-t border-hairline bg-canvas pb-[env(safe-area-inset-bottom)] lg:hidden"
+          className="relative z-20 shrink-0 border-t border-hairline bg-canvas pb-[env(safe-area-inset-bottom)] lg:hidden"
         >
-          {/* Rides the sticky tab bar rather than being `fixed`, for the same iOS reason. */}
+          {/* Rides the tab bar rather than being `fixed`, for the same iOS reason. */}
           <Floater className="absolute inset-x-0 bottom-full mb-3" />
           <ul className="mx-auto grid max-w-2xl grid-cols-4">
             {TABS.map((t) => (

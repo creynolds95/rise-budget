@@ -187,13 +187,14 @@ export function Settings() {
 function screenReading(): string {
   const probe = document.createElement('div');
   probe.style.cssText =
-    'position:fixed;visibility:hidden;padding-bottom:env(safe-area-inset-bottom)';
+    'position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)';
   document.body.appendChild(probe);
+  const top = parseFloat(getComputedStyle(probe).paddingTop) || 0;
   const inset = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
   probe.remove();
   const navs = document.querySelectorAll('nav[aria-label="Tabs"]');
   const navBottom = Math.round(navs[navs.length - 1]?.getBoundingClientRect().bottom ?? 0);
-  return `screen ${screen.height} · window ${innerHeight} · app ${getComputedStyle(document.documentElement).getPropertyValue('--app-h').trim()} · bar ends ${navBottom} · inset ${inset}`;
+  return `screen ${screen.height} · window ${innerHeight} · bar ends ${navBottom} · inset ${top}/${inset}`;
 }
 
 function AppVersion({ timeZone }: { timeZone: string | undefined }) {
