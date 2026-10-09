@@ -193,7 +193,7 @@ function screenReading(): string {
   probe.remove();
   const navs = document.querySelectorAll('nav[aria-label="Tabs"]');
   const navBottom = Math.round(navs[navs.length - 1]?.getBoundingClientRect().bottom ?? 0);
-  return `screen ${screen.height} · window ${innerHeight} · bar ends ${navBottom} · inset ${inset}`;
+  return `screen ${screen.height} · window ${innerHeight} · app ${getComputedStyle(document.documentElement).getPropertyValue('--app-h').trim()} · bar ends ${navBottom} · inset ${inset}`;
 }
 
 function AppVersion({ timeZone }: { timeZone: string | undefined }) {
