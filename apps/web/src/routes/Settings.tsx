@@ -183,6 +183,19 @@ export function Settings() {
   );
 }
 
+/** Phone screen geometry, so a bar that sits short of the bottom edge can be diagnosed from a screenshot. */
+function screenReading(): string {
+  const probe = document.createElement('div');
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;padding-bottom:env(safe-area-inset-bottom)';
+  document.body.appendChild(probe);
+  const inset = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+  probe.remove();
+  const navs = document.querySelectorAll('nav[aria-label="Tabs"]');
+  const navBottom = Math.round(navs[navs.length - 1]?.getBoundingClientRect().bottom ?? 0);
+  return `screen ${screen.height} · window ${innerHeight} · bar ends ${navBottom} · inset ${inset}`;
+}
+
 function AppVersion({ timeZone }: { timeZone: string | undefined }) {
   const latest = useLatestBuild();
   const [updating, setUpdating] = useState(false);
@@ -204,6 +217,8 @@ function AppVersion({ timeZone }: { timeZone: string | undefined }) {
         ) : (
           latest && <span className="text-ink-faint">Latest</span>
         )}
+        <br />
+        <span className="text-ink-faint">{screenReading()}</span>
       </p>
       {stale && (
         <Button

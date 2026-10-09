@@ -120,7 +120,7 @@ export function Shell() {
     .toUpperCase();
   return (
     <PageBarSlotContext.Provider value={barSlot}>
-      <div className="flex max-lg:h-full min-h-0 flex-col lg:block lg:min-h-dvh lg:pl-72">
+      <div className="flex max-lg:fixed max-lg:inset-0 max-lg:top-[var(--banner-h,0px)] min-h-0 flex-col lg:block lg:min-h-dvh lg:pl-72">
         {/* Desktop sidebar is `fixed` so it can never be scrolled past; the content column gets
           matching `lg:pl-72` padding. The phone tab bar is deliberately NOT fixed: it is the
           last item of a full-height column and `sticky`, because iOS can leave a
