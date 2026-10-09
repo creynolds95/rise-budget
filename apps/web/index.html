@@ -13,8 +13,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Rise" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
     <title>Rise</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -38,9 +38,9 @@
         transition: opacity 240ms ease-out;
       }
       #splash img {
-        width: 72px;
-        height: 72px;
-        border-radius: 16px;
+        width: 160px;
+        height: 160px;
+        border-radius: 36px;
         animation: splash-rise 1400ms ease-in-out infinite;
       }
       @keyframes splash-rise {
@@ -71,7 +71,7 @@
     <!-- On a warm cache the app can mount in a handful of milliseconds — too fast to read
          anything as a splash. main.tsx uses this to hold it visible for a minimum stretch. -->
     <script src="/boot.js"></script>
-    <div id="splash" aria-hidden="true"><img src="/icon-192.png" alt="" /></div>
+    <div id="splash" aria-hidden="true"><img src="/icon-512.png" alt="" /></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
