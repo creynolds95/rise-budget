@@ -6,7 +6,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import { App } from './App';
-import { installAppHeight } from './lib/appHeight';
 import { ApiError, onAuthChange } from './lib/api';
 import { AuthProvider } from './lib/auth';
 import { installEdgeGuard, installNoZoom } from './lib/gestures';
@@ -45,7 +44,6 @@ const persister = createAsyncStoragePersister({
 });
 
 installNoZoom();
-installAppHeight();
 installEdgeGuard();
 installKeyboardAvoidance();
 
