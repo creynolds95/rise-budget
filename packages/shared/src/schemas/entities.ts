@@ -29,6 +29,7 @@ export const DASHBOARD_TILES = [
   'surplus',
   'budget',
   'spending',
+  'whereItWent',
   'transactions',
   'netWorth',
   'comingUp',

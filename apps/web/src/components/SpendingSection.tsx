@@ -25,17 +25,13 @@ export function SpendingSection(props: {
   month: string;
   spentCents: number;
   elapsedDays: number;
-  categories: ViewCategory[];
-  lastCategories: ViewCategory[] | undefined;
-  names: Category[] | undefined;
 }) {
   const { month, elapsedDays } = props;
   const prevMonth = addMonths(month, -1);
   const report = useSpendingReport(month).data;
 
   return (
-    <>
-      <section aria-labelledby="spending-h">
+    <section aria-labelledby="spending-h">
         <h2 id="spending-h" className="type-title">
           Spending
         </h2>
@@ -56,15 +52,7 @@ export function SpendingSection(props: {
             </>
           )}
         </div>
-      </section>
-
-      <WhereItWent
-        categories={props.categories}
-        lastCategories={props.lastCategories}
-        names={props.names}
-        prevMonth={prevMonth}
-      />
-    </>
+    </section>
   );
 }
 
@@ -138,12 +126,13 @@ function Legend(props: { color: string; label: string; children?: React.ReactNod
 }
 
 /** The biggest categories this month, each against itself last month. */
-function WhereItWent(props: {
+export function WhereItWent(props: {
+  month: string;
   categories: ViewCategory[];
   lastCategories: ViewCategory[] | undefined;
   names: Category[] | undefined;
-  prevMonth: string;
 }) {
+  const prevMonth = addMonths(props.month, -1);
   // Before the early return: a hook after it is skipped on an empty month, and React throws
   // when the next render (spending arrives) calls one more hook than the last.
   const navigate = useNavigate();
@@ -158,7 +147,7 @@ function WhereItWent(props: {
   const rest = spent.length - top.length;
 
   return (
-    <section className="mt-10" aria-labelledby="where-h">
+    <section aria-labelledby="where-h">
       <h2 id="where-h" className="type-title">
         Where it went
       </h2>
@@ -199,10 +188,10 @@ function WhereItWent(props: {
                   </span>
                   <span className="w-24 shrink-0 text-right type-caption text-ink-faint">
                     {was === undefined || was === 0 ? (
-                      `none in ${short(props.prevMonth)}`
+                      `none in ${short(prevMonth)}`
                     ) : (
                       <>
-                        {short(props.prevMonth)} <MoneyText cents={was} tone="muted" whole />
+                        {short(prevMonth)} <MoneyText cents={was} tone="muted" whole />
                       </>
                     )}
                   </span>
