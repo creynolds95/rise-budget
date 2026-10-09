@@ -126,9 +126,15 @@
   /* Below lg the page doesn't scroll: Shell's #app-scroll does, so the bars stay put while the
      content bounces. The keyboard room moves from the body to that container. */
   @media (width < 64rem) {
+    /* 100%, not 100dvh: in the installed app dvh stops short of the home-indicator area and
+       leaves a blank band under the tab bar. */
+    html,
+    body,
+    #root {
+      height: 100%;
+    }
     html,
     body {
-      height: 100dvh;
       overflow: hidden;
     }
     body {

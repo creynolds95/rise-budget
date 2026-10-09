@@ -120,7 +120,7 @@ export function Shell() {
     .toUpperCase();
   return (
     <PageBarSlotContext.Provider value={barSlot}>
-      <div className="flex max-lg:h-[calc(100dvh-var(--banner-h,0px))] min-h-0 flex-col lg:block lg:min-h-dvh lg:pl-72">
+      <div className="flex max-lg:h-full min-h-0 flex-col lg:block lg:min-h-dvh lg:pl-72">
         {/* Desktop sidebar is `fixed` so it can never be scrolled past; the content column gets
           matching `lg:pl-72` padding. The phone tab bar is deliberately NOT fixed: it is the
           last item of a full-height column and `sticky`, because iOS can leave a
@@ -229,7 +229,8 @@ export function Shell() {
             id={SCROLLER_ID}
             className="min-h-0 flex-1 max-lg:overflow-y-auto max-lg:overscroll-y-auto max-lg:overscroll-x-none max-lg:pb-[var(--kb,0px)]"
           >
-            <main>
+            {/* A page shorter than the screen still overflows by a pixel, so it bounces too. */}
+            <main className="max-lg:min-h-[calc(100%+1px)]">
               <HeaderActionsContext.Provider value={setActions}>
                 <Outlet />
               </HeaderActionsContext.Provider>
