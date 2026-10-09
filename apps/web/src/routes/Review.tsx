@@ -1,4 +1,5 @@
 import { Loading } from '../components/Pending';
+import { PageBar } from '../lib/pageBar';
 import type { RuleOffer, Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -265,11 +266,11 @@ export function Review() {
 
   return (
     <div className="mx-auto max-w-2xl pb-28">
-      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft">
+      <PageBar>
         <BackLink to="/" label="Dashboard" />
         <h1 className="type-body font-semibold">Needs review</h1>
         <span />
-      </header>
+      </PageBar>
 
       {error && <p className="gutter py-2 text-clay">{error}</p>}
       <p className="gutter hidden pt-2 type-caption text-ink-faint md:block">
