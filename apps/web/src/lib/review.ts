@@ -4,7 +4,8 @@ import type { Transaction } from '@rise/shared/schemas';
 export type QueueItem = Transaction & { topCategoryIds: string[] };
 
 export type QueueRow =
-  { kind: 'txn'; t: QueueItem; band: Band } | { kind: 'transfer'; out: QueueItem; in: QueueItem };
+  | { kind: 'txn'; t: QueueItem; band: Band }
+  | { kind: 'transfer'; out: QueueItem; in: QueueItem };
 
 export interface QueueDay {
   date: string;

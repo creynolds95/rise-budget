@@ -128,3 +128,15 @@ describe('touching a line chart', () => {
     expect(nearestIndex(0.5, 1)).toBe(0);
   });
 });
+
+describe('niceTicks and axisLabel', () => {
+  it('rounds the scale up to a 1/2/5 step starting at zero', async () => {
+    const { niceTicks, axisLabel } = await import('./chart');
+    expect(niceTicks(525_834)).toEqual([0, 200_000, 400_000, 600_000]);
+    expect(niceTicks(0)[0]).toBe(0);
+    expect(axisLabel(0)).toBe('$0');
+    expect(axisLabel(52_000)).toBe('$520');
+    expect(axisLabel(1_250_000)).toBe('$12.5K');
+    expect(axisLabel(250_000_000)).toBe('$2.5M');
+  });
+});
