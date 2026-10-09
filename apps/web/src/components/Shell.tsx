@@ -127,7 +127,7 @@ export function Shell() {
             {TABS.map((t) => (
               <NavLink
                 key={t.tab}
-                {...tabLink(t.path, isActiveTab(t.path))}
+                {...tabLink(t.path, location.pathname === t.path)}
                 to={t.path}
                 end={t.path === '/'}
                 className={({ isActive }) =>
@@ -228,7 +228,7 @@ export function Shell() {
           {TABS.map((t) => (
             <li key={t.tab}>
               <NavLink
-                {...tabLink(t.path, isActiveTab(t.path))}
+                {...tabLink(t.path, location.pathname === t.path)}
                 to={t.path}
                 end={t.path === '/'}
                 className={({ isActive }) =>
