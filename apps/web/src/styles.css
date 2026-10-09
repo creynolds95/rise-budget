@@ -95,9 +95,11 @@
     -webkit-touch-callout: none;
     color-scheme: light dark;
     /* Fixed scale: no double-tap zoom, no rubber-banding the page sideways (a swipe back
-       on a tab root must not drag the page around). Charts opt back in with their own gestures. */
+       on a tab root must not drag the page around). Vertical overscroll stays on so the end of
+       a page bounces instead of stopping dead. Charts opt back in with their own gestures. */
     touch-action: manipulation;
-    overscroll-behavior: none;
+    overscroll-behavior-x: none;
+    overscroll-behavior-y: auto;
     -webkit-text-size-adjust: 100%;
     overflow-x: clip;
   }
