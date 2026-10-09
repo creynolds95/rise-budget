@@ -1,3 +1,5 @@
+import { scroller } from './scroller';
+
 /**
  * Freezes the page under a sheet or menu without moving anything. The body is NOT pinned with
  * `position: fixed`: on an installed iPhone PWA that re-lays-out the page and the viewport
@@ -11,6 +13,7 @@
  */
 let locks = 0;
 let saved: string | null = null;
+let savedScroller: { el: HTMLElement; overflowY: string } | null = null;
 
 export const isScrollLocked = () => locks > 0;
 
@@ -32,6 +35,12 @@ export function lockScroll(): () => void {
     const html = document.documentElement;
     saved = html.style.overflow;
     html.style.overflow = 'hidden';
+    // Below lg the page scrolls inside Shell's container instead (lib/scroller): freeze that too.
+    const sc = scroller();
+    if (sc) {
+      savedScroller = { el: sc, overflowY: sc.style.overflowY };
+      sc.style.overflowY = 'hidden';
+    }
     document.addEventListener('touchmove', onTouchMove, { passive: false });
   }
   let released = false;
@@ -42,5 +51,7 @@ export function lockScroll(): () => void {
     document.removeEventListener('touchmove', onTouchMove);
     document.documentElement.style.overflow = saved;
     saved = null;
+    if (savedScroller) savedScroller.el.style.overflowY = savedScroller.overflowY;
+    savedScroller = null;
   };
 }

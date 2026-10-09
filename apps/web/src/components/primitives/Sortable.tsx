@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { dropIndex, edgeScroll, moveItem } from '../../lib/reorder';
+import { scrollByY, scrollTop } from '../../lib/scroller';
 
 /**
  * The part of the screen the list shows through: below the sticky title bar, above the tab
@@ -68,7 +69,7 @@ export function Sortable<T extends { id: string }>({
     const s = start.current;
     if (!s) return;
     const from = items.findIndex((i) => i.id === s.id);
-    const dy = finger.current - s.y + window.scrollY - s.scroll;
+    const dy = finger.current - s.y + scrollTop() - s.scroll;
     setDrag({ id: s.id, dy, to: dropIndex(s.tops, s.heights, from, dy) });
   };
   const followRef = useRef(follow);
@@ -80,9 +81,9 @@ export function Sortable<T extends { id: string }>({
     const { top, bottom } = visibleBand();
     const step = edgeScroll(finger.current, top, bottom);
     if (step) {
-      const before = window.scrollY;
-      window.scrollBy(0, step);
-      if (window.scrollY !== before) followRef.current();
+      const before = scrollTop();
+      scrollByY(step);
+      if (scrollTop() !== before) followRef.current();
     }
     frame.current = requestAnimationFrame(tick);
   };
@@ -96,7 +97,7 @@ export function Sortable<T extends { id: string }>({
       start.current = {
         id,
         y: e.clientY,
-        scroll: window.scrollY,
+        scroll: scrollTop(),
         tops: els.map((el) => el?.offsetTop ?? 0),
         heights: els.map((el) => el?.offsetHeight ?? 0),
       };

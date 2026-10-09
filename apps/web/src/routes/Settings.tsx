@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BackLink } from '../components/BackLink';
+import { PageBar } from '../lib/pageBar';
 import { GroupHeading, PageHeader } from '../components/PageHeader';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { AddCategorySheet } from '../components/AddCategorySheet';
@@ -259,11 +260,11 @@ export function SettingsSection() {
   const back = backFrom(params.get('from'), { label: 'Settings', to: '/settings' });
   return (
     <div className="mx-auto max-w-2xl pb-16">
-      <header className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft">
+      <PageBar>
         <BackLink to={back.to} label={back.label} />
         <h1 className="type-body font-semibold">{SECTIONS[s]}</h1>
         <span id="settings-action" className="justify-self-end" />
-      </header>
+      </PageBar>
       <Suspense fallback={<SectionFallback />}>
         {s === 'reports' && <Reports />}
         {s === 'investments' && (
