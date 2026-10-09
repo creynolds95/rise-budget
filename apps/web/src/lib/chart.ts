@@ -4,6 +4,8 @@ export interface LinePoint {
   inferred: boolean;
   /** What a touch on this point reads out, e.g. the date. */
   label?: string;
+  /** Names of what finishes in the stretch of time this point stands for (a loan paid off). */
+  paid?: string[];
 }
 
 export interface Segment {

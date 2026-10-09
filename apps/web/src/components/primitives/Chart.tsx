@@ -175,6 +175,18 @@ export function Chart(
               ))}
             {props.kind === 'bar' && bars(props.bars)}
           </svg>
+          {/* HTML dots, not SVG circles: the svg stretches, a circle would turn oval. */}
+          {props.kind === 'line' &&
+            linePoints.map((pt, i) =>
+              pt.paid && xy[i] ? (
+                <span
+                  key={i}
+                  aria-hidden
+                  className="pointer-events-none absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sage-700 ring-2 ring-surface"
+                  style={{ left: `${(xy[i][0] / W) * 100}%`, top: `${(xy[i][1] / H) * 100}%` }}
+                />
+              ) : null,
+            )}
           {hit && at && (
             <>
               <span
@@ -197,6 +209,7 @@ export function Chart(
               >
                 {hit.label ? `${hit.label} · ` : ''}
                 {formatCents(hit.cents)}
+                {hit.paid && <span className="block">Paid off: {hit.paid.join(', ')}</span>}
               </span>
             </>
           )}
