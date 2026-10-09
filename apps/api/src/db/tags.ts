@@ -134,8 +134,10 @@ export async function addTxnTags(
     tagIds.map((tagId) =>
       db
         .prepare(
+          // Driven from the id list; CROSS JOIN pins that order so each id is a primary-key lookup.
           `INSERT OR IGNORE INTO txn_tag (txn_id, tag_id, user_id)
-           SELECT id, ?2, ?1 FROM txn WHERE user_id = ?1 AND id IN (SELECT value FROM json_each(?3))`,
+           SELECT t.id, ?2, ?1 FROM json_each(?3) j CROSS JOIN txn t ON t.id = j.value
+           WHERE t.user_id = ?1`,
         )
         .bind(userId, tagId, ids),
     ),
