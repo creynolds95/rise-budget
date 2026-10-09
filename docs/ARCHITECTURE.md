@@ -446,7 +446,7 @@ full descriptors, or amounts joined to identity.
 
 ## 6. Sync
 
-Hourly cron `0 * * * *`; a tick syncs only in the owner's chosen hours (`syncHours`, default every 2 h from 5am to 11pm local, max 12), skipped ticks write nothing. Weekly deep re-read at the first chosen hour on Sunday. Manual `POST /sync/run` is refused after 20 runs in 24 h (SimpleFIN allows 24).
+Per-minute cron `* * * * *`; a tick syncs only at the owner's chosen times (`syncTimes`, minutes after local midnight, default every 2 h from 5am to 11pm, max 12), skipped ticks write nothing. Weekly deep re-read at the earliest chosen time on Sunday. Manual `POST /sync/run` is refused after 20 runs in 24 h (SimpleFIN allows 24).
 
 ```
 for each synced account:

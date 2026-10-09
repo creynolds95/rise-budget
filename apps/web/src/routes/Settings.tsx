@@ -1,5 +1,5 @@
 import { isTransfersGroup } from '@rise/shared/categorize';
-import { SYNC_HOURS_DEFAULT, SYNC_HOURS_MAX } from '@rise/shared/schemas';
+import { SYNC_TIMES_DEFAULT, SYNC_TIMES_MAX } from '@rise/shared/schemas';
 import type {
   AlertSettings,
   PushSettings,
@@ -922,48 +922,74 @@ function RulesSection() {
   );
 }
 
-const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'a' : 'p'}`;
+const timeLabel = (m: number) => {
+  const h = Math.floor(m / 60);
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+const timeValue = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-/** Which hours the automatic sync runs. SimpleFIN allows 24 requests a day, so at most 12. */
+/** When the automatic sync runs. SimpleFIN allows 24 requests a day, so at most 12 times. */
 function SyncSchedule() {
   const me = useMe().data;
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const hours = me?.settings.syncHours ?? SYNC_HOURS_DEFAULT;
+  const times = me?.settings.syncTimes ?? SYNC_TIMES_DEFAULT;
   const patch = useMutation({
-    mutationFn: (syncHours: number[]) => api('PATCH', '/me/settings', { syncHours }),
+    mutationFn: (syncTimes: number[]) => api('PATCH', '/me/settings', { syncTimes }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
     onError: (e) => setError(e instanceof ApiError ? e.message : 'Could not save.'),
   });
-  const toggle = (h: number) => {
+  const save = (next: number[]) => {
     setError(null);
-    const next = hours.includes(h) ? hours.filter((x) => x !== h) : [...hours, h];
-    if (next.length < 1 || next.length > SYNC_HOURS_MAX) {
-      setError(next.length < 1 ? 'Keep at least one hour.' : `At most ${SYNC_HOURS_MAX} hours.`);
-      return;
-    }
+    if (next.length < 1) return setError('Keep at least one time.');
+    if (next.length > SYNC_TIMES_MAX) return setError(`At most ${SYNC_TIMES_MAX} times.`);
+    if (new Set(next).size !== next.length) return setError('That time is already there.');
     patch.mutate(next.sort((a, b) => a - b));
+  };
+  const change = (i: number, value: string) => {
+    const [h, m] = value.split(':').map(Number);
+    if (h === undefined || m === undefined || Number.isNaN(h) || Number.isNaN(m)) return;
+    save(times.map((t, j) => (j === i ? h * 60 + m : t)));
+  };
+  const add = () => {
+    let t = ((times[times.length - 1] ?? 0) + 120) % 1440;
+    while (times.includes(t)) t = (t + 1) % 1440;
+    save([...times, t]);
   };
   return (
     <>
       <h2 className="mt-8 type-label text-ink-muted">Sync at</h2>
-      <div className="mt-2 grid grid-cols-6 gap-2">
-        {Array.from({ length: 24 }, (_, h) => (
-          <button
-            key={h}
-            type="button"
-            aria-pressed={hours.includes(h)}
-            onClick={() => toggle(h)}
-            className={`min-h-11 rounded-input border tabular-nums ${
-              hours.includes(h)
-                ? 'border-sage-500 bg-sage-100 font-semibold'
-                : 'border-hairline bg-surface text-ink-muted'
-            }`}
+      <ul className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        {times.map((t, i) => (
+          <li
+            key={t}
+            className="flex min-h-12 items-center justify-between border-b border-hairline"
           >
-            {hourLabel(h)}
-          </button>
+            <label className="relative flex min-h-11 flex-1 items-center tabular-nums">
+              {timeLabel(t)}
+              <input
+                type="time"
+                aria-label={`Sync time ${i + 1}`}
+                value={timeValue(t)}
+                onChange={(e) => change(i, e.target.value)}
+                className="absolute inset-0 size-full cursor-pointer opacity-0"
+              />
+            </label>
+            <IconButton
+              icon="close"
+              label={`Remove ${timeLabel(t)}`}
+              disabled={times.length <= 1}
+              onClick={() => save(times.filter((x) => x !== t))}
+            />
+          </li>
         ))}
-      </div>
+      </ul>
+      {times.length < SYNC_TIMES_MAX && (
+        <Button variant="quiet" className="-ml-4 mt-2" onClick={add}>
+          Add time
+        </Button>
+      )}
       {error && <p className="mt-2 text-clay">{error}</p>}
     </>
   );
@@ -1028,7 +1054,7 @@ function SyncSection() {
       <p className="mt-1 text-ink-muted">
         {mode === 'off'
           ? 'Rise will pull from your banks on a schedule once SimpleFIN is connected. It can only read; it can never move money.'
-          : 'Rise syncs automatically at the hours below. It can only read; it can never move money.'}
+          : 'Rise syncs automatically at the times below. It can only read; it can never move money.'}
       </p>
       {mode !== 'off' && (
         <Button className="mt-4" disabled={run.isPending || !mode} onClick={() => run.mutate()}>

@@ -470,7 +470,7 @@ describe('T16 auth middleware + error contract', () => {
     const u = await signedInUser();
     const res = await call('PATCH', '/me/settings', { access: u.access, body: { appLock: '5m' } });
     expect(res.json).toEqual({
-      syncHours: [5, 7, 9, 11, 13, 15, 17, 19, 21, 23],
+      syncTimes: [300, 420, 540, 660, 780, 900, 1020, 1140, 1260, 1380],
       appLock: '5m',
       planChangesApplyToFuture: false,
       cushionCents: 50_000,
