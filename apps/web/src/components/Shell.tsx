@@ -97,12 +97,6 @@ export function Shell() {
   const currentTab = TABS.find((t) =>
     t.path === '/' ? onDashboard : location.pathname.startsWith(t.path),
   );
-  // Screens pushed from the Dashboard menu keep the Dashboard tab lit.
-  const fromDashboard = /^\/(review|recurring|cash-to-payday|financial-health)\/?$/.test(
-    location.pathname,
-  );
-  const isActiveTab = (path: string) =>
-    path === '/' ? onDashboard || fromDashboard : location.pathname.startsWith(path);
   // Pushed screens bring their own banner; the tab title bar is only for the tab roots.
   const showTabHead =
     onTabRoot || location.pathname === '/settings' || location.pathname === '/financial-health';
@@ -138,7 +132,7 @@ export function Shell() {
               {TABS.map((t) => (
                 <NavLink
                   key={t.tab}
-                  {...tabLink(t.path, isActiveTab(t.path))}
+                  {...tabLink(t.path, location.pathname === t.path)}
                   to={t.path}
                   end={t.path === '/'}
                   className={({ isActive }) =>
@@ -253,7 +247,7 @@ export function Shell() {
             {TABS.map((t) => (
               <li key={t.tab}>
                 <NavLink
-                  {...tabLink(t.path, isActiveTab(t.path))}
+                  {...tabLink(t.path, location.pathname === t.path)}
                   to={t.path}
                   end={t.path === '/'}
                   className={({ isActive }) =>

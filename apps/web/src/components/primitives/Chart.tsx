@@ -1,4 +1,4 @@
-import { useState, type PointerEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import {
   RANGES,
   linePositions,
@@ -21,6 +21,36 @@ const H = 160;
  * One chart component, one control set (§7): same height, same chip row, same axis
  * treatment for lines and bars. Hairline gridlines, no borders, no junk.
  */
+/**
+ * The scrub read-out. Sits inside the top of the chart (never above it, where it would cover
+ * a headline) centred on the pointer, then clamped so it stays fully on screen.
+ */
+function Tip({ pct, children }: { pct: number; children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [left, setLeft] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const box = el?.parentElement?.getBoundingClientRect();
+    if (!el || !box) return;
+    const w = el.offsetWidth;
+    const margin = 8;
+    const want = (pct / 100) * box.width - w / 2;
+    const min = margin - box.left;
+    const max = window.innerWidth - margin - box.left - w;
+    setLeft(Math.max(min, Math.min(max, want)));
+  });
+  return (
+    <span
+      ref={ref}
+      aria-live="polite"
+      className="pointer-events-none absolute top-1 z-10 max-w-[calc(100vw-16px)] rounded-input bg-ink px-2 py-1 type-caption text-surface money"
+      style={{ left: left ?? 0, visibility: left === null ? 'hidden' : 'visible' }}
+    >
+      {children}
+    </span>
+  );
+}
+
 export function Chart(
   props: (
     | { kind: 'line'; points: LinePoint[] }
@@ -199,18 +229,11 @@ export function Chart(
                 className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sage-700 ring-2 ring-surface"
                 style={{ left: `${(at[0] / W) * 100}%`, top: `${(at[1] / H) * 100}%` }}
               />
-              <span
-                aria-live="polite"
-                className="pointer-events-none absolute -top-1 z-10 -translate-y-full whitespace-nowrap rounded-input bg-ink px-2 py-1 type-caption text-surface money"
-                style={{
-                  left: `${Math.min(80, Math.max(20, (at[0] / W) * 100))}%`,
-                  transform: 'translate(-50%, -100%)',
-                }}
-              >
+              <Tip pct={(at[0] / W) * 100}>
                 {hit.label ? `${hit.label} · ` : ''}
                 {formatCents(hit.cents)}
                 {hit.paid && <span className="block">Paid off: {hit.paid.join(', ')}</span>}
-              </span>
+              </Tip>
             </>
           )}
           {multi && active !== null && multiPaths[0]?.points[active] && (
@@ -237,14 +260,7 @@ export function Chart(
                   />
                 );
               })}
-              <span
-                aria-live="polite"
-                className="pointer-events-none absolute -top-1 z-10 whitespace-nowrap rounded-input bg-ink px-2 py-1 type-caption text-surface money"
-                style={{
-                  left: `${Math.min(75, Math.max(25, ((multiPaths[0].points[active] as [number, number])[0] / W) * 100))}%`,
-                  transform: 'translate(-50%, -100%)',
-                }}
-              >
+              <Tip pct={((multiPaths[0].points[active] as [number, number])[0] / W) * 100}>
                 <span className="block font-medium">{multi.scrubLabels?.[active]}</span>
                 {multi.lines.map((l) => (
                   <span key={l.label} className="block">
@@ -254,7 +270,7 @@ export function Chart(
                 {multi.scrubExtra?.[active] && (
                   <span className="block">{multi.scrubExtra[active]}</span>
                 )}
-              </span>
+              </Tip>
             </>
           )}
           {detailed && liveLast && (
