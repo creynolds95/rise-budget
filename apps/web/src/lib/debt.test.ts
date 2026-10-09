@@ -4,6 +4,7 @@ import {
   DEFAULT_DEBT_PLAN,
   aprFromText,
   aprToText,
+  chartPoints,
   dueSuggestions,
   groupView,
   owedCents,
@@ -74,6 +75,14 @@ describe('group view', () => {
     );
     expect(v.monthsSooner).toBeNull();
     expect(v.interestSavedCents).toBeNull();
+  });
+
+  it('chart points name each loan on the point its payoff falls in, never a finished one', () => {
+    const v = groupView(loans, opts, '2026-10');
+    const pts = chartPoints(v, '2026-10');
+    const paid = pts.flatMap((p) => p.paid ?? []);
+    expect(paid.sort()).toEqual(['A', 'B']);
+    expect(paid).not.toContain('Paid');
   });
 
   it('extra money brings the date in and saves interest', () => {

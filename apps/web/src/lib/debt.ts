@@ -230,13 +230,28 @@ export function chartPoints(view: GroupView, period: string) {
   const idx = Array.from({ length: Math.ceil((owed.length - 1) / step) + 1 }, (_, i) =>
     Math.min(i * step, owed.length - 1),
   );
-  return idx.map((i) => ({
-    cents: owed[i] ?? 0,
-    inferred: false,
-    label: `${monthName(addMonths(period, i))} · ${
-      view.rows.filter(
-        (r) => r.done || (r.payoffPeriod !== null && r.payoffPeriod <= addMonths(period, i)),
-      ).length
-    } of ${total} paid off`,
-  }));
+  return idx.map((i, n) => {
+    // Loans that finish after the previous point and by this one, so every payoff gets a dot.
+    const from = n === 0 ? null : addMonths(period, idx[n - 1] as number);
+    const to = addMonths(period, i);
+    const paid = view.rows
+      .filter(
+        (r) =>
+          !r.done &&
+          r.payoffPeriod !== null &&
+          r.payoffPeriod <= to &&
+          (from === null || r.payoffPeriod > from),
+      )
+      .map((r) => r.name);
+    return {
+      cents: owed[i] ?? 0,
+      inferred: false,
+      ...(paid.length > 0 ? { paid } : {}),
+      label: `${monthName(addMonths(period, i))} · ${
+        view.rows.filter(
+          (r) => r.done || (r.payoffPeriod !== null && r.payoffPeriod <= addMonths(period, i)),
+        ).length
+      } of ${total} paid off`,
+    };
+  });
 }
