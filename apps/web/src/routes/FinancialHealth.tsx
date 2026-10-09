@@ -9,7 +9,7 @@ import { useSwipeBack } from '../lib/gestures';
 import { formatCents } from '../lib/money';
 import { useAccounts, useMe, useToday } from '../lib/queries';
 import { groupView, owedCents, planLoans } from '../lib/debt';
-import { mortgageView } from '../lib/mortgage';
+import { equityOf, homeAccount, mortgageView } from '../lib/mortgage';
 import { monthName, periodOf } from '../lib/dates';
 import { goalView } from '../lib/savings';
 import { defaultTaxYear } from '../lib/tax';
@@ -45,13 +45,13 @@ function Tile({
             <Icon name={icon} size={18} />
           </IconBadge>
           <span className="min-w-0 flex-1">
-            <span className="block type-label text-ink-muted">{title}</span>
-            {!cta && (
-              <span className="block truncate font-medium money">
-                {state ?? <Skeleton className="h-5 w-24" />}
-              </span>
-            )}
+            <span className="block font-medium text-ink">{title}</span>
           </span>
+          {!cta && (
+            <span className="shrink-0 text-ink-muted money">
+              {state ?? <Skeleton className="h-5 w-24" />}
+            </span>
+          )}
           {cta ? (
             <span className="rounded-button bg-gold-100 px-4 py-2 font-medium text-gold-text">
               {state}
@@ -137,7 +137,12 @@ export function FinancialHealth() {
           pct: Math.round((v.paidCount * 100) / term),
           caption: `${Math.round((v.paidCount * 100) / term)}% paid`,
         };
-      mortgageState = v.payoffPeriod ? `Paid off ${monthName(v.payoffPeriod)}` : 'Add payment';
+      const home = homeAccount(accounts, debt.homeValueAccountId);
+      mortgageState = home
+        ? `${formatCents(equityOf(home.balanceCents, owedCents(acct.balanceCents)).cents, { whole: true })} equity`
+        : v.payoffPeriod
+          ? `Paid off ${monthName(v.payoffPeriod)}`
+          : 'Add payment';
     } else mortgageState = setUp;
     if (!plan) state = setUp;
     else {
@@ -145,8 +150,9 @@ export function FinancialHealth() {
       const start = accounts
         .filter((a) => ids.includes(a.id))
         .reduce((n, a) => n + a.balanceCents, 0);
-      const v = retirementView(plan, start, totalMonthly(plan, ids), plan.goalAge);
-      state = `${formatCents(v.incomeCents, { whole: true })}/mo at ${plan.goalAge}`;
+      const monthly = totalMonthly(plan, ids);
+      const v = retirementView(plan, start, monthly, plan.goalAge);
+      state = `${formatCents(monthly, { whole: true })}/mo`;
       if (v.pctOfGoal !== null)
         retireBar = {
           pct: v.pctOfGoal,
