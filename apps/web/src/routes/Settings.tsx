@@ -183,56 +183,6 @@ export function Settings() {
   );
 }
 
-/** Phone screen geometry, live, so a bar that sits short of the bottom edge can be diagnosed from a screenshot. */
-function screenReading(): string {
-  const probe = document.createElement('div');
-  probe.style.cssText =
-    'position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)';
-  document.body.appendChild(probe);
-  const top = parseFloat(getComputedStyle(probe).paddingTop) || 0;
-  const inset = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
-  probe.remove();
-  const navs = document.querySelectorAll('nav[aria-label="Tabs"]');
-  const navBottom = Math.round(navs[navs.length - 1]?.getBoundingClientRect().bottom ?? 0);
-  const vv = Math.round(window.visualViewport?.height ?? 0);
-  return `screen ${screen.height} · window ${innerHeight} · visible ${vv} · bar ends ${navBottom} · page scroll ${Math.round(scrollY)} · inset ${top}/${inset}`;
-}
-
-/** Temporary: the reading above, kept fresh, and a switch for the screen-tall layout test. */
-function ScreenReading() {
-  const [text, setText] = useState(screenReading);
-  const [full, setFull] = useState(() => document.documentElement.classList.contains('vp-full'));
-  useEffect(() => {
-    const tick = () => setText(screenReading());
-    const id = window.setInterval(tick, 500);
-    window.addEventListener('scroll', tick, { passive: true });
-    return () => {
-      window.clearInterval(id);
-      window.removeEventListener('scroll', tick);
-    };
-  }, []);
-  const toggle = () => {
-    const on = !full;
-    document.documentElement.classList.toggle('vp-full', on);
-    try {
-      if (on) localStorage.setItem('rise-vp', 'full');
-      else localStorage.removeItem('rise-vp');
-    } catch {
-      // Storage blocked: the switch lasts until the app closes.
-    }
-    setFull(on);
-  };
-  return (
-    <>
-      <span className="text-ink-faint">{text}</span>
-      <br />
-      <button type="button" className="min-h-11 text-sage-700 underline" onClick={toggle}>
-        Layout test: {full ? 'on' : 'off'}
-      </button>
-    </>
-  );
-}
-
 function AppVersion({ timeZone }: { timeZone: string | undefined }) {
   const latest = useLatestBuild();
   const [updating, setUpdating] = useState(false);
@@ -254,8 +204,6 @@ function AppVersion({ timeZone }: { timeZone: string | undefined }) {
         ) : (
           latest && <span className="text-ink-faint">Latest</span>
         )}
-        <br />
-        <ScreenReading />
       </p>
       {stale && (
         <Button
