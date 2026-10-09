@@ -142,6 +142,17 @@
       min-height: 0;
       padding-bottom: 0;
     }
+    /* Temporary layout test (Settings, under Version): the document, not the window, holds a
+       screen-tall app, so the tab bar ends at the screen's bottom edge even if iOS reports a
+       shorter window. */
+    html.vp-full,
+    html.vp-full body {
+      height: auto;
+      overflow: visible;
+    }
+    html.vp-full #root {
+      height: calc(var(--screen-h, 100lvh) - var(--banner-h, 0px));
+    }
   }
   :focus-visible {
     outline: 2px solid var(--color-sage-600);

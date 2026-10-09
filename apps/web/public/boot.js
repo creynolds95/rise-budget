@@ -11,3 +11,11 @@ try {
 } catch {
   // Storage blocked: fall back to the system theme.
 }
+// Temporary layout test for the installed iPhone app's short window (Settings, under Version):
+// "full" sizes the app to the screen and lets the document hold it, instead of the window.
+try {
+  if (localStorage.getItem('rise-vp') === 'full') document.documentElement.classList.add('vp-full');
+} catch {
+  // Storage blocked: normal layout.
+}
+document.documentElement.style.setProperty('--screen-h', window.screen.height + 'px');
