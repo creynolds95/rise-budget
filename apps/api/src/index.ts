@@ -117,11 +117,11 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
     if (!userId) return;
     let deep = false;
     if (event.cron === SYNC_CRON) {
-      // The hourly tick only syncs in the owner's chosen hours. Skipped ticks write nothing
-      // (not even the usage row), so the idle hours cost one small read each.
+      // The per-minute tick only syncs at the owner's chosen times. Skipped ticks write nothing
+      // (not even the usage row), so idle minutes cost one small read each.
       const user = await getUser(userId, env.DB);
       if (!user) return;
-      const slot = syncSlot(user.settings.syncHours, user.timezone, new Date(event.scheduledTime));
+      const slot = syncSlot(user.settings.syncTimes, user.timezone, new Date(event.scheduledTime));
       if (!slot.due) {
         tally.read = tally.written = 0;
         return;
