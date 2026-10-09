@@ -3,6 +3,7 @@ import { allocateRefund, normalizeMerchant, refundFits } from '@rise/shared/cate
 import { nextScheduled } from '@rise/shared/recurring';
 import {
   BulkAcceptBody,
+  BulkTagBody,
   CreateTransactionBody,
   PatchTransactionBody,
   RecurringCashWithdrawalBody,
@@ -18,6 +19,7 @@ import { Hono } from 'hono';
 import {
   acceptSuggestions,
   categoryIdsExist,
+  addTxnTags,
   countOwnTags,
   deleteManualRuleStmt,
   deleteTransaction,
@@ -237,6 +239,17 @@ transactions.post('/:id/spread', async (c) => {
   const stmts = await spreadStmts(userId, c.env.DB, row, categoryId, months);
   if (stmts) await c.env.DB.batch(stmts);
   return c.json(await getTransaction(userId, c.env.DB, id));
+});
+
+/** Add tags to many transactions (select all on Transactions). Labels only: no money moves. */
+transactions.post('/bulk-tags', async (c) => {
+  const userId = c.get('userId');
+  const { ids, tagIds: raw } = await body(c, BulkTagBody);
+  const tagIds = [...new Set(raw)];
+  if ((await countOwnTags(userId, c.env.DB, tagIds)) !== tagIds.length)
+    throw new AppError(400, 'BAD_REQUEST', 'Unknown tag');
+  await addTxnTags(userId, c.env.DB, [...new Set(ids)], tagIds);
+  return c.json({ tagged: ids.length });
 });
 
 /** Replace a transaction's tags. Labels only: no money moves. */

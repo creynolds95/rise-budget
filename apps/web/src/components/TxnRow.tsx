@@ -7,6 +7,7 @@ import { useMe } from '../lib/queries';
 import { spreadMonths, spreadPart } from '../lib/spread';
 import { transitionClick } from '../lib/transition';
 import { TxnAmount } from './TxnAmount';
+import { Icon } from './primitives/Icon';
 import { Chevron } from './primitives/Rows';
 
 /** A transaction in a list: a NAV row. Pending shows italic with a P (SPEC §3.2). */
@@ -17,6 +18,8 @@ export function TxnRow({
   hideDate = false,
   onRecategorize,
   periodId,
+  selected,
+  onToggle,
 }: {
   t: Transaction;
   /** Shown before the merchant name; the category's name isn't repeated on the row. */
@@ -28,6 +31,9 @@ export function TxnRow({
   onRecategorize?: (() => void) | undefined;
   /** In one month's list, a spread charge shows the part it draws that month. */
   periodId?: string | undefined;
+  /** Select mode: the row is a checkbox, not a link. */
+  selected?: boolean;
+  onToggle?: (() => void) | undefined;
 }) {
   const navigate = useNavigate();
   const alerts = useMe().data?.settings.alerts;
@@ -50,6 +56,38 @@ export function TxnRow({
     .filter(Boolean)
     .join(' · ');
   const to = `/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`;
+  if (onToggle) {
+    return (
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={!!selected}
+        onClick={onToggle}
+        className={`flex min-h-14 w-full items-center gap-3 border-b border-hairline py-2 text-left ${t.isPending ? 'italic' : ''}`}
+      >
+        <span
+          aria-hidden
+          className={`flex size-6 shrink-0 items-center justify-center rounded-[7px] border-2 ${
+            selected ? 'border-sage-600 bg-sage-600 text-surface' : 'border-hairline'
+          }`}
+        >
+          {selected && <Icon name="check" size={16} />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">
+            {categoryEmoji && (
+              <span aria-hidden className="mr-2 not-italic">
+                {categoryEmoji}
+              </span>
+            )}
+            {merchantName(t)}
+          </span>
+          {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
+        </span>
+        <TxnAmount t={part ? { ...t, amountCents: part.amountCents } : t} />
+      </button>
+    );
+  }
   return (
     <div
       className={`flex min-h-14 items-center justify-between gap-3 border-b border-hairline py-2 ${t.isPending ? 'italic' : ''}`}

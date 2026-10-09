@@ -122,6 +122,28 @@ export async function setTxnTags(
   ]);
 }
 
+/** Add tags to many transactions at once; only the user's own transactions are touched. */
+export async function addTxnTags(
+  userId: UserId,
+  db: D1Database,
+  txnIds: string[],
+  tagIds: string[],
+): Promise<void> {
+  const ids = JSON.stringify(txnIds);
+  await db.batch(
+    tagIds.map((tagId) =>
+      db
+        .prepare(
+          // Driven from the id list; CROSS JOIN pins that order so each id is a primary-key lookup.
+          `INSERT OR IGNORE INTO txn_tag (txn_id, tag_id, user_id)
+           SELECT t.id, ?2, ?1 FROM json_each(?3) j CROSS JOIN txn t ON t.id = j.value
+           WHERE t.user_id = ?1`,
+        )
+        .bind(userId, tagId, ids),
+    ),
+  );
+}
+
 /**
  * The year's tax rows: splits filed to a category with a tax heading, and whole transactions
  * carrying a tag with one. Driven from the few tax categories and tags: each tax category's

@@ -12,12 +12,15 @@ import { Sheet } from './primitives/Sheet';
 export function TagSheet({
   open,
   txnId,
+  bulkIds,
   selected,
   onClose,
   onSaved,
 }: {
   open: boolean;
-  txnId: string;
+  txnId?: string;
+  /** Add the picked tags to all of these instead of replacing one transaction's tags. */
+  bulkIds?: string[];
   selected: string[];
   onClose: () => void;
   onSaved: () => Promise<unknown>;
@@ -49,7 +52,8 @@ export function TagSheet({
     setSaving(true);
     setError(null);
     try {
-      await api('PUT', `/transactions/${txnId}/tags`, { tagIds: [...sel] });
+      if (bulkIds) await api('POST', '/transactions/bulk-tags', { ids: bulkIds, tagIds: [...sel] });
+      else await api('PUT', `/transactions/${txnId}/tags`, { tagIds: [...sel] });
       onClose();
       await onSaved();
     } catch (e) {
@@ -61,9 +65,13 @@ export function TagSheet({
   return (
     <Sheet
       open={open}
-      title="Tags"
+      title={bulkIds ? `Add tags to ${bulkIds.length}` : 'Tags'}
       onClose={onClose}
-      action={{ label: saving ? 'Saving…' : 'Save', onClick: () => void save(), disabled: saving }}
+      action={{
+        label: saving ? 'Saving…' : 'Save',
+        onClick: () => void save(),
+        disabled: saving || (!!bulkIds && sel.size === 0),
+      }}
     >
       {tags.length > 0 && (
         <Group>

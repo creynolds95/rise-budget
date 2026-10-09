@@ -7,6 +7,7 @@ import { BackLink } from '../components/BackLink';
 import { useNavigate, useSearchParams } from 'react-router';
 import { AddTransactionSheet } from '../components/AddTransactionSheet';
 import { CategoryPicker } from '../components/CategoryPicker';
+import { TagSheet } from '../components/TagSheet';
 import { FilterSheet } from '../components/FilterSheet';
 import { TxnAmount } from '../components/TxnAmount';
 import { TxnRow } from '../components/TxnRow';
@@ -42,6 +43,8 @@ import {
 } from '../lib/txnFilters';
 import { spreadMonths } from '../lib/spread';
 
+const MAX_BULK = 1000;
+
 /** The Transactions tab: everything, searchable, filterable. Filters live in the URL. */
 export function Transactions() {
   const [params, setParams] = useSearchParams();
@@ -55,6 +58,12 @@ export function Transactions() {
   const [adding, setAdding] = useState(false);
   const [recategorizing, setRecategorizing] = useState<string | null>(null);
   const [marking, setMarking] = useState(false);
+  // Select mode: pick rows, or everything the search and filters match, then tag them together.
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [tagging, setTagging] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const qc = useQueryClient();
   const invalidate = useInvalidateMoney();
   const origin = listOrigin(params.get('back'));
@@ -90,6 +99,36 @@ export function Transactions() {
   const byDate = filters.sort.startsWith('date');
   const batchReview = filters.review === 'needs_review';
 
+  const toggle = (id: string) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const stopPicking = () => {
+    setPicking(false);
+    setPicked(new Set());
+    setNotice(null);
+  };
+  const selectAll = async () => {
+    setLoadingAll(true);
+    setNotice(null);
+    try {
+      let r = { hasNextPage: list.hasNextPage, data: list.data };
+      while (r.hasNextPage) r = await list.fetchNextPage();
+      const all = r.data?.pages.flatMap((p) => p.items.map((t) => t.id)) ?? [];
+      if (all.length > MAX_BULK) {
+        setNotice(`That's ${all.length}. Narrow the search to ${MAX_BULK} or fewer.`);
+        return;
+      }
+      setPicked(new Set(all));
+    } finally {
+      setLoadingAll(false);
+    }
+  };
+  const allPicked = items.length > 0 && picked.size >= items.length && !list.hasNextPage;
+
   const afterChange = () =>
     Promise.all([
       invalidate(),
@@ -119,7 +158,8 @@ export function Transactions() {
         categoryEmoji={c?.emoji}
         from={back}
         hideDate={byDate}
-        onRecategorize={batchReview ? () => setRecategorizing(t.id) : undefined}
+        onRecategorize={batchReview && !picking ? () => setRecategorizing(t.id) : undefined}
+        {...(picking ? { selected: picked.has(t.id), onToggle: () => toggle(t.id) } : {})}
       />
     );
   };
@@ -131,6 +171,7 @@ export function Transactions() {
     <table className="w-full overflow-hidden rounded-card bg-surface shadow-soft">
       <thead>
         <tr className="border-b border-hairline text-left type-label text-ink-muted">
+          {picking && <th className="w-10" />}
           <th className="px-4 py-2 font-normal">Date</th>
           <th className="px-4 py-2 font-normal">Merchant</th>
           <th className="px-4 py-2 font-normal">Category</th>
@@ -146,9 +187,20 @@ export function Transactions() {
           return (
             <tr
               key={t.id}
-              onClick={transitionClick(navigate, to)}
+              onClick={picking ? () => toggle(t.id) : transitionClick(navigate, to)}
               className={`cursor-pointer border-b border-hairline last:border-0 hover:bg-sage-100/50 ${t.isPending ? 'italic' : ''}`}
             >
+              {picking && (
+                <td className="w-10 pl-4">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${merchantName(t)}`}
+                    checked={picked.has(t.id)}
+                    onChange={() => toggle(t.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </td>
+              )}
               <td className="px-4 py-2.5 whitespace-nowrap text-ink-muted money">
                 {shortDate(t.postedAt)}
               </td>
@@ -318,7 +370,46 @@ export function Transactions() {
         </div>
       )}
 
-      {batchReview && items.length > 0 && (
+      {items.length > 0 && (
+        <div className="gutter mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+          {picking ? (
+            <>
+              <button
+                type="button"
+                disabled={loadingAll}
+                onClick={() => (allPicked ? setPicked(new Set()) : void selectAll())}
+                className="hit-44 min-h-9 type-caption font-medium text-sage-700"
+              >
+                {loadingAll ? 'Loading…' : allPicked ? 'Clear' : 'Select all'}
+              </button>
+              <span className="type-caption text-ink-muted">{picked.size} selected</span>
+              <span className="ml-auto flex gap-1">
+                <Button
+                  variant="quiet"
+                  disabled={picked.size === 0}
+                  onClick={() => setTagging(true)}
+                >
+                  Tag
+                </Button>
+                <Button variant="quiet" onClick={stopPicking}>
+                  Done
+                </Button>
+              </span>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPicking(true)}
+              className="hit-44 ml-auto min-h-9 type-caption font-medium text-sage-700"
+            >
+              Select
+            </button>
+          )}
+          {notice && <p className="w-full type-caption text-clay">{notice}</p>}
+        </div>
+      )}
+
+      {batchReview && !picking && items.length > 0 && (
         <div className="gutter mt-3">
           <Button className="w-full" onClick={() => void markAllReviewed()} disabled={marking}>
             {marking ? 'Marking…' : `Mark all reviewed (${items.length})`}
@@ -391,6 +482,18 @@ export function Transactions() {
         )}
       </div>
 
+      {tagging && (
+        <TagSheet
+          open
+          bulkIds={[...picked]}
+          selected={[]}
+          onClose={() => setTagging(false)}
+          onSaved={async () => {
+            await qc.invalidateQueries({ queryKey: ['txns'] });
+            stopPicking();
+          }}
+        />
+      )}
       <AddTransactionSheet open={adding} onClose={() => setAdding(false)} />
       <FilterSheet
         open={sheet}
