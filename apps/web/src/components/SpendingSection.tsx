@@ -21,37 +21,33 @@ const ordinal = (n: number) =>
  * spending faster than last month (the line), on what (the categories). Every comparison is
  * in dollars — no percentages over one month (§7).
  */
-export function SpendingSection(props: {
-  month: string;
-  spentCents: number;
-  elapsedDays: number;
-}) {
+export function SpendingSection(props: { month: string; spentCents: number; elapsedDays: number }) {
   const { month, elapsedDays } = props;
   const prevMonth = addMonths(month, -1);
   const report = useSpendingReport(month).data;
 
   return (
     <section aria-labelledby="spending-h">
-        <h2 id="spending-h" className="type-title">
-          Spending
-        </h2>
-        <div className="mt-2 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-          {report ? (
-            <PaceAgainstLastMonth
-              month={month}
-              prevMonth={prevMonth}
-              elapsedDays={elapsedDays}
-              spentCents={props.spentCents}
-              days={report.days}
-            />
-          ) : (
-            <>
-              <Skeleton className="h-9 w-40" />
-              <Skeleton className="mt-2 h-4 w-64" />
-              <Skeleton className="mt-5 h-40 w-full" />
-            </>
-          )}
-        </div>
+      <h2 id="spending-h" className="type-title">
+        Spending
+      </h2>
+      <div className="mt-2 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+        {report ? (
+          <PaceAgainstLastMonth
+            month={month}
+            prevMonth={prevMonth}
+            elapsedDays={elapsedDays}
+            spentCents={props.spentCents}
+            days={report.days}
+          />
+        ) : (
+          <>
+            <Skeleton className="h-9 w-40" />
+            <Skeleton className="mt-2 h-4 w-64" />
+            <Skeleton className="mt-5 h-40 w-full" />
+          </>
+        )}
+      </div>
     </section>
   );
 }

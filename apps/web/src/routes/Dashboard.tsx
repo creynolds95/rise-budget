@@ -184,11 +184,7 @@ export function Dashboard() {
       </section>
     ),
     spending: (
-      <SpendingSection
-        month={month}
-        spentCents={t.spentCents}
-        elapsedDays={p.pace.elapsedDays}
-      />
+      <SpendingSection month={month} spentCents={t.spentCents} elapsedDays={p.pace.elapsedDays} />
     ),
     whereItWent: (
       <WhereItWent
