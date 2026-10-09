@@ -2,7 +2,7 @@ import { Loading } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { axisPicks, surplusTone } from '../lib/surplus';
+import { dailySeries, surplusTone, tooltipLines } from '../lib/surplus';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
@@ -20,24 +20,34 @@ import type { ScheduleRow, SuggestionRow } from '../lib/types';
 import { ScheduleFields } from '../components/ScheduleFields';
 
 /**
- * Balance by day to payday, the lowest point marked. Bars rise above a zero line when the
- * balance is positive and hang below it when it isn't. A single day has no shape to show.
+ * End-of-day balance for the next 14 days. Bars rise above a zero line when the balance is
+ * positive and hang below it when it isn't. Tap or hold a bar for that day's charges and income.
  */
 function Shape({
   points,
   lowestDate,
 }: {
-  points: { date: string; balanceCents: number }[];
+  points: { date: string; balanceCents: number; label: string }[];
   lowestDate: string;
 }) {
-  if (points.length < 2) return null;
-  const hi = Math.max(...points.map((p) => p.balanceCents), 0);
-  const lo = Math.min(...points.map((p) => p.balanceCents), 0);
+  const [picked, setPicked] = useState<number | null>(null);
+  const days = dailySeries(points);
+  if (points.length < 2 || days.length === 0) return null;
+  const hi = Math.max(...days.map((p) => p.balanceCents), 0);
+  const lo = Math.min(...days.map((p) => p.balanceCents), 0);
   const span = Math.max(hi - lo, 1);
   const zeroPct = (hi / span) * 100;
-  const picks = new Set(axisPicks(points.length));
+  const day = picked == null ? null : (days[picked] ?? null);
+  const lines = day ? tooltipLines(day) : null;
+  // Pin the tooltip to the side the bar is nearest so it never leaves the screen.
+  const side =
+    picked == null || picked < 4
+      ? 'left-0'
+      : picked > days.length - 5
+        ? 'right-0'
+        : 'left-1/2 -translate-x-1/2';
   return (
-    <figure className="m-0 overflow-hidden">
+    <figure className="relative m-0 overflow-hidden">
       <div className="relative h-28">
         <div
           aria-hidden
@@ -45,11 +55,18 @@ function Shape({
           style={{ top: `${zeroPct}%` }}
         />
         <div className="absolute inset-0 flex gap-1.5">
-          {points.map((p, i) => {
+          {days.map((p, i) => {
             const h = Math.max(2, (Math.abs(p.balanceCents) / span) * 100);
             const up = p.balanceCents >= 0;
             return (
-              <div key={i} className="relative min-w-0 flex-1">
+              <button
+                key={p.date}
+                type="button"
+                aria-label={`${shortDate(p.date)}: ${formatCents(p.balanceCents)}`}
+                onClick={() => setPicked(picked === i ? null : i)}
+                onPointerDown={(e) => e.pointerType === 'touch' && setPicked(i)}
+                className="relative min-w-0 flex-1 p-0"
+              >
                 <div
                   className={`absolute inset-x-0 ${up ? 'rounded-t-sm' : 'rounded-b-sm'} ${
                     p.balanceCents < 0
@@ -57,29 +74,54 @@ function Shape({
                       : p.date === lowestDate
                         ? 'bg-gold'
                         : 'bg-sage-600'
-                  }`}
+                  } ${picked === i ? 'opacity-80' : ''}`}
                   style={
                     up
                       ? { bottom: `${100 - zeroPct}%`, height: `${h}%` }
                       : { top: `${zeroPct}%`, height: `${h}%` }
                   }
-                >
-                  <span className="sr-only">
-                    {shortDate(p.date)}: {formatCents(p.balanceCents)}
-                  </span>
-                </div>
-              </div>
+                />
+              </button>
             );
           })}
         </div>
       </div>
       <div aria-hidden className="mt-1 flex gap-1.5">
-        {points.map((p, i) => (
-          <span key={i} className="min-w-0 flex-1 text-center type-caption text-ink-faint">
-            {picks.has(i) && <span className="block truncate">{shortDate(p.date)}</span>}
-          </span>
-        ))}
+        {days.map((p, i) => {
+          const dom = Number(p.date.slice(8));
+          return (
+            <span
+              key={p.date}
+              className="min-w-0 flex-1 text-center leading-tight type-caption text-ink-faint"
+            >
+              <span className="block">{dom}</span>
+              <span className="block h-4">
+                {i === 0 || dom === 1 ? shortDate(p.date).split(' ')[0] : ''}
+              </span>
+            </span>
+          );
+        })}
       </div>
+      {day && lines && (
+        <div
+          role="status"
+          className={`pointer-events-none absolute top-0 ${side} w-56 max-w-full rounded-card bg-surface p-3 shadow-soft`}
+        >
+          <div className="flex justify-between gap-3 font-medium">
+            <span>{shortDate(day.date)}</span>
+            <MoneyText cents={day.balanceCents} tone={day.balanceCents < 0 ? 'over' : 'ink'} />
+          </div>
+          {lines.shown.map((l, i) => (
+            <div key={i} className="mt-1 flex justify-between gap-3 type-caption">
+              <span className="min-w-0 truncate text-ink-muted">{l.label}</span>
+              <MoneyText cents={l.cents} tone={l.cents < 0 ? 'over' : 'in'} />
+            </div>
+          ))}
+          {lines.more > 0 && (
+            <div className="mt-1 type-caption text-ink-faint">+{lines.more} more</div>
+          )}
+        </div>
+      )}
     </figure>
   );
 }
