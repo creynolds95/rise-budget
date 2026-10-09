@@ -18,6 +18,7 @@ const loan = (over: Partial<DebtLoanPlan> = {}): DebtLoanPlan => ({
   accountId: 'a',
   aprMilliPct: 5250,
   paymentCents: 20_000,
+  escrowCents: 0,
   dueDay: 14,
   group: 'student',
   appliedThrough: '2026-09',

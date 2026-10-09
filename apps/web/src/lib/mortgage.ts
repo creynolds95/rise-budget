@@ -9,8 +9,12 @@ import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { addMonths } from './dates';
 
 export interface MortgageView {
-  /** The payment the schedule runs on. */
+  /** The principal-and-interest payment the schedule runs on. */
   paymentCents: number;
+  /** Taxes and insurance inside the saved payment. */
+  escrowCents: number;
+  /** What leaves the account each month: schedule payment plus escrow. */
+  totalCents: number;
   /** The saved payment can't beat the interest, so a full-term payment stands in for the date. */
   estimated: boolean;
   /** With the extra payments in the plan. */
@@ -38,11 +42,12 @@ export function mortgageView(
 ): MortgageView {
   const lead = pending ? 1 : 0;
   // A payment at or under the interest never pays off; show the full-term date until it's fixed.
-  const estimated =
-    owedCents > 0 && loan.paymentCents <= monthlyInterest(owedCents, loan.aprMilliPct);
+  const escrowCents = Math.min(loan.escrowCents, loan.paymentCents);
+  const savedCents = loan.paymentCents - escrowCents;
+  const estimated = owedCents > 0 && savedCents <= monthlyInterest(owedCents, loan.aprMilliPct);
   const paymentCents = estimated
     ? levelPayment(owedCents, loan.aprMilliPct, settings.mortgageTermMonths)
-    : loan.paymentCents;
+    : savedCents;
   const input = { balanceCents: owedCents, aprMilliPct: loan.aprMilliPct, paymentCents };
   const base = amortize({ ...input, extraMonthlyCents: 0, lumps: [] });
   const plan = amortize({
@@ -65,6 +70,8 @@ export function mortgageView(
       : null;
   return {
     paymentCents,
+    escrowCents,
+    totalCents: paymentCents + escrowCents,
     estimated,
     plan,
     base,

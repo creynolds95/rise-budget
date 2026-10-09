@@ -3,19 +3,22 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
+import { Donut, Legend } from '../components/Donut';
 import { Button } from '../components/primitives/Button';
+import { Chart } from '../components/primitives/Chart';
 import { IconButton } from '../components/primitives/Icon';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow, StaticRow, ValueRow } from '../components/primitives/Rows';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
+import { series } from '../design/tokens';
 import { api } from '../lib/api';
 import { isDue, levelPayment } from '@rise/shared/debt';
 import { DEFAULT_DEBT_PLAN, aprFromText, aprToText, owedCents } from '../lib/debt';
 import { addMonths, monthName, periodOf } from '../lib/dates';
 import { formatCents } from '../lib/money';
-import { equityOf, homeAccount, mortgageView } from '../lib/mortgage';
+import { equityOf, homeAccount, lineSeries, mortgageView } from '../lib/mortgage';
 import { useAccounts, useMe, useToday } from '../lib/queries';
 
 const field =
@@ -71,6 +74,42 @@ const parseLeft = (t: string): number | null => {
   return t.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 600 ? n : null;
 };
 const showInt = (n: number) => String(n);
+
+/** A wide two-way switch. */
+function Pill<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { id: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex w-full gap-1 rounded-full bg-sage-100 p-1"
+    >
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={o.id === value}
+          onClick={() => onChange(o.id)}
+          className={`min-h-11 flex-1 rounded-full type-caption font-medium ${
+            o.id === value ? 'bg-surface text-sage-700 shadow-soft' : 'text-ink-muted'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** 150 months as "12 yr 6 mo". */
 const duration = (months: number): string => {
@@ -222,6 +261,7 @@ export function Mortgage() {
   const [pickingAccount, setPickingAccount] = useState(false);
   const [pickingHome, setPickingHome] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [graph, setGraph] = useState<'schedule' | 'year'>('schedule');
   const [tryExtra, setTryExtra] = useState(0);
   const [managing, setManaging] = useState(false);
   const [addKey, setAddKey] = useState(0);
@@ -280,6 +320,7 @@ export function Mortgage() {
       group: 'mortgage',
       aprMilliPct: 0,
       paymentCents: 0,
+      escrowCents: 0,
       dueDay: 1,
       appliedThrough: period,
       merchant: '',
@@ -345,6 +386,7 @@ export function Mortgage() {
     );
   }
 
+  const lines = lineSeries(view.plan, owed);
   const first = view.plan.rows[0];
   const tries = [10_000, 25_000, 50_000, 100_000, ...(tryExtra > 0 ? [tryExtra] : [])]
     .sort((a, b) => a - b)
@@ -354,6 +396,9 @@ export function Mortgage() {
       view: mortgageView(loan, owed, { ...current, mortgageExtraCents: extra }, period, pending),
     }));
   const equity = homeValue ? equityOf(homeValue.balanceCents, owed) : null;
+  const labelAt = (m: number) =>
+    monthName(addMonths(period, m - (pending ? 1 : 0))).replace(/^(\w{3})\w* /, '$1 ');
+  const lastMonth = lines.months.at(-1) ?? 0;
 
   return (
     <>
@@ -386,16 +431,70 @@ export function Mortgage() {
               <p className="mb-4 text-clay money">
                 {loan.paymentCents === 0
                   ? 'No payment entered.'
-                  : `${formatCents(loan.paymentCents)} doesn't cover ${formatCents(first?.interestCents ?? 0)}/mo interest.`}{' '}
+                  : `${formatCents(loan.paymentCents - view.escrowCents)} doesn't cover ${formatCents(first?.interestCents ?? 0)}/mo interest.`}{' '}
                 Dates assume {formatCents(view.paymentCents)}/mo. Set payments left or the payment
                 below.
               </p>
+            )}
+            {view.ytd && (
+              <div className="mb-4">
+                <Pill
+                  label="Graph"
+                  value={graph}
+                  options={[
+                    { id: 'schedule', label: 'Payoff schedule' },
+                    { id: 'year', label: `${period.slice(0, 4)} so far` },
+                  ]}
+                  onChange={setGraph}
+                />
+              </div>
+            )}
+            {view.ytd && graph === 'year' ? (
+              <div className="rounded-card bg-surface p-4 shadow-soft">
+                <Donut principal={view.ytd.principalCents} interest={view.ytd.interestCents} />
+              </div>
+            ) : (
+              lines.months.length > 2 && (
+                <>
+                  <Chart
+                    kind="lines"
+                    label="Balance, principal paid and interest paid over the life of the loan"
+                    slots={lines.balance.length}
+                    scrubLabels={lines.months.map((m) => labelAt(m))}
+                    scrubExtra={
+                      homeValue
+                        ? lines.balance.map(
+                            (b) =>
+                              `Equity · ${formatCents(equityOf(homeValue.balanceCents, b).cents, { whole: true })}`,
+                          )
+                        : undefined
+                    }
+                    xLabels={[labelAt(0), labelAt(Math.round(lastMonth / 2)), labelAt(lastMonth)]}
+                    lines={[
+                      { label: 'Balance', values: lines.balance, color: series[0] },
+                      { label: 'Principal to date', values: lines.principal, color: series[3] },
+                      { label: 'Interest to date', values: lines.interest, color: series[2] },
+                    ]}
+                  />
+                  <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 type-caption text-ink-muted">
+                    <Legend color={series[0]} label="Balance" />
+                    <Legend color={series[3]} label="Principal to date" />
+                    <Legend color={series[2]} label="Interest to date" />
+                  </ul>
+                </>
+              )
             )}
           </>
         }
         facts={
           <>
-            <StaticRow label="Monthly payment" value={<MoneyText cents={view.paymentCents} />} />
+            <StaticRow label="Monthly payment" value={<MoneyText cents={view.totalCents} />} />
+            {view.escrowCents > 0 && (
+              <StaticRow
+                label="Taxes and insurance"
+                value={<MoneyText cents={view.escrowCents} />}
+              />
+            )}
             <StaticRow
               label="Payments left"
               value={<span className="money">{view.base.payoffMonth ?? '—'}</span>}
@@ -455,8 +554,18 @@ export function Mortgage() {
             field={
               <MoneyField
                 label="Monthly payment"
-                cents={view.paymentCents}
+                cents={view.totalCents}
                 onCommit={(c) => editLoan({ paymentCents: c })}
+              />
+            }
+          />
+          <EditRow
+            label="Taxes and insurance"
+            field={
+              <MoneyField
+                label="Taxes and insurance in the payment"
+                cents={view.escrowCents}
+                onCommit={(c) => editLoan({ escrowCents: c })}
               />
             }
           />
@@ -470,7 +579,9 @@ export function Mortgage() {
                 show={showInt}
                 width="w-12"
                 onCommit={(n) =>
-                  editLoan({ paymentCents: levelPayment(owed, loan.aprMilliPct, n) })
+                  editLoan({
+                    paymentCents: levelPayment(owed, loan.aprMilliPct, n) + view.escrowCents,
+                  })
                 }
               />
             }

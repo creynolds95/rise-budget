@@ -6,6 +6,7 @@ const loan: DebtLoanPlan = {
   accountId: 'm',
   aprMilliPct: 5875,
   paymentCents: 196_811,
+  escrowCents: 0,
   dueDay: 1,
   group: 'mortgage',
   appliedThrough: '2026-10',
@@ -14,6 +15,20 @@ const loan: DebtLoanPlan = {
 const settings = { mortgageExtraCents: 0, mortgageLumps: [], mortgageTermMonths: 360 };
 
 describe('mortgage view', () => {
+  it('runs the schedule on the payment less taxes and insurance', () => {
+    const plain = mortgageView(loan, 33_064_962, settings, '2026-10');
+    const withEscrow = mortgageView(
+      { ...loan, paymentCents: loan.paymentCents + 80_000, escrowCents: 80_000 },
+      33_064_962,
+      settings,
+      '2026-10',
+    );
+    expect(withEscrow.paymentCents).toBe(196_811);
+    expect(withEscrow.escrowCents).toBe(80_000);
+    expect(withEscrow.totalCents).toBe(276_811);
+    expect(withEscrow.payoffPeriod).toBe(plain.payoffPeriod);
+  });
+
   it("lines up with the servicer's statement", () => {
     const v = mortgageView(loan, 33_064_962, settings, '2026-10');
     expect(v.payoffPeriod).toBe('2056-04');

@@ -126,7 +126,7 @@ export function dueSuggestions(
         plan: l,
         name: a.name,
         beforeCents: owed,
-        afterCents: stepBalance(owed, l.aprMilliPct, l.paymentCents),
+        afterCents: stepBalance(owed, l.aprMilliPct, l.paymentCents - l.escrowCents),
       },
     ];
   });

@@ -13,7 +13,7 @@ import { equityOf, homeAccount, mortgageView } from '../lib/mortgage';
 import { monthName, periodOf } from '../lib/dates';
 import { goalView } from '../lib/savings';
 import { defaultTaxYear } from '../lib/tax';
-import { retirementView, totalMonthly } from '../lib/retirement';
+import { totalMonthly } from '../lib/retirement';
 import { transitionClick } from '../lib/transition';
 
 function Tile({
@@ -22,7 +22,6 @@ function Tile({
   icon,
   state,
   cta = false,
-  bar,
 }: {
   to: string;
   title: string;
@@ -30,7 +29,6 @@ function Tile({
   state: string | undefined;
   /** An area not started yet: the state becomes a gold button, since it wants a look. */
   cta?: boolean;
-  bar?: { pct: number; caption: string } | undefined;
 }) {
   const navigate = useNavigate();
   return (
@@ -60,17 +58,6 @@ function Tile({
             <Chevron />
           )}
         </span>
-        {bar && (
-          <span className="mt-3 block">
-            <span className="block h-2 overflow-hidden rounded-full bg-hairline">
-              <span
-                className="block h-full rounded-full bg-sage-600"
-                style={{ width: `${Math.min(100, Math.max(0, bar.pct))}%` }}
-              />
-            </span>
-            <span className="mt-1.5 block type-caption text-ink-muted money">{bar.caption}</span>
-          </span>
-        )}
       </Link>
     </li>
   );
@@ -94,8 +81,6 @@ export function FinancialHealth() {
   let debtState: string | undefined;
   let savingsState: string | undefined;
   let mortgageState: string | undefined;
-  let mortgageBar: { pct: number; caption: string } | undefined;
-  let retireBar: { pct: number; caption: string } | undefined;
   if (ready) {
     const goals = me.settings.savings?.goals ?? [];
     const fund = goals.find((g) => g.kind === 'emergency');
@@ -131,12 +116,6 @@ export function FinancialHealth() {
         acct.source === 'manual' &&
           isDue({ ...loan, owedCents: owedCents(acct.balanceCents) }, today),
       );
-      const term = debt.mortgageTermMonths;
-      if (term > 0)
-        mortgageBar = {
-          pct: Math.round((v.paidCount * 100) / term),
-          caption: `${Math.round((v.paidCount * 100) / term)}% paid`,
-        };
       const home = homeAccount(accounts, debt.homeValueAccountId);
       mortgageState = home
         ? `${formatCents(equityOf(home.balanceCents, owedCents(acct.balanceCents)).cents, { whole: true })} equity`
@@ -147,17 +126,8 @@ export function FinancialHealth() {
     if (!plan) state = setUp;
     else {
       const ids = accounts.filter((a) => a.kind === 'investment' && !a.archivedAt).map((a) => a.id);
-      const start = accounts
-        .filter((a) => ids.includes(a.id))
-        .reduce((n, a) => n + a.balanceCents, 0);
       const monthly = totalMonthly(plan, ids);
-      const v = retirementView(plan, start, monthly, plan.goalAge);
       state = `${formatCents(monthly, { whole: true })}/mo`;
-      if (v.pctOfGoal !== null)
-        retireBar = {
-          pct: v.pctOfGoal,
-          caption: v.pctOfGoal >= 100 ? 'On track for your goal' : `${v.pctOfGoal}% of your goal`,
-        };
     }
   } else if (gap) {
     state = debtState = mortgageState = savingsState = '—';
@@ -172,7 +142,6 @@ export function FinancialHealth() {
           icon="chart"
           state={state}
           cta={todo(state)}
-          bar={retireBar}
         />
         <Tile
           to="/financial-health/debt"
@@ -187,7 +156,6 @@ export function FinancialHealth() {
           icon="home"
           state={mortgageState}
           cta={todo(mortgageState)}
-          bar={mortgageBar}
         />
         <Tile
           to="/financial-health/savings"

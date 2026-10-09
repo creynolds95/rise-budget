@@ -6,6 +6,7 @@ import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { IconButton } from '../components/primitives/Icon';
+import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow, StaticRow } from '../components/primitives/Rows';
@@ -16,6 +17,7 @@ import { ApiError, api } from '../lib/api';
 import {
   DEFAULT_DEBT_PLAN,
   aprFromText,
+  chartPoints,
   aprToText,
   dueSuggestions,
   groupView,
@@ -333,6 +335,7 @@ function LoanSheet({
             group: loan?.group ?? 'student',
             aprMilliPct: aprMilli,
             paymentCents: payment,
+            escrowCents: loan?.escrowCents ?? 0,
             dueDay: due,
             merchant: name.toLowerCase(),
             appliedThrough: loan?.appliedThrough ?? periodOf(today),
@@ -754,6 +757,17 @@ export function Debt() {
                   </Button>
                 </div>
               </div>
+            )}
+            {hasStudent && student.debtFreePeriod && student.totalOwedByMonth.length > 2 && (
+              <>
+                <div>
+                  <Chart
+                    kind="line"
+                    label="Student loans still owed"
+                    points={chartPoints(student, period)}
+                  />
+                </div>
+              </>
             )}
           </>
         }
