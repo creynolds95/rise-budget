@@ -439,15 +439,16 @@ export function AccountDetail() {
               }}
             />
           </>
-        ) : a.kind === 'loan' ? (
+        ) : (
           <ConvertToManual
             id={id}
             name={a.name}
+            isLoan={a.kind === 'loan'}
             onDone={async () => {
               await invalidate();
             }}
           />
-        ) : undefined
+        )
       }
     />
   );
@@ -640,14 +641,17 @@ function BalanceHistory({
   );
 }
 
-/** A synced loan the bank can't keep fresh: detach it so Debt tracks the balance by hand. */
+/** A synced account the bank can't keep fresh, or whose link was removed: detach it so its
+ *  balance is kept by hand (a loan then shows in Debt). */
 function ConvertToManual({
   id,
   name,
+  isLoan,
   onDone,
 }: {
   id: string;
   name: string;
+  isLoan: boolean;
   onDone: () => Promise<void>;
 }) {
   const [asking, setAsking] = useState(false);
@@ -667,8 +671,8 @@ function ConvertToManual({
     <div className="w-full rounded-card bg-surface p-4 shadow-soft">
       <p className="font-medium">Convert {name} to manual?</p>
       <p className="mt-1 type-caption text-ink-muted">
-        It stops syncing from SimpleFIN and keeps its history. You set its balance yourself, and
-        Debt can then track it.
+        It stops syncing from SimpleFIN and keeps its history. You set its balance yourself
+        {isLoan ? ', and Debt can then track it.' : '.'}
       </p>
       {error && <p className="mt-2 type-caption text-clay">{error}</p>}
       <div className="mt-3 flex gap-2">
