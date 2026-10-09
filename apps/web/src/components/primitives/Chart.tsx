@@ -3,6 +3,8 @@ import {
   RANGES,
   linePositions,
   lineSegments,
+  niceTicks,
+  axisLabel,
   nearestIndex,
   sharedScalePaths,
   zeroY,
@@ -32,6 +34,9 @@ export function Chart(
         scrubLabels?: string[];
         /** An extra read-out line per slot, shown under the lines in the touch tooltip. */
         scrubExtra?: (string | null)[] | undefined;
+        /** Monarch-style: dollar values down the side, shading under the live line, and its
+         * total labelled at the end of the line. */
+        detailed?: boolean;
       }
   ) & { label: string; range?: Range; onRange?: (r: Range) => void },
 ) {
@@ -44,6 +49,8 @@ export function Chart(
     setActive(nearestIndex((e.clientX - r.left) / Math.max(1, r.width), linePoints.length));
   };
   const multi = props.kind === 'lines' && props.scrubLabels ? props : null;
+  const detailed = props.kind === 'lines' && props.detailed ? props : null;
+  const ticks = detailed ? niceTicks(Math.max(0, ...detailed.lines.flatMap((l) => l.values))) : [];
   const multiPaths = multi
     ? sharedScalePaths(
         multi.lines.map((l) => l.values),
@@ -52,6 +59,22 @@ export function Chart(
         H,
       )
     : [];
+  const livePaths = detailed
+    ? sharedScalePaths(
+        detailed.lines.map((l) => l.values),
+        detailed.slots,
+        W,
+        H,
+        4,
+        ticks.at(-1),
+      )
+    : [];
+  const liveIdx = detailed ? detailed.lines.findIndex((l) => l.live) : -1;
+  const liveLast = liveIdx >= 0 ? livePaths[liveIdx]?.last : null;
+  const tickY = (v: number) => {
+    const top = ticks.at(-1) || 1;
+    return 4 + (1 - v / top) * (H - 8);
+  };
   const scrubMulti = (e: PointerEvent<HTMLDivElement>) => {
     if (!multi) return;
     const r = e.currentTarget.getBoundingClientRect();
@@ -62,164 +85,197 @@ export function Chart(
   return (
     <figure className="m-0">
       {/* Touch and drag along a line chart to read the balance on that date. */}
-      <div
-        className="relative select-none"
-        {...(multi
-          ? {
-              style: { touchAction: 'pan-y' },
-              onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
-                if (e.pointerType !== 'mouse') e.currentTarget.setPointerCapture(e.pointerId);
-                scrubMulti(e);
-              },
-              onPointerMove: scrubMulti,
-              onPointerUp: () => setActive(null),
-              onPointerCancel: () => setActive(null),
-              onPointerLeave: () => setActive(null),
-            }
-          : props.kind === 'line' && linePoints.length > 0
+      <div className={detailed ? 'flex' : undefined}>
+        {detailed && (
+          <div aria-hidden className="relative h-40 w-11 shrink-0">
+            {ticks.map((v) => (
+              <span
+                key={v}
+                className="type-caption money absolute right-2 -translate-y-1/2 text-ink-faint"
+                style={{ top: `${(tickY(v) / H) * 100}%` }}
+              >
+                {axisLabel(v)}
+              </span>
+            ))}
+          </div>
+        )}
+        <div
+          className="relative min-w-0 flex-1 select-none"
+          {...(multi
             ? {
                 style: { touchAction: 'pan-y' },
                 onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
                   if (e.pointerType !== 'mouse') e.currentTarget.setPointerCapture(e.pointerId);
-                  scrub(e);
+                  scrubMulti(e);
                 },
-                onPointerMove: scrub,
+                onPointerMove: scrubMulti,
                 onPointerUp: () => setActive(null),
                 onPointerCancel: () => setActive(null),
                 onPointerLeave: () => setActive(null),
               }
-            : {})}
-      >
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          role="img"
-          aria-label={props.label}
-          className="h-40 w-full"
-          preserveAspectRatio="none"
+            : props.kind === 'line' && linePoints.length > 0
+              ? {
+                  style: { touchAction: 'pan-y' },
+                  onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
+                    if (e.pointerType !== 'mouse') e.currentTarget.setPointerCapture(e.pointerId);
+                    scrub(e);
+                  },
+                  onPointerMove: scrub,
+                  onPointerUp: () => setActive(null),
+                  onPointerCancel: () => setActive(null),
+                  onPointerLeave: () => setActive(null),
+                }
+              : {})}
         >
-          {[0.25, 0.5, 0.75].map((f) => (
-            <line
-              key={f}
-              x1={0}
-              x2={W}
-              y1={H * f}
-              y2={H * f}
-              className="stroke-hairline"
-              strokeWidth={1}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-          {props.kind === 'lines' && lines(props.lines, props.slots)}
-          {props.kind === 'line' && zeroAt !== null && (
-            <line
-              x1={0}
-              x2={W}
-              y1={zeroAt}
-              y2={zeroAt}
-              className="stroke-ink-faint"
-              strokeWidth={1}
-              strokeDasharray="2 3"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
-          {props.kind === 'line' &&
-            lineSegments(props.points, W, H).map((s, i) => (
-              <polyline
-                key={i}
-                data-dashed={s.dashed}
-                points={s.points.map((p) => p.join(',')).join(' ')}
-                fill="none"
-                stroke={series[0]}
-                strokeWidth={2}
-                strokeDasharray={s.dashed ? '4 4' : undefined}
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            role="img"
+            aria-label={props.label}
+            className="h-40 w-full"
+            preserveAspectRatio="none"
+          >
+            {(detailed ? ticks.map((v) => tickY(v) / H) : [0.25, 0.5, 0.75]).map((f) => (
+              <line
+                key={f}
+                x1={0}
+                x2={W}
+                y1={H * f}
+                y2={H * f}
+                className="stroke-hairline"
+                strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
               />
             ))}
-          {props.kind === 'bar' && bars(props.bars)}
-        </svg>
-        {hit && at && (
-          <>
-            <span
-              aria-hidden
-              className="pointer-events-none absolute top-0 h-full w-px bg-ink-faint"
-              style={{ left: `${(at[0] / W) * 100}%` }}
-            />
-            <span
-              aria-hidden
-              className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sage-700 ring-2 ring-surface"
-              style={{ left: `${(at[0] / W) * 100}%`, top: `${(at[1] / H) * 100}%` }}
-            />
-            <span
-              aria-live="polite"
-              className="pointer-events-none absolute -top-1 z-10 -translate-y-full whitespace-nowrap rounded-input bg-ink px-2 py-1 type-caption text-surface money"
-              style={{
-                left: `${Math.min(80, Math.max(20, (at[0] / W) * 100))}%`,
-                transform: 'translate(-50%, -100%)',
-              }}
-            >
-              {hit.label ? `${hit.label} · ` : ''}
-              {formatCents(hit.cents)}
-            </span>
-          </>
-        )}
-        {multi && active !== null && multiPaths[0]?.points[active] && (
-          <>
-            <span
-              aria-hidden
-              className="pointer-events-none absolute top-0 h-full w-px bg-ink-faint"
-              style={{
-                left: `${((multiPaths[0].points[active] as [number, number])[0] / W) * 100}%`,
-              }}
-            />
-            {multiPaths.map((p, i) => {
-              const pt = p.points[active] as [number, number];
-              return (
-                <span
-                  key={multi.lines[i]?.label}
-                  aria-hidden
-                  className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface"
-                  style={{
-                    left: `${(pt[0] / W) * 100}%`,
-                    top: `${(pt[1] / H) * 100}%`,
-                    background: multi.lines[i]?.color,
-                  }}
+            {props.kind === 'lines' &&
+              lines(props.lines, props.slots, ticks.at(-1), detailed !== null)}
+            {props.kind === 'line' && zeroAt !== null && (
+              <line
+                x1={0}
+                x2={W}
+                y1={zeroAt}
+                y2={zeroAt}
+                className="stroke-ink-faint"
+                strokeWidth={1}
+                strokeDasharray="2 3"
+                vectorEffect="non-scaling-stroke"
+              />
+            )}
+            {props.kind === 'line' &&
+              lineSegments(props.points, W, H).map((s, i) => (
+                <polyline
+                  key={i}
+                  data-dashed={s.dashed}
+                  points={s.points.map((p) => p.join(',')).join(' ')}
+                  fill="none"
+                  stroke={series[0]}
+                  strokeWidth={2}
+                  strokeDasharray={s.dashed ? '4 4' : undefined}
+                  vectorEffect="non-scaling-stroke"
                 />
-              );
-            })}
+              ))}
+            {props.kind === 'bar' && bars(props.bars)}
+          </svg>
+          {hit && at && (
+            <>
+              <span
+                aria-hidden
+                className="pointer-events-none absolute top-0 h-full w-px bg-ink-faint"
+                style={{ left: `${(at[0] / W) * 100}%` }}
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sage-700 ring-2 ring-surface"
+                style={{ left: `${(at[0] / W) * 100}%`, top: `${(at[1] / H) * 100}%` }}
+              />
+              <span
+                aria-live="polite"
+                className="pointer-events-none absolute -top-1 z-10 -translate-y-full whitespace-nowrap rounded-input bg-ink px-2 py-1 type-caption text-surface money"
+                style={{
+                  left: `${Math.min(80, Math.max(20, (at[0] / W) * 100))}%`,
+                  transform: 'translate(-50%, -100%)',
+                }}
+              >
+                {hit.label ? `${hit.label} · ` : ''}
+                {formatCents(hit.cents)}
+              </span>
+            </>
+          )}
+          {multi && active !== null && multiPaths[0]?.points[active] && (
+            <>
+              <span
+                aria-hidden
+                className="pointer-events-none absolute top-0 h-full w-px bg-ink-faint"
+                style={{
+                  left: `${((multiPaths[0].points[active] as [number, number])[0] / W) * 100}%`,
+                }}
+              />
+              {multiPaths.map((p, i) => {
+                const pt = p.points[active] as [number, number];
+                return (
+                  <span
+                    key={multi.lines[i]?.label}
+                    aria-hidden
+                    className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface"
+                    style={{
+                      left: `${(pt[0] / W) * 100}%`,
+                      top: `${(pt[1] / H) * 100}%`,
+                      background: multi.lines[i]?.color,
+                    }}
+                  />
+                );
+              })}
+              <span
+                aria-live="polite"
+                className="pointer-events-none absolute -top-1 z-10 whitespace-nowrap rounded-input bg-ink px-2 py-1 type-caption text-surface money"
+                style={{
+                  left: `${Math.min(75, Math.max(25, ((multiPaths[0].points[active] as [number, number])[0] / W) * 100))}%`,
+                  transform: 'translate(-50%, -100%)',
+                }}
+              >
+                <span className="block font-medium">{multi.scrubLabels?.[active]}</span>
+                {multi.lines.map((l) => (
+                  <span key={l.label} className="block">
+                    {l.label} · {formatCents(l.values[active] ?? 0, { whole: true })}
+                  </span>
+                ))}
+                {multi.scrubExtra?.[active] && (
+                  <span className="block">{multi.scrubExtra[active]}</span>
+                )}
+              </span>
+            </>
+          )}
+          {detailed && liveLast && (
             <span
-              aria-live="polite"
-              className="pointer-events-none absolute -top-1 z-10 whitespace-nowrap rounded-input bg-ink px-2 py-1 type-caption text-surface money"
+              aria-hidden
+              className="type-caption money pointer-events-none absolute whitespace-nowrap font-semibold text-sage-700"
               style={{
-                left: `${Math.min(75, Math.max(25, ((multiPaths[0].points[active] as [number, number])[0] / W) * 100))}%`,
-                transform: 'translate(-50%, -100%)',
+                left: `${(liveLast[0] / W) * 100}%`,
+                top: `${(liveLast[1] / H) * 100}%`,
+                transform: `translate(${liveLast[0] / W > 0.7 ? '-100%' : '-50%'}, calc(-100% - 8px))`,
               }}
             >
-              <span className="block font-medium">{multi.scrubLabels?.[active]}</span>
-              {multi.lines.map((l) => (
-                <span key={l.label} className="block">
-                  {l.label} · {formatCents(l.values[active] ?? 0, { whole: true })}
-                </span>
-              ))}
-              {multi.scrubExtra?.[active] && (
-                <span className="block">{multi.scrubExtra[active]}</span>
-              )}
+              {formatCents(detailed.lines[liveIdx]?.values.at(-1) ?? 0, { whole: true })}
             </span>
-          </>
-        )}
-        {/* Plain HTML, not SVG text: the svg above stretches non-uniformly
+          )}
+          {/* Plain HTML, not SVG text: the svg above stretches non-uniformly
             (preserveAspectRatio="none"), which would distort glyphs. Height scale is 1:1
             (the box is always h-40 = H), so a top percentage lines up with the svg's y. */}
-        {zeroAt !== null && (
-          <span
-            aria-hidden
-            className="type-caption absolute left-0 -translate-y-1/2 bg-surface pr-1 text-ink-faint"
-            style={{ top: `${(zeroAt / H) * 100}%` }}
-          >
-            $0
-          </span>
-        )}
+          {zeroAt !== null && (
+            <span
+              aria-hidden
+              className="type-caption absolute left-0 -translate-y-1/2 bg-surface pr-1 text-ink-faint"
+              style={{ top: `${(zeroAt / H) * 100}%` }}
+            >
+              $0
+            </span>
+          )}
+        </div>
       </div>
-      {props.kind === 'lines' && <Axis labels={props.xLabels} spread />}
+      {props.kind === 'lines' && (
+        <div className={detailed ? 'ml-11' : undefined}>
+          <Axis labels={props.xLabels} spread />
+        </div>
+      )}
       {props.kind === 'bar' && props.bars.length > 0 && (
         <Axis labels={props.bars.map((b) => b.label)} />
       )}
@@ -259,17 +315,32 @@ function Axis({ labels, spread = false }: { labels: string[]; spread?: boolean }
   );
 }
 
-function lines(data: Line[], slots: number) {
+function lines(data: Line[], slots: number, top?: number, shaded = false) {
   const paths = sharedScalePaths(
     data.map((l) => l.values),
     slots,
     W,
     H,
+    4,
+    top,
   );
+  const base = sharedScalePaths([[0]], slots, W, H, 4, top)[0]?.points[0]?.[1] ?? H;
   return data.map((l, i) => {
     const p = paths[i] as (typeof paths)[number];
     return (
       <g key={l.label}>
+        {shaded && l.live && p.points.length > 0 && (
+          <polygon
+            data-area
+            points={[
+              `${p.points[0]?.[0]},${base}`,
+              ...p.points.map((xy) => xy.join(',')),
+              `${p.points.at(-1)?.[0]},${base}`,
+            ].join(' ')}
+            fill={l.color}
+            fillOpacity={0.14}
+          />
+        )}
         <polyline
           points={p.points.map((xy) => xy.join(',')).join(' ')}
           fill="none"

@@ -40,3 +40,33 @@ describe('line chart with several series', () => {
     expect(screen.queryByText('Balance · $0')).toBeNull();
   });
 });
+
+describe('detailed line chart', () => {
+  it('shows dollar values at the side, shades the live line and labels its end', () => {
+    const { container } = render(
+      <Chart
+        kind="lines"
+        label="Spend"
+        slots={3}
+        xLabels={['1', '2', '3']}
+        detailed
+        lines={[
+          { label: 'Last', values: [100_000, 500_000, 1_000_000], color: '#111' },
+          { label: 'Now', values: [100_000, 525_834, 525_834], color: '#222', live: true },
+        ]}
+      />,
+    );
+    expect(screen.getByText('$0')).toBeTruthy();
+    expect(screen.getByText('$5K')).toBeTruthy();
+    expect(screen.getByText('$5,258')).toBeTruthy();
+    expect(container.querySelector('polygon[data-area]')).toBeTruthy();
+  });
+
+  it('the default chart has none of it', () => {
+    const { container } = render(
+      <Chart kind="lines" label="Plain" slots={3} xLabels={['a', 'b', 'c']} lines={lines} />,
+    );
+    expect(container.querySelector('polygon')).toBeNull();
+    expect(screen.queryByText('$0')).toBeNull();
+  });
+});

@@ -246,10 +246,12 @@ export function sharedScalePaths(
   width: number,
   height: number,
   pad = 4,
+  /** Force the top of the scale, e.g. to a gridline from `niceTicks`. */
+  top?: number,
 ): { points: [number, number][]; last: [number, number] | null }[] {
   const all = series.flat();
   const lo = Math.min(0, ...all);
-  const hi = Math.max(0, ...all);
+  const hi = Math.max(0, top ?? 0, ...all);
   const span = hi - lo || 1;
   const x = (i: number) => (slots <= 1 ? width / 2 : (i / (slots - 1)) * width);
   const y = (v: number) => pad + (1 - (v - lo) / span) * (height - 2 * pad);
@@ -257,4 +259,26 @@ export function sharedScalePaths(
     const points = s.map((v, i): [number, number] => [x(i), y(v)]);
     return { points, last: points.at(-1) ?? null };
   });
+}
+
+/**
+ * Round gridline values from $0 up past `maxCents`: a 1/2/5 step, three or four lines.
+ * The last tick is the top of the scale, so the data never touches the ceiling.
+ */
+export function niceTicks(maxCents: number): number[] {
+  const max = Math.max(maxCents, 100) / 100;
+  const raw = max / 4;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = ([1, 2, 5, 10].find((m) => m * mag >= raw) as number) * mag;
+  const ticks: number[] = [];
+  for (let v = 0; v < max + step; v += step) ticks.push(Math.round(v * 100));
+  return ticks;
+}
+
+/** "$2K", "$12K", "$1.5M": axis labels, whole dollars below a thousand. */
+export function axisLabel(cents: number): string {
+  const d = cents / 100;
+  if (d >= 1_000_000) return `$${+(d / 1_000_000).toFixed(1)}M`;
+  if (d >= 1_000) return `$${+(d / 1_000).toFixed(1)}K`;
+  return `$${Math.round(d)}`;
 }

@@ -107,6 +107,7 @@ function PaceAgainstLastMonth(props: {
           kind="lines"
           label={`Running spending total: ${name} against ${prevName}`}
           slots={slots}
+          detailed
           xLabels={['1', ordinal(Math.ceil(slots / 2)), ordinal(slots)]}
           lines={[
             { label: prevName, values: previous, color: series[1] as string },
@@ -115,11 +116,7 @@ function PaceAgainstLastMonth(props: {
         />
       </div>
       <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 type-caption text-ink-muted">
-        <Legend color={series[0]} label={name}>
-          <span>
-            <MoneyText cents={props.spentCents} tone="muted" whole /> so far
-          </span>
-        </Legend>
+        <Legend color={series[0]} label={name} />
         <Legend color={series[1]} label={prevName}>
           <span>
             <MoneyText cents={previous.at(-1) ?? 0} tone="muted" whole /> all month
