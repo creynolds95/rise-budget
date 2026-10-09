@@ -183,7 +183,7 @@ export function Settings() {
   );
 }
 
-/** Phone screen geometry, so a bar that sits short of the bottom edge can be diagnosed from a screenshot. */
+/** Phone screen geometry, live, so a bar that sits short of the bottom edge can be diagnosed from a screenshot. */
 function screenReading(): string {
   const probe = document.createElement('div');
   probe.style.cssText =
@@ -194,7 +194,43 @@ function screenReading(): string {
   probe.remove();
   const navs = document.querySelectorAll('nav[aria-label="Tabs"]');
   const navBottom = Math.round(navs[navs.length - 1]?.getBoundingClientRect().bottom ?? 0);
-  return `screen ${screen.height} · window ${innerHeight} · bar ends ${navBottom} · inset ${top}/${inset}`;
+  const vv = Math.round(window.visualViewport?.height ?? 0);
+  return `screen ${screen.height} · window ${innerHeight} · visible ${vv} · bar ends ${navBottom} · page scroll ${Math.round(scrollY)} · inset ${top}/${inset}`;
+}
+
+/** Temporary: the reading above, kept fresh, and a switch for the screen-tall layout test. */
+function ScreenReading() {
+  const [text, setText] = useState(screenReading);
+  const [full, setFull] = useState(() => document.documentElement.classList.contains('vp-full'));
+  useEffect(() => {
+    const tick = () => setText(screenReading());
+    const id = window.setInterval(tick, 500);
+    window.addEventListener('scroll', tick, { passive: true });
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('scroll', tick);
+    };
+  }, []);
+  const toggle = () => {
+    const on = !full;
+    document.documentElement.classList.toggle('vp-full', on);
+    try {
+      if (on) localStorage.setItem('rise-vp', 'full');
+      else localStorage.removeItem('rise-vp');
+    } catch {
+      // Storage blocked: the switch lasts until the app closes.
+    }
+    setFull(on);
+  };
+  return (
+    <>
+      <span className="text-ink-faint">{text}</span>
+      <br />
+      <button type="button" className="min-h-11 text-sage-700 underline" onClick={toggle}>
+        Layout test: {full ? 'on' : 'off'}
+      </button>
+    </>
+  );
 }
 
 function AppVersion({ timeZone }: { timeZone: string | undefined }) {
@@ -219,7 +255,7 @@ function AppVersion({ timeZone }: { timeZone: string | undefined }) {
           latest && <span className="text-ink-faint">Latest</span>
         )}
         <br />
-        <span className="text-ink-faint">{screenReading()}</span>
+        <ScreenReading />
       </p>
       {stale && (
         <Button
