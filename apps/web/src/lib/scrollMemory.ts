@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useLocation, useNavigationType } from 'react-router';
 import { isScrollLocked } from './scrollLock';
+import { onScroll, scrollToY, scrollTop } from './scroller';
 
 /**
  * Each screen's last scroll offset, by path. Going back to a screen puts it where it was;
@@ -31,12 +32,11 @@ export function useScrollMemory() {
     const prev = window.history.scrollRestoration;
     window.history.scrollRestoration = 'manual';
     // A sheet pins the body, which reads as offset 0; that isn't where the page is.
-    const onScroll = () => {
-      if (!isScrollLocked()) offsets.set(current.current, window.scrollY);
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
+    const stop = onScroll(() => {
+      if (!isScrollLocked()) offsets.set(current.current, scrollTop());
+    });
     return () => {
-      window.removeEventListener('scroll', onScroll);
+      stop();
       window.history.scrollRestoration = prev;
     };
   }, []);
@@ -46,7 +46,7 @@ export function useScrollMemory() {
     const back = pop.current || backTo === pathname;
     backTo = null;
     const target = back ? (offsets.get(pathname) ?? 0) : 0;
-    window.scrollTo(0, target);
+    scrollToY(target);
     if (target === 0) return;
     // The list may still be loading or re-rendering; keep putting it back until it holds,
     // unless the user starts scrolling first.
@@ -54,7 +54,7 @@ export function useScrollMemory() {
     const deadline = performance.now() + SETTLE_MS;
     const stop = () => cancelAnimationFrame(frame);
     const tick = () => {
-      if (Math.abs(window.scrollY - target) > 1) window.scrollTo(0, target);
+      if (Math.abs(scrollTop() - target) > 1) scrollToY(target);
       if (performance.now() < deadline) frame = requestAnimationFrame(tick);
       else cleanup();
     };

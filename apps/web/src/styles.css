@@ -98,8 +98,7 @@
        on a tab root must not drag the page around). Vertical overscroll stays on so the end of
        a page bounces instead of stopping dead. Charts opt back in with their own gestures. */
     touch-action: manipulation;
-    overscroll-behavior-x: none;
-    overscroll-behavior-y: auto;
+    overscroll-behavior: none;
     -webkit-text-size-adjust: 100%;
     overflow-x: clip;
   }
@@ -122,6 +121,20 @@
     padding-top: var(--banner-h, 0px);
     /* Room to scroll a field up past the on-screen keyboard (lib/keyboard). */
     padding-bottom: var(--kb, 0px);
+  }
+  /* Below lg the page doesn't scroll: Shell's #app-scroll does, so the bars stay put while the
+     content bounces. The keyboard room moves from the body to that container. */
+  @media (width < 64rem) {
+    html,
+    body {
+      height: 100dvh;
+      overflow: hidden;
+    }
+    body {
+      box-sizing: border-box;
+      min-height: 0;
+      padding-bottom: 0;
+    }
   }
   :focus-visible {
     outline: 2px solid var(--color-sage-600);
