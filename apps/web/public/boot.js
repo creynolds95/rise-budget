@@ -1,4 +1,4 @@
-/* global window, document, localStorage */
+/* global window, document, localStorage, navigator, screen */
 // Runs before first paint; a file, not inline, so the CSP can forbid inline script.
 window.__splashStart = Date.now();
 // Apply a pinned theme before first paint, so there's no flash of the wrong one.
@@ -11,11 +11,27 @@ try {
 } catch {
   // Storage blocked: fall back to the system theme.
 }
-// Temporary layout test for the installed iPhone app's short window (Settings, under Version):
-// "full" sizes the app to the screen and lets the document hold it, instead of the window.
-try {
-  if (localStorage.getItem('rise-vp') === 'full') document.documentElement.classList.add('vp-full');
-} catch {
-  // Storage blocked: normal layout.
+// The installed iPhone app reports a window one status bar shorter than the screen until the
+// document itself is screen-tall, and nothing draws in the strip that leaves under the tab bar.
+// Installed, the app is sized to the screen (styles.css, html.app-full) so the window grows to it.
+var riseRoot = document.documentElement;
+if (
+  navigator.standalone === true ||
+  (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+) {
+  riseRoot.classList.add('app-full');
+  var riseScreenH = function () {
+    var landscape = window.matchMedia && window.matchMedia('(orientation: landscape)').matches;
+    var long = Math.max(screen.width, screen.height);
+    var short = Math.min(screen.width, screen.height);
+    riseRoot.style.setProperty('--screen-h', (landscape ? short : long) + 'px');
+  };
+  riseScreenH();
+  window.addEventListener('orientationchange', riseScreenH);
+  window.addEventListener('resize', riseScreenH);
 }
-document.documentElement.style.setProperty('--screen-h', window.screen.height + 'px');
+try {
+  localStorage.removeItem('rise-vp'); // the old on-phone layout test's switch
+} catch {
+  // Storage blocked: nothing to clean up.
+}
