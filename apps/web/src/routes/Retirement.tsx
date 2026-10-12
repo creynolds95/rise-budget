@@ -390,55 +390,9 @@ function SettingsSheet({
             />
           }
         />
-        <EditRow
-          label="Spouse"
-          field={
-            <Toggle
-              label="Plan for a spouse"
-              on={sp !== null}
-              onChange={(on) =>
-                set({
-                  spouse: on ? { age: draft.currentAge, ssBenefitCents: 0, ssClaimAge: 67 } : null,
-                })
-              }
-            />
-          }
-        />
-        {sp && (
-          <>
-            <EditRow
-              label="Spouse’s age"
-              field={
-                <NumberField
-                  label="Spouse’s age"
-                  value={sp.age}
-                  onCommit={(n) => setSpouse({ age: n })}
-                />
-              }
-            />
-            <EditRow
-              label="Spouse’s Social Security at 67"
-              field={
-                <MoneyField
-                  label="Spouse’s Social Security at 67"
-                  cents={sp.ssBenefitCents}
-                  draft
-                  onCommit={(c) => setSpouse({ ssBenefitCents: c })}
-                />
-              }
-            />
-            <EditRow
-              label="Spouse claims at"
-              field={
-                <NumberField
-                  label="Spouse’s claiming age"
-                  value={sp.ssClaimAge}
-                  onCommit={(n) => setSpouse({ ssClaimAge: n })}
-                />
-              }
-            />
-          </>
-        )}
+      </div>
+      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Assumptions</h3>
+      <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         <EditRow
           label="Count on Social Security"
           field={
@@ -486,6 +440,58 @@ function SettingsSheet({
             />
           }
         />
+      </div>
+      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Spouse</h3>
+      <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        <EditRow
+          label="Plan for a spouse"
+          field={
+            <Toggle
+              label="Plan for a spouse"
+              on={sp !== null}
+              onChange={(on) =>
+                set({
+                  spouse: on ? { age: draft.currentAge, ssBenefitCents: 0, ssClaimAge: 67 } : null,
+                })
+              }
+            />
+          }
+        />
+        {sp && (
+          <>
+            <EditRow
+              label="Spouse’s age"
+              field={
+                <NumberField
+                  label="Spouse’s age"
+                  value={sp.age}
+                  onCommit={(n) => setSpouse({ age: n })}
+                />
+              }
+            />
+            <EditRow
+              label="Spouse’s Social Security at 67"
+              field={
+                <MoneyField
+                  label="Spouse’s Social Security at 67"
+                  cents={sp.ssBenefitCents}
+                  draft
+                  onCommit={(c) => setSpouse({ ssBenefitCents: c })}
+                />
+              }
+            />
+            <EditRow
+              label="Spouse claims at"
+              field={
+                <NumberField
+                  label="Spouse’s claiming age"
+                  value={sp.ssClaimAge}
+                  onCommit={(n) => setSpouse({ ssClaimAge: n })}
+                />
+              }
+            />
+          </>
+        )}
       </div>
       <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Contributions</h3>
       <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
