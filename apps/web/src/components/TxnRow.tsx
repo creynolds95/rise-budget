@@ -57,6 +57,8 @@ export function TxnRow({
   ]
     .filter(Boolean)
     .join(' · ');
+  // A split's joined emojis run smaller so several don't crowd the merchant.
+  const emojiSize = categoryEmoji?.includes(' / ') ? 'text-[0.75em]' : '';
   const to = `/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`;
   if (onToggle) {
     return (
@@ -78,7 +80,7 @@ export function TxnRow({
         <span className="min-w-0 flex-1">
           <span className="block truncate">
             {categoryEmoji && (
-              <span aria-hidden className="mr-2 not-italic">
+              <span aria-hidden className={`mr-2 not-italic ${emojiSize}`}>
                 {categoryEmoji}
               </span>
             )}
@@ -101,7 +103,7 @@ export function TxnRow({
       >
         <span className="block truncate">
           {categoryEmoji && (
-            <span aria-hidden className="mr-2 not-italic">
+            <span aria-hidden className={`mr-2 not-italic ${emojiSize}`}>
               {categoryEmoji}
             </span>
           )}
