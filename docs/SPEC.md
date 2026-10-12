@@ -588,8 +588,8 @@ server works out what is new and pushes it:
   turned off under "Show me" never pushes either. Also off by default: Surplus going negative
   (once when the projected lowest point first goes under zero, again only after it has
   recovered and dipped anew) and transactions to review (one count per sync that brings in new rows, never one per
-  transaction, nothing at zero). Money in, all off by default: a paycheck (money in filed under
-  an income category), and a manual loan's balance changing (a scheduled paydown counts, any
+  transaction, nothing at zero). Money in, all off by default: a paycheck (money into a bank account, filed under
+  an income category or from a merchant that pays on a schedule), and a manual loan's balance changing (a scheduled paydown counts, any
   amount). Per account, under "Account alerts", the owner picks **Deposits** (each new money-in
   transaction on that account, transfers included; right for retirement, where a market move
   is not news) or **Balance** (the reported balance moved from the one before). Both skip

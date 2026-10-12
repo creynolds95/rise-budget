@@ -161,7 +161,11 @@ export async function reviewCount(userId: UserId, db: D1Database): Promise<numbe
   return row?.n ?? 0;
 }
 
-/** Income deposits (money in, filed under an income category) posted since `from`. */
+/**
+ * Paychecks: money in on a bank account, posted since `from`, that is filed under an income
+ * category or comes from a merchant Rise has found paying on a schedule. Transfers and
+ * pending rows never count.
+ */
 export async function recentIncome(
   userId: UserId,
   db: D1Database,
@@ -169,15 +173,20 @@ export async function recentIncome(
 ): Promise<{ id: string; name: string; amountCents: number }[]> {
   const { results } = await db
     .prepare(
-      `SELECT DISTINCT t.id, COALESCE(t.merchant_display, t.merchant_normalized) AS name,
+      `SELECT t.id, COALESCE(t.merchant_display, t.merchant_normalized) AS name,
               -t.amount_cents AS amount_cents
        FROM txn t
-       JOIN split s ON s.txn_id = t.id
-       JOIN category c ON c.id = s.category_id
-       JOIN category_group g ON g.id = c.group_id
+       JOIN account a ON a.id = t.account_id AND a.kind = 'depository'
        WHERE t.user_id = ?1 AND t.posted_at >= ?2 AND t.amount_cents < 0
          AND t.is_transfer = 0 AND t.is_pending = 0 AND t.review_state != 'dropped'
-         AND g.kind = 'income'
+         AND (
+           EXISTS (SELECT 1 FROM split s
+                   JOIN category c ON c.id = s.category_id
+                   JOIN category_group g ON g.id = c.group_id
+                   WHERE s.txn_id = t.id AND g.kind = 'income')
+           OR EXISTS (SELECT 1 FROM recurring_series r
+                      WHERE r.user_id = t.user_id AND r.merchant_normalized = t.merchant_normalized)
+         )
        ORDER BY t.posted_at DESC LIMIT 20`,
     )
     .bind(userId, from)

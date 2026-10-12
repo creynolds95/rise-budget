@@ -247,7 +247,7 @@ describe('push notifications (SPEC §8.2)', () => {
     expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
   });
 
-  it('tells a balance move on a chosen account, and a paycheck in an income category', async () => {
+  it('tells a balance move on a chosen account, and a paycheck in an income category or from a recurring payer', async () => {
     const s = await setup();
     await s.api('POST', '/push/subscriptions', await device());
     pushService();
