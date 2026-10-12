@@ -527,9 +527,9 @@ describe('T16 auth middleware + error contract', () => {
       ssBenefitCents: 0,
       ssClaimAge: 67,
       spouse: null,
+      ssHaircutPct: 100,
       lifeEvents: [],
       planToAge: 95,
-      lifeEvents: [],
     });
   });
 });
