@@ -107,12 +107,13 @@ async function moneyIn(
     paychecks,
     deposits,
     balanceMoves: moves
-      .filter((m) => m.asOf >= from && m.deltaCents !== 0)
+      .filter((m) => m.asOf >= from && m.deltaCents > 0)
       .map((m) => {
         const a = live.get(m.accountId);
         return {
           ...m,
           account: a?.name ?? '',
+          debt: a?.kind === 'loan' || a?.kind === 'credit',
           manualLoan: a?.kind === 'loan' && a.source === 'manual' && !wantBalance.has(m.accountId),
         };
       }),

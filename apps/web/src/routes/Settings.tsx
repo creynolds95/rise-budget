@@ -427,8 +427,8 @@ const PUSH_ROWS: { key: keyof PushSettings; label: string }[] = [
   ...ALERT_ROWS.map(({ key, label }) => ({ key, label })),
   { key: 'surplusNegative', label: 'Surplus going negative' },
   { key: 'toReview', label: 'Transactions to review' },
-  { key: 'paycheck', label: 'Paycheck landed' },
-  { key: 'manualLoan', label: 'Manual loan balance changed' },
+  { key: 'paycheck', label: 'Paycheck deposited' },
+  { key: 'manualLoan', label: 'Manual loan paid down' },
 ];
 
 const MIN_CHOICES = [0, 5_000, 10_000, 25_000, 50_000, 100_000];
@@ -455,8 +455,8 @@ function AccountAlertsGroup({ alerts }: { alerts: BalanceAlerts }) {
     });
   return (
     <Group
-      title="Account alerts"
-      footer="Deposits tells you about money coming in. Balance tells you when the balance moves. Both skip anything under the minimum."
+      title="Debts, savings and retirement"
+      footer="Tells you when a loan or card balance drops, or a savings or retirement balance rises, never the reverse. Deposits only skips market gains, so it suits retirement. Anything under the minimum is skipped."
     >
       <GroupRow label="Minimum amount">
         <select
@@ -485,8 +485,8 @@ function AccountAlertsGroup({ alerts }: { alerts: BalanceAlerts }) {
             onChange={(e) => set(a.id, e.target.value as BalanceAlertMode | 'off')}
           >
             <option value="off">Off</option>
-            <option value="deposits">Deposits</option>
-            <option value="balance">Balance</option>
+            <option value="deposits">Deposits only</option>
+            <option value="balance">Any increase</option>
           </select>
         </GroupRow>
       ))}

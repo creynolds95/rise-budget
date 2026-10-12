@@ -592,7 +592,7 @@ server works out what is new and pushes it:
   an income category or from a merchant that pays on a schedule), and a manual loan's balance changing (a scheduled paydown counts, any
   amount). Per account, under "Account alerts", the owner picks **Deposits** (each new money-in
   transaction on that account, transfers included; right for retirement, where a market move
-  is not news) or **Balance** (the reported balance moved from the one before). Both skip
+  is not news) or **Any increase** (`balance`: the reported balance rose from the one before; for a loan or card, a rise means less owed). Never the reverse: debt going up, savings or retirement dipping are not told. Both skip
   anything under a minimum (default $100). Only the last three days count as new. Deposits
   rely on the bank sending transactions for that account; where it sends balances only, use
   Balance with a minimum, which cannot tell a contribution from a market move.

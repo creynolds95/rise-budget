@@ -114,6 +114,7 @@ describe('notices', () => {
           balanceCents: 500_000,
           deltaCents: 120_000,
           manualLoan: false,
+          debt: false,
         },
         {
           accountId: 'a2',
@@ -122,6 +123,7 @@ describe('notices', () => {
           balanceCents: 400_000,
           deltaCents: -30_000,
           manualLoan: false,
+          debt: false,
         },
         {
           accountId: 'a3',
@@ -130,6 +132,7 @@ describe('notices', () => {
           balanceCents: 400_100,
           deltaCents: 100,
           manualLoan: false,
+          debt: false,
         },
         {
           accountId: 'l1',
@@ -138,6 +141,7 @@ describe('notices', () => {
           balanceCents: -900_000,
           deltaCents: 30_000,
           manualLoan: true,
+          debt: true,
         },
         {
           accountId: 'l2',
@@ -146,6 +150,7 @@ describe('notices', () => {
           balanceCents: -900_050,
           deltaCents: -50,
           manualLoan: true,
+          debt: true,
         },
       ],
     };
@@ -154,21 +159,14 @@ describe('notices', () => {
       'pay:p1',
       'dep:d1',
       'bal:a1:2026-10-08:500000',
-      'bal:a2:2026-10-08:400000',
       'bal:l1:2026-10-08:-900000',
-      'bal:l2:2026-10-09:-900050',
     ]);
     expect(n[0]).toMatchObject({ title: 'Paycheck landed', body: 'Example Employer, $2,500.00' });
     expect(n[1]).toMatchObject({ title: 'Deposit to 401k', body: '$800.00' });
     expect(n[2]).toMatchObject({ title: 'Checking went up', body: '+$1,200.00, now $5,000.00' });
-    expect(n[3]).toMatchObject({ title: 'Checking went down', body: '-$300.00, now $4,000.00' });
-    expect(n[4]).toMatchObject({ title: 'Car loan paid down', body: '+$300.00, now $9,000.00' });
+    expect(n[3]).toMatchObject({ title: 'Car loan paid down', body: '+$300.00, now $9,000.00' });
     const off = notices(money, { ...ALL, paycheck: false, manualLoan: false });
-    expect(off.map((x) => x.key)).toEqual([
-      'dep:d1',
-      'bal:a1:2026-10-08:500000',
-      'bal:a2:2026-10-08:400000',
-    ]);
+    expect(off.map((x) => x.key)).toEqual(['dep:d1', 'bal:a1:2026-10-08:500000']);
   });
 
   it('keeps the quiet kinds off by default', () => {

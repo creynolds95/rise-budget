@@ -41,13 +41,15 @@ export interface NoticeInputs {
   paychecks: readonly { id: string; name: string; amountCents: number }[];
   /** New money-in rows on accounts set to "deposits". */
   deposits: readonly { id: string; account: string; amountCents: number }[];
-  /** Latest balance move per account set to "balance" or a manual loan. */
+  /** Latest balance rise per account set to "balance" or a manual loan. */
   balanceMoves: readonly {
     accountId: string;
     account: string;
     asOf: string;
     balanceCents: number;
     deltaCents: number;
+    /** A loan or card: a drop in what's owed is the news. */
+    debt: boolean;
     /** Manual loans follow the manualLoan switch instead of the per-account list. */
     manualLoan: boolean;
   }[];
@@ -165,16 +167,15 @@ export function notices(input: NoticeInputs, prefs: PushSettings): Notice[] {
       });
   }
   for (const b of input.balanceMoves) {
+    // Only good news: debt paid down, savings or retirement up. Never the other way.
+    if (b.deltaCents <= 0) continue;
     if (b.manualLoan && !prefs.manualLoan) continue;
     // A manual loan changes only when a payment lands: any change is worth telling.
-    if (!b.manualLoan && Math.abs(b.deltaCents) < input.minCents) continue;
+    if (!b.manualLoan && b.deltaCents < input.minCents) continue;
     out.push({
       key: `bal:${b.accountId}:${b.asOf}:${b.balanceCents}`,
-      title:
-        b.manualLoan && b.deltaCents > 0
-          ? `${b.account} paid down`
-          : `${b.account} ${b.deltaCents > 0 ? 'went up' : 'went down'}`,
-      body: `${b.deltaCents > 0 ? '+' : '-'}${dollars(b.deltaCents)}, now ${dollars(b.balanceCents)}`,
+      title: b.debt ? `${b.account} paid down` : `${b.account} went up`,
+      body: `+${dollars(b.deltaCents)}, now ${dollars(b.balanceCents)}`,
       url: `/accounts/${b.accountId}`,
     });
   }
