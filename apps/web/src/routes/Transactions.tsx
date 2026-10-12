@@ -378,31 +378,6 @@ export function Transactions() {
         </div>
       )}
 
-      {items.length > 0 && picking && (
-        <div className="gutter mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <>
-            <button
-              type="button"
-              disabled={loadingAll}
-              onClick={() => (allPicked ? setPicked(new Set()) : void selectAll())}
-              className="hit-44 min-h-9 type-caption font-medium text-sage-700"
-            >
-              {loadingAll ? 'Loading…' : allPicked ? 'Clear' : 'Select all'}
-            </button>
-            <span className="type-caption text-ink-muted">{picked.size} selected</span>
-            <span className="ml-auto flex gap-1">
-              <Button variant="quiet" disabled={picked.size === 0} onClick={() => setTagging(true)}>
-                Tag
-              </Button>
-              <Button variant="quiet" onClick={stopPicking}>
-                Done
-              </Button>
-            </span>
-          </>
-          {notice && <p className="w-full type-caption text-clay">{notice}</p>}
-        </div>
-      )}
-
       {batchReview && !picking && items.length > 0 && (
         <div className="gutter mt-3">
           <Button className="w-full" onClick={() => void markAllReviewed()} disabled={marking}>
@@ -475,6 +450,31 @@ export function Transactions() {
           </Button>
         )}
       </div>
+
+      {items.length > 0 && picking && (
+        <div className="sticky bottom-0 z-[6] border-t border-hairline bg-surface">
+          <div className="gutter flex items-center gap-x-4 py-1">
+            <button
+              type="button"
+              disabled={loadingAll}
+              onClick={() => (allPicked ? setPicked(new Set()) : void selectAll())}
+              className="hit-44 min-h-11 type-caption font-medium text-sage-700"
+            >
+              {loadingAll ? 'Loading…' : allPicked ? 'Clear' : 'Select all'}
+            </button>
+            <span className="type-caption text-ink-muted">{picked.size} selected</span>
+            <span className="ml-auto flex gap-1">
+              <Button variant="quiet" disabled={picked.size === 0} onClick={() => setTagging(true)}>
+                Tag
+              </Button>
+              <Button variant="quiet" onClick={stopPicking}>
+                Done
+              </Button>
+            </span>
+          </div>
+          {notice && <p className="gutter pb-2 type-caption text-clay">{notice}</p>}
+        </div>
+      )}
 
       {tagging && (
         <TagSheet
