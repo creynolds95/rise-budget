@@ -4,6 +4,7 @@ import {
   projectBalance,
   projectSeries,
   requiredMonthlyContribution,
+  simulateDrawdown,
   simulateRetirement,
   socialSecurity,
   splitLifeEvents,
@@ -18,6 +19,7 @@ export const AGE_MAX = 75;
 export const DEFAULT_PLAN: RetirementPlan = {
   currentAge: 30,
   goalAge: 65,
+  planToAge: 95,
   spendTargetCents: 0,
   contributions: [],
   realGrowthBps: 400,
@@ -49,6 +51,8 @@ export interface RetirementView {
    */
   gapMonthlyCents: number | null;
   series: { age: number; balanceCents: number }[];
+  /** Whether the money lasts to `planToAge`; null with no spending to test (no goal, no income). */
+  lasts: { successPct: number; lastsToAge: number | null; drawCents: number } | null;
 }
 
 export const totalMonthly = (plan: RetirementPlan, accountIds: readonly string[]): number =>
@@ -105,9 +109,26 @@ export function retirementView(
     neededCents === null
       ? null
       : requiredMonthlyContribution(startCents, neededCents, years, plan.realGrowthBps, lumps);
+  const spendCents = hasGoal ? plan.spendTargetCents : incomeCents;
+  const drawCents = Math.max(0, spendCents - ss.monthlyCents);
+  const lasts =
+    drawCents === 0 || atAge >= plan.planToAge
+      ? null
+      : {
+          ...simulateDrawdown({
+            startCents: Math.max(0, balanceCents - setAsideCents),
+            monthlyDrawCents: drawCents,
+            years: plan.planToAge - atAge,
+            retireAge: atAge,
+            realGrowthBps: plan.realGrowthBps,
+            volatilityBps: plan.volatilityBps,
+          }),
+          drawCents,
+        };
   return {
     balanceCents,
     incomeCents,
+    lasts,
     ssMonthlyCents: ss.monthlyCents,
     setAsideCents,
     neededCents,

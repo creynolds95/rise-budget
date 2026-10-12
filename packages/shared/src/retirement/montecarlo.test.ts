@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { projectBalance } from './project';
-import { MC_RUNS, percentile, seededRandom, simulateRetirement, successRate } from './montecarlo';
+import {
+  MC_RUNS,
+  percentile,
+  seededRandom,
+  simulateDrawdown,
+  simulateRetirement,
+  successRate,
+} from './montecarlo';
 
 const base = {
   startCents: 10_000_000,
@@ -133,5 +140,47 @@ describe('one-time amounts in the fan', () => {
       runs: 3,
     });
     expect(fan[1]?.p50).toBe(70_000);
+  });
+});
+
+describe('simulateDrawdown', () => {
+  const base = {
+    startCents: 100_000_000,
+    monthlyDrawCents: 300_000,
+    years: 28,
+    retireAge: 67,
+    realGrowthBps: 400,
+    volatilityBps: 0,
+    runs: 50,
+  };
+
+  it('lasts the whole plan when the draw is under the growth', () => {
+    expect(simulateDrawdown(base)).toEqual({ successPct: 100, lastsToAge: null });
+  });
+
+  it('names the age it runs out on a steady path', () => {
+    const r = simulateDrawdown({ ...base, realGrowthBps: 0, monthlyDrawCents: 500_000 });
+    expect(r).toEqual({ successPct: 0, lastsToAge: 83 });
+  });
+
+  it('swings can sink a run that steady growth would carry', () => {
+    const r = simulateDrawdown({
+      ...base,
+      monthlyDrawCents: 380_000,
+      realGrowthBps: 400,
+      volatilityBps: 2500,
+      runs: 200,
+    });
+    expect(r.successPct).toBeGreaterThan(0);
+    expect(r.successPct).toBeLessThan(100);
+  });
+
+  it('is deterministic for a seed', () => {
+    const o = { ...base, volatilityBps: 1500, monthlyDrawCents: 400_000, runs: 100 };
+    expect(simulateDrawdown(o)).toEqual(simulateDrawdown(o));
+  });
+
+  it('defaults to the standard run count and seed', () => {
+    expect(simulateDrawdown({ ...base, runs: undefined }).successPct).toBe(100);
   });
 });

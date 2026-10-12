@@ -47,6 +47,8 @@ export type DashboardTile = z.infer<typeof DashboardTile>;
 export const RetirementPlan = z.object({
   currentAge: z.int().min(18).max(100),
   goalAge: z.int().min(40).max(90),
+  /** Age the plan has to last to; the draw-down test runs from retirement to here. */
+  planToAge: z.int().min(70).max(110).default(95),
   /** Monthly spend wanted in retirement, in today's dollars. The needed balance is derived from it. */
   spendTargetCents: Cents.min(0),
   /** What goes in each month, per retirement account, match included. */

@@ -113,3 +113,47 @@ export function successRate(finals: readonly number[], targetCents: number): num
   if (finals.length === 0) return 0;
   return Math.round((finals.filter((f) => f >= targetCents).length * 100) / finals.length);
 }
+
+export interface DrawdownResult {
+  /** Whole percent of runs that still hold money at the end of the plan. */
+  successPct: number;
+  /** Age the money runs out on a no-swing path (growth only); null if it lasts the plan. */
+  lastsToAge: number | null;
+}
+
+/**
+ * Retirement draw-down: from the balance at retirement, take `monthlyDrawCents` out each month
+ * (in today's dollars) while the rest grows, through `years`. Same seeded lognormal shock as the
+ * fan. A run fails the month its balance reaches zero. `lastsToAge` is the same walk with no
+ * shocks, so it matches the plain projection.
+ */
+export function simulateDrawdown(opts: {
+  startCents: number;
+  monthlyDrawCents: number;
+  years: number;
+  retireAge: number;
+  realGrowthBps: number;
+  volatilityBps: number;
+  runs?: number;
+  seed?: number;
+}): DrawdownResult {
+  const { startCents, monthlyDrawCents, years, retireAge, realGrowthBps, volatilityBps } = opts;
+  const months = years * 12;
+  const rate = monthlyRateE12(realGrowthBps);
+  const survives = (shock: () => number): number => {
+    let balance = startCents;
+    for (let m = 0; m < months; m++) {
+      balance = Math.round(fanStep(balance, rate) * shock()) - monthlyDrawCents;
+      if (balance <= 0) return m + 1;
+    }
+    return months + 1;
+  };
+  const plain = survives(() => 1);
+  const lastsToAge = plain > months ? null : retireAge + Math.floor((plain - 1) / 12);
+  const runs = opts.runs ?? MC_RUNS;
+  const rand = seededRandom(opts.seed ?? MC_SEED);
+  const sd = volatilityBps / 10_000 / Math.sqrt(12);
+  let ok = 0;
+  for (let r = 0; r < runs; r++) if (survives(() => Math.exp(sd * gaussian(rand))) > months) ok++;
+  return { successPct: Math.round((ok * 100) / runs), lastsToAge };
+}
