@@ -10,6 +10,7 @@ import { CategoryPicker } from '../components/CategoryPicker';
 import { TagSheet } from '../components/TagSheet';
 import { FilterSheet } from '../components/FilterSheet';
 import { TxnAmount } from '../components/TxnAmount';
+import { splitEmojis } from '../lib/splits';
 import { TxnRow } from '../components/TxnRow';
 import { Button } from '../components/primitives/Button';
 import { Icon, IconButton } from '../components/primitives/Icon';
@@ -156,6 +157,7 @@ export function Transactions() {
         key={t.id}
         t={t}
         categoryEmoji={c?.emoji}
+        splitEmojis={splitEmojis(t.splits, (id) => cat(id)?.emoji)}
         from={back}
         hideDate={byDate}
         onRecategorize={batchReview && !picking ? () => setRecategorizing(t.id) : undefined}

@@ -14,6 +14,7 @@ import { Chevron } from './primitives/Rows';
 export function TxnRow({
   t,
   categoryEmoji,
+  splitEmojis,
   from,
   hideDate = false,
   onRecategorize,
@@ -24,6 +25,8 @@ export function TxnRow({
   t: Transaction;
   /** Shown before the merchant name; the category's name isn't repeated on the row. */
   categoryEmoji?: string | null | undefined;
+  /** A split's category emojis; the row reads "Split: 🚙 / 🏚️" at the merchant's size. */
+  splitEmojis?: string[] | undefined;
   from?: string;
   /** Under a date header the date would only repeat it. */
   hideDate?: boolean;
@@ -48,13 +51,19 @@ export function TxnRow({
         : months > 1
           ? `Spread over ${months} months`
           : t.splits.length > 1
-            ? 'Split'
+            ? splitEmojis?.length
+              ? null
+              : 'Split'
             : null,
     t.reviewState === 'needs_review' ? 'To review' : null,
     flagText(t.flag, alerts),
   ]
     .filter(Boolean)
     .join(' · ');
+  const splitLine =
+    !t.isTransfer && !part && months <= 1 && t.splits.length > 1 && splitEmojis?.length ? (
+      <span className="block truncate">Split: {splitEmojis.join(' / ')}</span>
+    ) : null;
   const to = `/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`;
   if (onToggle) {
     return (
@@ -82,6 +91,8 @@ export function TxnRow({
             )}
             {merchantName(t)}
           </span>
+          {splitLine}
+          {splitLine}
           {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
         </span>
         <TxnAmount t={part ? { ...t, amountCents: part.amountCents } : t} />
