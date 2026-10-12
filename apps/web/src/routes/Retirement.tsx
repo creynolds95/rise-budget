@@ -558,7 +558,12 @@ function LifeEventSheet({
       action={{
         label: 'Save',
         disabled: !valid,
-        onClick: () => onSave({ label: label.trim(), age: Math.min(100, Math.max(18, age)), cents: moneyIn ? cents : -cents }),
+        onClick: () =>
+          onSave({
+            label: label.trim(),
+            age: Math.min(100, Math.max(18, age)),
+            cents: moneyIn ? cents : -cents,
+          }),
       }}
     >
       <div
@@ -600,13 +605,7 @@ function LifeEventSheet({
         />
         <EditRow
           label="Your age"
-          field={
-            <NumberField
-              label="Your age then"
-              value={age}
-              onCommit={setAge}
-            />
-          }
+          field={<NumberField label="Your age then" value={age} onCommit={setAge} />}
         />
         <EditRow
           label="Amount"
