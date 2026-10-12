@@ -6,10 +6,10 @@ import { DetailPage } from '../components/detail/DetailPage';
 import { Donut, Legend } from '../components/Donut';
 import { Button } from '../components/primitives/Button';
 import { Chart } from '../components/primitives/Chart';
-import { IconButton } from '../components/primitives/Icon';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow, StaticRow, ValueRow } from '../components/primitives/Rows';
+import { Menu } from '../components/primitives/Menu';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { series } from '../design/tokens';
@@ -407,7 +407,27 @@ export function Mortgage() {
         header={{
           ...header,
           action: (
-            <IconButton icon="more" label="Mortgage settings" onClick={() => setManaging(true)} />
+            <Menu
+              label="Mortgage options"
+              items={[
+                {
+                  label: 'Set up',
+                  icon: 'sliders',
+                  onSelect: () => {
+                    setSettingsView('setup');
+                    setManaging(true);
+                  },
+                },
+                {
+                  label: 'What if',
+                  icon: 'chart',
+                  onSelect: () => {
+                    setSettingsView('whatif');
+                    setManaging(true);
+                  },
+                },
+              ]}
+            />
           ),
         }}
         identity={{
@@ -535,16 +555,11 @@ export function Mortgage() {
         }
       />
       {sheets}
-      <Sheet open={managing} title="Mortgage settings" onClose={() => setManaging(false)}>
-        <select
-          aria-label="View"
-          className="mb-4 min-h-11 w-full rounded-card bg-surface px-4 focus:outline-none"
-          value={settingsView}
-          onChange={(e) => setSettingsView(e.target.value as 'setup' | 'whatif')}
-        >
-          <option value="setup">Set up</option>
-          <option value="whatif">What if</option>
-        </select>
+      <Sheet
+        open={managing}
+        title={settingsView === 'setup' ? 'Set up' : 'What if'}
+        onClose={() => setManaging(false)}
+      >
         {settingsView === 'setup' ? (
           <div className="overflow-hidden rounded-card bg-surface px-4">
             <EditRow
