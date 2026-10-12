@@ -5,11 +5,11 @@ import { monthlyInterest } from '@rise/shared/debt';
 import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
-import { IconButton } from '../components/primitives/Icon';
 import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow, StaticRow } from '../components/primitives/Rows';
+import { Menu } from '../components/primitives/Menu';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { Toggle } from '../components/primitives/Toggle';
@@ -532,7 +532,29 @@ export function Debt() {
   };
   const header = {
     ...baseHeader,
-    action: <IconButton icon="more" label="Debt settings" onClick={() => setManaging(true)} />,
+    action: (
+      <Menu
+        label="Debt options"
+        items={[
+          {
+            label: 'Set up',
+            icon: 'sliders',
+            onSelect: () => {
+              setSettingsView('setup');
+              setManaging(true);
+            },
+          },
+          {
+            label: 'What if',
+            icon: 'chart',
+            onSelect: () => {
+              setSettingsView('whatif');
+              setManaging(true);
+            },
+          },
+        ]}
+      />
+    ),
   };
   const openEdit = (l: DebtLoanPlan) => {
     setEditing(l);
@@ -779,16 +801,11 @@ export function Debt() {
             : []),
         ]}
       />
-      <Sheet open={managing} title="Debt settings" onClose={() => setManaging(false)}>
-        <select
-          aria-label="View"
-          className="mb-4 min-h-11 w-full rounded-card bg-surface px-4 focus:outline-none"
-          value={settingsView}
-          onChange={(e) => setSettingsView(e.target.value as 'setup' | 'whatif')}
-        >
-          <option value="setup">Set up</option>
-          <option value="whatif">What if</option>
-        </select>
+      <Sheet
+        open={managing}
+        title={settingsView === 'setup' ? 'Set up' : 'What if'}
+        onClose={() => setManaging(false)}
+      >
         {settingsView === 'setup' ? (
           <>
             <div className="overflow-hidden rounded-card bg-surface px-4">
