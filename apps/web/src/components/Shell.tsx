@@ -138,7 +138,7 @@ export function Shell() {
                   end={t.path === '/'}
                   className={({ isActive }) =>
                     `flex min-h-11 items-center gap-3 rounded-card px-3 text-body ${
-                      isActive ? 'bg-sage-100 font-semibold text-sage-700' : 'text-ink-muted'
+                      isActive ? 'bg-sage-100 font-semibold text-sage-700' : 'text-ink'
                     }`
                   }
                 >
@@ -166,7 +166,7 @@ export function Shell() {
                   to={i.to}
                   className={({ isActive }) =>
                     `flex min-h-10 items-center rounded-card px-3 type-body ${
-                      isActive ? 'bg-sage-100 font-semibold text-sage-700' : 'text-ink-muted'
+                      isActive ? 'bg-sage-100 font-semibold text-sage-700' : 'text-ink'
                     }`
                   }
                 >
@@ -177,7 +177,7 @@ export function Shell() {
           </div>
           <Link
             to="/settings"
-            className="flex min-h-11 items-center gap-2.5 rounded-card px-3 text-ink-muted"
+            className="flex min-h-11 items-center gap-2.5 rounded-card px-3 text-ink"
           >
             <span className="flex size-8 items-center justify-center rounded-full bg-sage-100 type-caption font-semibold text-sage-700">
               {initials || '•'}
@@ -254,7 +254,7 @@ export function Shell() {
                   end={t.path === '/'}
                   className={({ isActive }) =>
                     `flex min-h-14 flex-col items-center justify-center gap-0.5 type-caption ${
-                      isActive ? 'font-semibold text-sage-700' : 'text-ink-muted'
+                      isActive ? 'font-semibold text-sage-700' : 'text-ink'
                     }`
                   }
                 >
