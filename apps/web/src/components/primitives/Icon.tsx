@@ -28,6 +28,7 @@ export const PATHS = {
   pencil: 'M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4',
   trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
   check: 'M5 12l5 5L20 7',
+  select: 'M9 11l3 3 8-8M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9',
   close: 'M6 6l12 12M18 6L6 18',
   chevronDown: 'M6 9l6 6 6-6',
   chevronLeft: 'M15 6l-6 6 6 6',
