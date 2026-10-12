@@ -95,7 +95,7 @@ export function AddTransactionSheet({ open, onClose }: { open: boolean; onClose:
         </div>
         <div className="mt-2 rounded-card bg-surface px-4 shadow-soft">
           <div className="flex min-h-12 items-center justify-between gap-4 border-b border-hairline py-3">
-            <span className="text-ink-muted">Amount</span>
+            <span className="text-ink">Amount</span>
             <MoneyField label="Amount" cents={cents} draft onCommit={setCents} />
           </div>
           <div className="flex min-h-12 items-center justify-between gap-4 border-b border-hairline py-3">
