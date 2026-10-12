@@ -475,6 +475,7 @@ export function Debt() {
   const [addKey, setAddKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [managing, setManaging] = useState(false);
+  const [settingsView, setSettingsView] = useState<'setup' | 'whatif'>('setup');
 
   const save = useMutation({
     mutationFn: (debt: DebtPlan) => api('PATCH', '/me/settings', { debt }),
@@ -779,70 +780,83 @@ export function Debt() {
         ]}
       />
       <Sheet open={managing} title="Debt settings" onClose={() => setManaging(false)}>
-        <div className="overflow-hidden rounded-card bg-surface px-4">
-          <EditRow
-            label="Extra per month"
-            field={
-              <MoneyField
+        <select
+          aria-label="View"
+          className="mb-4 min-h-11 w-full rounded-card bg-surface px-4 focus:outline-none"
+          value={settingsView}
+          onChange={(e) => setSettingsView(e.target.value as 'setup' | 'whatif')}
+        >
+          <option value="setup">Set up</option>
+          <option value="whatif">What if</option>
+        </select>
+        {settingsView === 'setup' ? (
+          <>
+            <div className="overflow-hidden rounded-card bg-surface px-4">
+              <EditRow
                 label="Extra per month"
-                cents={current.extraCents}
-                onCommit={(c) => edit({ extraCents: c })}
+                field={
+                  <MoneyField
+                    label="Extra per month"
+                    cents={current.extraCents}
+                    onCommit={(c) => edit({ extraCents: c })}
+                  />
+                }
               />
-            }
-          />
-          <EditRow
-            label="Extra goes to"
-            field={
-              <Segmented
+              <EditRow
                 label="Extra goes to"
-                value={current.strategy}
-                options={[
-                  { id: 'snowball', label: 'Smallest' },
-                  { id: 'avalanche', label: 'Highest rate' },
-                ]}
-                onChange={(strategy) => edit({ strategy })}
+                field={
+                  <Segmented
+                    label="Extra goes to"
+                    value={current.strategy}
+                    options={[
+                      { id: 'snowball', label: 'Smallest' },
+                      { id: 'avalanche', label: 'Highest rate' },
+                    ]}
+                    onChange={(strategy) => edit({ strategy })}
+                  />
+                }
               />
-            }
-          />
-          <EditRow
-            label="Apply payments when they post"
-            field={
-              <Toggle
+              <EditRow
                 label="Apply payments when they post"
-                on={current.autoApply}
-                onChange={(autoApply) => edit({ autoApply })}
+                field={
+                  <Toggle
+                    label="Apply payments when they post"
+                    on={current.autoApply}
+                    onChange={(autoApply) => edit({ autoApply })}
+                  />
+                }
               />
-            }
-          />
-          <EditRow
-            label="Freed payments move on"
-            field={
-              <Toggle
+              <EditRow
                 label="Freed payments move on"
-                on={current.rollForward}
-                onChange={(rollForward) => edit({ rollForward })}
+                field={
+                  <Toggle
+                    label="Freed payments move on"
+                    on={current.rollForward}
+                    onChange={(rollForward) => edit({ rollForward })}
+                  />
+                }
               />
-            }
+            </div>
+            <div className="mt-4">
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  setManaging(false);
+                  openAdd();
+                }}
+              >
+                Add a loan
+              </Button>
+            </div>
+          </>
+        ) : (
+          <WhatIf
+            loans={planLoans(plan, live, 'student')}
+            plan={plan}
+            period={period}
+            onApply={edit}
           />
-        </div>
-        <div className="mt-4">
-          <Button
-            variant="quiet"
-            onClick={() => {
-              setManaging(false);
-              openAdd();
-            }}
-          >
-            Add a loan
-          </Button>
-        </div>
-        <h3 className="mt-6 mb-2 type-label font-semibold text-ink-muted">What if</h3>
-        <WhatIf
-          loans={planLoans(plan, live, 'student')}
-          plan={plan}
-          period={period}
-          onApply={edit}
-        />
+        )}
       </Sheet>
       {sheets}
     </>
