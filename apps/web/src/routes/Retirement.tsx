@@ -13,7 +13,7 @@ import { IconButton } from '../components/primitives/Icon';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow, StaticRow } from '../components/primitives/Rows';
-import { Sheet } from '../components/primitives/Sheet';
+import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { Toggle } from '../components/primitives/Toggle';
 import { api } from '../lib/api';
@@ -28,7 +28,11 @@ import {
   totalMonthly,
 } from '../lib/retirement';
 
-/** A whole-number or percent box that commits on blur, reverting what it can't read. */
+/**
+ * A whole-number or percent box. Every readable keystroke is reported, because the number pad
+ * has no Return key and iOS doesn't blur a field when a button is tapped, so waiting for blur
+ * lost the edit. Clamping belongs to whoever saves, not to the keystroke.
+ */
 function NumberField({
   value,
   label,
@@ -43,23 +47,27 @@ function NumberField({
   /** Stored value = shown value × scale (percent shown, basis points stored). */
   scale?: number;
 }) {
-  const shown = value / scale;
-  const [text, setText] = useState(String(shown));
-  useEffect(() => setText(String(shown)), [shown]);
-  const commit = () => {
-    const n = Number(text);
-    if (!Number.isFinite(n) || n < 0 || text.trim() === '') return setText(String(shown));
-    const stored = Math.round(n * scale);
-    if (stored !== value) onCommit(stored);
+  const [text, setText] = useState(String(value / scale));
+  const read = (t: string) => {
+    const n = Number(t);
+    return t.trim() === '' || !Number.isFinite(n) || n < 0 ? null : Math.round(n * scale);
   };
+  // Follow outside changes, but never rewrite what's mid-typing ("3." reads as 3).
+  useEffect(() => {
+    setText((t) => (read(t) === value ? t : String(value / scale)));
+  }, [value, scale]);
   return (
     <span className="inline-flex min-h-11 items-center rounded-input border border-hairline bg-surface px-3 focus-within:border-sage-600">
       <input
         aria-label={label}
         inputMode="decimal"
         value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
+        onChange={(e) => {
+          setText(e.target.value);
+          const stored = read(e.target.value);
+          if (stored !== null && stored !== value) onCommit(stored);
+        }}
+        onBlur={() => setText(String(value / scale))}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         className="money w-14 bg-transparent text-right outline-none"
       />
@@ -137,15 +145,6 @@ export function Retirement() {
   const monthly = totalMonthly(plan, ids);
   const v = retirementView(plan, start, monthly, shownAge);
   const f = fanView(plan, start, monthly, shownAge);
-  const contributionOf = (id: string) =>
-    plan.contributions.find((c) => c.accountId === id)?.monthlyCents ?? 0;
-  const setContribution = (id: string, monthlyCents: number) =>
-    edit({
-      contributions: [
-        ...plan.contributions.filter((c) => c.accountId !== id),
-        { accountId: id, monthlyCents },
-      ],
-    });
 
   return (
     <>
@@ -298,177 +297,240 @@ export function Retirement() {
           }
         />
       )}
-      <Sheet open={managing} title="Retirement settings" onClose={() => setManaging(false)}>
-        <div className="overflow-hidden rounded-card bg-surface px-4">
-          <EditRow
-            label="Your age"
-            field={
-              <NumberField
-                label="Your age"
-                value={plan.currentAge}
-                onCommit={(n) => edit({ currentAge: n })}
-              />
-            }
+      <Leaving>
+        {managing && (
+          <SettingsSheet
+            plan={plan}
+            accounts={retirementAccounts}
+            onClose={() => setManaging(false)}
+            onSave={(p) => {
+              save.mutate(p);
+              setManaging(false);
+            }}
           />
-          <EditRow
-            label="Goal age"
-            field={
-              <NumberField
-                label="Goal age"
-                value={plan.goalAge}
-                onCommit={(n) => edit({ goalAge: n })}
-              />
-            }
-          />
-          <EditRow
-            label="Monthly spending goal"
-            field={
-              <MoneyField
-                label="Monthly spending goal"
-                cents={plan.spendTargetCents}
-                onCommit={(c) => edit({ spendTargetCents: c })}
-              />
-            }
-          />
-          {retirementAccounts.map((a) => (
+        )}
+      </Leaving>
+    </>
+  );
+}
+
+/** The plan's own numbers, edited as a draft and saved together. */
+function SettingsSheet({
+  plan,
+  accounts,
+  onClose,
+  onSave,
+}: {
+  plan: RetirementPlan;
+  accounts: { id: string; name: string }[];
+  onClose: () => void;
+  onSave: (plan: RetirementPlan) => void;
+}) {
+  const [draft, setDraft] = useState(plan);
+  const set = (patch: Partial<RetirementPlan>) => setDraft((d) => ({ ...d, ...patch }));
+  const contributionOf = (id: string) =>
+    draft.contributions.find((c) => c.accountId === id)?.monthlyCents ?? 0;
+  const setContribution = (id: string, monthlyCents: number) =>
+    set({
+      contributions: [
+        ...draft.contributions.filter((c) => c.accountId !== id),
+        { accountId: id, monthlyCents },
+      ],
+    });
+  const sp = draft.spouse;
+  const setSpouse = (patch: Partial<NonNullable<RetirementPlan['spouse']>>) =>
+    sp && set({ spouse: { ...sp, ...patch } });
+  return (
+    <Sheet
+      open
+      title="Retirement settings"
+      onClose={onClose}
+      action={{ label: 'Save', onClick: () => onSave(finalize(draft)) }}
+    >
+      <h3 className="px-1 pb-1 type-caption text-ink-muted">Plan</h3>
+      <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        <EditRow
+          label="Your age"
+          field={
+            <NumberField
+              label="Your age"
+              value={draft.currentAge}
+              onCommit={(n) => set({ currentAge: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Goal age"
+          field={
+            <NumberField
+              label="Goal age"
+              value={draft.goalAge}
+              onCommit={(n) => set({ goalAge: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Social Security at 67"
+          field={
+            <MoneyField
+              label="Your Social Security at 67"
+              cents={draft.ssBenefitCents}
+              draft
+              onCommit={(c) => set({ ssBenefitCents: c })}
+            />
+          }
+        />
+        <EditRow
+          label="You claim at"
+          field={
+            <NumberField
+              label="Your claiming age"
+              value={draft.ssClaimAge}
+              onCommit={(n) => set({ ssClaimAge: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Spouse"
+          field={
+            <Toggle
+              label="Plan for a spouse"
+              on={sp !== null}
+              onChange={(on) =>
+                set({
+                  spouse: on ? { age: draft.currentAge, ssBenefitCents: 0, ssClaimAge: 67 } : null,
+                })
+              }
+            />
+          }
+        />
+        {sp && (
+          <>
             <EditRow
-              key={a.id}
-              label={`${a.name} per month`}
+              label="Spouse’s age"
               field={
-                <MoneyField
-                  label={`${a.name} monthly contribution`}
-                  cents={contributionOf(a.id)}
-                  onCommit={(c) => setContribution(a.id, c)}
+                <NumberField
+                  label="Spouse’s age"
+                  value={sp.age}
+                  onCommit={(n) => setSpouse({ age: n })}
                 />
               }
             />
-          ))}
+            <EditRow
+              label="Spouse’s Social Security at 67"
+              field={
+                <MoneyField
+                  label="Spouse’s Social Security at 67"
+                  cents={sp.ssBenefitCents}
+                  draft
+                  onCommit={(c) => setSpouse({ ssBenefitCents: c })}
+                />
+              }
+            />
+            <EditRow
+              label="Spouse claims at"
+              field={
+                <NumberField
+                  label="Spouse’s claiming age"
+                  value={sp.ssClaimAge}
+                  onCommit={(n) => setSpouse({ ssClaimAge: n })}
+                />
+              }
+            />
+          </>
+        )}
+        <EditRow
+          label="Count on Social Security"
+          field={
+            <NumberField
+              label="Share of Social Security to count on"
+              value={draft.ssHaircutPct}
+              suffix="%"
+              onCommit={(n) => set({ ssHaircutPct: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Growth after inflation"
+          field={
+            <NumberField
+              label="Growth after inflation"
+              value={draft.realGrowthBps}
+              scale={100}
+              suffix="%"
+              onCommit={(n) => set({ realGrowthBps: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Withdrawal rate"
+          field={
+            <NumberField
+              label="Withdrawal rate"
+              value={draft.withdrawalBps}
+              scale={100}
+              suffix="%"
+              onCommit={(n) => set({ withdrawalBps: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Volatility"
+          field={
+            <NumberField
+              label="Volatility"
+              value={draft.volatilityBps}
+              scale={100}
+              suffix="%"
+              onCommit={(n) => set({ volatilityBps: n })}
+            />
+          }
+        />
+      </div>
+      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Contributions</h3>
+      <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        <EditRow
+          label="Monthly spending goal"
+          field={
+            <MoneyField
+              label="Monthly spending goal"
+              cents={draft.spendTargetCents}
+              draft
+              onCommit={(c) => set({ spendTargetCents: c })}
+            />
+          }
+        />
+        {accounts.map((a) => (
           <EditRow
-            label="Social Security at 67"
+            key={a.id}
+            label={`${a.name} per month`}
             field={
               <MoneyField
-                label="Your Social Security at 67"
-                cents={plan.ssBenefitCents}
-                onCommit={(c) => edit({ ssBenefitCents: c })}
+                label={`${a.name} monthly contribution`}
+                cents={contributionOf(a.id)}
+                draft
+                onCommit={(c) => setContribution(a.id, c)}
               />
             }
           />
-          <EditRow
-            label="You claim at"
-            field={
-              <NumberField
-                label="Your claiming age"
-                value={plan.ssClaimAge}
-                onCommit={(n) => edit({ ssClaimAge: clampClaim(n) })}
-              />
-            }
-          />
-          <EditRow
-            label="Spouse"
-            field={
-              <Toggle
-                label="Plan for a spouse"
-                on={plan.spouse !== null}
-                onChange={(on) =>
-                  edit({
-                    spouse: on ? { age: plan.currentAge, ssBenefitCents: 0, ssClaimAge: 67 } : null,
-                  })
-                }
-              />
-            }
-          />
-          {plan.spouse && (
-            <>
-              <EditRow
-                label="Spouse’s age"
-                field={
-                  <NumberField
-                    label="Spouse’s age"
-                    value={plan.spouse.age}
-                    onCommit={(n) =>
-                      plan.spouse &&
-                      edit({ spouse: { ...plan.spouse, age: Math.min(100, Math.max(18, n)) } })
-                    }
-                  />
-                }
-              />
-              <EditRow
-                label="Spouse’s Social Security at 67"
-                field={
-                  <MoneyField
-                    label="Spouse’s Social Security at 67"
-                    cents={plan.spouse.ssBenefitCents}
-                    onCommit={(c) =>
-                      plan.spouse && edit({ spouse: { ...plan.spouse, ssBenefitCents: c } })
-                    }
-                  />
-                }
-              />
-              <EditRow
-                label="Spouse claims at"
-                field={
-                  <NumberField
-                    label="Spouse’s claiming age"
-                    value={plan.spouse.ssClaimAge}
-                    onCommit={(n) =>
-                      plan.spouse && edit({ spouse: { ...plan.spouse, ssClaimAge: clampClaim(n) } })
-                    }
-                  />
-                }
-              />
-            </>
-          )}
-          <EditRow
-            label="Count on Social Security"
-            field={
-              <NumberField
-                label="Share of Social Security to count on"
-                value={plan.ssHaircutPct}
-                suffix="%"
-                onCommit={(n) => edit({ ssHaircutPct: Math.min(100, n) })}
-              />
-            }
-          />
-          <EditRow
-            label="Growth after inflation"
-            field={
-              <NumberField
-                label="Growth after inflation"
-                value={plan.realGrowthBps}
-                scale={100}
-                suffix="%"
-                onCommit={(n) => edit({ realGrowthBps: n })}
-              />
-            }
-          />
-          <EditRow
-            label="Withdrawal rate"
-            field={
-              <NumberField
-                label="Withdrawal rate"
-                value={plan.withdrawalBps}
-                scale={100}
-                suffix="%"
-                onCommit={(n) => edit({ withdrawalBps: n })}
-              />
-            }
-          />
-          <EditRow
-            label="Volatility"
-            field={
-              <NumberField
-                label="Volatility"
-                value={plan.volatilityBps}
-                scale={100}
-                suffix="%"
-                onCommit={(n) => edit({ volatilityBps: n })}
-              />
-            }
-          />
-        </div>
-      </Sheet>
-    </>
+        ))}
+      </div>
+    </Sheet>
   );
+}
+
+/** Bounds applied once, when the draft is saved, so typing "6" on the way to "67" isn't rewritten. */
+function finalize(p: RetirementPlan): RetirementPlan {
+  return {
+    ...p,
+    ssClaimAge: clampClaim(p.ssClaimAge),
+    ssHaircutPct: Math.min(100, p.ssHaircutPct),
+    spouse: p.spouse && {
+      ...p.spouse,
+      age: Math.min(100, Math.max(18, p.spouse.age)),
+      ssClaimAge: clampClaim(p.spouse.ssClaimAge),
+    },
+  };
 }
 
 /** Add or change one life event: money in or out at an age, in today's dollars. */
@@ -496,7 +558,7 @@ function LifeEventSheet({
       action={{
         label: 'Save',
         disabled: !valid,
-        onClick: () => onSave({ label: label.trim(), age, cents: moneyIn ? cents : -cents }),
+        onClick: () => onSave({ label: label.trim(), age: Math.min(100, Math.max(18, age)), cents: moneyIn ? cents : -cents }),
       }}
     >
       <div
@@ -542,7 +604,7 @@ function LifeEventSheet({
             <NumberField
               label="Your age then"
               value={age}
-              onCommit={(n) => setAge(Math.min(100, Math.max(18, n)))}
+              onCommit={setAge}
             />
           }
         />
