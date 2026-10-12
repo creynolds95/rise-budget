@@ -175,6 +175,9 @@ export interface ScenarioView {
   /** Cash out the door: the lump plus any payoffs. */
   upfrontCents: number;
   payoffs: { name: string; payoffPeriod: string | null }[];
+  /** Total owed each month: the plan as it stands, then with this what-if. */
+  baseOwedByMonth: number[];
+  owedByMonth: number[];
 }
 
 export function scenarioView(
@@ -215,6 +218,8 @@ export function scenarioView(
     monthsSooner: sooner,
     interestSavedCents: sooner === null ? null : base.totalInterestCents - r.totalInterestCents,
     upfrontCents: s.lumpCents + payOffCents,
+    baseOwedByMonth: base.totalOwedByMonth,
+    owedByMonth: r.totalOwedByMonth,
     payoffs: loans.map((l, i) => {
       const m = r.loans[i]?.payoffMonth ?? null;
       return { name: l.name, payoffPeriod: m === null ? null : addMonths(period, m) };

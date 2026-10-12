@@ -5,6 +5,7 @@ import { monthlyInterest } from '@rise/shared/debt';
 import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
+import { WhatIfChart } from '../components/WhatIfChart';
 import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -216,6 +217,12 @@ function WhatIf({
                 })}
               </div>
             </div>
+            <WhatIfChart
+              label="Total owed, current plan against this what-if"
+              period={period}
+              current={v.baseOwedByMonth}
+              scenario={v.owedByMonth}
+            />
             <StaticRow
               label="Debt-free"
               value={

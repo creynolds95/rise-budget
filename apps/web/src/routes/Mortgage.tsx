@@ -5,6 +5,7 @@ import type { DebtLoanPlan, DebtPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Donut, Legend } from '../components/Donut';
 import { Button } from '../components/primitives/Button';
+import { WhatIfChart } from '../components/WhatIfChart';
 import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -665,6 +666,19 @@ export function Mortgage() {
               <EditRow
                 label="Try an amount"
                 field={<MoneyField label="Try an amount" cents={tryExtra} onCommit={setTryExtra} />}
+              />
+              <WhatIfChart
+                label="Balance, current plan against the extra payment tried"
+                period={period}
+                current={[owed, ...view.plan.rows.map((r) => r.balanceCents)]}
+                scenario={[
+                  owed,
+                  ...(
+                    tries.find((t) => t.extra === (tryExtra || 10_000))?.view.plan.rows ??
+                    view.plan.rows
+                  ).map((r) => r.balanceCents),
+                ]}
+                scenarioName={`+${formatCents(tryExtra || 10_000, { whole: true })}/mo`}
               />
               {tries.map((t) => (
                 <StaticRow
