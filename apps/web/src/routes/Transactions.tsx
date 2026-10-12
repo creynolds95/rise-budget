@@ -156,8 +156,11 @@ export function Transactions() {
       <TxnRow
         key={t.id}
         t={t}
-        categoryEmoji={c?.emoji}
-        splitEmojis={splitEmojis(t.splits, (id) => cat(id)?.emoji)}
+        categoryEmoji={
+          t.splits.length > 1 && !t.isTransfer && spreadMonths(t) <= 1
+            ? splitEmojis(t.splits, (id) => cat(id)?.emoji).join(' / ')
+            : c?.emoji
+        }
         from={back}
         hideDate={byDate}
         onRecategorize={batchReview && !picking ? () => setRecategorizing(t.id) : undefined}
