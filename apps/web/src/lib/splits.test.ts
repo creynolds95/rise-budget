@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { splitProblem, withRemainder } from './splits';
+import { splitEmojis, splitProblem, withRemainder } from './splits';
 
 describe('split editor (SPEC §3.5)', () => {
   it('auto-computes the last row so the set sums exactly', () => {
@@ -43,5 +43,16 @@ describe('split editor (SPEC §3.5)', () => {
         { categoryId: 'b', amountCents: -5 },
       ]),
     ).toBeNull();
+  });
+});
+
+describe('split row emojis', () => {
+  const emoji = (id: string) => ({ car: '🚙', kid: '👱', home: '🏚️', none: null })[id as 'car'];
+  const parts = (...ids: string[]) => ids.map((categoryId) => ({ categoryId }));
+  it('lists each category emoji in split order', () => {
+    expect(splitEmojis(parts('car', 'kid', 'home'), emoji)).toEqual(['🚙', '👱', '🏚️']);
+  });
+  it('dedupes and skips categories without an emoji', () => {
+    expect(splitEmojis(parts('car', 'none', 'car', 'kid'), emoji)).toEqual(['🚙', '👱']);
   });
 });

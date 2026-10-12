@@ -22,7 +22,7 @@ export function TxnRow({
   onToggle,
 }: {
   t: Transaction;
-  /** Shown before the merchant name; the category's name isn't repeated on the row. */
+  /** Shown before the merchant name (a split joins its categories' with " / "); the category's name isn't repeated on the row. */
   categoryEmoji?: string | null | undefined;
   from?: string;
   /** Under a date header the date would only repeat it. */
@@ -48,7 +48,9 @@ export function TxnRow({
         : months > 1
           ? `Spread over ${months} months`
           : t.splits.length > 1
-            ? 'Split'
+            ? categoryEmoji
+              ? null
+              : 'Split'
             : null,
     t.reviewState === 'needs_review' ? 'To review' : null,
     flagText(t.flag, alerts),
