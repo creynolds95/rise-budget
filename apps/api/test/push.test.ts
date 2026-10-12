@@ -40,7 +40,10 @@ function pushService(status = 201) {
 
 const NOW = new Date('2026-10-08T15:00:00Z'); // a Thursday
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe('push notifications (SPEC §8.2)', () => {
   it('hands out one sender key, kept for good', async () => {
@@ -176,6 +179,8 @@ describe('push notifications (SPEC §8.2)', () => {
   });
 
   it('tells a bank needing a look once, and the Sunday recap', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-09T15:00:00Z'));
     const s = await setup();
     await s.api('POST', '/push/subscriptions', await device());
     const service = pushService();
