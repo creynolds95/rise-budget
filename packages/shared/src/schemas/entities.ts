@@ -270,6 +270,10 @@ export const PushSettings = z.object({
   firstTime: z.boolean().default(false),
   surplusNegative: z.boolean().default(false),
   toReview: z.boolean().default(false),
+  /** A paycheck or other income deposit landed. */
+  paycheck: z.boolean().default(false),
+  /** A manual loan's balance changed (a scheduled paydown counts). */
+  manualLoan: z.boolean().default(false),
 });
 export type PushSettings = z.infer<typeof PushSettings>;
 export const PUSH_DEFAULTS: PushSettings = {
@@ -283,7 +287,22 @@ export const PUSH_DEFAULTS: PushSettings = {
   firstTime: false,
   surplusNegative: false,
   toReview: false,
+  paycheck: false,
+  manualLoan: false,
 };
+
+/**
+ * Accounts the owner wants told about (SPEC §8.2). `deposits` pushes each new money-in
+ * transaction (right for retirement: contributions, never market moves); `balance` pushes
+ * when the reported balance moves. Both skip anything under `minCents`.
+ */
+export const BalanceAlertMode = z.enum(['deposits', 'balance']);
+export type BalanceAlertMode = z.infer<typeof BalanceAlertMode>;
+export const BalanceAlerts = z.object({
+  minCents: Cents.min(0).default(10_000),
+  accounts: z.array(z.object({ accountId: Id, mode: BalanceAlertMode })).default([]),
+});
+export type BalanceAlerts = z.infer<typeof BalanceAlerts>;
 
 /** Times of day (minutes after local midnight, the owner's timezone) when the bank sync runs on
  * its own. SimpleFIN allows 24 requests a day; the cap on rows leaves room for manual syncs. */
@@ -325,6 +344,7 @@ export const UserSettings = z.object({
   alerts: AlertSettings.default(ALERTS_ON),
   binder: Binder.default({ passwordsLiveIn: '', entries: [] }),
   push: PushSettings.default(PUSH_DEFAULTS),
+  balanceAlerts: BalanceAlerts.default({ minCents: 10_000, accounts: [] }),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 

@@ -588,7 +588,14 @@ server works out what is new and pushes it:
   turned off under "Show me" never pushes either. Also off by default: Surplus going negative
   (once when the projected lowest point first goes under zero, again only after it has
   recovered and dipped anew) and transactions to review (one count per sync that brings in new rows, never one per
-  transaction, nothing at zero).
+  transaction, nothing at zero). Money in, all off by default: a paycheck (money into a bank account, filed under
+  an income category or from a merchant that pays on a schedule), and a manual loan's balance changing (a scheduled paydown counts, any
+  amount). Per account, under "Account alerts", the owner picks **Deposits** (each new money-in
+  transaction on that account, transfers included; right for retirement, where a market move
+  is not news) or **Any increase** (`balance`: the reported balance rose from the one before; for a loan or card, a rise means less owed). Never the reverse: debt going up, savings or retirement dipping are not told. Both skip
+  anything under a minimum (default $100). Only the last three days count as new. Deposits
+  rely on the bank sending transactions for that account; where it sends balances only, use
+  Balance with a minimum, which cannot tell a contribution from a market move.
 
 Every notice has a key and is told once; at most five go out per run and the rest wait in the
 app. A device signing up starts from now, not with a backlog. A device the browser has dropped

@@ -15,6 +15,7 @@ import {
   AlertSettings,
   Binder,
   PushSettings,
+  BalanceAlerts,
   DashboardTile,
   DebtPlan,
   FollowRule,
@@ -87,6 +88,7 @@ export const PatchSettingsBody = z.object({
   alerts: AlertSettings.optional(),
   binder: Binder.optional(),
   push: PushSettings.optional(),
+  balanceAlerts: BalanceAlerts.optional(),
 });
 
 /** A push service only ever speaks https. */
