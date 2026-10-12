@@ -347,7 +347,7 @@ function SettingsSheet({
       onClose={onClose}
       action={{ label: 'Save', onClick: () => onSave(finalize(draft)) }}
     >
-      <h3 className="px-1 pb-1 type-caption text-ink-muted">Plan</h3>
+      <h3 className="px-1 pb-1 type-caption text-ink-muted">You</h3>
       <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         <EditRow
           label="Your age"
@@ -356,16 +356,6 @@ function SettingsSheet({
               label="Your age"
               value={draft.currentAge}
               onCommit={(n) => set({ currentAge: n })}
-            />
-          }
-        />
-        <EditRow
-          label="Goal age"
-          field={
-            <NumberField
-              label="Goal age"
-              value={draft.goalAge}
-              onCommit={(n) => set({ goalAge: n })}
             />
           }
         />
@@ -387,56 +377,6 @@ function SettingsSheet({
               label="Your claiming age"
               value={draft.ssClaimAge}
               onCommit={(n) => set({ ssClaimAge: n })}
-            />
-          }
-        />
-      </div>
-      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Assumptions</h3>
-      <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-        <EditRow
-          label="Count on Social Security"
-          field={
-            <NumberField
-              label="Share of Social Security to count on"
-              value={draft.ssHaircutPct}
-              suffix="%"
-              onCommit={(n) => set({ ssHaircutPct: n })}
-            />
-          }
-        />
-        <EditRow
-          label="Growth after inflation"
-          field={
-            <NumberField
-              label="Growth after inflation"
-              value={draft.realGrowthBps}
-              scale={100}
-              suffix="%"
-              onCommit={(n) => set({ realGrowthBps: n })}
-            />
-          }
-        />
-        <EditRow
-          label="Withdrawal rate"
-          field={
-            <NumberField
-              label="Withdrawal rate"
-              value={draft.withdrawalBps}
-              scale={100}
-              suffix="%"
-              onCommit={(n) => set({ withdrawalBps: n })}
-            />
-          }
-        />
-        <EditRow
-          label="Volatility"
-          field={
-            <NumberField
-              label="Volatility"
-              value={draft.volatilityBps}
-              scale={100}
-              suffix="%"
-              onCommit={(n) => set({ volatilityBps: n })}
             />
           }
         />
@@ -493,8 +433,18 @@ function SettingsSheet({
           </>
         )}
       </div>
-      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Contributions</h3>
+      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Plan, both of you</h3>
       <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        <EditRow
+          label="Goal age"
+          field={
+            <NumberField
+              label="Goal age"
+              value={draft.goalAge}
+              onCommit={(n) => set({ goalAge: n })}
+            />
+          }
+        />
         <EditRow
           label="Monthly spending goal"
           field={
@@ -506,6 +456,56 @@ function SettingsSheet({
             />
           }
         />
+        <EditRow
+          label="Count on Social Security"
+          field={
+            <NumberField
+              label="Share of Social Security to count on"
+              value={draft.ssHaircutPct}
+              suffix="%"
+              onCommit={(n) => set({ ssHaircutPct: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Growth after inflation"
+          field={
+            <NumberField
+              label="Growth after inflation"
+              value={draft.realGrowthBps}
+              scale={100}
+              suffix="%"
+              onCommit={(n) => set({ realGrowthBps: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Withdrawal rate"
+          field={
+            <NumberField
+              label="Withdrawal rate"
+              value={draft.withdrawalBps}
+              scale={100}
+              suffix="%"
+              onCommit={(n) => set({ withdrawalBps: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Volatility"
+          field={
+            <NumberField
+              label="Volatility"
+              value={draft.volatilityBps}
+              scale={100}
+              suffix="%"
+              onCommit={(n) => set({ volatilityBps: n })}
+            />
+          }
+        />
+      </div>
+      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Contributions by account</h3>
+      <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         {accounts.map((a) => (
           <EditRow
             key={a.id}
