@@ -192,4 +192,92 @@ describe('push notifications (SPEC §8.2)', () => {
     expect(service).toHaveBeenCalledTimes(2);
     expect(await runPush(s.userId, env.DB, sunday)).toEqual({ sent: 0, notices: 0 });
   });
+
+  it('tells deposits to a chosen account, never market moves, and each only once', async () => {
+    const s = await setup();
+    const k = (await s.api('POST', '/accounts', { name: 'Example 401k', kind: 'investment' }))
+      .json as { id: string };
+    await s.api('POST', `/accounts/${k.id}/snapshots`, {
+      asOf: '2026-10-01',
+      balanceCents: 5_000_000,
+    });
+    await s.api('PATCH', '/me/settings', {
+      balanceAlerts: { minCents: 10_000, accounts: [{ accountId: k.id, mode: 'deposits' }] },
+    });
+    await s.api('POST', '/push/subscriptions', await device());
+    pushService();
+    // A market swing moves the balance: not a deposit, so not told.
+    await s.api('POST', `/accounts/${k.id}/snapshots`, {
+      asOf: '2026-10-07',
+      balanceCents: 5_400_000,
+    });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+    const dep = (postedAt: string, amountCents: number) =>
+      s.api('POST', '/transactions', {
+        accountId: k.id,
+        postedAt,
+        amountCents,
+        descriptor: 'EMPLOYER CONTRIBUTION',
+      });
+    await dep('2026-10-07', -40_000);
+    await dep('2026-10-07', -2_000); // under the minimum
+    await dep('2026-09-01', -40_000); // too old to be news
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 1, notices: 1 });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+  });
+
+  it('tells a manual loan paydown only when that switch is on', async () => {
+    const s = await setup();
+    const l = (await s.api('POST', '/accounts', { name: 'Example Loan', kind: 'loan' })).json as {
+      id: string;
+    };
+    await s.api('POST', `/accounts/${l.id}/snapshots`, {
+      asOf: '2026-09-07',
+      balanceCents: -900_000,
+    });
+    await s.api('POST', `/accounts/${l.id}/snapshots`, {
+      asOf: '2026-10-07',
+      balanceCents: -870_000,
+    });
+    await s.api('POST', '/push/subscriptions', await device());
+    pushService();
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+    await s.api('PATCH', '/me/settings', { push: { manualLoan: true } });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 1, notices: 1 });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+  });
+
+  it('tells a balance move on a chosen account, and a paycheck in an income category', async () => {
+    const s = await setup();
+    await s.api('POST', '/push/subscriptions', await device());
+    pushService();
+    const c = (await s.api('POST', '/accounts', { name: 'Checking', kind: 'depository' })).json as {
+      id: string;
+    };
+    const group = (await s.api('POST', '/category-groups', { name: 'Paychecks', kind: 'income' }))
+      .json as { id: string };
+    const pay = (await s.api('POST', '/categories', { groupId: group.id, name: 'Salary' }))
+      .json as { id: string };
+    await s.api('POST', `/accounts/${c.id}/snapshots`, {
+      asOf: '2026-10-01',
+      balanceCents: 100_000,
+    });
+    await s.api('POST', `/accounts/${c.id}/snapshots`, {
+      asOf: '2026-10-07',
+      balanceCents: 400_000,
+    });
+    await s.api('PATCH', '/me/settings', {
+      push: { paycheck: true },
+      balanceAlerts: { minCents: 10_000, accounts: [{ accountId: c.id, mode: 'balance' }] },
+    });
+    await s.api('POST', '/transactions', {
+      accountId: c.id,
+      postedAt: '2026-10-07',
+      amountCents: -300_000,
+      descriptor: 'EXAMPLE EMPLOYER PAYROLL',
+      categoryId: pay.id,
+    });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 2, notices: 2 });
+    expect(await runPush(s.userId, env.DB, NOW)).toEqual({ sent: 0, notices: 0 });
+  });
 });

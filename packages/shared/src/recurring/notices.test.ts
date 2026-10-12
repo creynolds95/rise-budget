@@ -13,6 +13,8 @@ const ALL: PushSettings = {
   firstTime: true,
   surplusNegative: true,
   toReview: true,
+  paycheck: true,
+  manualLoan: true,
 };
 const series = (p: Partial<NoticeInputs['series'][number]> = {}) => ({
   id: 's1',
@@ -43,6 +45,10 @@ const input: NoticeInputs = {
   recap: { weekOf: '2026-10-04', spentCents: 123_456, toReview: 3 },
   surplusNegative: { shortfallCents: 25_050, date: '2026-10-12' },
   review: { runId: 'run1', count: 12 },
+  paychecks: [],
+  deposits: [],
+  balanceMoves: [],
+  minCents: 10_000,
 };
 
 describe('notices', () => {
@@ -81,6 +87,88 @@ describe('notices', () => {
       body: '$250.50 short around 10/12.',
     });
     expect(n[9]).toMatchObject({ title: '12 to review', url: '/review' });
+  });
+
+  it('tells paychecks, deposits and balance moves, skipping the small and the switched off', () => {
+    const money: NoticeInputs = {
+      ...input,
+      series: [],
+      flags: [],
+      bankTrouble: null,
+      recap: null,
+      surplusNegative: null,
+      review: null,
+      paychecks: [
+        { id: 'p1', name: 'Example Employer', amountCents: 250_000 },
+        { id: 'p2', name: 'Refund', amountCents: 2_000 },
+      ],
+      deposits: [
+        { id: 'd1', account: '401k', amountCents: 80_000 },
+        { id: 'd2', account: '401k', amountCents: 5_000 },
+      ],
+      balanceMoves: [
+        {
+          accountId: 'a1',
+          account: 'Checking',
+          asOf: '2026-10-08',
+          balanceCents: 500_000,
+          deltaCents: 120_000,
+          manualLoan: false,
+        },
+        {
+          accountId: 'a2',
+          account: 'Checking',
+          asOf: '2026-10-08',
+          balanceCents: 400_000,
+          deltaCents: -30_000,
+          manualLoan: false,
+        },
+        {
+          accountId: 'a3',
+          account: 'Checking',
+          asOf: '2026-10-08',
+          balanceCents: 400_100,
+          deltaCents: 100,
+          manualLoan: false,
+        },
+        {
+          accountId: 'l1',
+          account: 'Car loan',
+          asOf: '2026-10-08',
+          balanceCents: -900_000,
+          deltaCents: 30_000,
+          manualLoan: true,
+        },
+        {
+          accountId: 'l2',
+          account: 'Car loan',
+          asOf: '2026-10-09',
+          balanceCents: -900_050,
+          deltaCents: -50,
+          manualLoan: true,
+        },
+      ],
+    };
+    const n = notices(money, ALL);
+    expect(n.map((x) => x.key)).toEqual([
+      'pay:p1',
+      'dep:d1',
+      'bal:a1:2026-10-08:500000',
+      'bal:a2:2026-10-08:400000',
+      'bal:l1:2026-10-08:-900000',
+      'bal:l2:2026-10-09:-900050',
+    ]);
+    expect(n[0]).toMatchObject({ title: 'Paycheck landed', body: 'Example Employer, $2,500.00' });
+    expect(n[1]).toMatchObject({ title: 'Deposit to 401k', body: '$800.00' });
+    expect(n[2]).toMatchObject({ title: 'Checking went up', body: '+$1,200.00, now $5,000.00' });
+    expect(n[3]).toMatchObject({ title: 'Checking went down', body: '-$300.00, now $4,000.00' });
+    expect(n[4]).toMatchObject({ title: 'Car loan paid down', body: '+$300.00, now $9,000.00' });
+    const off = notices(money, { ...ALL, paycheck: false, manualLoan: false });
+    expect(off.map((x) => x.key)).toEqual([
+      'dep:d1',
+      'bal:a1:2026-10-08:500000',
+      'bal:a2:2026-10-08:400000',
+    ]);
   });
 
   it('keeps the quiet kinds off by default', () => {

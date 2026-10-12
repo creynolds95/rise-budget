@@ -13,10 +13,13 @@ import {
   flaggedForReview,
   getUser,
   getVapid,
+  latestBalanceMoves,
   listAccounts,
   listPushSubscriptions,
   listSeries,
   listSyncRuns,
+  recentDeposits,
+  recentIncome,
   markSentStmts,
   reviewCount,
   saveVapid,
@@ -66,6 +69,56 @@ async function surplusShortfall(
     : null;
 }
 
+/** How far back a deposit or balance move still counts as new. */
+const MONEY_IN_DAYS = 3;
+
+/** Paychecks, deposits to chosen accounts and balance moves: only what the owner switched on. */
+async function moneyIn(
+  userId: UserId,
+  db: D1Database,
+  user: PushUser,
+  prefs: PushSettings,
+  from: string,
+): Promise<Pick<NoticeInputs, 'paychecks' | 'deposits' | 'balanceMoves' | 'minCents'>> {
+  const { minCents, accounts: picked } = user.settings.balanceAlerts;
+  const wantDeposits = picked.filter((p) => p.mode === 'deposits').map((p) => p.accountId);
+  const wantBalance = new Set(picked.filter((p) => p.mode === 'balance').map((p) => p.accountId));
+  const anyAccounts = picked.length > 0 || prefs.manualLoan;
+  const all = anyAccounts ? await listAccounts(userId, db) : [];
+  const live = new Map(all.filter((a) => !a.archivedAt).map((a) => [a.id, a]));
+  const loans = prefs.manualLoan
+    ? [...live.values()].filter((a) => a.kind === 'loan' && a.source === 'manual')
+    : [];
+  const balanceIds = [...new Set([...wantBalance, ...loans.map((a) => a.id)])].filter((id) =>
+    live.has(id),
+  );
+  const [paychecks, deposits, moves] = await Promise.all([
+    prefs.paycheck ? recentIncome(userId, db, from) : [],
+    recentDeposits(
+      userId,
+      db,
+      wantDeposits.filter((id) => live.has(id)),
+      from,
+    ),
+    latestBalanceMoves(userId, db, balanceIds),
+  ]);
+  return {
+    minCents,
+    paychecks,
+    deposits,
+    balanceMoves: moves
+      .filter((m) => m.asOf >= from && m.deltaCents !== 0)
+      .map((m) => {
+        const a = live.get(m.accountId);
+        return {
+          ...m,
+          account: a?.name ?? '',
+          manualLoan: a?.kind === 'loan' && a.source === 'manual' && !wantBalance.has(m.accountId),
+        };
+      }),
+  };
+}
+
 async function gather(
   userId: UserId,
   db: D1Database,
@@ -91,11 +144,13 @@ async function gather(
     ? await weekSummary(userId, db, shiftDay(today, -7), shiftDay(today, -1))
     : null;
   const surplusChecked = prefs.surplusNegative;
-  const [surplusNegative, toReview] = await Promise.all([
+  const [surplusNegative, toReview, money] = await Promise.all([
     surplusChecked ? surplusShortfall(userId, db, user, today) : null,
     prefs.toReview ? reviewCount(userId, db) : 0,
+    moneyIn(userId, db, user, prefs, shiftDay(today, -MONEY_IN_DAYS)),
   ]);
   return {
+    ...money,
     surplusChecked,
     surplusNegative,
     review: prefs.toReview && runId ? { runId, count: toReview } : null,

@@ -2,6 +2,8 @@ import { isTransfersGroup } from '@rise/shared/categorize';
 import { SYNC_TIMES_DEFAULT, SYNC_TIMES_MAX } from '@rise/shared/schemas';
 import type {
   AlertSettings,
+  BalanceAlertMode,
+  BalanceAlerts,
   PushSettings,
   AppLock,
   Category,
@@ -413,6 +415,7 @@ function AlertsSection() {
         ))}
       </Group>
       <PushGroup push={me.settings.push} />
+      <AccountAlertsGroup alerts={me.settings.balanceAlerts} />
     </>
   );
 }
@@ -424,7 +427,72 @@ const PUSH_ROWS: { key: keyof PushSettings; label: string }[] = [
   ...ALERT_ROWS.map(({ key, label }) => ({ key, label })),
   { key: 'surplusNegative', label: 'Surplus going negative' },
   { key: 'toReview', label: 'Transactions to review' },
+  { key: 'paycheck', label: 'Paycheck landed' },
+  { key: 'manualLoan', label: 'Manual loan balance changed' },
 ];
+
+const MIN_CHOICES = [0, 5_000, 10_000, 25_000, 50_000, 100_000];
+
+/** Per-account pushes: deposits (right for retirement, skips market moves) or any balance move. */
+function AccountAlertsGroup({ alerts }: { alerts: BalanceAlerts }) {
+  const qc = useQueryClient();
+  const accounts = (useAccounts().data ?? []).filter(
+    (a) => !a.archivedAt && !(a.kind === 'loan' && a.source === 'manual'),
+  );
+  const patch = useMutation({
+    mutationFn: (b: BalanceAlerts) => api('PATCH', '/me/settings', { balanceAlerts: b }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+  if (accounts.length === 0) return null;
+  const modeOf = (id: string) => alerts.accounts.find((x) => x.accountId === id)?.mode ?? 'off';
+  const set = (id: string, mode: BalanceAlertMode | 'off') =>
+    patch.mutate({
+      ...alerts,
+      accounts: [
+        ...alerts.accounts.filter((x) => x.accountId !== id),
+        ...(mode === 'off' ? [] : [{ accountId: id, mode }]),
+      ],
+    });
+  return (
+    <Group
+      title="Account alerts"
+      footer="Deposits tells you about money coming in. Balance tells you when the balance moves. Both skip anything under the minimum."
+    >
+      <GroupRow label="Minimum amount">
+        <select
+          aria-label="Minimum amount"
+          className="bg-transparent text-right tabular-nums"
+          value={alerts.minCents}
+          disabled={patch.isPending}
+          onChange={(e) => patch.mutate({ ...alerts, minCents: Number(e.target.value) })}
+        >
+          {[...new Set([...MIN_CHOICES, alerts.minCents])]
+            .sort((x, y) => x - y)
+            .map((c) => (
+              <option key={c} value={c}>
+                {c === 0 ? 'Any' : `$${(c / 100).toLocaleString('en-US')}`}
+              </option>
+            ))}
+        </select>
+      </GroupRow>
+      {accounts.map((a) => (
+        <GroupRow key={a.id} label={a.name}>
+          <select
+            aria-label={`Alerts for ${a.name}`}
+            className="bg-transparent text-right"
+            value={modeOf(a.id)}
+            disabled={patch.isPending}
+            onChange={(e) => set(a.id, e.target.value as BalanceAlertMode | 'off')}
+          >
+            <option value="off">Off</option>
+            <option value="deposits">Deposits</option>
+            <option value="balance">Balance</option>
+          </select>
+        </GroupRow>
+      ))}
+    </Group>
+  );
+}
 
 function PushGroup({ push }: { push: PushSettings }) {
   const qc = useQueryClient();

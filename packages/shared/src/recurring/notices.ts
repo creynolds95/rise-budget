@@ -37,6 +37,22 @@ export interface NoticeInputs {
   surplusNegative: { shortfallCents: number; date: string } | null;
   /** How many wait for review today; null when not looked up. */
   review: { runId: string; count: number } | null;
+  /** Income deposits seen lately (a txn id each). */
+  paychecks: readonly { id: string; name: string; amountCents: number }[];
+  /** New money-in rows on accounts set to "deposits". */
+  deposits: readonly { id: string; account: string; amountCents: number }[];
+  /** Latest balance move per account set to "balance" or a manual loan. */
+  balanceMoves: readonly {
+    accountId: string;
+    account: string;
+    asOf: string;
+    balanceCents: number;
+    deltaCents: number;
+    /** Manual loans follow the manualLoan switch instead of the per-account list. */
+    manualLoan: boolean;
+  }[];
+  /** Smaller deposits and balance moves are not told. */
+  minCents: number;
 }
 
 /** One standing key: told once per dip, and cleared by the caller when Surplus recovers. */
@@ -130,6 +146,38 @@ export function notices(input: NoticeInputs, prefs: PushSettings): Notice[] {
       body: 'Transactions are waiting for a look.',
       url: '/review',
     });
+  for (const p of input.paychecks) {
+    if (prefs.paycheck && p.amountCents >= input.minCents)
+      out.push({
+        key: `pay:${p.id}`,
+        title: 'Paycheck landed',
+        body: `${p.name}, ${dollars(p.amountCents)}`,
+        url: `/transactions/${p.id}`,
+      });
+  }
+  for (const d of input.deposits) {
+    if (d.amountCents >= input.minCents)
+      out.push({
+        key: `dep:${d.id}`,
+        title: `Deposit to ${d.account}`,
+        body: dollars(d.amountCents),
+        url: `/transactions/${d.id}`,
+      });
+  }
+  for (const b of input.balanceMoves) {
+    if (b.manualLoan && !prefs.manualLoan) continue;
+    // A manual loan changes only when a payment lands: any change is worth telling.
+    if (!b.manualLoan && Math.abs(b.deltaCents) < input.minCents) continue;
+    out.push({
+      key: `bal:${b.accountId}:${b.asOf}:${b.balanceCents}`,
+      title:
+        b.manualLoan && b.deltaCents > 0
+          ? `${b.account} paid down`
+          : `${b.account} ${b.deltaCents > 0 ? 'went up' : 'went down'}`,
+      body: `${b.deltaCents > 0 ? '+' : '-'}${dollars(b.deltaCents)}, now ${dollars(b.balanceCents)}`,
+      url: `/accounts/${b.accountId}`,
+    });
+  }
   return out;
 }
 

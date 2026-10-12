@@ -81,7 +81,10 @@ describe('schemas', () => {
         firstTime: false,
         surplusNegative: false,
         toReview: false,
+        paycheck: false,
+        manualLoan: false,
       },
+      balanceAlerts: { minCents: 10_000, accounts: [] },
     });
     expect(u.timezone).toBe('America/Chicago');
   });

@@ -160,3 +160,80 @@ export async function reviewCount(userId: UserId, db: D1Database): Promise<numbe
     .first<{ n: number }>();
   return row?.n ?? 0;
 }
+
+/** Income deposits (money in, filed under an income category) posted since `from`. */
+export async function recentIncome(
+  userId: UserId,
+  db: D1Database,
+  from: string,
+): Promise<{ id: string; name: string; amountCents: number }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT DISTINCT t.id, COALESCE(t.merchant_display, t.merchant_normalized) AS name,
+              -t.amount_cents AS amount_cents
+       FROM txn t
+       JOIN split s ON s.txn_id = t.id
+       JOIN category c ON c.id = s.category_id
+       JOIN category_group g ON g.id = c.group_id
+       WHERE t.user_id = ?1 AND t.posted_at >= ?2 AND t.amount_cents < 0
+         AND t.is_transfer = 0 AND t.is_pending = 0 AND t.review_state != 'dropped'
+         AND g.kind = 'income'
+       ORDER BY t.posted_at DESC LIMIT 20`,
+    )
+    .bind(userId, from)
+    .all<{ id: string; name: string; amount_cents: number }>();
+  return results.map((r) => ({ id: r.id, name: r.name, amountCents: r.amount_cents }));
+}
+
+/** Money-in rows on the given accounts since `from`, transfers included (a contribution may be one). */
+export async function recentDeposits(
+  userId: UserId,
+  db: D1Database,
+  accountIds: readonly string[],
+  from: string,
+): Promise<{ id: string; account: string; amountCents: number }[]> {
+  if (accountIds.length === 0) return [];
+  const { results } = await db
+    .prepare(
+      `SELECT t.id, a.name AS account, -t.amount_cents AS amount_cents
+       FROM json_each(?2) j
+       CROSS JOIN txn t ON t.account_id = j.value AND t.user_id = ?1 AND t.posted_at >= ?3
+       JOIN account a ON a.id = t.account_id
+       WHERE t.amount_cents < 0 AND t.is_pending = 0 AND t.review_state != 'dropped'
+       ORDER BY t.posted_at DESC LIMIT 20`,
+    )
+    .bind(userId, JSON.stringify(accountIds), from)
+    .all<{ id: string; account: string; amount_cents: number }>();
+  return results.map((r) => ({ id: r.id, account: r.account, amountCents: r.amount_cents }));
+}
+
+/** Each account's newest balance and how far it moved from the one before it. */
+export async function latestBalanceMoves(
+  userId: UserId,
+  db: D1Database,
+  accountIds: readonly string[],
+): Promise<{ accountId: string; asOf: string; balanceCents: number; deltaCents: number }[]> {
+  if (accountIds.length === 0) return [];
+  const rows = await db.batch<{ as_of: string; balance_cents: number }>(
+    accountIds.map((id) =>
+      db
+        .prepare(
+          `SELECT as_of, balance_cents FROM balance_snapshot
+           WHERE user_id = ?1 AND account_id = ?2 ORDER BY as_of DESC LIMIT 2`,
+        )
+        .bind(userId, id),
+    ),
+  );
+  return rows.flatMap((r, i) => {
+    const [now, before] = r.results;
+    if (!now || !before) return [];
+    return [
+      {
+        accountId: accountIds[i] as string,
+        asOf: now.as_of,
+        balanceCents: now.balance_cents,
+        deltaCents: now.balance_cents - before.balance_cents,
+      },
+    ];
+  });
+}

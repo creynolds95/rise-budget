@@ -501,7 +501,10 @@ describe('T16 auth middleware + error contract', () => {
         firstTime: false,
         surplusNegative: false,
         toReview: false,
+        paycheck: false,
+        manualLoan: false,
       },
+      balanceAlerts: { minCents: 10_000, accounts: [] },
     });
   });
 
