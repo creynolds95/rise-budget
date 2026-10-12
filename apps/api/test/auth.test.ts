@@ -521,13 +521,14 @@ describe('T16 auth middleware + error contract', () => {
     };
     await call('PATCH', '/me/settings', { access: u.access, body: { retirement: plan } });
     const res = await call('PATCH', '/me/settings', { access: u.access, body: { appLock: '5m' } });
-    // A plan saved before Social Security existed reads back with it off.
+    // A plan saved before Social Security or Plan to age existed reads back with them at defaults.
     expect(res.json.retirement).toEqual({
       ...plan,
       ssBenefitCents: 0,
       ssClaimAge: 67,
       spouse: null,
-      ssHaircutPct: 100,
+      lifeEvents: [],
+      planToAge: 95,
       lifeEvents: [],
     });
   });
