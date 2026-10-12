@@ -1,17 +1,20 @@
 import { Loading, PlanUnknown, useSettingsState } from '../components/Pending';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { netWorthSeries } from '@rise/shared/networth';
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { SavingsGoal, SavingsPlan } from '@rise/shared/schemas';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
+import { Chart } from '../components/primitives/Chart';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { EditRow } from '../components/primitives/Rows';
 import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { Toggle } from '../components/primitives/Toggle';
-import { api } from '../lib/api';
-import { monthName, periodOf } from '../lib/dates';
+import { api, get } from '../lib/api';
+import { rangeStart, type Range } from '../lib/chart';
+import { monthName, periodOf, shortDate } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { useAccounts, useMe, useToday } from '../lib/queries';
 import { goalView, newGoalId, type GoalView } from '../lib/savings';
@@ -184,6 +187,44 @@ function GoalSheet({
 const paceText = (v: GoalView): string =>
   v.monthsToGo === 0 ? 'Reached' : v.period === null ? 'Set a monthly amount' : monthName(v.period);
 
+/** Combined balance of the accounts the goals sit on, over time (dashed where estimated). */
+function SavingsChart({ accountIds, today }: { accountIds: string[]; today: string }) {
+  const [range, setRange] = useState<Range>('1Y');
+  const snaps = useQueries({
+    queries: accountIds.map((id) => ({
+      queryKey: ['snapshots', id],
+      queryFn: () => get<{ asOf: string; balanceCents: number }[]>(`/accounts/${id}/snapshots`),
+    })),
+  });
+  if (snaps.some((q) => q.isLoading)) return <Skeleton className="h-64 w-full" />;
+  const all = snaps.flatMap((q) => q.data ?? []);
+  // Before the first report there is nothing to draw, not a zero balance.
+  const first = all.reduce<string | null>((m, s) => (m === null || s.asOf < m ? s.asOf : m), null);
+  const series = netWorthSeries(
+    accountIds.map((id, i) => ({
+      accountId: id,
+      includeInNetWorth: true,
+      snapshots: snaps[i]?.data ?? [],
+    })),
+    rangeStart(range, today),
+    today,
+  );
+  const known = first ? series.filter((p) => p.date >= first) : [];
+  return (
+    <Chart
+      kind="line"
+      label="Savings balance over time. Dashed where estimated between reports."
+      points={known.map((p) => ({
+        cents: p.netWorthCents,
+        inferred: p.inferred,
+        label: shortDate(p.date),
+      }))}
+      range={range}
+      onRange={setRange}
+    />
+  );
+}
+
 export function Savings() {
   const me = useMe().data;
   const settings = useSettingsState();
@@ -262,6 +303,9 @@ export function Savings() {
   }
 
   const fund = views.find((v) => v.goal.kind === 'emergency');
+  const goalAccountIds = [...new Set(goals.map((g) => g.accountId))].filter((id) =>
+    live.some((a) => a.id === id),
+  );
   const row = (v: GoalView) => (
     <button
       key={v.goal.id}
@@ -287,6 +331,7 @@ export function Savings() {
     <>
       <DetailPage
         header={header}
+        shape={<SavingsChart accountIds={goalAccountIds} today={today} />}
         identity={
           fund && fund.covered !== null
             ? {
