@@ -151,15 +151,14 @@ describe('simulateDrawdown', () => {
     retireAge: 67,
     realGrowthBps: 400,
     volatilityBps: 0,
-    runs: 50,
   };
 
   it('lasts the whole plan when the draw is under the growth', () => {
-    expect(simulateDrawdown(base)).toEqual({ successPct: 100, lastsToAge: null });
+    expect(simulateDrawdown({ ...base, runs: 50 })).toEqual({ successPct: 100, lastsToAge: null });
   });
 
   it('names the age it runs out on a steady path', () => {
-    const r = simulateDrawdown({ ...base, realGrowthBps: 0, monthlyDrawCents: 500_000 });
+    const r = simulateDrawdown({ ...base, realGrowthBps: 0, monthlyDrawCents: 500_000, runs: 50 });
     expect(r).toEqual({ successPct: 0, lastsToAge: 83 });
   });
 
@@ -181,6 +180,6 @@ describe('simulateDrawdown', () => {
   });
 
   it('defaults to the standard run count and seed', () => {
-    expect(simulateDrawdown({ ...base, runs: undefined }).successPct).toBe(100);
+    expect(simulateDrawdown(base).successPct).toBe(100);
   });
 });
