@@ -264,6 +264,7 @@ export function Mortgage() {
   const [graph, setGraph] = useState<'schedule' | 'year'>('schedule');
   const [tryExtra, setTryExtra] = useState(0);
   const [managing, setManaging] = useState(false);
+  const [settingsView, setSettingsView] = useState<'setup' | 'whatif'>('setup');
   const [addKey, setAddKey] = useState(0);
   const save = useMutation({
     mutationFn: (debt: DebtPlan) => api('PATCH', '/me/settings', { debt }),
@@ -535,156 +536,172 @@ export function Mortgage() {
       />
       {sheets}
       <Sheet open={managing} title="Mortgage settings" onClose={() => setManaging(false)}>
-        <div className="overflow-hidden rounded-card bg-surface px-4">
-          <EditRow
-            label="Rate"
-            field={
-              <NumberBox
-                label="Rate"
-                value={loan.aprMilliPct}
-                parse={aprFromText}
-                show={aprToText}
-                suffix="%"
-                onCommit={(n) => editLoan({ aprMilliPct: n })}
-              />
-            }
-          />
-          <EditRow
-            label="Monthly payment"
-            field={
-              <MoneyField
-                label="Monthly payment"
-                cents={view.totalCents}
-                onCommit={(c) => editLoan({ paymentCents: c })}
-              />
-            }
-          />
-          <EditRow
-            label="Taxes and insurance"
-            field={
-              <MoneyField
-                label="Taxes and insurance in the payment"
-                cents={view.escrowCents}
-                onCommit={(c) => editLoan({ escrowCents: c })}
-              />
-            }
-          />
-          <EditRow
-            label="Payments left"
-            field={
-              <NumberBox
-                label="Payments left"
-                value={view.base.payoffMonth ?? 0}
-                parse={parseLeft}
-                show={showInt}
-                width="w-12"
-                onCommit={(n) =>
-                  editLoan({
-                    paymentCents: levelPayment(owed, loan.aprMilliPct, n) + view.escrowCents,
-                  })
-                }
-              />
-            }
-          />
-          <EditRow
-            label="Term"
-            field={
-              <NumberBox
-                label="Term in months"
-                value={current.mortgageTermMonths}
-                parse={parseInt1}
-                show={showInt}
-                suffix="mo"
-                width="w-12"
-                onCommit={(n) => edit({ mortgageTermMonths: n })}
-              />
-            }
-          />
-          <EditRow
-            label="Extra per month"
-            field={
-              <MoneyField
-                label="Extra per month"
-                cents={current.mortgageExtraCents}
-                onCommit={(c) => edit({ mortgageExtraCents: c })}
-              />
-            }
-          />
-          <ValueRow
-            label="Home value"
-            onClick={() => {
-              setManaging(false);
-              setPickingHome(true);
-            }}
-            muted={!homeValue}
-          >
-            {homeValue ? <MoneyText cents={homeValue.balanceCents} whole /> : 'Choose account'}
-          </ValueRow>
-          <ValueRow
-            label="Account"
-            onClick={() => {
-              setManaging(false);
-              setPickingAccount(true);
-            }}
-          >
-            {account.name}
-          </ValueRow>
-        </div>
-        <h3 className="mt-6 mb-2 type-label font-semibold text-ink-muted">Pay extra per month</h3>
-        <div>
-          <EditRow
-            label="Try an amount"
-            field={<MoneyField label="Try an amount" cents={tryExtra} onCommit={setTryExtra} />}
-          />
-          {tries.map((t) => (
-            <StaticRow
-              key={t.extra}
-              label={`+${formatCents(t.extra, { whole: true })}/mo`}
-              value={
-                <span className="money">
-                  {t.view.payoffPeriod ? monthName(t.view.payoffPeriod) : '—'}
-                  <span className="block type-caption text-ink-muted">
-                    {t.view.monthsSooner !== null && t.view.interestSavedCents !== null
-                      ? `${duration(t.view.monthsSooner)} sooner · saves ${formatCents(t.view.interestSavedCents, { whole: true })}`
-                      : 'No change'}
-                  </span>
-                </span>
+        <select
+          aria-label="View"
+          className="mb-4 min-h-11 w-full rounded-card bg-surface px-4 focus:outline-none"
+          value={settingsView}
+          onChange={(e) => setSettingsView(e.target.value as 'setup' | 'whatif')}
+        >
+          <option value="setup">Set up</option>
+          <option value="whatif">What if</option>
+        </select>
+        {settingsView === 'setup' ? (
+          <div className="overflow-hidden rounded-card bg-surface px-4">
+            <EditRow
+              label="Rate"
+              field={
+                <NumberBox
+                  label="Rate"
+                  value={loan.aprMilliPct}
+                  parse={aprFromText}
+                  show={aprToText}
+                  suffix="%"
+                  onCommit={(n) => editLoan({ aprMilliPct: n })}
+                />
               }
             />
-          ))}
-        </div>
-        <h3 className="mt-6 mb-2 type-label font-semibold text-ink-muted">One-time payments</h3>
-        <div>
-          {current.mortgageLumps.map((l, i) => (
-            <div
-              key={`${l.period}-${i}`}
-              className="flex min-h-12 items-center justify-between gap-3 border-b border-hairline py-2"
-            >
-              <span>
-                {monthName(l.period)} · <MoneyText cents={l.cents} whole />
-              </span>
-              <Button
-                variant="quiet"
-                onClick={() =>
-                  edit({ mortgageLumps: current.mortgageLumps.filter((_, j) => j !== i) })
-                }
-              >
-                Remove
-              </Button>
-            </div>
-          ))}
-          <div className="py-3">
-            <Button
-              variant="quiet"
+            <EditRow
+              label="Monthly payment"
+              field={
+                <MoneyField
+                  label="Monthly payment"
+                  cents={view.totalCents}
+                  onCommit={(c) => editLoan({ paymentCents: c })}
+                />
+              }
+            />
+            <EditRow
+              label="Taxes and insurance"
+              field={
+                <MoneyField
+                  label="Taxes and insurance in the payment"
+                  cents={view.escrowCents}
+                  onCommit={(c) => editLoan({ escrowCents: c })}
+                />
+              }
+            />
+            <EditRow
+              label="Payments left"
+              field={
+                <NumberBox
+                  label="Payments left"
+                  value={view.base.payoffMonth ?? 0}
+                  parse={parseLeft}
+                  show={showInt}
+                  width="w-12"
+                  onCommit={(n) =>
+                    editLoan({
+                      paymentCents: levelPayment(owed, loan.aprMilliPct, n) + view.escrowCents,
+                    })
+                  }
+                />
+              }
+            />
+            <EditRow
+              label="Term"
+              field={
+                <NumberBox
+                  label="Term in months"
+                  value={current.mortgageTermMonths}
+                  parse={parseInt1}
+                  show={showInt}
+                  suffix="mo"
+                  width="w-12"
+                  onCommit={(n) => edit({ mortgageTermMonths: n })}
+                />
+              }
+            />
+            <EditRow
+              label="Extra per month"
+              field={
+                <MoneyField
+                  label="Extra per month"
+                  cents={current.mortgageExtraCents}
+                  onCommit={(c) => edit({ mortgageExtraCents: c })}
+                />
+              }
+            />
+            <ValueRow
+              label="Home value"
               onClick={() => {
-                setAddKey((k) => k + 1);
-                setAdding(true);
+                setManaging(false);
+                setPickingHome(true);
+              }}
+              muted={!homeValue}
+            >
+              {homeValue ? <MoneyText cents={homeValue.balanceCents} whole /> : 'Choose account'}
+            </ValueRow>
+            <ValueRow
+              label="Account"
+              onClick={() => {
+                setManaging(false);
+                setPickingAccount(true);
               }}
             >
-              Add a one-time payment
-            </Button>
+              {account.name}
+            </ValueRow>
           </div>
-        </div>
+        ) : (
+          <>
+            <h3 className="mt-6 mb-2 type-label font-semibold text-ink-muted">
+              Pay extra per month
+            </h3>
+            <div>
+              <EditRow
+                label="Try an amount"
+                field={<MoneyField label="Try an amount" cents={tryExtra} onCommit={setTryExtra} />}
+              />
+              {tries.map((t) => (
+                <StaticRow
+                  key={t.extra}
+                  label={`+${formatCents(t.extra, { whole: true })}/mo`}
+                  value={
+                    <span className="money">
+                      {t.view.payoffPeriod ? monthName(t.view.payoffPeriod) : '—'}
+                      <span className="block type-caption text-ink-muted">
+                        {t.view.monthsSooner !== null && t.view.interestSavedCents !== null
+                          ? `${duration(t.view.monthsSooner)} sooner · saves ${formatCents(t.view.interestSavedCents, { whole: true })}`
+                          : 'No change'}
+                      </span>
+                    </span>
+                  }
+                />
+              ))}
+            </div>
+            <h3 className="mt-6 mb-2 type-label font-semibold text-ink-muted">One-time payments</h3>
+            <div>
+              {current.mortgageLumps.map((l, i) => (
+                <div
+                  key={`${l.period}-${i}`}
+                  className="flex min-h-12 items-center justify-between gap-3 border-b border-hairline py-2"
+                >
+                  <span>
+                    {monthName(l.period)} · <MoneyText cents={l.cents} whole />
+                  </span>
+                  <Button
+                    variant="quiet"
+                    onClick={() =>
+                      edit({ mortgageLumps: current.mortgageLumps.filter((_, j) => j !== i) })
+                    }
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <div className="py-3">
+                <Button
+                  variant="quiet"
+                  onClick={() => {
+                    setAddKey((k) => k + 1);
+                    setAdding(true);
+                  }}
+                >
+                  Add a one-time payment
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
       </Sheet>
     </>
   );
