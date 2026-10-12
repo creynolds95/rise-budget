@@ -216,6 +216,18 @@ export function Retirement() {
                 value={<MoneyText cents={v.setAsideCents} whole />}
               />
             )}
+            {v.lasts && (
+              <StaticRow
+                label={`Money lasts to ${plan.planToAge}`}
+                value={
+                  <span className="money">
+                    {v.lasts.successPct}% of the time
+                    {v.lasts.lastsToAge !== null &&
+                      `, runs out at ${v.lasts.lastsToAge} if returns are steady`}
+                  </span>
+                }
+              />
+            )}
             {v.neededCents !== null && (
               <StaticRow
                 label="Needed for goal"
@@ -442,6 +454,16 @@ function SettingsSheet({
               label="Goal age"
               value={draft.goalAge}
               onCommit={(n) => set({ goalAge: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Plan to age"
+          field={
+            <NumberField
+              label="Plan to age"
+              value={draft.planToAge}
+              onCommit={(n) => set({ planToAge: n })}
             />
           }
         />
