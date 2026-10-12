@@ -347,7 +347,7 @@ function SettingsSheet({
       onClose={onClose}
       action={{ label: 'Save', onClick: () => onSave(finalize(draft)) }}
     >
-      <h3 className="px-1 pb-1 type-caption text-ink-muted">Plan</h3>
+      <h3 className="px-1 pb-1 type-caption text-ink-muted">You</h3>
       <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         <EditRow
           label="Your age"
@@ -356,16 +356,6 @@ function SettingsSheet({
               label="Your age"
               value={draft.currentAge}
               onCommit={(n) => set({ currentAge: n })}
-            />
-          }
-        />
-        <EditRow
-          label="Goal age"
-          field={
-            <NumberField
-              label="Goal age"
-              value={draft.goalAge}
-              onCommit={(n) => set({ goalAge: n })}
             />
           }
         />
@@ -390,8 +380,11 @@ function SettingsSheet({
             />
           }
         />
+      </div>
+      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Spouse</h3>
+      <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
         <EditRow
-          label="Spouse"
+          label="Plan for a spouse"
           field={
             <Toggle
               label="Plan for a spouse"
@@ -439,6 +432,30 @@ function SettingsSheet({
             />
           </>
         )}
+      </div>
+      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Plan, both of you</h3>
+      <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        <EditRow
+          label="Goal age"
+          field={
+            <NumberField
+              label="Goal age"
+              value={draft.goalAge}
+              onCommit={(n) => set({ goalAge: n })}
+            />
+          }
+        />
+        <EditRow
+          label="Monthly spending goal"
+          field={
+            <MoneyField
+              label="Monthly spending goal"
+              cents={draft.spendTargetCents}
+              draft
+              onCommit={(c) => set({ spendTargetCents: c })}
+            />
+          }
+        />
         <EditRow
           label="Count on Social Security"
           field={
@@ -487,19 +504,8 @@ function SettingsSheet({
           }
         />
       </div>
-      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Contributions</h3>
+      <h3 className="mt-4 px-1 pb-1 type-caption text-ink-muted">Contributions by account</h3>
       <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-        <EditRow
-          label="Monthly spending goal"
-          field={
-            <MoneyField
-              label="Monthly spending goal"
-              cents={draft.spendTargetCents}
-              draft
-              onCommit={(c) => set({ spendTargetCents: c })}
-            />
-          }
-        />
         {accounts.map((a) => (
           <EditRow
             key={a.id}

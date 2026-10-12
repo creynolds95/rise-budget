@@ -70,9 +70,9 @@ describe('Retirement settings', () => {
     );
   });
 
-  it('groups plan fields apart from contributions', () => {
+  it('groups fields by who they are about', () => {
     open();
-    expect(screen.getByText('Plan')).toBeTruthy();
-    expect(screen.getByText('Contributions')).toBeTruthy();
+    for (const h of ['You', 'Spouse', 'Plan, both of you', 'Contributions by account'])
+      expect(screen.getByText(h)).toBeTruthy();
   });
 });
