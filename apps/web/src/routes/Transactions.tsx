@@ -255,12 +255,19 @@ export function Transactions() {
       onClick={() => setSheet(true)}
     />
   );
+  const selectButton = (
+    <IconButton
+      icon="select"
+      label={picking ? 'Done selecting' : 'Select transactions'}
+      onClick={() => (picking ? stopPicking() : setPicking(true))}
+    />
+  );
   const addButton = (
     <IconButton icon="plus" label="Add transaction" onClick={() => setAdding(true)} />
   );
   useHeaderActions(
     <>
-      {filterButton}
+      {selectButton}
       {addButton}
     </>,
   );
@@ -275,7 +282,7 @@ export function Transactions() {
       <header className="gutter hidden items-center justify-between pt-3 lg:flex">
         <h1 className="type-page">Transactions</h1>
         <div className="-mr-2 flex">
-          {filterButton}
+          {selectButton}
           {addButton}
         </div>
       </header>
@@ -305,6 +312,7 @@ export function Transactions() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          <span className="-mr-3 shrink-0">{filterButton}</span>
         </label>
       </div>
 
@@ -370,41 +378,27 @@ export function Transactions() {
         </div>
       )}
 
-      {items.length > 0 && (
+      {items.length > 0 && picking && (
         <div className="gutter mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-          {picking ? (
-            <>
-              <button
-                type="button"
-                disabled={loadingAll}
-                onClick={() => (allPicked ? setPicked(new Set()) : void selectAll())}
-                className="hit-44 min-h-9 type-caption font-medium text-sage-700"
-              >
-                {loadingAll ? 'Loading…' : allPicked ? 'Clear' : 'Select all'}
-              </button>
-              <span className="type-caption text-ink-muted">{picked.size} selected</span>
-              <span className="ml-auto flex gap-1">
-                <Button
-                  variant="quiet"
-                  disabled={picked.size === 0}
-                  onClick={() => setTagging(true)}
-                >
-                  Tag
-                </Button>
-                <Button variant="quiet" onClick={stopPicking}>
-                  Done
-                </Button>
-              </span>
-            </>
-          ) : (
+          <>
             <button
               type="button"
-              onClick={() => setPicking(true)}
-              className="hit-44 ml-auto min-h-9 type-caption font-medium text-sage-700"
+              disabled={loadingAll}
+              onClick={() => (allPicked ? setPicked(new Set()) : void selectAll())}
+              className="hit-44 min-h-9 type-caption font-medium text-sage-700"
             >
-              Select
+              {loadingAll ? 'Loading…' : allPicked ? 'Clear' : 'Select all'}
             </button>
-          )}
+            <span className="type-caption text-ink-muted">{picked.size} selected</span>
+            <span className="ml-auto flex gap-1">
+              <Button variant="quiet" disabled={picked.size === 0} onClick={() => setTagging(true)}>
+                Tag
+              </Button>
+              <Button variant="quiet" onClick={stopPicking}>
+                Done
+              </Button>
+            </span>
+          </>
           {notice && <p className="w-full type-caption text-clay">{notice}</p>}
         </div>
       )}
