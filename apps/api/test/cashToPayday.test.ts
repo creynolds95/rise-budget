@@ -2,11 +2,15 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { linkTransferStmts, upsertManualEventStmt, upsertManualRuleStmt } from '../src/db';
 import { buildCashToPaydayProjection } from '../src/lib/cashToPayday';
+import { localToday } from '../src/lib/dates';
 import { refreshRecurring } from '../src/lib/recurring';
 import { centsToDecimal } from '../src/sync/mock';
 import { runSync } from '../src/sync/run';
 import type { SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
+
+const shiftDay = (day: string, by: number): string =>
+  new Date(Date.parse(`${day}T00:00:00Z`) + by * 86_400_000).toISOString().slice(0, 10);
 
 const sec = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10), 18) / 1000;
 
@@ -234,14 +238,19 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
         cadence,
         anchorDate,
       });
-    await add('Biweekly pay', 'income', 150_000, 'biweekly', '2026-10-09');
-    await add('Side income', 'income', 20_000, 'monthly', '2026-11-01');
-    await add('Rent', 'expense', 250_000, 'monthly', '2026-11-01');
-    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-07', 200_000, 0);
-    // The biweekly run's third paycheck (Nov 6) ends it. Running to the monthly run's third
-    // (Jan 1) would count three rents against three of the biweekly pays and dip below zero.
-    expect(p.points.at(-1)?.date).toBe('2026-11-06');
-    expect(p.points.every((x) => x.date <= '2026-11-06')).toBe(true);
+    // Dated from the real clock: adding a rule walks its anchor forward from the real today.
+    const today = localToday('America/Chicago');
+    const first = shiftDay(today, 2);
+    const third = shiftDay(first, 28);
+    await add('Biweekly pay', 'income', 150_000, 'biweekly', first);
+    await add('Side income', 'income', 20_000, 'monthly', shiftDay(today, 25));
+    await add('Rent', 'expense', 250_000, 'monthly', shiftDay(today, 25));
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, today, 200_000, 0);
+    // The biweekly run's third paycheck ends it. Running to the monthly run's third
+    // (about two months out) would count three rents against three of the biweekly pays and
+    // dip below zero.
+    expect(p.points.at(-1)?.date).toBe(third);
+    expect(p.points.every((x) => x.date <= third)).toBe(true);
     expect(p.lowestPoint.balanceCents).toBeGreaterThanOrEqual(0);
   });
 
