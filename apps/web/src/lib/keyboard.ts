@@ -10,6 +10,11 @@
 /** Gap kept between the field and the keyboard / top edge. */
 const MARGIN = 16;
 const KEYBOARD_MIN = 150;
+/**
+ * iOS's previous/next/done bar floats just above the keyboard and isn't part of the visual
+ * viewport, so anything it covers has to count as hidden too.
+ */
+export const INPUT_BAR = 72;
 
 const NON_TEXT = new Set([
   'checkbox',
@@ -59,6 +64,7 @@ export function revealField(el: HTMLElement) {
   const visible = vv
     ? { top: vv.offsetTop, bottom: vv.offsetTop + vv.height }
     : { top: 0, bottom: window.innerHeight };
+  if (vv && window.innerHeight - vv.height > KEYBOARD_MIN) visible.bottom -= INPUT_BAR;
   let delta = scrollDelta(el.getBoundingClientRect(), visible);
   if (delta === 0) return;
   for (let p = scrollParent(el); p && delta !== 0; p = scrollParent(p)) {
@@ -86,7 +92,10 @@ export function installKeyboardAvoidance() {
   };
   const padPage = () => {
     const kb = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
-    root.style.setProperty('--kb', active() && kb > KEYBOARD_MIN ? `${Math.round(kb)}px` : '0px');
+    root.style.setProperty(
+      '--kb',
+      active() && kb > KEYBOARD_MIN ? `${Math.round(kb + INPUT_BAR)}px` : '0px',
+    );
   };
 
   document.addEventListener('focusin', () => {

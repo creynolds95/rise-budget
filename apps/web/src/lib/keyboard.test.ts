@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scrollDelta } from './keyboard';
+import { INPUT_BAR, scrollDelta } from './keyboard';
 
 const visible = { top: 0, bottom: 400 };
 
@@ -18,5 +18,12 @@ describe('scrollDelta', () => {
   });
   it('aligns the top of a field taller than the band', () => {
     expect(scrollDelta({ top: 200, bottom: 700 }, visible)).toBe(184);
+  });
+});
+
+describe('input bar allowance', () => {
+  it('counts a field under the input bar as hidden', () => {
+    // 400px visible less the 72px bar: a field ending at 380 must scroll up by 68 (16px margin).
+    expect(scrollDelta({ top: 330, bottom: 380 }, { top: 0, bottom: 400 - INPUT_BAR })).toBe(68);
   });
 });

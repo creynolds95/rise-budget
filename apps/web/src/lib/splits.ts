@@ -27,3 +27,16 @@ export function splitProblem(totalCents: number, rows: readonly DraftSplit[]): S
     return 'remainder_flips_sign';
   return null;
 }
+
+/** The distinct category emojis of a split, in split order; categories without one are skipped. */
+export function splitEmojis(
+  splits: readonly { categoryId: string }[],
+  emojiOf: (categoryId: string) => string | null | undefined,
+): string[] {
+  const out: string[] = [];
+  for (const s of splits) {
+    const e = emojiOf(s.categoryId);
+    if (e && !out.includes(e)) out.push(e);
+  }
+  return out;
+}

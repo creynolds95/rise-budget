@@ -40,10 +40,7 @@ function pushService(status = 201) {
 
 const NOW = new Date('2026-10-08T15:00:00Z'); // a Thursday
 
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.useRealTimers();
-});
+afterEach(() => vi.restoreAllMocks());
 
 describe('push notifications (SPEC §8.2)', () => {
   it('hands out one sender key, kept for good', async () => {
@@ -179,20 +176,18 @@ describe('push notifications (SPEC §8.2)', () => {
   });
 
   it('tells a bank needing a look once, and the Sunday recap', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-10-09T15:00:00Z'));
     const s = await setup();
     await s.api('POST', '/push/subscriptions', await device());
     const service = pushService();
     await env.DB.prepare(
       `INSERT INTO sync_run (id, user_id, started_at, finished_at, status, accounts_touched,
          rows_inserted, rows_updated, error_json)
-       VALUES ('run-1', ?1, '2026-10-11T12:00:00Z', '2026-10-11T12:00:05Z', 'partial', 1, 0, 0, ?2)`,
+       VALUES ('run-1', ?1, '2025-01-05T12:00:00Z', '2025-01-05T12:00:05Z', 'partial', 1, 0, 0, ?2)`,
     )
       .bind(s.userId, JSON.stringify([{ accountId: null, message: 'Made-up Bank: auth required' }]))
       .run();
-    await s.add('2026-10-06', 2_000, 'CORNER CAFE');
-    const sunday = new Date('2026-10-11T15:00:00Z');
+    await s.add('2025-01-01', 2_000, 'CORNER CAFE');
+    const sunday = new Date('2025-01-05T15:00:00Z');
     expect(await runPush(s.userId, env.DB, sunday)).toEqual({ sent: 2, notices: 2 });
     expect(service).toHaveBeenCalledTimes(2);
     expect(await runPush(s.userId, env.DB, sunday)).toEqual({ sent: 0, notices: 0 });

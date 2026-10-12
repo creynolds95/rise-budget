@@ -22,7 +22,7 @@ export function TxnRow({
   onToggle,
 }: {
   t: Transaction;
-  /** Shown before the merchant name; the category's name isn't repeated on the row. */
+  /** Shown before the merchant name (a split joins its categories' with " / "); the category's name isn't repeated on the row. */
   categoryEmoji?: string | null | undefined;
   from?: string;
   /** Under a date header the date would only repeat it. */
@@ -48,13 +48,17 @@ export function TxnRow({
         : months > 1
           ? `Spread over ${months} months`
           : t.splits.length > 1
-            ? 'Split'
+            ? categoryEmoji
+              ? null
+              : 'Split'
             : null,
     t.reviewState === 'needs_review' ? 'To review' : null,
     flagText(t.flag, alerts),
   ]
     .filter(Boolean)
     .join(' · ');
+  // A split's joined emojis run smaller so several don't crowd the merchant.
+  const emojiSize = categoryEmoji?.includes(' / ') ? 'text-[0.75em]' : '';
   const to = `/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`;
   if (onToggle) {
     return (
@@ -76,7 +80,7 @@ export function TxnRow({
         <span className="min-w-0 flex-1">
           <span className="block truncate">
             {categoryEmoji && (
-              <span aria-hidden className="mr-2 not-italic">
+              <span aria-hidden className={`mr-2 not-italic ${emojiSize}`}>
                 {categoryEmoji}
               </span>
             )}
@@ -99,7 +103,7 @@ export function TxnRow({
       >
         <span className="block truncate">
           {categoryEmoji && (
-            <span aria-hidden className="mr-2 not-italic">
+            <span aria-hidden className={`mr-2 not-italic ${emojiSize}`}>
               {categoryEmoji}
             </span>
           )}

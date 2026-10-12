@@ -11,6 +11,7 @@ import {
   type TouchEvent,
 } from 'react';
 import { MOTION_EASE, MOTION_IN_MS, MOTION_OUT_MS } from '../../lib/motion';
+import { INPUT_BAR } from '../../lib/keyboard';
 import { lockScroll } from '../../lib/scrollLock';
 
 /**
@@ -304,6 +305,8 @@ export function Sheet({
   );
 
   const keyboard = view?.keyboard ?? false;
+  // The input bar floats over the bottom of what iOS reports as visible.
+  const room = view ? view.height - (keyboard ? INPUT_BAR : 0) : 0;
   if (fullScreen) {
     return (
       <>
@@ -313,7 +316,7 @@ export function Sheet({
           role="dialog"
           aria-modal="true"
           aria-labelledby={id}
-          style={keyboard && view ? { top: view.top, height: view.height } : undefined}
+          style={keyboard && view ? { top: view.top, height: room } : undefined}
           className={`${closing ? 'animate-sheet-out' : 'animate-sheet-up'} fixed inset-0 z-40 flex flex-col bg-canvas pt-[env(safe-area-inset-top)]`}
         >
           <div {...handlers}>{header}</div>
@@ -332,9 +335,7 @@ export function Sheet({
     <>
       {standIn}
       <div
-        style={
-          keyboard && view ? { top: view.top, height: view.height, bottom: 'auto' } : undefined
-        }
+        style={keyboard && view ? { top: view.top, height: room, bottom: 'auto' } : undefined}
         className="fixed inset-0 z-40 flex items-end justify-center md:items-center"
       >
         <button
@@ -348,7 +349,7 @@ export function Sheet({
           role="dialog"
           aria-modal="true"
           aria-labelledby={id}
-          style={view ? { maxHeight: `${view.height * 0.92}px` } : undefined}
+          style={view ? { maxHeight: `${room * 0.92}px` } : undefined}
           className={`${closing ? 'animate-sheet-out' : 'animate-sheet-up'} relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] bg-canvas shadow-soft md:max-w-lg md:rounded-[20px]`}
         >
           <div {...handlers}>
