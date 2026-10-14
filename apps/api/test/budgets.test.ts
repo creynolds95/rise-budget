@@ -2,6 +2,8 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { runHousekeeping } from '../src/backup/run';
 import { centsToDecimal } from '../src/sync/mock';
+import { upsertManualRuleStmt } from '../src/db';
+import { localToday } from '../src/lib/dates';
 import { refreshRecurring } from '../src/lib/recurring';
 import { runSync } from '../src/sync/run';
 import type { SimpleFinSource } from '../src/sync/source';
@@ -103,6 +105,15 @@ describe('rows read on a production-sized database', () => {
       ).bind(s.userId),
       // A tax heading on a busy category, for the tax pack.
       env.DB.prepare("UPDATE category SET tax_kind = 'business_expense' WHERE id = 'budc3'"),
+      // A bill due today, whatever the clock says: Surplus reads the balance evidence (§7.2).
+      upsertManualRuleStmt(
+        s.userId,
+        env.DB,
+        'BUD DUE TODAY',
+        'monthly',
+        50_000,
+        localToday('America/Chicago'),
+      ),
     ]);
     const failures: string[] = [];
     for (const [template, budget] of BUDGETS) {
