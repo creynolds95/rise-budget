@@ -138,7 +138,9 @@ export async function buildCashToPaydayProjection(
       // out of it as a pending debit that sync hasn't imported yet, so counting it again would
       // read as a shortfall. A bill that is late (dated before today, still unmatched) is not
       // assumed taken and still counts.
-      .filter((o) => !(o.date === today && !(rule.label == null && series.nextExpectedDate < today)))
+      .filter(
+        (o) => !(o.date === today && !(rule.label == null && series.nextExpectedDate < today)),
+      )
       .map((o) => ({
         date: o.date,
         cashDeltaCents: -o.amountCents,
