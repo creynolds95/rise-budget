@@ -350,3 +350,20 @@ export async function listSnapshots(
     .all<SnapshotRow>();
   return results;
 }
+
+/** One account's dated balances from `from` on, oldest first. */
+export async function snapshotsSince(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+  from: string,
+): Promise<{ asOf: string; balanceCents: number }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT as_of AS asOf, balance_cents AS balanceCents FROM balance_snapshot
+       WHERE user_id = ?1 AND account_id = ?2 AND as_of >= ?3 ORDER BY as_of`,
+    )
+    .bind(userId, accountId, from)
+    .all<{ asOf: string; balanceCents: number }>();
+  return results;
+}

@@ -8,6 +8,7 @@ import {
   type DetectedSeries,
 } from '@rise/shared/recurring';
 import { changeOf, displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
+import { loadBalanceEvidence, paidAlready } from './balanceSeen';
 
 /** How far ahead to project: through this many upcoming paychecks. */
 const PAYCHECK_HORIZON = 3;
@@ -42,6 +43,10 @@ export interface ScheduleRow {
   isHandAdded: boolean;
   /** A new amount from a date on, unsigned like `amountCents`. */
   change: AmountChange | null;
+  /** The bank balance already shows this one; its transaction hasn't reached Rise yet. */
+  inBalance: boolean;
+  /** Days its transaction usually trails the balance, once learned. */
+  lagDays: number | null;
 }
 
 /** A schedule sync found in the cash accounts, waiting for the user to add or dismiss it. */
@@ -76,11 +81,14 @@ export async function buildCashToPaydayProjection(
   startBalanceCents: number,
   cushionCents: number,
   dismissedMerchants: readonly string[] = [],
+  /** The cash accounts behind `startBalanceCents`: their balance history is the evidence. */
+  cashAccountIds: readonly string[] = [],
 ): Promise<CashToPaydayResult> {
   const [manualRules, saved] = await Promise.all([
     listManualRules(userId, db),
     listSuggestions(userId, db),
   ]);
+  const { seen } = await loadBalanceEvidence(db, userId, manualRules, cashAccountIds, today);
   // Re-checked here: an add or dismiss since the last sync takes effect at once.
   const skip = new Set([...dismissedMerchants, ...manualRules.map((r) => r.merchant_normalized)]);
   const pending = saved.filter((r) => !skip.has(r.merchant_normalized));
@@ -117,8 +125,14 @@ export async function buildCashToPaydayProjection(
   // A hand-added schedule has no charge to wait for; a tagged one waits for its real one.
   const upcoming = (rule: (typeof manualRules)[number], series: DetectedSeries, count: number) =>
     withAmountChange(upcomingOccurrences(series, today, count, rule.label == null), changeOf(rule));
+  // The bank balance can show a bill (or paycheck) before its transaction reaches Rise: that
+  // one already moved the starting balance, so it is not projected a second time.
+  const ahead = (rule: (typeof manualRules)[number], series: DetectedSeries, count: number) => {
+    const all = upcoming(rule, series, count + 1);
+    return paidAlready(rule, seen.get(rule.id), all[0], today) ? all.slice(1) : all.slice(0, count);
+  };
   const payRuns = paySchedules.map(({ rule, merchant, series }) =>
-    upcoming(rule, series, PAYCHECK_HORIZON).map((o) => ({
+    ahead(rule, series, PAYCHECK_HORIZON).map((o) => ({
       date: o.date,
       cashDeltaCents: -o.amountCents,
       label: displayNames.get(merchant) ?? merchant,
@@ -132,15 +146,8 @@ export async function buildCashToPaydayProjection(
   const payEvents: CashEvent[] = payRuns.flat().filter((e) => e.date <= horizonEnd);
 
   const billEvents: CashEvent[] = bills.flatMap(({ rule, merchant, series }) =>
-    upcoming(rule, series, MAX_BILL_OCCURRENCES)
+    ahead(rule, series, MAX_BILL_OCCURRENCES)
       .filter((o) => o.date <= horizonEnd)
-      // The bank balance is the available one: a bill due today has usually already been taken
-      // out of it as a pending debit that sync hasn't imported yet, so counting it again would
-      // read as a shortfall. A bill that is late (dated before today, still unmatched) is not
-      // assumed taken and still counts.
-      .filter(
-        (o) => !(o.date === today && !(rule.label == null && series.nextExpectedDate < today)),
-      )
       .map((o) => ({
         date: o.date,
         cashDeltaCents: -o.amountCents,
@@ -169,6 +176,8 @@ export async function buildCashToPaydayProjection(
     change: rule.amount_changes_on
       ? { amountCents: Math.abs(rule.next_amount_cents ?? 0), on: rule.amount_changes_on }
       : null,
+    inBalance: seen.has(rule.id),
+    lagDays: rule.balance_lag_days,
   }));
   // Hand-added schedules only: a tagged one already hides its own merchant's suggestion.
   const handAdded = schedules

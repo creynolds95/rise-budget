@@ -1,5 +1,6 @@
 import { merchantName } from '@rise/shared/categorize';
 import {
+  balanceOverdue,
   notices,
   SURPLUS_NEGATIVE_KEY,
   toSend,
@@ -15,6 +16,7 @@ import {
   getVapid,
   latestBalanceMoves,
   listAccounts,
+  listManualRules,
   listPushSubscriptions,
   listSeries,
   listSyncRuns,
@@ -55,7 +57,8 @@ async function surplusShortfall(
 ): Promise<{ shortfallCents: number; date: string } | null> {
   const accounts = await listAccounts(userId, db);
   const { cushionCents, dismissedPayMerchants } = user.settings;
-  const start = cashAccountsOf(user.settings, accounts).reduce((sum, a) => sum + a.balanceCents, 0);
+  const cash = cashAccountsOf(user.settings, accounts);
+  const start = cash.reduce((sum, a) => sum + a.balanceCents, 0);
   const p = await buildCashToPaydayProjection(
     db,
     userId,
@@ -63,6 +66,7 @@ async function surplusShortfall(
     start,
     cushionCents,
     dismissedPayMerchants.map((d) => d.merchant),
+    cash.map((a) => a.id),
   );
   return p.freeToMoveCents < 0
     ? { shortfallCents: -p.freeToMoveCents, date: p.lowestPoint.date }
@@ -128,10 +132,11 @@ async function gather(
   prefs: PushSettings,
   runId?: string,
 ): Promise<NoticeInputs & { surplusChecked: boolean }> {
-  const [series, flags, runs] = await Promise.all([
+  const [series, flags, runs, rules] = await Promise.all([
     listSeries(userId, db),
     flaggedForReview(userId, db),
     listSyncRuns(userId, db, 1),
+    listManualRules(userId, db),
   ]);
   const last = runs[0];
   const errors = last?.error_json ? (JSON.parse(last.error_json) as { message: string }[]) : [];
@@ -160,6 +165,22 @@ async function gather(
       name: merchantName({ merchantNormalized: s.merchantNormalized }),
     })),
     flags,
+    // Bills only: a paycheck the balance shows early is good news nobody needs pushed.
+    inBalance: rules.flatMap((r) =>
+      r.balance_seen_due && r.balance_seen_on && r.expected_amount_cents > 0
+        ? [
+            {
+              id: r.id,
+              name: r.label ?? merchantName({ merchantNormalized: r.merchant_normalized }),
+              amountCents: r.expected_amount_cents,
+              dueOn: r.balance_seen_due,
+              seenOn: r.balance_seen_on,
+              overdue: balanceOverdue(r.balance_seen_on, r.balance_lag_days, today),
+              twice: r.balance_seen_twice === 1,
+            },
+          ]
+        : [],
+    ),
     // Keyed on the message, so the same trouble is told once however many runs it lasts.
     bankTrouble: trouble ? { key: trouble, message: trouble } : null,
     recap: week ? { weekOf: today, ...week } : null,

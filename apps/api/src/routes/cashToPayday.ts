@@ -38,6 +38,7 @@ cashToPayday.get('/', async (c) => {
     startBalanceCents,
     cushionCents,
     dismissedPayMerchants.map((d) => d.merchant),
+    cashAccounts.map((a) => a.id),
   );
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
   return c.json({

@@ -548,6 +548,25 @@ the owner turns that on. Each kind can be turned off in Settings → Alerts.
 
 ---
 
+### 7.2 Surplus: bills the balance already shows
+
+SimpleFIN can report a balance that already has a bill (or paycheck) in it a day or more
+before that transaction reaches Rise. Counting the bill as still to come would subtract it
+twice. So, for a manual schedule from 3 days before its due date to 2 days after (plus its
+learned lag, at most 7 more), Surplus compares the cash accounts' balance now with one from
+before the due date. Whatever the imported rows don't explain is the unexplained gap. When
+due schedules (each once or twice, within 5%) add up to that gap, they are **in balance**:
+not projected again, and marked on the Surplus page. A pending row may or may not be in a
+bank's balance, so both readings are weighed. A schedule counts as in balance only when
+every reading and every fitting set agrees. A gap nothing explains leaves every schedule
+counted (cautious, never reading high).
+
+Each sync remembers when a schedule was first seen in balance. When its row arrives, the
+days between are the schedule's lag, averaged with what was learned before. With no row
+after 2 days (or one day past its lag), the owner is told. A gap of twice a bill is told as
+a possible double charge. Both alerts fall under the missed-bill switch (§8.2). After 14 days
+with no row, it is let go.
+
 ## 8. Review queue
 
 The primary daily interaction. At ~175 transactions/month this must be fast.
@@ -583,7 +602,8 @@ device up (on iPhone, only from the app added to the Home Screen). After each sc
 server works out what is new and pushes it:
 
 - **On by default**: the weekly recap (Sunday: last week's money out and how many to review),
-  a bill that didn't charge (a recurring series gone broken), and a bank sync needing a look.
+  a bill that didn't charge (a recurring series gone broken; also a bill the balance shows whose
+  row hasn't come, or that came out twice, §7.2), and a bank sync needing a look.
 - **Off by default**: price went up, charged twice, and the three charge flags of §8.1. A kind
   turned off under "Show me" never pushes either. Also off by default: Surplus going negative
   (once when the projected lowest point first goes under zero, again only after it has

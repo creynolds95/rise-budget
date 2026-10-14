@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dailySeries, surplusTone, tooltipLines } from './surplus';
+import { dailySeries, inBalanceNote, surplusTone, tooltipLines } from './surplus';
 
 describe('surplus', () => {
   it('green above zero, clay below, ink at zero', () => {
@@ -39,5 +39,19 @@ describe('surplus', () => {
     expect(tooltipLines(day)).toMatchObject({ more: 2 });
     expect(tooltipLines(day).shown).toHaveLength(3);
     expect(tooltipLines({ ...day, charges: [], income: [] })).toEqual({ shown: [], more: 0 });
+  });
+});
+
+describe('inBalanceNote', () => {
+  it('says the balance already has it, and how far behind its row usually is', () => {
+    expect(inBalanceNote({ kind: 'expense', lagDays: null })).toBe(
+      'Out of your balance, waiting on the transaction',
+    );
+    expect(inBalanceNote({ kind: 'income', lagDays: 1 })).toBe(
+      'In your balance, transaction usually 1 day behind',
+    );
+    expect(inBalanceNote({ kind: 'expense', lagDays: 2 })).toBe(
+      'Out of your balance, transaction usually 2 days behind',
+    );
   });
 });

@@ -1,3 +1,5 @@
+import type { ScheduleRow } from './types';
+
 /** Surplus is green, a shortfall is clay (the app's red); zero reads as plain ink. */
 export const surplusTone = (cents: number) => (cents > 0 ? 'in' : cents < 0 ? 'over' : 'ink');
 
@@ -57,4 +59,13 @@ export function dailySeries(
 export function tooltipLines(day: Day, max = 3) {
   const all = [...day.charges, ...day.income];
   return { shown: all.slice(0, max), more: Math.max(0, all.length - max) };
+}
+
+/** Why a schedule isn't projected: the balance already has it, its row is still on the way. */
+export function inBalanceNote(r: Pick<ScheduleRow, 'kind' | 'lagDays'>): string {
+  const what = r.kind === 'income' ? 'In your balance' : 'Out of your balance';
+  const lag = r.lagDays ?? 0;
+  return lag > 0
+    ? `${what}, transaction usually ${lag} day${lag === 1 ? '' : 's'} behind`
+    : `${what}, waiting on the transaction`;
 }

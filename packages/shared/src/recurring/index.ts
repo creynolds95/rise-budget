@@ -7,3 +7,4 @@ export * from './change';
 export * from './amount';
 export * from './radar';
 export * from './notices';
+export * from './inBalance';

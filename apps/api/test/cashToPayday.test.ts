@@ -523,22 +523,6 @@ describe('Surplus never drops a schedule whose date has passed', () => {
     expect(p.schedules.find((r) => r.isHandAdded)?.nextExpectedDate).toBe('2026-10-15');
   });
 
-  it('a bill due today is already in the available balance; a late one still counts', async () => {
-    const s = await setup();
-    await env.DB.batch([
-      upsertManualRuleStmt(s.userId, env.DB, 'LOAN PYMT', 'monthly', 106_054, '2026-10-14'),
-      upsertManualRuleStmt(s.userId, env.DB, 'LATE BILL', 'monthly', 33_100, '2026-10-12'),
-      upsertManualRuleStmt(s.userId, env.DB, 'PAYCHECK', 'monthly', -300_000, '2026-10-20'),
-    ]);
-    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-14', 93_516, 0);
-    expect(p.points.slice(0, 3).map((x: { label: string }) => x.label)).toEqual([
-      'Today',
-      'LATE BILL',
-      'PAYCHECK',
-    ]);
-    expect(p.points[1]?.balanceCents).toBe(93_516 - 33_100);
-  });
-
   it('refresh keeps a hand-added schedule current and never flags it missed', async () => {
     const s = await setup();
     await s.api('POST', '/cash-to-payday/manual-events', {
