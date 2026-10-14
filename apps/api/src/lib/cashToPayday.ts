@@ -134,6 +134,11 @@ export async function buildCashToPaydayProjection(
   const billEvents: CashEvent[] = bills.flatMap(({ rule, merchant, series }) =>
     upcoming(rule, series, MAX_BILL_OCCURRENCES)
       .filter((o) => o.date <= horizonEnd)
+      // The bank balance is the available one: a bill due today has usually already been taken
+      // out of it as a pending debit that sync hasn't imported yet, so counting it again would
+      // read as a shortfall. A bill that is late (dated before today, still unmatched) is not
+      // assumed taken and still counts.
+      .filter((o) => !(o.date === today && !(rule.label == null && series.nextExpectedDate < today)))
       .map((o) => ({
         date: o.date,
         cashDeltaCents: -o.amountCents,
