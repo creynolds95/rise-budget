@@ -21,7 +21,7 @@ import { ScheduleFields } from '../components/ScheduleFields';
 
 /**
  * End-of-day balance for the next 14 days. Bars rise above a zero line when the balance is
- * positive and hang below it when it isn't. Tap or hold a bar for that day's charges and income.
+ * positive and hang below it when it isn't. Tap a bar, or drag a finger across them, for that day's charges and income.
  */
 function Shape({
   points,
@@ -31,8 +31,14 @@ function Shape({
   lowestDate: string;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
+  const touched = useRef(false);
   const days = dailySeries(points);
   if (points.length < 2 || days.length === 0) return null;
+  const scrub = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const i = Math.floor(((e.clientX - r.left) / r.width) * days.length);
+    setPicked(Math.min(days.length - 1, Math.max(0, i)));
+  };
   const hi = Math.max(...days.map((p) => p.balanceCents), 0);
   const lo = Math.min(...days.map((p) => p.balanceCents), 0);
   const span = Math.max(hi - lo, 1);
@@ -54,7 +60,15 @@ function Shape({
           className="absolute inset-x-0 border-t border-hairline"
           style={{ top: `${zeroPct}%` }}
         />
-        <div className="absolute inset-0 flex gap-1.5">
+        <div
+          className="absolute inset-0 flex gap-1.5 touch-pan-y select-none"
+          onPointerDown={(e) => {
+            if (e.pointerType !== 'touch') return;
+            touched.current = true;
+            scrub(e);
+          }}
+          onPointerMove={(e) => e.pointerType === 'touch' && scrub(e)}
+        >
           {days.map((p, i) => {
             const h = Math.max(2, (Math.abs(p.balanceCents) / span) * 100);
             const up = p.balanceCents >= 0;
@@ -63,8 +77,11 @@ function Shape({
                 key={p.date}
                 type="button"
                 aria-label={`${shortDate(p.date)}: ${formatCents(p.balanceCents)}`}
-                onClick={() => setPicked(picked === i ? null : i)}
-                onPointerDown={(e) => e.pointerType === 'touch' && setPicked(i)}
+                onClick={() => {
+                  // A touch already picked this bar on pointerdown; don't toggle it back off.
+                  if (touched.current) touched.current = false;
+                  else setPicked(picked === i ? null : i);
+                }}
                 className="relative min-w-0 flex-1 p-0"
               >
                 <div
