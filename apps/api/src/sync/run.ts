@@ -39,6 +39,7 @@ import {
 } from '../db';
 import { suggestFor } from '../lib/categorize';
 import { localToday } from '../lib/dates';
+import { trackBalanceSeen } from '../lib/balanceSeen';
 import { refreshRecurring } from '../lib/recurring';
 import type { FetchInfo, SimpleFinSource } from './source';
 
@@ -405,6 +406,12 @@ export async function runSync(
     if (!skip) await refreshRecurring(db, userId, today);
   } catch (e) {
     errors.push({ message: `Recurring detection: ${message(e)}` });
+  }
+  // Even an idle sync can bring a new balance: it may show a bill before its row arrives.
+  try {
+    await trackBalanceSeen(db, userId, today);
+  } catch (e) {
+    errors.push({ message: `Balance check: ${message(e)}` });
   }
 
   return finish();

@@ -52,6 +52,42 @@ const input: NoticeInputs = {
 };
 
 describe('notices', () => {
+  it('tells of a bill the balance shows once it waits too long, or moved twice', () => {
+    const b = {
+      id: 'r1',
+      name: 'Loan',
+      amountCents: 33_100,
+      dueOn: '2026-10-14',
+      seenOn: '2026-10-14',
+    };
+    const withSeen = {
+      ...input,
+      inBalance: [
+        { ...b, overdue: true, twice: false },
+        { ...b, id: 'r2', overdue: false, twice: true },
+        { ...b, id: 'r3', overdue: false, twice: false },
+      ],
+    };
+    const n = notices(withSeen, ALL).filter((x) => /^(inbalance|twice):/.test(x.key));
+    expect(n).toEqual([
+      {
+        key: 'inbalance:r1:2026-10-14',
+        title: 'Loan hasn’t come through',
+        body: 'Your balance dropped $331.00 for it 10/14, but the transaction isn’t in Rise yet.',
+        url: '/cash',
+      },
+      {
+        key: 'twice:r2:2026-10-14',
+        title: 'Loan may have come out twice',
+        body: 'Your balance dropped by $662.00, twice the usual $331.00.',
+        url: '/cash',
+      },
+    ]);
+    expect(
+      notices(withSeen, { ...ALL, missedBill: false }).filter((x) => x.key.startsWith('in')),
+    ).toEqual([]);
+  });
+
   it('skips the review count at zero and the Surplus alert when fine', () => {
     const n = notices(
       { ...input, surplusNegative: null, review: { runId: 'r', count: 0 } },

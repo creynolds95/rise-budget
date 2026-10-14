@@ -976,3 +976,30 @@ export async function setRefundOf(
     .bind(userId, id, originalId, nowIso())
     .run();
 }
+
+export interface CashTxnRow {
+  posted_at: string;
+  amount_cents: number;
+  merchant_normalized: string;
+  is_pending: number;
+  source: string;
+  created_at: string;
+}
+
+/** One account's rows from `from` on (dropped ones aside): what moved its balance. */
+export async function accountTxnsSince(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+  from: string,
+): Promise<CashTxnRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT posted_at, amount_cents, merchant_normalized, is_pending, source, created_at
+       FROM txn WHERE user_id = ?1 AND account_id = ?2 AND posted_at >= ?3
+         AND review_state != 'dropped'`,
+    )
+    .bind(userId, accountId, from)
+    .all<CashTxnRow>();
+  return results;
+}

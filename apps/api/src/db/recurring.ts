@@ -93,6 +93,12 @@ export interface ManualRuleRow {
   label: string | null;
   next_amount_cents: number | null;
   amount_changes_on: string | null;
+  /** The due date the bank balance already shows, still waiting on its transaction. */
+  balance_seen_due: string | null;
+  balance_seen_on: string | null;
+  balance_seen_twice: number;
+  /** Days its transaction usually trails the balance (learned). */
+  balance_lag_days: number | null;
 }
 
 /** A rule's pending amount change, if any (both columns set together). */
@@ -106,7 +112,8 @@ export async function listManualRules(userId: UserId, db: D1Database): Promise<M
   const { results } = await db
     .prepare(
       `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
-         anchor_days, label, next_amount_cents, amount_changes_on
+         anchor_days, label, next_amount_cents, amount_changes_on,
+         balance_seen_due, balance_seen_on, balance_seen_twice, balance_lag_days
        FROM recurring_series WHERE user_id = ?1 AND source = 'manual'`,
     )
     .bind(userId)
@@ -531,4 +538,20 @@ export async function listSuggestions(userId: UserId, db: D1Database): Promise<S
     .bind(userId)
     .all<SuggestionRow>();
   return results;
+}
+
+/** Records (or clears) what the balance shows of a manual rule, and its learned lag. */
+export function setBalanceSeenStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  seen: { due: string | null; on: string | null; twice: boolean; lagDays: number | null },
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE recurring_series SET balance_seen_due = ?3, balance_seen_on = ?4,
+         balance_seen_twice = ?5, balance_lag_days = ?6
+       WHERE user_id = ?1 AND id = ?2 AND source = 'manual'`,
+    )
+    .bind(userId, id, seen.due, seen.on, seen.twice ? 1 : 0, seen.lagDays);
 }

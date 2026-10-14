@@ -2,7 +2,7 @@ import { Loading } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { dailySeries, surplusTone, tooltipLines } from '../lib/surplus';
+import { dailySeries, inBalanceNote, surplusTone, tooltipLines } from '../lib/surplus';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
@@ -302,6 +302,9 @@ function ScheduleList({
               <span className="block type-caption text-ink-faint">
                 <MoneyText cents={r.change.amountCents} /> from {shortDate(r.change.on)}
               </span>
+            )}
+            {r.inBalance && (
+              <span className="block type-caption text-gold-text">{inBalanceNote(r)}</span>
             )}
           </span>
           <span className="flex shrink-0 items-center gap-2">

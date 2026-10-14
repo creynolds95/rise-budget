@@ -55,6 +55,18 @@ export interface NoticeInputs {
   }[];
   /** Smaller deposits and balance moves are not told. */
   minCents: number;
+  /** Bills the bank balance already shows, still waiting on their transaction. */
+  inBalance?: readonly {
+    id: string;
+    name: string;
+    amountCents: number;
+    dueOn: string;
+    seenOn: string;
+    /** Waited past its usual lag. */
+    overdue: boolean;
+    /** The balance moved by it twice. */
+    twice: boolean;
+  }[];
 }
 
 /** One standing key: told once per dip, and cleared by the caller when Surplus recovers. */
@@ -108,6 +120,23 @@ export function notices(input: NoticeInputs, prefs: PushSettings): Notice[] {
         title: `${s.name} charged twice`,
         body: `Two charges of ${dollars(s.expectedAmountCents)} in one cycle.`,
         url: '/recurring',
+      });
+  }
+  for (const b of input.inBalance ?? []) {
+    if (!prefs.missedBill) break;
+    if (b.overdue)
+      out.push({
+        key: `inbalance:${b.id}:${b.dueOn}`,
+        title: `${b.name} hasn’t come through`,
+        body: `Your balance dropped ${dollars(b.amountCents)} for it ${b.seenOn.slice(5).replace('-', '/')}, but the transaction isn’t in Rise yet.`,
+        url: '/cash',
+      });
+    if (b.twice)
+      out.push({
+        key: `twice:${b.id}:${b.dueOn}`,
+        title: `${b.name} may have come out twice`,
+        body: `Your balance dropped by ${dollars(2 * b.amountCents)}, twice the usual ${dollars(b.amountCents)}.`,
+        url: '/cash',
       });
   }
   for (const f of input.flags) {
