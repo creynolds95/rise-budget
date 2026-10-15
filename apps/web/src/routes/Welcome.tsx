@@ -155,7 +155,7 @@ export function Welcome() {
         ),
       }}
       facts={
-        <div className="pt-2">
+        <div className="py-4">
           <ol className="flex gap-1.5" aria-label="Steps">
             {STEPS.map((s, i) => (
               <li key={s.title} className="flex-1">
