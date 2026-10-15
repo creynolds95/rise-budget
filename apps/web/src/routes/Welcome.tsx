@@ -46,7 +46,7 @@ function BanksStep() {
       <>
         <p>
           Link your banks in SimpleFIN Bridge, then claim its setup token from the computer you
-          installed Rise from: <code className="type-caption">pnpm simplefin:claim --yes</code>.
+          installed Rise from: <code className="type-caption">pnpm simplefin:claim --yes</code>
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Go to="/settings/sync">Bank connection</Go>
@@ -169,7 +169,7 @@ export function Welcome() {
               </li>
             ))}
           </ol>
-          <section className="mt-6 rounded-card bg-surface p-5 shadow-soft">
+          <section className="mt-6">
             <p className="type-label text-ink-muted">
               Step <span className="money">{step + 1}</span> of{' '}
               <span className="money">{STEPS.length}</span>

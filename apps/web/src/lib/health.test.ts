@@ -54,6 +54,8 @@ describe('Settings → Health', () => {
     const checks = healthChecks({ ...healthy, usage: undefined, appStale: null });
     expect(checks.filter((c) => c.ok === null).map((c) => c.key)).toEqual(['app', 'database']);
     expect(healthSummary(checks)).toBeUndefined();
+    // …but an unknown app version alone doesn't hold the summary up.
+    expect(healthSummary(healthChecks({ ...healthy, appStale: null }))).toBe('All good');
   });
 
   it('flags an out-of-date app', () => {

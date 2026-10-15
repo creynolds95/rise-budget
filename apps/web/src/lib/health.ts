@@ -181,7 +181,8 @@ function databaseCheck({ usage }: HealthInput): HealthCheck {
 
 /** The one-line summary for the Settings index. */
 export function healthSummary(checks: HealthCheck[]): string | undefined {
-  if (checks.some((c) => c.ok === null)) return undefined;
+  // The app version can't be checked offline (or on a dev server); it never holds the rest up.
+  if (checks.some((c) => c.ok === null && c.key !== 'app')) return undefined;
   const bad = checks.filter((c) => c.ok === false).length;
   return bad === 0 ? 'All good' : `${bad} ${bad === 1 ? 'needs' : 'need'} a look`;
 }
