@@ -140,3 +140,31 @@ describe('niceTicks and axisLabel', () => {
     expect(axisLabel(250_000_000)).toBe('$2.5M');
   });
 });
+
+describe('zoomed line', () => {
+  const pts = [
+    { cents: -1_650_000, inferred: false },
+    { cents: -1_640_000, inferred: false },
+  ];
+  it('fits the data, so a small step spans the chart instead of a sliver', () => {
+    const flat = lineSegments(pts, 100, 100, 0)[0]?.points ?? [];
+    const zoomed = lineSegments(pts, 100, 100, 0, true)[0]?.points ?? [];
+    expect(Math.abs((flat[1]?.[1] ?? 0) - (flat[0]?.[1] ?? 0))).toBeLessThan(2);
+    expect(Math.abs((zoomed[1]?.[1] ?? 0) - (zoomed[0]?.[1] ?? 0))).toBeGreaterThan(50);
+    expect(linePositions(pts, 100, 100, 0, true)).toHaveLength(2);
+  });
+  it('has no $0 line, and a flat series still draws', () => {
+    expect(zeroY(pts, 100, 0, true)).toBeNull();
+    const flat = lineSegments(
+      [
+        { cents: -5, inferred: false },
+        { cents: -5, inferred: false },
+      ],
+      10,
+      10,
+      0,
+      true,
+    );
+    expect(flat[0]?.points).toHaveLength(2);
+  });
+});

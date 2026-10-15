@@ -14,6 +14,19 @@ export interface Segment {
 }
 
 /**
+ * The value range a line is drawn across. Anchored at 0 (like sharedScalePaths below), or an
+ * all-negative series plots identically to an all-positive one. `zoom` drops the anchor and
+ * fits the data with a margin, for a balance that moves a little against its size (a loan).
+ */
+function bounds(values: number[], zoom: boolean): { lo: number; hi: number } {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (!zoom) return { lo: Math.min(0, min), hi: Math.max(0, max) };
+  const margin = Math.max(1, Math.round((max - min) * 0.15));
+  return { lo: min - margin, hi: max + margin };
+}
+
+/**
  * Maps a series onto a width×height box and splits it into runs. A step between two points
  * is dashed if either end is inferred (interpolated or held) — inferred data is never drawn
  * as measured.
@@ -23,13 +36,11 @@ export function lineSegments(
   width: number,
   height: number,
   pad = 4,
+  zoom = false,
 ): Segment[] {
   if (points.length === 0) return [];
   const values = points.map((p) => p.cents);
-  // Anchored at 0 (like sharedScalePaths below), or an all-negative series plots identically
-  // to an all-positive one — there's nothing on the chart to show it's underwater.
-  const lo = Math.min(0, ...values);
-  const hi = Math.max(0, ...values);
+  const { lo, hi } = bounds(values, zoom);
   const span = hi - lo;
   const x = (i: number) => (points.length === 1 ? width / 2 : (i / (points.length - 1)) * width);
   // Only a series flat at exactly $0 has no scale to speak of; draw that through the middle.
@@ -62,8 +73,9 @@ export function linePositions(
   width: number,
   height: number,
   pad = 4,
+  zoom = false,
 ): [number, number][] {
-  return lineSegments(points, width, height, pad).flatMap((s, i) =>
+  return lineSegments(points, width, height, pad, zoom).flatMap((s, i) =>
     // A segment after the first starts on the previous one's last point; count it once.
     i === 0 ? s.points : s.points.slice(1),
   );
@@ -76,11 +88,16 @@ export function nearestIndex(fraction: number, count: number): number {
 }
 
 /** Where $0 falls on a `lineSegments` chart, so it can be drawn as a reference line. */
-export function zeroY(points: readonly LinePoint[], height: number, pad = 4): number | null {
-  if (points.length === 0) return null;
+export function zeroY(
+  points: readonly LinePoint[],
+  height: number,
+  pad = 4,
+  zoom = false,
+): number | null {
+  // A zoomed chart has no $0 to show.
+  if (points.length === 0 || zoom) return null;
   const values = points.map((p) => p.cents);
-  const lo = Math.min(0, ...values);
-  const hi = Math.max(0, ...values);
+  const { lo, hi } = bounds(values, false);
   const span = hi - lo;
   if (span === 0) return null;
   return pad + (1 - (0 - lo) / span) * (height - 2 * pad);

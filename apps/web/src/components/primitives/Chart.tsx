@@ -53,7 +53,7 @@ function Tip({ pct, children }: { pct: number; children: ReactNode }) {
 
 export function Chart(
   props: (
-    | { kind: 'line'; points: LinePoint[] }
+    | { kind: 'line'; points: LinePoint[]; zoom?: boolean }
     | { kind: 'bar'; bars: Bar[] }
     | {
         kind: 'lines';
@@ -70,10 +70,10 @@ export function Chart(
       }
   ) & { label: string; range?: Range; onRange?: (r: Range) => void },
 ) {
-  const zeroAt = props.kind === 'line' ? zeroY(props.points, H) : null;
+  const zeroAt = props.kind === 'line' ? zeroY(props.points, H, 4, props.zoom) : null;
   const [active, setActive] = useState<number | null>(null);
   const linePoints = props.kind === 'line' ? props.points : [];
-  const xy = props.kind === 'line' ? linePositions(linePoints, W, H) : [];
+  const xy = props.kind === 'line' ? linePositions(linePoints, W, H, 4, props.zoom) : [];
   const scrub = (e: PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     setActive(nearestIndex((e.clientX - r.left) / Math.max(1, r.width), linePoints.length));
@@ -191,7 +191,7 @@ export function Chart(
               />
             )}
             {props.kind === 'line' &&
-              lineSegments(props.points, W, H).map((s, i) => (
+              lineSegments(props.points, W, H, 4, props.zoom).map((s, i) => (
                 <polyline
                   key={i}
                   data-dashed={s.dashed}
