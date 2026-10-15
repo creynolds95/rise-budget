@@ -4,6 +4,8 @@ import {
   DEFAULT_DEBT_PLAN,
   aprFromText,
   aprToText,
+  byName,
+  startAppliedThrough,
   chartPoints,
   dueSuggestions,
   groupView,
@@ -265,5 +267,23 @@ describe('scenarioView', () => {
     expect(v.monthsSooner).toBeNull();
     expect(v.interestSavedCents).toBeNull();
     expect(v.payoffs[0]?.payoffPeriod).toBeNull();
+  });
+});
+
+describe('new loans and ordering', () => {
+  it('a loan added before its due day this month still owes this month', () => {
+    expect(startAppliedThrough('2026-10-10', 14)).toBe('2026-09');
+  });
+  it('a loan added on or after its due day is taken as current', () => {
+    expect(startAppliedThrough('2026-10-14', 14)).toBe('2026-10');
+    expect(startAppliedThrough('2026-10-20', 14)).toBe('2026-10');
+  });
+  it('lists loans A to Z with numbers in natural order', () => {
+    const names = byName([
+      { name: 'Fed Loan 1-10' },
+      { name: 'Fed Loan 1-02' },
+      { name: 'CL0001' },
+    ]);
+    expect(names.map((n) => n.name)).toEqual(['CL0001', 'Fed Loan 1-02', 'Fed Loan 1-10']);
   });
 });

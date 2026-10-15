@@ -1,4 +1,5 @@
 import {
+  dueDateIn,
   isDue,
   monthlyInterest,
   simulatePayoff,
@@ -33,6 +34,20 @@ export const aprFromText = (text: string): number | null => {
     ? Math.round(n * 1000)
     : null;
 };
+
+/**
+ * The month a loan's payment is already in the balance through when it joins the plan. Once
+ * this month's due day has passed the balance is taken as current; before it, this month's
+ * payment is still to come and must not be skipped.
+ */
+export const startAppliedThrough = (today: string, dueDay: number): string => {
+  const period = today.slice(0, 7);
+  return dueDateIn(period, dueDay) <= today ? period : addMonths(period, -1);
+};
+
+/** Loans A to Z by name, digits in natural order. */
+export const byName = <T extends { name: string }>(rows: T[]): T[] =>
+  [...rows].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
 export interface LoanRow {
   plan: DebtLoanPlan;
