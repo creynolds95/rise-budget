@@ -29,7 +29,7 @@ import { clearPin, hasPin, lockKeys, setPin, store as lockStore, validPin } from
 import { getThemeSetting, setThemeSetting, type ThemeSetting } from '../lib/theme';
 import { RULE_FIELD as FIELD, RULE_TYPE as TYPE, RuleSheet } from '../components/RuleSheet';
 import { Button } from '../components/primitives/Button';
-import { Chevron } from '../components/primitives/Rows';
+import { Chevron, NavRow } from '../components/primitives/Rows';
 import { Icon, IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
 import { Leaving, Sheet } from '../components/primitives/Sheet';
@@ -1752,6 +1752,9 @@ function DataSection() {
           </button>
         </Group>
       )}
+      <Group>
+        <NavRow label="Setup guide" to="/welcome" />
+      </Group>
     </>
   );
 }
