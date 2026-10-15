@@ -75,8 +75,17 @@ describe('group view', () => {
         .sort()
         .at(-1),
     );
-    expect(v.monthsSooner).toBeNull();
-    expect(v.interestSavedCents).toBeNull();
+  });
+
+  it('compares against each loan on its own schedule, so rolling freed payments counts', () => {
+    const own = groupView(loans, { ...opts, rollForward: false }, '2026-10');
+    expect(own.monthsSooner).toBeNull();
+    expect(own.interestSavedCents).toBeNull();
+    const rolled = groupView(loans, opts, '2026-10');
+    expect(rolled.monthsSooner).toBeGreaterThan(0);
+    expect(rolled.interestSavedCents).toBeGreaterThan(0);
+    const withExtra = groupView(loans, { ...opts, extraCents: 20_000 }, '2026-10');
+    expect(withExtra.monthsSooner).toBeGreaterThan(rolled.monthsSooner ?? 0);
   });
 
   it('chart points name each loan on the point its payoff falls in, never a finished one', () => {
