@@ -96,6 +96,10 @@ export function AccountDetail() {
     (m, s) => (m === null || s.asOf < m ? s.asOf : m),
     null,
   );
+  const lastReport = (snaps.data ?? []).reduce<string | null>(
+    (m, s) => (m === null || s.asOf > m ? s.asOf : m),
+    null,
+  );
   const known = firstReport ? series.filter((p) => p.date >= firstReport) : [];
 
   const base: Draft = {
@@ -181,6 +185,8 @@ export function AccountDetail() {
         hero: <MoneyText cents={owes && a.balanceCents <= 0 ? -a.balanceCents : a.balanceCents} />,
         context: stale ? (
           <span className="text-gold-text">{stale}</span>
+        ) : manual && lastReport ? (
+          `As of ${shortDate(lastReport)}`
         ) : a.lastSyncedAt ? (
           `As of ${shortDate(localToday(tz, new Date(a.lastSyncedAt)))}`
         ) : manual ? (

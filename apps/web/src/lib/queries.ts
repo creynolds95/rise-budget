@@ -213,6 +213,7 @@ export function useInvalidateMoney() {
         'accounts',
         'recurring',
         'networth',
+        'snapshots',
         'categories',
         'groups',
         'cash-to-payday',
