@@ -196,6 +196,7 @@ export function AccountDetail() {
       shape={
         <Chart
           kind="line"
+          zoom={a.kind === 'loan'}
           label={`${a.name} balance over time. Dashed where estimated between reports.`}
           points={known.map((p) => ({
             cents: p.netWorthCents,
