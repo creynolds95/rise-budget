@@ -23,7 +23,11 @@ minutes), then offers to connect SimpleFIN. Your real ids go in `apps/api/wrangl
 which git ignores; the tracked `wrangler.toml` keeps its placeholders, so your fork can stay public.
 
 - **Link expired before you used it?** `pnpm rise:setup --new-link`.
-- **Updating later:** `git pull`, then `pnpm rise:update` (build, migrate, deploy with your local config).
+- **Updating later:** press **Sync fork** on your fork's GitHub page, then `git pull` and
+  `pnpm rise:update` (build, migrate, deploy with your local config). Deploying from GitHub
+  Actions (below) makes Sync fork the whole update.
+- **Is it all working?** Settings → Health lists the app version, bank connection, accounts,
+  backup and database use, each with what to do when it isn't fine.
 - **Safe to re-run:** each step skips what exists. It refuses to touch a Rise that already
   has a signed-in user, so it can't disturb an install in use.
 
