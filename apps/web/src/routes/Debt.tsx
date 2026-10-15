@@ -20,6 +20,8 @@ import {
   aprFromText,
   chartPoints,
   aprToText,
+  byName,
+  startAppliedThrough,
   dueSuggestions,
   groupView,
   owedCents,
@@ -315,11 +317,16 @@ function LoanSheet({
   const [payment, setPayment] = useState(loan?.paymentCents ?? 0);
   const [dueDay, setDueDay] = useState(String(loan?.dueDay ?? 1));
   const [merchant, setMerchant] = useState(loan?.merchant ?? '');
+  const period = periodOf(today);
+  const [paidPick, setPaidPick] = useState<boolean | null>(null);
   const aprMilli = aprFromText(apr);
   const due = Number(dueDay);
   const name = merchant.trim();
   const owedNow = loan ? owed : (candidates.find((c) => c.id === accountId)?.owedCents ?? 0);
   const interest = aprMilli === null ? 0 : monthlyInterest(owedNow, aprMilli);
+  const paid =
+    paidPick ??
+    (loan ? loan.appliedThrough >= period : startAppliedThrough(today, Number(dueDay)) >= period);
   const valid =
     accountId !== null &&
     aprMilli !== null &&
@@ -345,7 +352,11 @@ function LoanSheet({
             escrowCents: loan?.escrowCents ?? 0,
             dueDay: due,
             merchant: name.toLowerCase(),
-            appliedThrough: loan?.appliedThrough ?? periodOf(today),
+            appliedThrough: paid
+              ? loan && loan.appliedThrough >= period
+                ? loan.appliedThrough
+                : period
+              : ([loan?.appliedThrough ?? '9999-12', addMonths(period, -1)].sort()[0] as string),
           });
           onClose();
         },
@@ -431,6 +442,16 @@ function LoanSheet({
                 className="money w-10 bg-transparent text-right outline-none"
               />
             </span>
+          }
+        />
+        <EditRow
+          label={`${monthName(period, false)} payment in balance`}
+          field={
+            <Toggle
+              label={`${monthName(period, false)} payment in balance`}
+              on={paid}
+              onChange={setPaidPick}
+            />
           }
         />
       </div>
@@ -804,7 +825,7 @@ export function Debt() {
         facts={hasStudent ? <>{savings(student)}</> : undefined}
         related={[
           ...(hasStudent
-            ? [{ title: 'Student loans', children: <div>{student.rows.map(loanRow)}</div> }]
+            ? [{ title: 'Student loans', children: <div>{byName(student.rows).map(loanRow)}</div> }]
             : []),
         ]}
       />
