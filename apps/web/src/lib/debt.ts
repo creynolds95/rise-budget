@@ -65,7 +65,7 @@ export interface GroupView {
   owedCents: number;
   debtFreePeriod: string | null;
   interestCents: number;
-  /** Against the same plan with no extra; null when there is no extra or no baseline date. */
+  /** Against each loan paid on its own schedule; null when nothing speeds it up or no baseline date. */
   monthsSooner: number | null;
   interestSavedCents: number | null;
   totalOwedByMonth: number[];
@@ -77,7 +77,7 @@ export function groupView(
   opts: { extraCents: number; strategy: Strategy; rollForward: boolean },
   period: string,
 ): GroupView {
-  const run = (extraCents: number) =>
+  const run = (extraCents: number, rollForward = opts.rollForward) =>
     simulatePayoff(
       loans.map((l) => ({
         id: l.plan.accountId,
@@ -85,10 +85,11 @@ export function groupView(
         aprMilliPct: l.plan.aprMilliPct,
         paymentCents: l.plan.paymentCents,
       })),
-      { ...opts, extraCents },
+      { ...opts, extraCents, rollForward },
     );
   const result = run(opts.extraCents);
-  const base = opts.extraCents > 0 ? run(0) : null;
+  // Against each loan on its own standard schedule: no extra, freed payments left alone.
+  const base = opts.extraCents > 0 || opts.rollForward ? run(0, false) : null;
   const sooner =
     base !== null && base.debtFreeMonth !== null && result.debtFreeMonth !== null
       ? base.debtFreeMonth - result.debtFreeMonth
