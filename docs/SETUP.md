@@ -6,6 +6,29 @@ their own SimpleFIN subscription. Nothing is shared with the original deployment
 Cost: SimpleFIN Bridge is ~$15/yr. Cloudflare Workers, D1 and R2 fit the free tier at
 personal-use volume, but **R2 asks for a payment method on file** before it can be enabled.
 
+## Quick setup (one command)
+
+You need Node 22+, pnpm (`corepack enable`), git, a Cloudflare account with R2 turned on, and
+(optionally, for bank sync) a SimpleFIN setup token.
+
+```sh
+git clone <your fork> rise && cd rise
+pnpm install
+pnpm rise:setup              # add --dry-run first to see every step without changing anything
+```
+
+It signs you in to Cloudflare, creates the database and backup bucket, deploys, sets the
+secrets, creates your account and prints a passkey link (open it on your phone within 10
+minutes), then offers to connect SimpleFIN. Your real ids go in `apps/api/wrangler.local.toml`,
+which git ignores; the tracked `wrangler.toml` keeps its placeholders, so your fork can stay public.
+
+- **Link expired before you used it?** `pnpm rise:setup --new-link`.
+- **Updating later:** `git pull`, then `pnpm rise:update` (build, migrate, deploy with your local config).
+- **Safe to re-run:** each step skips what exists. It refuses to touch a Rise that already
+  has a signed-in user, so it can't disturb an install in use.
+
+The numbered steps below are the same thing done by hand.
+
 ## 0. What you need
 
 - Node 22+, pnpm (`corepack enable`), git

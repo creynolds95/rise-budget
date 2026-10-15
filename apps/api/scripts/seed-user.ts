@@ -5,6 +5,11 @@
  *
  * Inserts the user row via wrangler and prints a one-time passkey-registration link valid
  * for 10 minutes. JWT_SECRET must match the Worker's secret.
+ *
+ * --config <file>  wrangler config to use (setup.ts passes the git-ignored wrangler.local.toml)
+ * --timezone <tz>  the new user's timezone (default America/Chicago)
+ * --link-only      create nobody; print a fresh link for the one existing user (setup.ts
+ *                  uses this only while that user has no passkey yet)
  */
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -18,11 +23,16 @@ const { values } = parseArgs({
     remote: { type: 'boolean', default: false },
     origin: { type: 'string', default: 'http://localhost:5173' },
     'dry-run': { type: 'boolean', default: false },
+    config: { type: 'string' },
+    timezone: { type: 'string', default: 'America/Chicago' },
+    'link-only': { type: 'boolean', default: false },
   },
 });
+const linkOnly = values['link-only'];
+const configArgs = values.config ? ['-c', values.config] : [];
 
 const secret = process.env['JWT_SECRET'];
-if (!values.email || !values.name || !secret) {
+if ((!linkOnly && (!values.email || !values.name)) || !secret) {
   console.error(
     'usage: JWT_SECRET=… pnpm seed:user --email <email> --name <name> [--remote] [--origin <url>]',
   );
@@ -30,12 +40,38 @@ if (!values.email || !values.name || !secret) {
 }
 
 const sql = (s: string) => `'${s.replace(/'/g, "''")}'`;
-const id = randomUUID();
+
+/** The single existing user's id (Rise is single-user), for --link-only. */
+function existingUserId(): string {
+  const out = execFileSync(
+    'npx',
+    [
+      'wrangler',
+      'd1',
+      'execute',
+      'rise',
+      values.remote ? '--remote' : '--local',
+      ...configArgs,
+      '--json',
+      '--command',
+      'SELECT id FROM user LIMIT 1',
+    ],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
+  );
+  const found = (JSON.parse(out) as { results?: { id?: string }[] }[])[0]?.results?.[0]?.id;
+  if (!found) {
+    console.error('No user to make a link for.');
+    process.exit(1);
+  }
+  return found;
+}
+
+const id = linkOnly ? (values['dry-run'] ? '(existing user)' : existingUserId()) : randomUUID();
 const now = new Date().toISOString();
 const settings = JSON.stringify({ appLock: 'off' });
 const insert =
   `INSERT INTO user (id, email, display_name, timezone, settings_json, created_at) VALUES ` +
-  `(${sql(id)}, ${sql(values.email)}, ${sql(values.name)}, 'America/Chicago', ${sql(settings)}, ${sql(now)});`;
+  `(${sql(id)}, ${sql(values.email ?? '')}, ${sql(values.name ?? '')}, ${sql(values.timezone)}, ${sql(settings)}, ${sql(now)});`;
 
 /**
  * Starter categories (pre-deploy-todo decision, 2026-09-24): a new user gets generic budget
@@ -143,7 +179,9 @@ const categoryInserts = STARTER_GROUPS.flatMap((g, groupIdx) => {
 
 const fullScript = [insert, ...categoryInserts].join('\n');
 
-if (values['dry-run']) {
+if (linkOnly) {
+  // Nothing to write: the user already exists.
+} else if (values['dry-run']) {
   console.log(`-- dry run, nothing written:\n${fullScript}`);
 } else {
   execFileSync(
@@ -154,6 +192,7 @@ if (values['dry-run']) {
       'execute',
       'rise',
       values.remote ? '--remote' : '--local',
+      ...configArgs,
       '--command',
       fullScript,
     ],
@@ -165,7 +204,9 @@ if (values['dry-run']) {
 
 const nowS = Math.floor(Date.now() / 1000);
 const token = await sign({ sub: id, typ: 'register', iat: nowS, exp: nowS + 600 }, secret, 'HS256');
-console.log(`\nUser ${values.email} ${values['dry-run'] ? 'would be' : 'was'} created (${id}).`);
+if (!linkOnly) {
+  console.log(`\nUser ${values.email} ${values['dry-run'] ? 'would be' : 'was'} created (${id}).`);
+}
 console.log(
   `Register your first passkey within 10 minutes:\n\n  ${values.origin}/register#token=${token}\n`,
 );
