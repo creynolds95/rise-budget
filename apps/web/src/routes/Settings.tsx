@@ -29,7 +29,7 @@ import { clearPin, hasPin, lockKeys, setPin, store as lockStore, validPin } from
 import { getThemeSetting, setThemeSetting, type ThemeSetting } from '../lib/theme';
 import { RULE_FIELD as FIELD, RULE_TYPE as TYPE, RuleSheet } from '../components/RuleSheet';
 import { Button } from '../components/primitives/Button';
-import { Chevron } from '../components/primitives/Rows';
+import { Chevron, NavRow } from '../components/primitives/Rows';
 import { Icon, IconButton } from '../components/primitives/Icon';
 import { Menu } from '../components/primitives/Menu';
 import { Leaving, Sheet } from '../components/primitives/Sheet';
@@ -42,6 +42,8 @@ import { banksLastReported, syncOutcome, type SyncRunResult } from '../lib/syncO
 import { localToday, shortDate } from '../lib/dates';
 import { currentSubscription, disablePush, enablePush, pushSupport } from '../lib/push';
 import { isStale, RUNNING, updateApp, useLatestBuild } from '../lib/version';
+import { healthSummary } from '../lib/health';
+import { HealthSection, useHealthChecks } from './Health';
 import {
   useAccounts,
   useBackupStatus,
@@ -73,6 +75,7 @@ const SECTIONS = {
   rules: 'Rules',
   tags: 'Tags',
   sync: 'Bank sync',
+  health: 'Health',
   security: 'Security',
   data: 'Your data',
 } as const;
@@ -101,6 +104,9 @@ export function Settings() {
   const lastRun = sync?.runs[0];
   const backups = useBackupStatus().data;
   const appearance = getThemeSetting();
+  const checks = useHealthChecks();
+  const health = healthSummary(checks);
+  const healthTone = checks.some((c) => c.ok === false) ? 'text-clay-text' : 'text-sage-700';
 
   const syncTone =
     lastRun?.status === 'failed'
@@ -122,6 +128,7 @@ export function Settings() {
             state={sync ? MODE[sync.mode] : undefined}
             tone={syncTone}
           />
+          <Card to="/settings/health" title="Health" state={health} tone={healthTone} />
           <Card
             to="/settings/data"
             title="Your data"
@@ -282,6 +289,7 @@ export function SettingsSection() {
           {s === 'rules' && <RulesSection />}
           {s === 'tags' && <TagsSection />}
           {s === 'sync' && <SyncSection />}
+          {s === 'health' && <HealthSection />}
           {s === 'security' && <SecuritySection />}
           {s === 'data' && <DataSection />}
         </div>
@@ -1752,6 +1760,9 @@ function DataSection() {
           </button>
         </Group>
       )}
+      <Group>
+        <NavRow label="Setup guide" to="/welcome" />
+      </Group>
     </>
   );
 }

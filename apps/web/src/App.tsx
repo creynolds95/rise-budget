@@ -30,6 +30,7 @@ const Debt = lazy(() => import('./routes/Debt').then((m) => ({ default: m.Debt }
 const Mortgage = lazy(() => import('./routes/Mortgage').then((m) => ({ default: m.Mortgage })));
 const Savings = lazy(() => import('./routes/Savings').then((m) => ({ default: m.Savings })));
 const Binder = lazy(() => import('./routes/Binder').then((m) => ({ default: m.Binder })));
+const Welcome = lazy(() => import('./routes/Welcome').then((m) => ({ default: m.Welcome })));
 const Taxes = lazy(() => import('./routes/Taxes').then((m) => ({ default: m.Taxes })));
 
 /** Stand-in while a split-off page's code loads. */
@@ -140,6 +141,14 @@ export function App() {
           />
           <Route path="reports" element={<Navigate to="/settings/reports" replace />} />
           <Route path="settings/:section" element={<SettingsSection />} />
+          <Route
+            path="welcome"
+            element={
+              <Later>
+                <Welcome />
+              </Later>
+            }
+          />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

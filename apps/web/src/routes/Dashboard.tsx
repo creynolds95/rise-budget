@@ -1,7 +1,7 @@
 import { Loading } from '../components/Pending';
 import type { RecurringSeries } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { DashboardTile } from '@rise/shared/schemas';
 import { Link, useNavigate } from 'react-router';
@@ -45,6 +45,7 @@ import {
   useTransactions,
 } from '../lib/queries';
 import { spreadMonths } from '../lib/spread';
+import { shouldOpenWelcome, welcomeDone } from '../lib/welcome';
 
 const RECENT_TXNS = 4;
 
@@ -82,6 +83,11 @@ export function Dashboard() {
   const backups = useBackupStatus();
   const usage = useUsage();
   const [customizing, setCustomizing] = useState(false);
+  // A brand-new install (no accounts at all) opens the setup guide once.
+  const accountCount = accounts.data?.length;
+  useEffect(() => {
+    if (shouldOpenWelcome(accountCount, welcomeDone())) navigate('/welcome', { replace: true });
+  }, [accountCount, navigate]);
   useHeaderActions(
     <button
       type="button"
