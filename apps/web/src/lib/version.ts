@@ -45,13 +45,13 @@ function activated(worker: ServiceWorker, ms: number): Promise<void> {
 }
 
 /**
- * Pull the new service worker, then reload onto the new build. `reg.update()` resolves once
+ * Pull the new service worker, then load the new build at the Dashboard. `reg.update()` resolves once
  * the worker script is fetched, not once it is installed, so reloading right after it would
  * be served the old precached shell by the old worker. Wait for activation first. If a
  * previous tap this session still left the app stale, drop the worker and its caches.
  */
 export async function updateApp(): Promise<void> {
-  const reload = () => window.location.reload();
+  const reload = () => window.location.assign('/');
   const sw = navigator.serviceWorker;
   const reg = await sw?.getRegistration().catch(() => undefined);
   if (!sw || !reg) return reload();
