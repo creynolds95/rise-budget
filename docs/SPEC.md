@@ -248,12 +248,19 @@ review fast, never to skip it.
 
 ### 3.2 Pending → posted matching
 
+`posted_at` holds the **transaction date** (SimpleFIN `transacted_at`, when the purchase
+happened), falling back to the bank's posted date when none is sent. The window opens 7 days
+before P because a pending row the bank sent without a transaction date is dated the day it
+was first seen, and its posted row may then carry an earlier transaction date. A synced row
+whose date changes this way is updated in place on its next sync, inside the sync window
+only, moving months if the date crosses a boundary.
+
 SimpleFIN returns pending transactions. They may change amount (tips, fuel holds) or vanish.
 
 ```
 match pending P to posted Q when:
     P.account_id == Q.account_id
-    Q.posted_at BETWEEN P.posted_at AND P.posted_at + 7 days
+    Q.posted_at BETWEEN P.posted_at - 7 days AND P.posted_at + 7 days
     |P.amount_cents - Q.amount_cents| <= MAX(100, ABS(P.amount_cents) * 0.02)
     normalized_merchant matches, or trigram similarity >= 0.8
     neither already matched

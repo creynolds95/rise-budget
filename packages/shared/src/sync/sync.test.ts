@@ -52,11 +52,12 @@ describe('pending → posted (SPEC §3.2)', () => {
     expect(withinTolerance(-10_000, -9_800)).toBe(true);
   });
 
-  it('matches within 7 days after the pending date only', () => {
+  it('matches within 7 days either side of the pending date', () => {
     const p = stored({ isPending: true, sourceId: 'pend' });
     expect(pendingMatches(p, inc({ postedAt: '2026-09-17' }))).toBe(true);
     expect(pendingMatches(p, inc({ postedAt: '2026-09-18' }))).toBe(false);
-    expect(pendingMatches(p, inc({ postedAt: '2026-09-09' }))).toBe(false);
+    expect(pendingMatches(p, inc({ postedAt: '2026-09-03' }))).toBe(true); // transaction date predates a first-seen pending
+    expect(pendingMatches(p, inc({ postedAt: '2026-09-02' }))).toBe(false);
     expect(pendingMatches(p, inc({ merchant: 'Kroger' }))).toBe(false);
     expect(pendingMatches(p, inc({ merchant: 'SHELL' }))).toBe(true); // trigram ≥ 0.8
   });
