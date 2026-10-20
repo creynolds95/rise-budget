@@ -400,6 +400,13 @@ html[data-page-transition='back']::view-transition-new(root) {
   padding-bottom: 4px;
   min-height: calc(var(--banner-pt) + 48px);
 }
+/* Installed phone app below the solid status bar (index.html): the bar is the space above the
+   title, so no extra 12px; the title sits where it did when the page drew under the bar. */
+@media (width < 64rem) {
+  html.app-full .banner {
+    --banner-pt: max(0px, calc(env(safe-area-inset-top) - 1px));
+  }
+}
 /* Controls inside inherit the banner ink instead of their usual ink/muted/sage text. */
 .banner .text-ink,
 .banner .text-ink-muted,
