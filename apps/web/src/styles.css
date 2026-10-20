@@ -150,6 +150,11 @@
       height: auto;
       overflow: visible;
     }
+    /* iOS 26 blurs whatever sits under the status bar. Behind the banner that was the canvas
+       (the html background), which read as a sage-to-green fog; paint the root in banner green. */
+    html.app-full {
+      background: var(--color-banner);
+    }
     html.app-full #root {
       height: calc(var(--screen-h, 100lvh) - var(--banner-h, 0px));
     }
