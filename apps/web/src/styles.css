@@ -150,8 +150,21 @@
       height: auto;
       overflow: visible;
     }
+    /* iOS 26 paints the page background over the top of the installed app (a Liquid Glass fade,
+       or a solid strip with Reduce Transparency). Make that background the banner colour so it
+       reads as part of the banner. Body keeps the canvas colour for the content. */
+    html.app-full {
+      background: var(--color-banner);
+    }
+    /* Two launch modes on iOS 26. Under the status bar (top inset > 0) the window starts one
+       status bar short, so the app takes the screen height. Below an opaque status bar (inset 0)
+       the window is the right size already and the screen height would overshoot by the bar.
+       Tallest window seen + top inset gives the right height in both; capped at the screen. */
     html.app-full #root {
-      height: calc(var(--screen-h, 100lvh) - var(--banner-h, 0px));
+      height: calc(
+        min(var(--screen-h, 100lvh), calc(var(--win-h, 100lvh) + env(safe-area-inset-top))) -
+          var(--banner-h, 0px)
+      );
     }
   }
   :focus-visible {
