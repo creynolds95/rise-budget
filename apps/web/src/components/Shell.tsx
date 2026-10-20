@@ -121,13 +121,6 @@ export function Shell() {
   return (
     <PageBarSlotContext.Provider value={barSlot}>
       <div className="flex max-lg:h-full min-h-0 flex-col lg:block lg:min-h-dvh lg:pl-72">
-        {/* iOS 26 blurs a light fade over the top of the installed app unless a fixed,
-          full-width box of one solid colour sits at that edge. This band is that box: banner
-          green under the status bar. Zero height wherever there's no top inset. */}
-        <div
-          aria-hidden
-          className="pointer-events-none fixed inset-x-0 top-0 z-30 h-[env(safe-area-inset-top)] bg-banner lg:hidden"
-        />
         {/* Desktop sidebar is `fixed` so it can never be scrolled past; the content column gets
           matching `lg:pl-72` padding. The phone tab bar is deliberately neither fixed nor sticky:
           it is the last item of a full-height column (html/body/#root at 100%, styles.css), so it
