@@ -11,7 +11,11 @@
     <meta name="theme-color" content="#4A6142" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#2C3A25" media="(prefers-color-scheme: dark)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- No apple-mobile-web-app-status-bar-style=black-translucent: with it the installed app
+         draws under the status bar, and iOS 26 lays a Liquid Glass fade over the banner there.
+         Without it the status bar is solid (theme-color) and the app starts below it; styles.css
+         sizes #root for both. iOS reads this only when the app is added to the Home Screen, from
+         the page Safari is showing, which the service worker may serve from an older build. -->
     <meta name="apple-mobile-web-app-title" content="Rise" />
     <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
