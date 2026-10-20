@@ -63,6 +63,14 @@ describe('SimpleFIN adapter (SPEC §6.1, §6.3)', () => {
     expect(pay.amountCents).toBe(-250_000);
   });
 
+  it('dates a posted row by transacted_at when sent, else by posted', () => {
+    const day = 86_400;
+    const base = { id: 'T', posted: LATE_EVENING + 2 * day, amount: '-5', description: 'x' };
+    expect(toIncomingTxn({ ...base, transacted_at: LATE_EVENING }, TZ).postedAt).toBe('2026-09-09');
+    expect(toIncomingTxn(base, TZ).postedAt).toBe('2026-09-11');
+    expect(toIncomingTxn({ ...base, transacted_at: 0 }, TZ).postedAt).toBe('2026-09-11');
+  });
+
   it('treats posted=0 as pending, dated by transacted_at; falls back to payee', () => {
     expect(
       toIncomingTxn(
