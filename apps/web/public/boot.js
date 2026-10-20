@@ -19,16 +19,7 @@ if (
   navigator.standalone === true ||
   (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
 ) {
-  // Only when the page draws under the status bar (a top inset). On iOS 26 a fresh install can
-  // start the window below an opaque status bar instead (inset 0); sizing that to the screen
-  // height would push the tab bar off the bottom, so it keeps the plain window-height layout.
-  var riseProbe = document.createElement('div');
-  riseProbe.style.cssText =
-    'position:absolute;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top)';
-  riseRoot.appendChild(riseProbe);
-  var riseInsetTop = parseFloat(window.getComputedStyle(riseProbe).paddingTop) || 0;
-  riseRoot.removeChild(riseProbe);
-  if (riseInsetTop > 0) riseRoot.classList.add('app-full');
+  riseRoot.classList.add('app-full');
   var riseScreenH = function () {
     var landscape = window.matchMedia && window.matchMedia('(orientation: landscape)').matches;
     var long = Math.max(screen.width, screen.height);
