@@ -38,13 +38,13 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #fafaf7;
+        /* The icon's own green, so its tile melts into a full-screen field in either theme. */
+        background: #4a6142;
         transition: opacity 240ms ease-out;
       }
       #splash img {
         width: 160px;
         height: 160px;
-        border-radius: 36px;
         animation: splash-rise 1400ms ease-in-out infinite;
       }
       @keyframes splash-rise {
@@ -60,14 +60,6 @@
         #splash img {
           animation: none;
         }
-      }
-      @media (prefers-color-scheme: dark) {
-        html:not([data-theme='light']) #splash {
-          background: #14160f;
-        }
-      }
-      html[data-theme='dark'] #splash {
-        background: #14160f;
       }
     </style>
   </head>
