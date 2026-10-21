@@ -160,3 +160,30 @@ export function useTabRootTrap(pathname: string) {
     return () => window.removeEventListener('popstate', trap);
   }, [pathname]);
 }
+
+/** True for a field that takes a number: `type=number` or a numeric/decimal keyboard. */
+export function isNumberField(el: EventTarget | null): el is HTMLInputElement {
+  if (!(el instanceof HTMLInputElement)) return false;
+  return el.type === 'number' || el.inputMode === 'numeric' || el.inputMode === 'decimal';
+}
+
+/**
+ * Tapping into a number field selects all of it, so typing replaces the value without
+ * moving the caret first. iOS places the caret after focus fires, so the selection is
+ * deferred a tick and set with `setSelectionRange` (`select()` alone is ignored there;
+ * `type=number` rejects ranges, so it falls back to `select()`).
+ */
+export function installSelectOnFocus() {
+  document.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (!isNumberField(el)) return;
+    setTimeout(() => {
+      if (document.activeElement !== el || !el.value) return;
+      try {
+        el.setSelectionRange(0, el.value.length);
+      } catch {
+        el.select();
+      }
+    }, 0);
+  });
+}
