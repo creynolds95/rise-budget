@@ -335,7 +335,9 @@ export function Sheet({
     <>
       {standIn}
       <div
-        style={keyboard && view ? { top: view.top, height: room, bottom: 'auto' } : undefined}
+        style={
+          keyboard && view ? { top: view.top, height: view.height, bottom: 'auto' } : undefined
+        }
         className="fixed inset-0 z-40 flex items-end justify-center md:items-center"
       >
         <button
@@ -349,14 +351,23 @@ export function Sheet({
           role="dialog"
           aria-modal="true"
           aria-labelledby={id}
-          style={view ? { maxHeight: `${room * 0.92}px` } : undefined}
+          // With the keyboard up the sheet fills the visible area down to the keyboard, so the page
+          // behind never shows under it; its content scrolls above the input bar.
+          style={
+            view
+              ? { maxHeight: keyboard ? `${view.height - 12}px` : `${room * 0.92}px` }
+              : undefined
+          }
           className={`${closing ? 'animate-sheet-out' : 'animate-sheet-up'} relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] bg-canvas shadow-soft md:max-w-lg md:rounded-[20px]`}
         >
           <div {...handlers}>
             <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-hairline" />
             {header}
           </div>
-          <div className={`gutter min-h-0 overflow-y-auto overscroll-contain pt-2 ${bottomPad}`}>
+          <div
+            style={keyboard ? { paddingBottom: INPUT_BAR + 8 } : undefined}
+            className={`gutter min-h-0 overflow-y-auto overscroll-contain pt-2 ${keyboard ? '' : bottomPad}`}
+          >
             {children}
           </div>
           {footerBar}
