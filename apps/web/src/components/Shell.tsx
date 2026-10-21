@@ -207,7 +207,7 @@ export function Shell() {
                   <Icon name="menu" />
                 </button>
               )}
-              <span className="type-page">
+              <span className="type-page" data-bar-title>
                 {currentTab?.label ??
                   (location.pathname === '/settings'
                     ? 'Settings'

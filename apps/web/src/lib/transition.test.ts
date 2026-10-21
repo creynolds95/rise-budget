@@ -59,6 +59,21 @@ describe('navigateWithTransition', () => {
     expect(root.dataset.contentSlide).toBeUndefined();
   });
 
+  it('keeps an inert copy of the content being left until the slide ends', () => {
+    const { navigate } = setup('/', true);
+    const scroller = document.createElement('div');
+    scroller.id = 'app-scroll';
+    scroller.innerHTML = '<main><p>Dashboard content</p></main>';
+    document.body.append(scroller);
+    navigateWithTransition(navigate, '/cash-to-payday', 'forward');
+    const ghost = document.querySelector<HTMLElement>('.content-ghost');
+    expect(ghost?.getAttribute('aria-hidden')).toBe('true');
+    expect(ghost?.textContent).toBe('Dashboard content');
+    vi.advanceTimersByTime(700);
+    expect(document.querySelector('.content-ghost')).toBeNull();
+    scroller.remove();
+  });
+
   it('slides only the content back from Surplus to Dashboard in the installed app', () => {
     const { start, navigate } = setup('/cash-to-payday', true);
     navigateWithTransition(navigate, '/', 'back');
