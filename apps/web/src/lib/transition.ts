@@ -39,6 +39,13 @@ function pin(el: HTMLElement, rect: DOMRect, className: string): HTMLElement {
   return el;
 }
 
+/** The title bar showing at the top of the screen (not a copy of one). */
+const topBar = () =>
+  [...document.querySelectorAll<HTMLElement>('.banner:not(.bar-ghost)')].find((b) => {
+    const r = b.getBoundingClientRect();
+    return r.height > 0 && r.top <= 1;
+  });
+
 /** Copies of the screen being left: its content, and the title bar's contents. */
 function copiesOfScreen(): HTMLElement[] {
   const copies: HTMLElement[] = [];
@@ -56,13 +63,23 @@ function copiesOfScreen(): HTMLElement[] {
     ghost.append(content);
     copies.push(ghost);
   }
-  const bar = [...document.querySelectorAll<HTMLElement>('.banner')].find((b) => {
-    const r = b.getBoundingClientRect();
-    return r.height > 0 && r.top <= 1;
-  });
+  const bar = topBar();
   if (bar)
     copies.push(pin(bar.cloneNode(true) as HTMLElement, bar.getBoundingClientRect(), 'bar-ghost'));
   return copies;
+}
+
+/**
+ * How far the back arrow travels (styles.css): from the left edge of the other bar's title to
+ * where the arrow sits, as a native bar's back button comes out of the previous title.
+ */
+function arrowShift(bars: HTMLElement[]): number {
+  const arrowBar = bars.find((b) => b.querySelector('a[data-transition="back"]'));
+  const titleBar = bars.find((b) => b !== arrowBar);
+  const arrow = arrowBar?.querySelector('a[data-transition="back"] svg');
+  const title = titleBar?.querySelector('[data-bar-title]');
+  if (!arrow || !title) return 0;
+  return title.getBoundingClientRect().left - arrow.getBoundingClientRect().left;
 }
 
 let contentSlideRun = 0;
@@ -74,13 +91,18 @@ function slideContent(go: () => void, direction: 'forward' | 'back') {
   document.body.append(...copies);
   // Off and on again, so a slide still running starts over.
   delete root.dataset.contentSlide;
+  flushSync(go);
+  // Measured before the slide starts, while nothing in either bar has moved.
+  const bars = [topBar(), copies.find((c) => c.classList.contains('bar-ghost'))];
+  root.style.setProperty('--arrow-shift', `${arrowShift(bars.filter((b) => b !== undefined))}px`);
   void root.offsetWidth;
   root.dataset.contentSlide = direction;
-  flushSync(go);
   const run = ++contentSlideRun;
   window.setTimeout(() => {
     for (const copy of copies) copy.remove();
-    if (run === contentSlideRun) delete root.dataset.contentSlide;
+    if (run !== contentSlideRun) return;
+    delete root.dataset.contentSlide;
+    root.style.removeProperty('--arrow-shift');
   }, 700);
 }
 
