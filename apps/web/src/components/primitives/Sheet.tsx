@@ -24,7 +24,13 @@ import { lockScroll } from '../../lib/scrollLock';
  * the sheet is up is the fallback that actually catches the change.
  */
 function useVisibleViewport(active: boolean) {
-  const [view, setView] = useState<{ height: number; top: number; keyboard: boolean } | null>(null);
+  const [view, setView] = useState<{
+    height: number;
+    top: number;
+    keyboard: boolean;
+    /** Layout-viewport space the keyboard takes below the visible area. */
+    covered: number;
+  } | null>(null);
   useEffect(() => {
     if (!active) return;
     const vv = window.visualViewport;
@@ -34,10 +40,17 @@ function useVisibleViewport(active: boolean) {
       const top = Math.round(vv.offsetTop);
       // The layout viewport doesn't shrink for the keyboard in an installed PWA; the visual one does.
       const keyboard = window.innerHeight - vv.height > 150;
+      const covered = keyboard
+        ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
+        : 0;
       setView((v) =>
-        v && v.height === height && v.top === top && v.keyboard === keyboard
+        v &&
+        v.height === height &&
+        v.top === top &&
+        v.keyboard === keyboard &&
+        v.covered === covered
           ? v
-          : { height, top, keyboard },
+          : { height, top, keyboard, covered },
       );
     };
     update();
@@ -335,9 +348,9 @@ export function Sheet({
     <>
       {standIn}
       <div
-        style={
-          keyboard && view ? { top: view.top, height: view.height, bottom: 'auto' } : undefined
-        }
+        // Full screen always, so the page behind is covered right down to the keyboard; the sheet
+        // sits above it by padding, not by shrinking the layer.
+        style={keyboard && view ? { paddingBottom: view.covered } : undefined}
         className="fixed inset-0 z-40 flex items-end justify-center md:items-center"
       >
         <button
