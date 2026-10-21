@@ -24,8 +24,10 @@ describe('navigateWithTransition', () => {
     delete doc.startViewTransition;
     root.classList.remove('app-full');
     delete root.dataset.contentSlide;
+    root.style.removeProperty('--arrow-shift');
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     window.history.replaceState(null, '', '/');
   });
   const setup = (from: string, installed: boolean) => {
@@ -72,6 +74,37 @@ describe('navigateWithTransition', () => {
     vi.advanceTimersByTime(700);
     expect(document.querySelector('.content-ghost')).toBeNull();
     scroller.remove();
+  });
+
+  it('starts the back arrow at the left edge of the title being left', () => {
+    const { navigate } = setup('/', true);
+    // Rects from data-left; a bar is on screen unless it is hidden.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      const left = Number(this.getAttribute('data-left') ?? 0);
+      const height = this.closest('[hidden]') ? 0 : 48;
+      return { left, top: 0, height, width: 10 } as DOMRect;
+    });
+    const dashboard = document.createElement('div');
+    dashboard.className = 'banner';
+    dashboard.innerHTML = '<span data-bar-title data-left="60">Dashboard</span>';
+    const surplus = document.createElement('header');
+    surplus.className = 'banner';
+    surplus.hidden = true;
+    surplus.innerHTML =
+      '<a data-transition="back"><svg data-left="17"></svg></a><h1 data-bar-title>Surplus</h1>';
+    document.body.append(dashboard, surplus);
+    navigate.mockImplementation(() => {
+      dashboard.hidden = true;
+      surplus.hidden = false;
+    });
+    navigateWithTransition(navigate, '/cash-to-payday', 'forward');
+    expect(root.style.getPropertyValue('--arrow-shift')).toBe('43px');
+    vi.advanceTimersByTime(700);
+    expect(root.style.getPropertyValue('--arrow-shift')).toBe('');
+    dashboard.remove();
+    surplus.remove();
   });
 
   it('slides only the content back from Surplus to Dashboard in the installed app', () => {

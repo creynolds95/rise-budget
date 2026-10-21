@@ -359,8 +359,13 @@ html[data-page-transition='back']::view-transition-new(root) {
    the view transition above moved it, with .content-ghost (an inert copy) as the screen being
    left: forward, the new content slides over it from the right while it drifts left and dims;
    back, it slides off to the right over the old content coming back. In the green bar the
-   buttons cross-fade and only the title slides, on .bar-ghost (a copy of the old bar's
-   contents) and the live bar. Transform and opacity only; the dimming is an overlay. */
+   buttons cross-fade and only the title and the back arrow move, on .bar-ghost (a copy of the
+   old bar's contents) and the live bar. Transform and opacity only; the dimming is an overlay.
+   Timing is measured from a native iOS push: about 0.3 s, moving from the first frame. */
+html[data-content-slide] {
+  --slide-time: 300ms;
+  --slide: var(--slide-time) cubic-bezier(0.3, 0.2, 0.5, 1);
+}
 html[data-content-slide] #app-scroll {
   overflow-x: hidden;
 }
@@ -380,16 +385,16 @@ html[data-content-slide='back'] .content-ghost {
   z-index: 2;
 }
 html[data-content-slide='forward'] #app-scroll > main {
-  animation: rise-slide-from-right var(--motion-in) var(--motion-ease) both;
+  animation: rise-slide-from-right var(--slide) both;
 }
 html[data-content-slide='forward'] .content-ghost {
-  animation: rise-slide-to-left-quarter var(--motion-in) var(--motion-ease) both;
+  animation: rise-slide-to-left-quarter var(--slide) both;
 }
 html[data-content-slide='back'] #app-scroll > main {
-  animation: rise-slide-from-left-quarter var(--motion-in) var(--motion-ease) both;
+  animation: rise-slide-from-left-quarter var(--slide) both;
 }
 html[data-content-slide='back'] .content-ghost {
-  animation: rise-slide-to-right var(--motion-in) var(--motion-ease) both;
+  animation: rise-slide-to-right var(--slide) both;
 }
 html[data-content-slide='forward'] .content-ghost::after,
 html[data-content-slide='back'] #app-scroll > main::after {
@@ -401,10 +406,10 @@ html[data-content-slide='back'] #app-scroll > main::after {
   opacity: 0;
 }
 html[data-content-slide='forward'] .content-ghost::after {
-  animation: rise-dim var(--motion-in) var(--motion-ease) both;
+  animation: rise-dim var(--slide) both;
 }
 html[data-content-slide='back'] #app-scroll > main::after {
-  animation: rise-dim var(--motion-in) var(--motion-ease) reverse both;
+  animation: rise-dim var(--slide) reverse both;
 }
 .bar-ghost {
   position: fixed;
@@ -413,23 +418,47 @@ html[data-content-slide='back'] #app-scroll > main::after {
   background: transparent;
   box-shadow: none;
 }
+/* The buttons stay put and cross-fade a little behind the page. */
 .bar-ghost :is(a, button) {
-  animation: rise-fade-out var(--motion-in) var(--motion-ease) both;
+  animation: rise-fade-out var(--slide-time) cubic-bezier(0.45, 0.15, 0.5, 0.95) both;
 }
 html[data-content-slide] .banner:not(.bar-ghost) :is(a, button) {
-  animation: fade-in var(--motion-in) var(--motion-ease) both;
+  animation: fade-in var(--slide-time) cubic-bezier(0.45, 0.15, 0.5, 0.95) both;
 }
+/* The titles ride their pages (same distance, same curve) but fade on their own clocks, as a
+   native bar's do. Forward, the old title is gone at 57% of the way and the new one stays faint
+   until about halfway (its opacity is the square of the page's progress). Back mirrors that. */
 html[data-content-slide='forward'] .bar-ghost [data-bar-title] {
-  animation: rise-title-out-to-left var(--motion-in) var(--motion-ease) both;
+  animation:
+    rise-slide-to-left-quarter-vw var(--slide) both,
+    rise-gone-early var(--slide-time) cubic-bezier(0.3, 0.15, 0.7, 0.75) both;
 }
 html[data-content-slide='forward'] .banner:not(.bar-ghost) [data-bar-title] {
-  animation: rise-title-in-from-right var(--motion-in) var(--motion-ease) both;
+  animation:
+    rise-slide-from-right-vw var(--slide) both,
+    fade-in var(--slide-time) cubic-bezier(0.5, 0, 0.5, 0.9) both;
 }
 html[data-content-slide='back'] .bar-ghost [data-bar-title] {
-  animation: rise-title-out-to-right var(--motion-in) var(--motion-ease) both;
+  animation:
+    rise-slide-to-right-vw var(--slide) both,
+    rise-fade-out var(--slide-time) cubic-bezier(0.45, 0.75, 0.25, 1) both;
 }
 html[data-content-slide='back'] .banner:not(.bar-ghost) [data-bar-title] {
-  animation: rise-title-in-from-left var(--motion-in) var(--motion-ease) both;
+  animation:
+    rise-slide-from-left-quarter-vw var(--slide) both,
+    rise-in-late var(--slide-time) cubic-bezier(0.2, 0.3, 0.5, 1) both;
+}
+/* The back arrow comes out of the old title: it starts at that title's left edge
+   (--arrow-shift) and travels with the page, appearing as it goes. Back, it returns there. */
+html[data-content-slide='forward'] .banner:not(.bar-ghost) a[data-transition='back'] {
+  animation:
+    rise-arrow-from-title var(--slide) both,
+    fade-in var(--slide) both;
+}
+html[data-content-slide='back'] .bar-ghost a[data-transition='back'] {
+  animation:
+    rise-arrow-to-title var(--slide) both,
+    rise-fade-out var(--slide) both;
 }
 @keyframes rise-slide-from-right {
   from {
@@ -451,6 +480,37 @@ html[data-content-slide='back'] .banner:not(.bar-ghost) [data-bar-title] {
     transform: translateX(-25%);
   }
 }
+/* The same distances for the titles, which are narrower than the page they ride. */
+@keyframes rise-slide-from-right-vw {
+  from {
+    transform: translateX(100vw);
+  }
+}
+@keyframes rise-slide-to-left-quarter-vw {
+  to {
+    transform: translateX(-25vw);
+  }
+}
+@keyframes rise-slide-to-right-vw {
+  to {
+    transform: translateX(100vw);
+  }
+}
+@keyframes rise-slide-from-left-quarter-vw {
+  from {
+    transform: translateX(-25vw);
+  }
+}
+@keyframes rise-arrow-from-title {
+  from {
+    transform: translateX(var(--arrow-shift, 0px));
+  }
+}
+@keyframes rise-arrow-to-title {
+  to {
+    transform: translateX(var(--arrow-shift, 0px));
+  }
+}
 /* The overlay's take on rise-push-back's brightness(0.85). */
 @keyframes rise-dim {
   to {
@@ -462,28 +522,15 @@ html[data-content-slide='back'] .banner:not(.bar-ghost) [data-bar-title] {
     opacity: 0;
   }
 }
-/* The titles travel with the content (rise-slide-*), so neither one gets ahead of its page. */
-@keyframes rise-title-in-from-right {
-  from {
-    transform: translateX(100vw);
-    opacity: 0;
-  }
-}
-@keyframes rise-title-out-to-left {
+@keyframes rise-gone-early {
+  57%,
   to {
-    transform: translateX(-25vw);
     opacity: 0;
   }
 }
-@keyframes rise-title-in-from-left {
-  from {
-    transform: translateX(-25vw);
-    opacity: 0;
-  }
-}
-@keyframes rise-title-out-to-right {
-  to {
-    transform: translateX(100vw);
+@keyframes rise-in-late {
+  from,
+  21% {
     opacity: 0;
   }
 }
