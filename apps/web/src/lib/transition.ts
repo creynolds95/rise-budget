@@ -9,6 +9,34 @@ const supportsViewTransitions = () =>
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// Trial in the installed app (boot.js), Dashboard <-> Surplus only: while a view transition runs,
+// iOS 26 sees a snapshot instead of the sticky title bar and fades the status bar until it ends.
+// Here the title bar stays live, its contents fade in, and only the content below it slides.
+const CONTENT_SLIDE = new Set(['/', '/cash-to-payday']);
+const pathOf = (to: string) => to.split(/[?#]/)[0] ?? '';
+
+function slidesContentOnly(to: string): boolean {
+  if (!document.documentElement.classList.contains('app-full')) return false;
+  const from = window.location.pathname;
+  return from !== pathOf(to) && CONTENT_SLIDE.has(from) && CONTENT_SLIDE.has(pathOf(to));
+}
+
+let contentSlideRun = 0;
+
+/** Navigates, sliding #app-scroll's content and fading the title (styles.css). */
+function slideContent(go: () => void, direction: 'forward' | 'back') {
+  const root = document.documentElement;
+  // Off and on again, so a slide still running starts over.
+  delete root.dataset.contentSlide;
+  void root.offsetWidth;
+  root.dataset.contentSlide = direction;
+  flushSync(go);
+  const run = ++contentSlideRun;
+  window.setTimeout(() => {
+    if (run === contentSlideRun) delete root.dataset.contentSlide;
+  }, 700);
+}
+
 /**
  * Slides the next screen in (or the current one back out) like a native push/pop
  * (DESIGN-SYSTEM.md §4's depth model), using the browser's View Transitions API where it's
@@ -25,6 +53,10 @@ export function navigateWithTransition(
   if (direction === 'back') markBack(to);
   if (!supportsViewTransitions() || prefersReducedMotion()) {
     go();
+    return;
+  }
+  if (slidesContentOnly(to)) {
+    slideContent(go, direction);
     return;
   }
   document.documentElement.dataset.pageTransition = direction;
