@@ -354,6 +354,21 @@ html[data-page-transition='back']::view-transition-new(root) {
   z-index: 0;
   animation-name: rise-pop-in;
 }
+/* Trial, installed app, Dashboard <-> Surplus (lib/transition.ts): no view transition, so the
+   sticky title bar stays live and iOS 26 keeps the status bar solid. Its contents fade in and
+   only the content below it slides. */
+html[data-content-slide] #app-scroll {
+  overflow-x: hidden;
+}
+html[data-content-slide='forward'] #app-scroll > main {
+  animation: rise-push-in var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide='back'] #app-scroll > main {
+  animation: rise-pop-in var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide] .banner > * {
+  animation: fade-in var(--motion-in) var(--motion-ease) both;
+}
 @keyframes rise-push-in {
   from {
     transform: translateX(100%);
