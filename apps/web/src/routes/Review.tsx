@@ -269,7 +269,9 @@ export function Review() {
     <div className="mx-auto max-w-2xl pb-28">
       <PageBar>
         <BackLink to="/" label="Dashboard" />
-        <h1 className="type-body font-semibold">Needs review</h1>
+        <h1 className="type-body font-semibold" data-bar-title>
+          Needs review
+        </h1>
         <span />
       </PageBar>
 

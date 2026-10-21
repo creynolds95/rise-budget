@@ -10,19 +10,15 @@ const supportsViewTransitions = () =>
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// Trial in the installed app (boot.js), Dashboard <-> Surplus only: while a view transition runs,
+// In the installed phone app (boot.js) screens slide without a view transition: while one runs,
 // iOS 26 sees a snapshot instead of the sticky title bar and fades the status bar until it ends.
 // Here nothing is a snapshot. The content moves as the view transition moved it, with an inert
 // copy standing in for the screen being left; the green bar stays live, its buttons fade and
-// only its title slides (styles.css).
-const CONTENT_SLIDE = new Set(['/', '/cash-to-payday']);
-const pathOf = (to: string) => to.split(/[?#]/)[0] ?? '';
-
-function slidesContentOnly(to: string): boolean {
-  if (!document.documentElement.classList.contains('app-full')) return false;
-  const from = window.location.pathname;
-  return from !== pathOf(to) && CONTENT_SLIDE.has(from) && CONTENT_SLIDE.has(pathOf(to));
-}
+// its title and back arrow slide (styles.css). From lg up the document scrolls instead of
+// #app-scroll, so wide screens keep the view transition.
+const slidesInPlace = () =>
+  document.documentElement.classList.contains('app-full') &&
+  window.matchMedia('(width < 64rem)').matches;
 
 /** Makes `el` an inert overlay pinned to `rect`. */
 function pin(el: HTMLElement, rect: DOMRect, className: string): HTMLElement {
@@ -52,15 +48,17 @@ function copiesOfScreen(): HTMLElement[] {
   const scroller = document.getElementById(SCROLLER_ID);
   const main = scroller?.querySelector<HTMLElement>(':scope > main');
   if (scroller && main) {
-    // The pinned box clips and moves; the copy inside it keeps the scroll offset.
+    // The pinned box moves and dims; the view inside it is scrolled to the same offset once it's
+    // in the page, so anything sticky in the copy (a search field, a date heading) stays put.
     const ghost = pin(
       document.createElement('div'),
       scroller.getBoundingClientRect(),
       'content-ghost',
     );
-    const content = main.cloneNode(true) as HTMLElement;
-    content.style.transform = `translateY(${-scroller.scrollTop}px)`;
-    ghost.append(content);
+    const view = document.createElement('div');
+    view.style.cssText = 'height: 100%; overflow: hidden';
+    view.append(main.cloneNode(true));
+    ghost.append(view);
     copies.push(ghost);
   }
   const bar = topBar();
@@ -70,12 +68,11 @@ function copiesOfScreen(): HTMLElement[] {
 }
 
 /**
- * How far the back arrow travels (styles.css): from the left edge of the other bar's title to
- * where the arrow sits, as a native bar's back button comes out of the previous title.
+ * How far the back arrow travels (styles.css), as a native bar's back button comes out of the
+ * previous title: forward, the new bar's arrow starts at the old title's left edge; back, the
+ * old bar's arrow goes to the new title's.
  */
-function arrowShift(bars: HTMLElement[]): number {
-  const arrowBar = bars.find((b) => b.querySelector('a[data-transition="back"]'));
-  const titleBar = bars.find((b) => b !== arrowBar);
+function arrowShift(arrowBar: Element | undefined, titleBar: Element | undefined): number {
   const arrow = arrowBar?.querySelector('a[data-transition="back"] svg');
   const title = titleBar?.querySelector('[data-bar-title]');
   if (!arrow || !title) return 0;
@@ -83,18 +80,23 @@ function arrowShift(bars: HTMLElement[]): number {
 }
 
 let contentSlideRun = 0;
+/** The slide takes 300 ms (styles.css --slide-time); the copies go a little after. */
+const SLIDE_DONE_MS = 400;
 
 function slideContent(go: () => void, direction: 'forward' | 'back') {
   const root = document.documentElement;
   for (const old of document.querySelectorAll('.content-ghost, .bar-ghost')) old.remove();
   const copies = copiesOfScreen();
   document.body.append(...copies);
+  const view = copies.find((c) => c.classList.contains('content-ghost'))?.firstElementChild;
+  if (view) view.scrollTop = document.getElementById(SCROLLER_ID)?.scrollTop ?? 0;
   // Off and on again, so a slide still running starts over.
   delete root.dataset.contentSlide;
   flushSync(go);
   // Measured before the slide starts, while nothing in either bar has moved.
-  const bars = [topBar(), copies.find((c) => c.classList.contains('bar-ghost'))];
-  root.style.setProperty('--arrow-shift', `${arrowShift(bars.filter((b) => b !== undefined))}px`);
+  const [live, ghost] = [topBar(), copies.find((c) => c.classList.contains('bar-ghost'))];
+  const shift = direction === 'forward' ? arrowShift(live, ghost) : arrowShift(ghost, live);
+  root.style.setProperty('--arrow-shift', `${shift}px`);
   void root.offsetWidth;
   root.dataset.contentSlide = direction;
   const run = ++contentSlideRun;
@@ -103,13 +105,14 @@ function slideContent(go: () => void, direction: 'forward' | 'back') {
     if (run !== contentSlideRun) return;
     delete root.dataset.contentSlide;
     root.style.removeProperty('--arrow-shift');
-  }, 700);
+  }, SLIDE_DONE_MS);
 }
 
 /**
  * Slides the next screen in (or the current one back out) like a native push/pop
- * (DESIGN-SYSTEM.md §4's depth model), using the browser's View Transitions API where it's
- * supported. Falls back to a plain navigation everywhere else — no fallback code to maintain.
+ * (DESIGN-SYSTEM.md §4's depth model): in place in the installed phone app (slideContent), with
+ * the browser's View Transitions API elsewhere where it's supported, and as a plain navigation
+ * everywhere else.
  */
 export function navigateWithTransition(
   navigate: NavigateFunction,
@@ -124,7 +127,7 @@ export function navigateWithTransition(
     go();
     return;
   }
-  if (slidesContentOnly(to)) {
+  if (slidesInPlace()) {
     slideContent(go, direction);
     return;
   }
