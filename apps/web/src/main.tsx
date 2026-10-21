@@ -62,7 +62,10 @@ createRoot(document.getElementById('root') as HTMLElement).render(
       persistOptions={{ persister, maxAge: CACHE_MAX_AGE, buster: __APP_VERSION__ }}
     >
       <AuthProvider>
-        <BrowserRouter>
+        {/* Navigations commit at once, not in a React transition: a screen slide (lib/transition.ts)
+            renders the next screen inside flushSync and starts moving it straight after, and a
+            transition would leave the old screen in place for the first part of the slide. */}
+        <BrowserRouter useTransitions={false}>
           <App />
         </BrowserRouter>
       </AuthProvider>

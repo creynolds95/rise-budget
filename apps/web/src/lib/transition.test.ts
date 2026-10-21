@@ -30,9 +30,10 @@ describe('navigateWithTransition', () => {
     vi.restoreAllMocks();
     window.history.replaceState(null, '', '/');
   });
-  const setup = (from: string, installed: boolean) => {
+  const setup = (from: string, installed: boolean, wide = false) => {
     vi.useFakeTimers();
-    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    // A phone-width screen, motion allowed.
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('width') && !wide }));
     window.history.replaceState(null, '', from);
     if (installed) root.classList.add('app-full');
     const start = vi.fn((update: () => void) => {
@@ -51,13 +52,13 @@ describe('navigateWithTransition', () => {
     expect(root.dataset.contentSlide).toBeUndefined();
   });
 
-  it('slides only the content from Dashboard to Surplus in the installed app', () => {
+  it('slides in place from Dashboard to Surplus in the installed app', () => {
     const { start, navigate } = setup('/', true);
     navigateWithTransition(navigate, '/cash-to-payday', 'forward');
     expect(start).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith('/cash-to-payday', undefined);
     expect(root.dataset.contentSlide).toBe('forward');
-    vi.advanceTimersByTime(700);
+    vi.advanceTimersByTime(400);
     expect(root.dataset.contentSlide).toBeUndefined();
   });
 
@@ -71,7 +72,7 @@ describe('navigateWithTransition', () => {
     const ghost = document.querySelector<HTMLElement>('.content-ghost');
     expect(ghost?.getAttribute('aria-hidden')).toBe('true');
     expect(ghost?.textContent).toBe('Dashboard content');
-    vi.advanceTimersByTime(700);
+    vi.advanceTimersByTime(400);
     expect(document.querySelector('.content-ghost')).toBeNull();
     scroller.remove();
   });
@@ -101,13 +102,13 @@ describe('navigateWithTransition', () => {
     });
     navigateWithTransition(navigate, '/cash-to-payday', 'forward');
     expect(root.style.getPropertyValue('--arrow-shift')).toBe('43px');
-    vi.advanceTimersByTime(700);
+    vi.advanceTimersByTime(400);
     expect(root.style.getPropertyValue('--arrow-shift')).toBe('');
     dashboard.remove();
     surplus.remove();
   });
 
-  it('slides only the content back from Surplus to Dashboard in the installed app', () => {
+  it('slides in place back from Surplus to Dashboard in the installed app', () => {
     const { start, navigate } = setup('/cash-to-payday', true);
     navigateWithTransition(navigate, '/', 'back');
     expect(start).not.toHaveBeenCalled();
@@ -115,11 +116,18 @@ describe('navigateWithTransition', () => {
     expect(root.dataset.contentSlide).toBe('back');
   });
 
-  it('keeps the whole-screen slide for other screens in the installed app', () => {
-    const { start, navigate } = setup('/', true);
+  it('slides every pushed screen in place in the installed app', () => {
+    const { start, navigate } = setup('/accounts', true);
+    navigateWithTransition(navigate, '/accounts/a1', 'forward');
+    expect(start).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/accounts/a1', undefined);
+    expect(root.dataset.contentSlide).toBe('forward');
+  });
+
+  it('keeps the whole-screen slide on a wide screen in the installed app', () => {
+    const { start, navigate } = setup('/', true, true);
     navigateWithTransition(navigate, '/accounts/a1', 'forward');
     expect(start).toHaveBeenCalledOnce();
-    expect(navigate).toHaveBeenCalledWith('/accounts/a1', undefined);
     expect(root.dataset.contentSlide).toBeUndefined();
   });
 });

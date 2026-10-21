@@ -354,8 +354,8 @@ html[data-page-transition='back']::view-transition-new(root) {
   z-index: 0;
   animation-name: rise-pop-in;
 }
-/* Trial, installed app, Dashboard <-> Surplus (lib/transition.ts): no view transition, so the
-   sticky title bar stays live and iOS 26 keeps the status bar solid. The content moves the way
+/* Installed phone app (lib/transition.ts): no view transition, so the sticky title bar stays
+   live and iOS 26 keeps the status bar solid. The content moves the way
    the view transition above moved it, with .content-ghost (an inert copy) as the screen being
    left: forward, the new content slides over it from the right while it drifts left and dims;
    back, it slides off to the right over the old content coming back. In the green bar the

@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router';
 import { LockGate } from './components/LockGate';
 import { OfflineBar } from './components/OfflineBar';
@@ -21,17 +21,33 @@ import { Settings, SettingsSection } from './routes/Settings';
 import { TransactionDetail } from './routes/TransactionDetail';
 import { Transactions } from './routes/Transactions';
 
-// The planning pages are rarely opened, so they load on first visit; the service worker
-// precaches their chunks with the rest of the shell, so they still open offline.
-const Retirement = lazy(() =>
-  import('./routes/Retirement').then((m) => ({ default: m.Retirement })),
-);
-const Debt = lazy(() => import('./routes/Debt').then((m) => ({ default: m.Debt })));
-const Mortgage = lazy(() => import('./routes/Mortgage').then((m) => ({ default: m.Mortgage })));
-const Savings = lazy(() => import('./routes/Savings').then((m) => ({ default: m.Savings })));
-const Binder = lazy(() => import('./routes/Binder').then((m) => ({ default: m.Binder })));
+/**
+ * A split-off page. Once its code is in it renders straight away, without suspending, so a
+ * screen slide (lib/transition.ts) never starts on the placeholder.
+ */
+function lazyPage(load: () => Promise<ComponentType>) {
+  let Loaded: ComponentType | undefined;
+  const preload = () => load().then((C) => (Loaded = C));
+  const Lazy = lazy(() => preload().then((C) => ({ default: C })));
+  function Page() {
+    // Fixed for the life of the screen, so one that opened lazily never remounts.
+    const [Screen] = useState(() => Loaded ?? Lazy);
+    return <Screen />;
+  }
+  return Object.assign(Page, { preload });
+}
+
+// The planning pages are rarely opened, so they aren't in the main bundle; they load once the
+// app is idle after signing in. The service worker precaches their chunks with the rest of the
+// shell, so they still open offline.
+const Retirement = lazyPage(() => import('./routes/Retirement').then((m) => m.Retirement));
+const Debt = lazyPage(() => import('./routes/Debt').then((m) => m.Debt));
+const Mortgage = lazyPage(() => import('./routes/Mortgage').then((m) => m.Mortgage));
+const Savings = lazyPage(() => import('./routes/Savings').then((m) => m.Savings));
+const Binder = lazyPage(() => import('./routes/Binder').then((m) => m.Binder));
+const Taxes = lazyPage(() => import('./routes/Taxes').then((m) => m.Taxes));
+const PLANNING = [Retirement, Debt, Mortgage, Savings, Binder, Taxes];
 const Welcome = lazy(() => import('./routes/Welcome').then((m) => ({ default: m.Welcome })));
-const Taxes = lazy(() => import('./routes/Taxes').then((m) => ({ default: m.Taxes })));
 
 /** Stand-in while a split-off page's code loads. */
 export function PageFallback() {
@@ -51,6 +67,15 @@ const Later = ({ children }: { children: ReactNode }) => (
 /** Mounted only when signed in, so the badge query never fires on the login screen. */
 function BadgeKeeper() {
   useAppBadge();
+  return null;
+}
+
+/** Loads the planning pages' code a few seconds after the signed-in app opens. */
+function PlanningPreload() {
+  useEffect(() => {
+    const t = window.setTimeout(() => PLANNING.forEach((p) => void p.preload()), 3000);
+    return () => window.clearTimeout(t);
+  }, []);
   return null;
 }
 
@@ -76,6 +101,7 @@ export function App() {
   return (
     <LockGate>
       <BadgeKeeper />
+      <PlanningPreload />
       <OfflineBar />
       <Routes>
         <Route element={<Shell />}>
