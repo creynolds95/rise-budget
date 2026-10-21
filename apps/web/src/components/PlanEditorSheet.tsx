@@ -98,7 +98,9 @@ function Editor({
     setText((t) => pressKey(t, k, fresh));
     setFresh(false);
   };
-  const left = row.carriedInCents + cents - row.spentCents;
+  // An emptied amount in Set mode reads as $0 so Remaining follows the box; it can't be saved.
+  const shown = text === '' && mode === 'set' ? 0 : cents;
+  const left = row.carriedInCents + shown - row.spentCents;
   const save = async () => {
     if (!valid || busy) return;
     setBusy(true);
