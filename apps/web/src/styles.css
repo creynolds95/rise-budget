@@ -364,7 +364,18 @@ html[data-content-slide='forward'] #app-scroll > main {
   animation: rise-push-in var(--motion-in) var(--motion-ease) both;
 }
 html[data-content-slide='back'] #app-scroll > main {
-  animation: rise-pop-in var(--motion-in) var(--motion-ease) both;
+  animation: rise-content-back var(--motion-in) var(--motion-ease) both;
+}
+/* The mirror of rise-push-in, transform only: rise-pop-in's start (-25%, dimmed) is made for a
+   page uncovered from under the one leaving, and with nothing on top it reads as a jump, while
+   animating a filter across the whole page stutters on the phone. */
+@keyframes rise-content-back {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 html[data-content-slide] .banner > * {
   animation: fade-in var(--motion-in) var(--motion-ease) both;
