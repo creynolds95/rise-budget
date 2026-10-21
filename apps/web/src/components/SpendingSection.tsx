@@ -1,4 +1,4 @@
-import type { ViewCategory } from '@rise/shared/budget';
+import { applyTolerance, type ViewCategory } from '@rise/shared/budget';
 import { cumulativeSpend, sameDayTotal } from '@rise/shared/reports';
 import type { Category } from '@rise/shared/schemas';
 import { Link, useNavigate } from 'react-router';
@@ -170,7 +170,7 @@ export function WhereItWent(props: {
                   </span>
                   <MoneyText
                     cents={c.spentCents}
-                    tone={c.remainingCents < 0 ? 'over' : 'ink'}
+                    tone={applyTolerance(c).remainingCents < 0 ? 'over' : 'ink'}
                     className="font-semibold"
                     whole
                   />
@@ -178,7 +178,7 @@ export function WhereItWent(props: {
                 <span className="mt-2 flex items-center gap-3">
                   <span className="h-1 flex-1 overflow-hidden rounded-full bg-sage-100">
                     <span
-                      className={`block h-full rounded-full ${c.remainingCents < 0 ? 'bg-clay' : 'bg-sage-600'}`}
+                      className={`block h-full rounded-full ${applyTolerance(c).remainingCents < 0 ? 'bg-clay' : 'bg-sage-600'}`}
                       style={{ width: `${Math.max(2, (c.spentCents / max) * 100)}%` }}
                     />
                   </span>
