@@ -1,4 +1,5 @@
 import { Loading } from '../components/Pending';
+import { TxnBadges } from '../components/TxnBadges';
 import { PageBar } from '../lib/pageBar';
 import type { RuleOffer, Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
@@ -528,14 +529,7 @@ function ReviewRow({
                   </span>
                 )}
                 {merchantName(t)}
-                {t.isPending && (
-                  <span
-                    title="Pending"
-                    className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
-                  >
-                    P
-                  </span>
-                )}
+                <TxnBadges t={t} />
               </span>
               <span className="block truncate type-caption text-ink-faint not-italic">
                 {account}
