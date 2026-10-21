@@ -1,4 +1,5 @@
 import type { Transaction } from '@rise/shared/schemas';
+import { TxnBadges } from './TxnBadges';
 import { merchantName } from '../lib/merchant';
 import { Link, useNavigate } from 'react-router';
 import { flagText } from '../lib/alerts';
@@ -108,15 +109,7 @@ export function TxnRow({
             </span>
           )}
           {merchantName(t)}
-          {t.isPending && (
-            <span
-              className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
-              title="Pending"
-            >
-              <span aria-hidden>P</span>
-              <span className="sr-only">Pending</span>
-            </span>
-          )}
+          <TxnBadges t={t} />
         </span>
         {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
       </Link>

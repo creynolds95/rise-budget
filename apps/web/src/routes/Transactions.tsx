@@ -1,4 +1,5 @@
 import { Loading } from '../components/Pending';
+import { TxnBadges } from '../components/TxnBadges';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { listOrigin } from '../lib/nav';
@@ -211,14 +212,7 @@ export function Transactions() {
               </td>
               <td className="max-w-72 truncate px-4 py-2.5">
                 {merchantName(t)}
-                {t.isPending && (
-                  <span
-                    className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
-                    title="Pending"
-                  >
-                    P
-                  </span>
-                )}
+                <TxnBadges t={t} />
                 {t.reviewState === 'needs_review' && (
                   <span className="ml-2 type-caption text-ink-faint not-italic">To review</span>
                 )}
