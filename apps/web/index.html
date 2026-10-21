@@ -29,7 +29,7 @@
     <style>
       /*
        * A cold PWA launch shows a blank canvas-colored screen while the JS bundle parses.
-       * This covers that gap with the app icon; main.tsx fades and removes it once mounted.
+       * This covers that gap with the app icon on the header green; main.tsx fades and removes it once mounted.
        */
       #splash {
         position: fixed;
@@ -38,7 +38,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #fafaf7;
+        background: #4a6142;
         transition: opacity 240ms ease-out;
       }
       #splash img {
@@ -63,11 +63,11 @@
       }
       @media (prefers-color-scheme: dark) {
         html:not([data-theme='light']) #splash {
-          background: #14160f;
+          background: #2c3a25;
         }
       }
       html[data-theme='dark'] #splash {
-        background: #14160f;
+        background: #2c3a25;
       }
     </style>
   </head>
