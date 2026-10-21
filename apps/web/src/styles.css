@@ -462,27 +462,28 @@ html[data-content-slide='back'] .banner:not(.bar-ghost) [data-bar-title] {
     opacity: 0;
   }
 }
+/* The titles travel with the content (rise-slide-*), so neither one gets ahead of its page. */
 @keyframes rise-title-in-from-right {
   from {
-    transform: translateX(33vw);
+    transform: translateX(100vw);
     opacity: 0;
   }
 }
 @keyframes rise-title-out-to-left {
   to {
-    transform: translateX(-33vw);
+    transform: translateX(-25vw);
     opacity: 0;
   }
 }
 @keyframes rise-title-in-from-left {
   from {
-    transform: translateX(-33vw);
+    transform: translateX(-25vw);
     opacity: 0;
   }
 }
 @keyframes rise-title-out-to-right {
   to {
-    transform: translateX(33vw);
+    transform: translateX(100vw);
     opacity: 0;
   }
 }
