@@ -2,6 +2,7 @@ import type { MouseEvent } from 'react';
 import { flushSync } from 'react-dom';
 import type { NavigateFunction } from 'react-router';
 import { markBack } from './scrollMemory';
+import { SCROLLER_ID } from './scroller';
 
 const supportsViewTransitions = () =>
   typeof document !== 'undefined' && 'startViewTransition' in document;
@@ -11,7 +12,9 @@ const prefersReducedMotion = () =>
 
 // Trial in the installed app (boot.js), Dashboard <-> Surplus only: while a view transition runs,
 // iOS 26 sees a snapshot instead of the sticky title bar and fades the status bar until it ends.
-// Here the title bar stays live, its contents fade in, and only the content below it slides.
+// Here nothing is a snapshot. The content moves as the view transition moved it, with an inert
+// copy standing in for the screen being left; the green bar stays live, its buttons fade and
+// only its title slides (styles.css).
 const CONTENT_SLIDE = new Set(['/', '/cash-to-payday']);
 const pathOf = (to: string) => to.split(/[?#]/)[0] ?? '';
 
@@ -21,11 +24,54 @@ function slidesContentOnly(to: string): boolean {
   return from !== pathOf(to) && CONTENT_SLIDE.has(from) && CONTENT_SLIDE.has(pathOf(to));
 }
 
+/** Makes `el` an inert overlay pinned to `rect`. */
+function pin(el: HTMLElement, rect: DOMRect, className: string): HTMLElement {
+  el.classList.add(className);
+  el.setAttribute('aria-hidden', 'true');
+  el.inert = true;
+  Object.assign(el.style, {
+    top: `${rect.top}px`,
+    left: `${rect.left}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    margin: '0',
+  });
+  return el;
+}
+
+/** Copies of the screen being left: its content, and the title bar's contents. */
+function copiesOfScreen(): HTMLElement[] {
+  const copies: HTMLElement[] = [];
+  const scroller = document.getElementById(SCROLLER_ID);
+  const main = scroller?.querySelector<HTMLElement>(':scope > main');
+  if (scroller && main) {
+    // The pinned box clips and moves; the copy inside it keeps the scroll offset.
+    const ghost = pin(
+      document.createElement('div'),
+      scroller.getBoundingClientRect(),
+      'content-ghost',
+    );
+    const content = main.cloneNode(true) as HTMLElement;
+    content.style.transform = `translateY(${-scroller.scrollTop}px)`;
+    ghost.append(content);
+    copies.push(ghost);
+  }
+  const bar = [...document.querySelectorAll<HTMLElement>('.banner')].find((b) => {
+    const r = b.getBoundingClientRect();
+    return r.height > 0 && r.top <= 1;
+  });
+  if (bar)
+    copies.push(pin(bar.cloneNode(true) as HTMLElement, bar.getBoundingClientRect(), 'bar-ghost'));
+  return copies;
+}
+
 let contentSlideRun = 0;
 
-/** Navigates, sliding #app-scroll's content and fading the title (styles.css). */
 function slideContent(go: () => void, direction: 'forward' | 'back') {
   const root = document.documentElement;
+  for (const old of document.querySelectorAll('.content-ghost, .bar-ghost')) old.remove();
+  const copies = copiesOfScreen();
+  document.body.append(...copies);
   // Off and on again, so a slide still running starts over.
   delete root.dataset.contentSlide;
   void root.offsetWidth;
@@ -33,6 +79,7 @@ function slideContent(go: () => void, direction: 'forward' | 'back') {
   flushSync(go);
   const run = ++contentSlideRun;
   window.setTimeout(() => {
+    for (const copy of copies) copy.remove();
     if (run === contentSlideRun) delete root.dataset.contentSlide;
   }, 700);
 }

@@ -38,7 +38,9 @@ export function DetailPage(p: DetailPageProps) {
     <article className="mx-auto max-w-2xl pb-24">
       <PageBar data-zone="header">
         <BackLink to={p.header.back.to} label={p.header.back.label} />
-        <h1 className="truncate type-body font-semibold">{p.header.title}</h1>
+        <h1 className="truncate type-body font-semibold" data-bar-title>
+          {p.header.title}
+        </h1>
         <div className="justify-self-end">{p.header.action}</div>
       </PageBar>
       {p.identity && (

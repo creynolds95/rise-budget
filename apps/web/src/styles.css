@@ -355,19 +355,136 @@ html[data-page-transition='back']::view-transition-new(root) {
   animation-name: rise-pop-in;
 }
 /* Trial, installed app, Dashboard <-> Surplus (lib/transition.ts): no view transition, so the
-   sticky title bar stays live and iOS 26 keeps the status bar solid. Its contents fade in and
-   only the content below it slides. */
+   sticky title bar stays live and iOS 26 keeps the status bar solid. The content moves the way
+   the view transition above moved it, with .content-ghost (an inert copy) as the screen being
+   left: forward, the new content slides over it from the right while it drifts left and dims;
+   back, it slides off to the right over the old content coming back. In the green bar the
+   buttons cross-fade and only the title slides, on .bar-ghost (a copy of the old bar's
+   contents) and the live bar. Transform and opacity only; the dimming is an overlay. */
 html[data-content-slide] #app-scroll {
   overflow-x: hidden;
 }
+html[data-content-slide] #app-scroll > main {
+  position: relative;
+  z-index: 1;
+  background: var(--color-canvas);
+}
+.content-ghost {
+  position: fixed;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--color-canvas);
+}
+html[data-content-slide='back'] .content-ghost {
+  z-index: 2;
+}
 html[data-content-slide='forward'] #app-scroll > main {
-  animation: rise-push-in var(--motion-in) var(--motion-ease) both;
+  animation: rise-slide-from-right var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide='forward'] .content-ghost {
+  animation: rise-slide-to-left-quarter var(--motion-in) var(--motion-ease) both;
 }
 html[data-content-slide='back'] #app-scroll > main {
-  animation: rise-pop-in var(--motion-in) var(--motion-ease) both;
+  animation: rise-slide-from-left-quarter var(--motion-in) var(--motion-ease) both;
 }
-html[data-content-slide] .banner > * {
+html[data-content-slide='back'] .content-ghost {
+  animation: rise-slide-to-right var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide='forward'] .content-ghost::after,
+html[data-content-slide='back'] #app-scroll > main::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: #000;
+  opacity: 0;
+}
+html[data-content-slide='forward'] .content-ghost::after {
+  animation: rise-dim var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide='back'] #app-scroll > main::after {
+  animation: rise-dim var(--motion-in) var(--motion-ease) reverse both;
+}
+.bar-ghost {
+  position: fixed;
+  z-index: 30;
+  pointer-events: none;
+  background: transparent;
+  box-shadow: none;
+}
+.bar-ghost :is(a, button) {
+  animation: rise-fade-out var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide] .banner:not(.bar-ghost) :is(a, button) {
   animation: fade-in var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide='forward'] .bar-ghost [data-bar-title] {
+  animation: rise-title-out-to-left var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide='forward'] .banner:not(.bar-ghost) [data-bar-title] {
+  animation: rise-title-in-from-right var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide='back'] .bar-ghost [data-bar-title] {
+  animation: rise-title-out-to-right var(--motion-in) var(--motion-ease) both;
+}
+html[data-content-slide='back'] .banner:not(.bar-ghost) [data-bar-title] {
+  animation: rise-title-in-from-left var(--motion-in) var(--motion-ease) both;
+}
+@keyframes rise-slide-from-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes rise-slide-to-left-quarter {
+  to {
+    transform: translateX(-25%);
+  }
+}
+@keyframes rise-slide-to-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes rise-slide-from-left-quarter {
+  from {
+    transform: translateX(-25%);
+  }
+}
+/* The overlay's take on rise-push-back's brightness(0.85). */
+@keyframes rise-dim {
+  to {
+    opacity: 0.15;
+  }
+}
+@keyframes rise-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes rise-title-in-from-right {
+  from {
+    transform: translateX(33vw);
+    opacity: 0;
+  }
+}
+@keyframes rise-title-out-to-left {
+  to {
+    transform: translateX(-33vw);
+    opacity: 0;
+  }
+}
+@keyframes rise-title-in-from-left {
+  from {
+    transform: translateX(-33vw);
+    opacity: 0;
+  }
+}
+@keyframes rise-title-out-to-right {
+  to {
+    transform: translateX(33vw);
+    opacity: 0;
+  }
 }
 @keyframes rise-push-in {
   from {
