@@ -306,8 +306,8 @@ Used for any frequent, reversible action (filing items).
 
 - Plain, calm, short sentences. No exclamation marks, no jargon, no blame.
 - State outcomes: `Merchant → Category`, `12 confirmed`, `Transfer confirmed`.
-- Buttons are verbs naming the object: `Forgive $93`, `Confirm all (12)`.
-- Debt framing for overshoot ("Over budget", "carried deficit"), never failure framing.
+- Buttons are verbs naming the object: `Delete transaction`, `Confirm all (12)`.
+- Going over a limit is framed as a neutral state ("Over"), in a muted warm tone, never red and never alarming.
 - Empty states are a title and one line: "All caught up." / "Start with what you spend on."
 - Errors: what failed + the one fix. Stale notes: who + how long.
 - Dates short (`Sep 23`); times in the person's local time.
