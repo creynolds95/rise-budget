@@ -1,19 +1,18 @@
 # Rise — UX behaviour guide
 
-How the app *feels and operates*, written so another installable PWA can copy it. No colours,
-fonts or theme tokens (see `DESIGN-SYSTEM.md`). Money rules and logic live in `SPEC.md`, which
-wins on conflict.
+How the app *looks, feels and operates*, written so another installable PWA can copy it. Scope is
+interaction and behaviour only: no colours, fonts or theme tokens, and no domain logic or maths.
 
-- **Part I: the portable kit.** Reusable interaction patterns with exact thresholds, timings
-  and the reasoning behind them. Nothing here is budget-specific. Lift it whole.
-- **Part II: Rise screens.** How the kit is applied, screen by screen.
+- **Part I: the portable kit.** Reusable interaction patterns with exact thresholds, timings and
+  the reasoning behind them. Lift it whole.
+- **Part II: Rise screens.** How the kit is applied, screen by screen, by UI pattern.
 - **Part III: porting checklist and dead ends.**
 
 Numbers are the shipped values. Where a number was tuned on a real device, it says so.
 
 **Feel in one line:** calm, quick, forgiving. The common action is one tap; every action is
-undoable for a moment; nothing consequential happens without the person seeing it; the app
-never lies about how fresh its data is.
+undoable for a moment; nothing consequential happens without the person seeing it; the app never
+lies about how fresh its data is.
 
 ---
 
@@ -21,12 +20,12 @@ never lies about how fresh its data is.
 
 ## 1. Principles
 
-1. **One tap for the common case.** Show the best guess; confirming it is one tap.
+1. **One tap for the common case.** Show the best default; confirming it is one tap.
 2. **Forgiving by default.** Reversible actions apply instantly and wait behind Undo (§9).
 3. **Choosing is not committing.** Picking a value stages it; a separate, visible confirm applies it.
-4. **Consequential actions name their consequence** ("Forgive $93", "Delete erases history") and
-   live in a separated Manage area, never next to routine controls.
-5. **Honest data.** Stale, estimated, offline and inferred data says so, quietly, in place.
+4. **Consequential actions name their consequence** ("Delete erases history") and live in a
+   separated Manage area, never next to routine controls.
+5. **Honest data.** Stale, estimated and offline data says so, quietly, in place.
 6. **Same thing, same place, same component.** One sheet, one chart, one amount field, one detail
    scaffold, one chip row.
 7. **Quiet copy.** No captions that restate a label. Keep text only if it names a destructive
@@ -57,8 +56,8 @@ never lies about how fresh its data is.
 - **Updates:** auto-updating service worker, shell precached, SPA fallback excluded for `/api`.
   After a deploy the installed app may need a full close/reopen to pick up new HTML; show the
   running version in Settings, and serve a `no-store` version file.
-- **Badge:** the home-screen badge follows the one number that matters (items awaiting review),
-  set by push payload and cleared at zero.
+- **Badge:** the home-screen badge follows the one number that matters (items awaiting review)
+  and clears at zero.
 
 ## 3. Navigation model
 
@@ -233,10 +232,9 @@ Used for any frequent, reversible action (filing items).
 2. Nothing is sent for **5 s**. Undo cancels and restores the rows.
 3. A new action **flushes** the previous one first (one pending at a time).
 4. **Leaving the screen or backgrounding the app flushes**, never drops.
-5. Failure restores the rows and shows the server's message; **offline, the change is queued
-   on-device and the row stays done.**
-6. After a send, invalidate dependent queries (counts, totals).
-7. Keyboard: `u` / Ctrl+Z undoes.
+5. Failure restores the rows and shows the message; **offline, the change is kept on the device
+   and the row stays done.**
+6. Keyboard: `u` / Ctrl+Z undoes.
 
 ## 10. Data states, offline, background
 
@@ -254,24 +252,19 @@ Used for any frequent, reversible action (filing items).
 
 - **Retry on foreground:** retry stuck queries on `visibilitychange`/`pageshow`, not only `online`
   (iOS suspends fetches in the background and never fires `online`).
-- **Never claim "not set up"** from data that isn't known current.
-- **Outbox:** only changes safe to apply late are queueable (edits, accepts, links, snapshots).
-  Anything needing a decision from the server's reply (creating rules, forgiving, moving planned
-  money) requires a connection. Each entry keeps its idempotency key and a human label; replay in
-  order; the server replays its answer for a key already applied; Web Locks stop two tabs
-  interleaving; a rejected entry is reported with a reason.
-- **Auth plumbing:** access token in memory only; refresh token httpOnly cookie; a 401 triggers one
-  shared refresh (cross-tab lock) then a single retry.
+- **Never claim an empty/"not set up" state** from data that isn't known current.
+- **Queued changes** keep a human label for the offline bar and replay in order on reconnect; only
+  changes that are safe to apply late are queued, anything needing the server's answer first waits
+  for a connection.
 
 ## 11. Charts
 
 - **One component, one control set:** same height and axis treatment for lines and bars.
-  Range chips `1M 3M 6M YTD 1Y ALL` as a radio group below the chart.
+  Range chips (`1M 3M 6M YTD 1Y ALL`) as a radio group below the chart.
 - Gridlines hairline, no borders, no chart junk. Anchor value axes at 0 (zoom-to-fit only where a
   balance moves little against its size, e.g. a loan).
 - **Inferred ≠ measured:** a segment is dashed if either end is interpolated/held. If the newest
   point is held, name the date it is based on.
-- **No percentage change over a window under three months** (of actual history).
 - **Scrub:** pointer-down selects the nearest point immediately; move updates; up / leave /
   cancel clears. The read-out sits *inside the top of the chart* (never above, where it would
   cover a headline), centred on the pointer and clamped on-screen; multi-series lists every
@@ -284,9 +277,8 @@ Used for any frequent, reversible action (filing items).
   pan once zoomed, double-tap resets. Everything else is fixed-scale.
 - **Fan/what-if charts:** touch/drag reads any x; default read-out is the last point; redraw live
   as inputs change.
-- **Rail (progress) component:** three segments + one marker, never a plain progress bar
-  (carried / allocated / spent fill, plus a pace tick; tick omitted where linear pace is
-  meaningless).
+- **Rail:** a thin segmented bar (tinted lead-in segment, main segment, fill, one tick marker)
+  instead of a plain progress bar; the fill switches to the debt tone past its limit.
 
 ## 12. Lock and auth
 
@@ -307,10 +299,8 @@ Used for any frequent, reversible action (filing items).
 ## 13. Notifications
 
 - Opt-in **per device**; on iPhone only from the Home Screen app.
-- Server decides what's new after each scheduled sync; every notice has a key and is sent once;
-  max five per run, the rest wait in-app; a newly subscribed device starts from now.
 - Taps focus an existing window and navigate to the notice's URL, else open one.
-- Kinds are split into on-by-default (needs attention) and off-by-default (informational).
+- Few, deduplicated notices; each kind is individually switchable.
 
 ## 14. Copy tone
 
@@ -337,367 +327,203 @@ Used for any frequent, reversible action (filing items).
 
 ---
 
-# Part II — Rise screens
+# Part II — Rise screens (UI patterns only)
 
-## Information architecture
+Each screen is described by layout, interaction and states. Domain logic is deliberately left out.
 
-Tabs: **Dashboard · Accounts · Transactions · Budget** (phone: bottom bar; desktop: sidebar).
-Menu: Surplus, Financial health, Review, Recurring, Reports, Investments, Categories, Rules, Tags,
-Settings. Depth map (a test holds the two-push limit):
+## Structure
 
-| Depth 0 (tab roots) | Depth 1 (push) |
-|---|---|
-| Dashboard, Accounts, Transactions, Budget, Settings | Review, Surplus, Recurring, Financial health (+ its tools), Account detail, Transaction detail, Category detail, a Settings section |
-
-Everything deeper is a sheet. Each tab root shows the tab title bar with **header actions** on the
-right (each screen registers its own); a pushed screen shows its own bar: `‹ Origin · Title ·
-(action)`, three-column grid so the title stays centred. Settings and Financial health show the
-tab bar styling with `‹ Dashboard`.
-
-### Detail-page scaffold (every detail page)
-Zones may be omitted, never reordered:
-1. **Header**: `‹ Origin`, title, **one** action (Edit pencil, or a ⋯ menu).
-2. **Identity**: the number this page is about, hero, left-aligned, never a chart. Account →
-   balance (label becomes *Owed* / *Credit* for liabilities) · Transaction → amount (label *Spent*,
-   *Money in*, or *Transfer*, with a status word: *Pending*, *To review*, *Never posted*) · Category
-   → *Available this month*.
-3. **Shape**: optional chart + range chips.
-4. **Facts**: label/value rows (static / edit / nav, §8).
-5. **Related**: first ~5 children then an "All N transactions" **row** (shows `N+` while more pages
-   exist).
-6. **Manage**: destructive/rare actions last, separated.
+- **Four tabs:** Dashboard · Accounts · Transactions · Budget. A menu lists the rest (review queue,
+  reports, planning tools, categories, rules, tags, settings). Tab roots show the title bar with
+  right-hand **header actions** that each screen registers; pushed screens show
+  `‹ Origin · Title · (action)` in a three-column grid so the title stays centred.
+- **Detail-page scaffold** (every detail page; zones may be omitted, never reordered):
+  1. Header: `‹ Origin`, title, **one** action (pencil, or a ⋯ menu).
+  2. Identity: the one number the page is about, large, left-aligned, never a chart; a small
+     label above it and a status word where relevant.
+  3. Shape: optional chart with range chips.
+  4. Facts: label/value rows (static, edit or nav, §8).
+  5. Related: first ~5 children, then an "All N …" **row**.
+  6. Manage: destructive/rare actions last, separated.
 
 ## Sign-in
 
-- **Login:** the wordmark, then one primary button **Sign in with passkey** and a quiet **Use a
-  code instead**. The code form asks Email + Authenticator code (numeric keypad, one-time-code
-  autofill); a quiet toggle swaps to **Recovery code**; a quiet **Passkey** link returns. Errors
-  appear in an alert line below ("You weren't signed in."). Success replaces history with `/`.
-- **Register** (one-time link, token in the URL hash so it never reaches a server log): the
-  wordmark and **Create passkey**. A missing token says "This link is missing its token. Ask for a
-  new one." After creating, it signs in straight away; if that second step fails the passkey
-  already exists and the link is spent, so it just goes home.
-- Vertically centred, narrow column, no marketing copy.
+Wordmark, one primary button (**Sign in with passkey**) and a quiet **Use a code instead**. The code
+form is Email + code (numeric keypad, one-time-code autofill) with quiet toggles between code types
+and back to the passkey. Errors are one alert line below. The one-time registration link shows the
+wordmark and a single **Create passkey** button; a missing token gets a plain sentence. Vertically
+centred, narrow column, no marketing copy. Success replaces history.
 
 ## Dashboard
 
-- Header action: a **sliders** button → Customize sheet. Top of page can carry health notes (sync,
-  backups, usage) and stale-account notes, both **dismissible here** (device-local, per account
-  until its next sync).
-- Tiles in saved order (all hideable/reorderable). **Default on:** Review transactions, Surplus,
-  Budget, Spending trend, Where it went, Transactions, Net worth, Recurring transactions.
-  **Default off:** Investments, Savings goals, Retirement, Debt payoff, Mortgage payoff schedule,
-  Mortgage this year. Tiles with nothing to say render nothing (Review at zero, Coming up empty).
-- **Review tile:** up to two gold rows with a left accent: "N transactions to review" → Review,
-  "N to review in Surplus" → Surplus (anchor `#review`). Singular/plural handled.
-- **Surplus tile:** big number (whole dollars) or "Confirm your pay dates"; whole card is a link.
-- **Budget tile:** the same Summary card as the Budget tab; whole card is a link.
-- **Transactions tile:** the 4 most recent as rows (empty: "No transactions yet."), then a
-  "Most recent" nav row to the tab.
-- **Net worth tile:** same chart as Accounts; the whole tile is a link *except* the range chips.
-- **Coming up:** this month's expected bills with date and category, plus missed/broken bills.
-- A brand-new install (no accounts) replaces `/` with `/welcome` once.
-- **Customize sheet:** a list of every tile with a grip handle (aria "Drag X to reorder"), its name
-  and a toggle. Reorder and toggle both save immediately; hidden tiles sort after shown ones.
+- Header action: a **sliders** button that opens a Customize sheet.
+- A vertical stack of **tiles** in a user-chosen order; each tile is a titled card, and the whole
+  card is a link (except interactive parts such as chart range chips). Tiles with nothing to show
+  render nothing.
+- Top-of-page **notes** (sync problems, stale accounts) can be dismissed per item; dismissal is
+  device-local and returns if the situation recurs.
+- An action tile (items to review) is a gold-edged row with a count and a plural-aware label, and
+  disappears at zero.
+- A "recent items" tile shows the last four rows then a quiet "Most recent" nav row.
+- First launch with no data replaces the dashboard with the setup guide once.
+- **Customize sheet:** every tile as a row: grip handle, name, switch. Reorder and toggle both save
+  immediately; hidden tiles sort below shown ones.
 
 ## Review queue (the daily screen)
 
-Bar: `‹ Dashboard · Needs review`. Desktop (md+) shows a one-line key hint under it: "Keys for the
-top row: Enter confirms · O other · S split · T transfer · U undo". Rows are grouped by **date,
-newest first** (small label per day), each day a card; per-day totals are computed (money out,
-transfers excluded) for the grouping model. A filed row **collapses** (200 ms height + opacity)
-rather than vanishing; a day collapses when its last row goes.
-
-**Row** (a card row with a hairline between):
-- Line 1: optional category emoji, merchant name, badges, and the amount at the right; line 2:
-  account name. Tapping this line opens the transaction (back returns to Review). **Pending rows
-  are italic.**
-- Line 3 (actions): a wide **category button** showing the guess and a chevron; tapping it opens
-  the picker. Then optional quiet text buttons and the round **✓ confirm** (28px mark in a 44px
-  target; pressed state fills it).
-  - Guess shown as the category name; a *guess* (mid-confidence) shows in the warm accent text
-    with a trailing **?**; *none* shows "Choose a category" and has **no ✓** (nothing to confirm).
-  - A pick you've made counts as confident, and an **Always** tag appears if you asked for a rule.
-  - **Card payment** / **Transfer** quiet button appears when the row looks like one and the
-    guess isn't already that category; one tap marks it "not spending".
-  - **Split** quiet link appears for Amazon-style merchants (the likely multi-category charges);
-    it opens the transaction in split mode.
-- **Swipe** (touch/pen only, never mouse): the row follows the finger clamped to ±120px; mostly
-  vertical drags are ignored (scroll); release past 80px right = confirm, left = open picker;
-  otherwise it springs back.
-- **Transfer pair row:** "Account A → Account B", caption "Transfer · not spending", amount muted;
-  actions **Not a transfer** (unlinks, with undo) and ✓ Confirm transfer.
-- **Choosing never files:** a picked category is held on the row until ✓ or Confirm all.
-- Rows with no real suggestion aren't confirmable; nothing is filed to "Other" by default.
-
-**Picker:** a sheet, "Choose a category", optional first row "Always file {merchant} here" with a
-toggle, a Search field (no autofocus), categories grouped under group labels with emoji; empty
-state "No categories yet. Add them from the Budget tab."
-
-**Confirm all:** a full-width primary button below the list: `Confirm all`, or `Confirm all (N)`
-when only some rows are confirmable. Includes transfer pairs.
-
-**Undo:** toast pinned above the tab bar (above the safe area + 72px on phone, bottom 16px on
-desktop), max 560px wide, dark card, truncated label, **Undo** button (44px target).
-`Merchant → Category`, `Merchant → not spending`, `N confirmed`, `Transfer confirmed`, `Unlinked`.
-Five seconds; the toast fades in. Errors show as a line at the top of the list.
-
-**Empty:** centred "All caught up." / "Nothing waiting. New charges land here after each sync."
-**Loading:** four skeleton rows.
-**Dropped section:** "Pending charges that never posted", caption "These sat pending for 14 days
-with no matching charge, so they no longer count toward spending.", each as a muted row with a
-struck-through amount.
-**Desktop focus:** the top row has a 2px left accent; keys act on it (§Keyboard list):
-`Enter` confirm · `o` or `/` picker · `s` split · `t` mark transfer (only when offered) ·
-`u`/`Ctrl+Z` undo. Ignored with a sheet open, a modifier held, or an input focused.
+- Bar `‹ Dashboard · Needs review`. On desktop a one-line key hint sits under it.
+- Rows grouped by **date, newest first**, one card per day with a small day label. A filed row
+  **collapses** (200 ms height + opacity) rather than vanishing; a day collapses with its last row.
+- **Row:** line 1 = optional emoji, name, badges, amount; line 2 = account (tapping this block opens
+  the detail and back returns here); line 3 = a wide **category button** (value + chevron) that opens
+  the picker, optional quiet text buttons, and a round **✓ confirm** (28px mark in a 44px target,
+  fills while pressed). Pending rows are italic. A low-confidence guess renders in the warm accent
+  text with a trailing **?**; with no guess it reads "Choose a category" and has no ✓.
+- **Swipe** (touch and pen only, never mouse): the row follows the finger, clamped ±120px; mostly
+  vertical drags are scrolls; past 80px right = confirm, left = open the picker; otherwise spring back.
+- A picked value is **held on the row** until ✓ or Confirm all; choosing never commits.
+- **Pair rows** (linked items) show "A → B" with a muted caption, a quiet "Not a transfer" button
+  and a ✓.
+- **Picker sheet:** optional first row with a toggle, a Search field (no autofocus), items grouped
+  under labels with emoji; empty state is a single sentence pointing to where to add some.
+- **Confirm all:** full-width primary button below the list, with a count when only some rows
+  qualify.
+- **Undo toast:** dark card pinned above the tab bar, truncated label, **Undo** (44px target), 5 s
+  (§9). Phone: above the safe area + 72px; desktop: 16px from the bottom; max ~560px wide.
+- **Empty:** centred title "All caught up." + one line. **Loading:** four skeleton rows. Errors
+  are one line at the top of the list.
+- **Desktop keys** (top row focused, shown by a 2px left accent): `Enter` confirm · `o` or `/`
+  picker · `s` split · `t` mark transfer (only when offered) · `u` / `Ctrl+Z` undo.
 
 ## Budget
 
-- **Sticky head:** month switcher + pool banner stay in view while lists scroll.
-  - Switcher is a pill with `‹ Sep`, the **month name centred (adds the year only when it isn't the
-    current year)**, `Nov ›`. Planning is allowed 12 months ahead; the forward button disables
-    there. Choosing the current month clears `?m=`.
-  - **Pool banner** (`role=status`): "Left to budget $X" (tinted when positive, plain at zero) or
-    "Over budget $X" (solid debt colour with inverted text).
-- Header action: a ⋯ **Budget settings** link (desktop: same link in the content). Back from
-  settings returns to this month.
-- **Summary card** (also the Dashboard tile): two rows, *Income* (X planned · fill bar · $ earned ·
-  remaining/over) and *Expenses* (planned · fill bar with pace tick · $ spent · remaining/over, a
-  refresh glyph when anything is carried in). Income going past plan is shown in the "in" tone,
-  never as over. Rounding tolerance is already applied to spend.
-- **Income** and **Expenses** sections: title, then **Planned / Remaining** column labels once,
-  then groups. Fixed 72px columns so every row and each group total align.
-- **Group header:** a full-width button (44px) with a turning chevron, group name, planned total
-  and remaining total; **open by default**, `aria-expanded`. Group over-total uses debt tone.
-- **Category row:** emoji + name (link to detail), a roll-over glyph if leftovers carry, the
-  **Planned** box (bordered, 72px, tap opens the Plan editor, aria "Planned for X: $N. Change"),
-  the **Remaining** pill (muted at zero, tinted when positive, debt tint with "Over" label when
-  over; sign never shown), then the **rail** underneath (income uses a plain fill bar). The name
-  and rail are one link; planned and remaining are separate targets.
-- **Unbudgeted:** transfers / card payments / catch-all never get a budget line; budgeted
-  categories with no plan, carry or spend hide behind an eye-off row "Show N unbudgeted" /
-  "Collapse N unbudgeted", per group.
-- **+ Add category** (quiet button) → "New category" sheet (Name, Group picker incl. "New group…",
-  Add category).
-- **Money moved this month:** a bordered row `Money moved this month · N ›` (hidden if none) →
-  sheet "Money moved" listing `From → To`, amount, date and note.
-- **Empty:** gold-edged "Start with what you spend on." + **Add your first category**. Income empty:
-  "Paychecks count once they're filed under an income category." + **Add a Paycheck category**
-  (creates the group and category in one tap).
-- Row tap: phone pushes `/budget/:id?m=`; desktop selects it (`?category=`) and shows the detail
-  beside the list (list hidden below lg when something is selected).
-- Loading: a skeleton shaped like the screen.
+- **Sticky head:** month switcher + a status banner stay in view while lists scroll. The switcher
+  is a pill: `‹ Sep`, month name centred (year only when not the current year), `Nov ›`; the forward
+  button disables at the limit; choosing the current month clears the URL param.
+- Header action: ⋯ link to budget settings; back returns to the same month.
+- **Summary card:** two rows, each a label, "X planned", a fill bar, "$ done" and "remaining/over".
+- **Sections** (Income, Expenses): section title, a column-label row once, then collapsible groups.
+  Fixed 72px number columns so every row and group total align.
+- **Group header:** full-width 44px button, turning chevron, name, two totals; open by default,
+  `aria-expanded`.
+- **Row:** emoji + name (link), a small glyph for a flag, a bordered **amount box** (72px; tap edits
+  it in a full-height sheet), a **pill** with the remaining figure (muted at zero, tinted when over,
+  sign hidden), then a thin **rail** below. Name and rail are one link; box and pill are separate
+  targets.
+- **Idle rows** collapse behind an eye-off row "Show N …" / "Collapse N …".
+- **+ Add category** is a quiet button → a small form sheet.
+- **Log row:** a bordered row `Label · N ›` opens a read-only list sheet.
+- **Empty:** gold-edged one-line prompt with a single primary action.
+- **Phone:** row tap pushes the detail. **Desktop:** it opens beside the list; the list narrows.
+- **Loading:** skeleton shaped like the screen.
 
-### Plan editor (tap a Planned box)
-Full-height sheet with its own docked bottom (toggle + keypad); header `Cancel · {emoji} Name ·
-Save` (Save reads **Saving…** while busy, disabled when invalid).
-- **Add / Remove** are two toggle buttons (`aria-pressed`); tapping the active one returns to
-  Set and restores the current plan. In Add/Remove the box starts empty and shows `+$` / `−$`,
-  with "New plan for {Mon}: $N" beneath.
-- **Amount** is a 40px display figure; the whole figure is highlighted while "fresh" (first digit
-  replaces); after typing a caret blinks. An emptied Set amount reads as $0 (Remaining follows) but
-  can't be saved. Invalid (e.g. Remove past the plan) turns the figure debt-tone.
-- **Remaining:** carried-in + new plan − spent, shown with "Includes +$X carried from {previous
-  month}" when anything carried.
-- **Spend bars:** the **last six months**, each a button (aria "Month: $N. Use this amount."),
-  labelled with whole-dollar spend, with a dashed line at the current plan; loading shows stubs.
-  Hidden when there's no history at all. Beneath: two quick-fill cards **Spent last month** and
-  **Monthly average**; both fill **rounded up to the next whole dollar**.
-- **Docked:** "Apply $N to all future months" row with a switch (default from settings), then the
-  3×4 keypad (1-9, blank, 0, ⌫; 48px keys, hairline gaps, safe-area padding).
-- Hardware keys: digits, Backspace, Enter (save); ignored while the sheet is leaving or with
-  modifiers.
-- Save failure closes the sheet and shows the server message above the lists.
+### Amount editor (tap an amount box)
+A full-height sheet with its own docked bottom (a toggle row + keypad). Header `Cancel · {emoji}
+Name · Save` (Save reads "Saving…", disabled when invalid).
+- **Add / Remove** are two toggle buttons; tapping the active one returns to Set. In those modes
+  the field starts empty and shows `+$`/`−$`, with a preview line beneath.
+- The amount is a 40px serif figure. While "fresh" it is highlighted and the first digit replaces
+  it; afterwards a caret blinks. Invalid turns it debt-tone.
+- A short line beneath states the result; the **last six months** of history are tappable bars
+  (labelled with whole dollars, a dashed line at the current value); two quick-fill cards fill the
+  field rounded up to the next dollar. Bars hide when there's no history.
+- Docked: a labelled switch row, then the 3×4 keypad (1–9, blank, 0, ⌫; 48px keys, hairline
+  gaps, safe-area padding).
+- Hardware keys: digits, Backspace, Enter saves; ignored while leaving or with modifiers.
 
 ### Category detail
-Bar `‹ Budget` (or the Dashboard when opened from there) · category name · pencil → **Edit
-category** sheet. Hero *Available this month* with a month stepper (`?m=`, other params kept).
-Facts: `Left in {Name}` (income: `Left to earn in …`), `Rolled over from last month`, **Planned**
-(the shared edit box → Plan editor), `Total amount` (income: `Earned`), `Average transaction`.
-A 12-month spend chart with the viewed month picked out. **Transactions** zone: first few rows or
-"Nothing filed here yet.", then `All N transactions` row. **Manage** at the bottom: forgive deficit
-(sheet "Forgive the deficit?" naming the amount and asking why; button `Forgive $93`) and delete
-(refused with the reason when it has history).
-**Edit category sheet:** Name; Emoji row (shows current emoji or "None") expanding a searchable
-8-column emoji grid plus "Or type any emoji"; Group picker; **Budget** (toggle "Counts toward the
-budget"); **Month end** (toggles "Rolls over to next month" and "Spent all at once, like a bill");
-**Taxes** (Tax heading picker, default None).
+Back names where you came from. Hero number with a month stepper. Facts rows (one is the shared
+edit box). A 12-month bar chart with the viewed month picked out. Related list with an "All N" row.
+Manage zone at the bottom; destructive actions open a sheet that names the consequence. **Edit
+sheet:** name, emoji row that expands to a searchable 8-column grid plus "Or type any emoji", a
+group picker, and switches grouped under small headings.
 
 ## Transactions
 
-- **Header:** tab title with two header actions, **Select** and **+** (Add transaction). Desktop
-  repeats them beside a page title.
-- **Search:** a pill under the title bar that **stays pinned while the list scrolls** ("Search
-  merchants, notes"); the **Filters** icon lives inside the pill and carries a count badge (aria
-  "Filters, N on"). Typing applies after **250 ms**; filters and search live in the URL and
-  replace history.
-- **Active filter chips:** a horizontally scrolling row below the search, one chip per filter with
-  an ✕ (aria "Remove filter: X"); a quiet **Clear all** appears with two or more.
-- **Totals line** (only when filtered): `N transactions · Out $X · In $Y · Net $Z` (each part
-  shown only if it applies).
-- **"To review" filter** adds a full-width **Mark all reviewed (N)** button (shows "Marking…") and
-  makes each row's category tappable to recategorise in a picker.
-- **List:** grouped by day under **sticky date headings** (`dayLabel`) when sorted by date, a
-  single card otherwise; **Show more** button paginates (no infinite scroll; "Loading…" while
-  fetching). Row: optional category emoji (a split joins emojis with " / ", smaller), merchant,
-  badges, amount; caption "Sep 23 · Transfer / Spread, 2 of 3 / Spread over N months / Split / To
-  review / flag text" (date hidden under a date heading). Pending rows italic.
-- **Empty:** icon bubble + "No transactions yet" / "They arrive with the first bank sync." or,
-  when filtered, "Nothing matches" / "Try a wider date range or fewer filters." + **Clear filters**.
-- **Select mode:** header icon toggles (label "Done selecting"). Rows become checkboxes (24px
-  square, check when on). A **sticky bottom bar** shows `Select all` (→ `Loading…` → `Clear`),
-  `N selected`, **Tag** (disabled at zero → tag sheet) and **Done**. Select all fetches every page;
-  over the bulk cap it refuses with "That's N. Narrow the search to M or fewer."
-- **Desktop table:** Date · Merchant (with "To review" tag) · Category (a pill-shaped button that
-  opens the picker, or plain "Transfer"/"Split") · Account · Amount; hover tint; row click opens
-  detail; in select mode a checkbox column appears.
-- **Filter sheet:** `Filters` root page with **Date range** (presets: All time, This month, Last
-  month, Last 3 months, This year, Custom with From/To), **Sort by** (Date newest first / oldest
-  first, Amount largest first / smallest first), and **Filter by** rows (Accounts grouped by kind, Categories grouped by group with
-  emoji, Tags, Amount direction/min/max, Review status: Any / To review / Reviewed / Never
-  posted), each opening an in-sheet page (left slot becomes `‹`). Multi-select rows can be
-  negated ("Not X"). **Nothing applies until Apply**, so exploring is free; pinned footer `Clear
-  all · Apply`.
-- **Add transaction sheet:** "New transaction", Add button. Kind segmented control (Expense /
-  Income), Amount (the shared field), Merchant ("Where"), Account, Category ("Choose…" →
-  picker), Date, Notes ("Add notes…").
-
-### Transaction detail
-Bar `‹ {origin}` with a **⋯ Transaction options** menu: Split transaction / Edit split · Spread
-over months / Change spread · Mark reviewed / Send back to review · Not a transfer (unlink both)
-· Link as a transfer · Link as a refund / Unlink from purchase · untag actions · Create rule /
-Edit rule · **Delete transaction**. Only options that apply are listed.
-Hero amount; rows: **Merchant** (nav, opens the rename sheet which warns it renames every past and
-future transaction), *Original statement* (static), **Account**, **Category** (nav → picker; muted
-and read-only for transfers; per-split rows for splits; **Spread** row for spread charges),
-**Tags** (nav → tag sheet, "None" when empty), **Date** (inline date field), **Surplus** row on
-cash accounts (a suggested bill/paycheck mark, "Suggested, not added"), **Notes** ("Add notes…",
-commits on Enter/blur).
-**Splits** (§8): typed rows + auto-computed last row, so it always sums exactly.
-**Delete sheet:** "Delete transaction?" naming that it leaves every total, and (for synced rows)
-that the next sync won't bring it back; "This can't be undone."
-Transfer pairing candidates: equal and opposite, other account, within 4 days, not already paired.
-Refund matching lists earlier outflows, best match first.
+- **Header actions:** Select and + (add). Desktop repeats them next to a page title.
+- **Search pill** under the title bar stays **pinned while the list scrolls**; the Filters icon sits
+  inside the pill with a count badge. Typing applies after **250 ms**; filters and search live in the
+  URL and replace history.
+- **Active-filter chips:** a horizontally scrolling row, each chip with ✕; a quiet **Clear all**
+  with two or more. A summary line (count · out · in · net) appears only when filtered.
+- **List:** grouped by day under **sticky date headings** when sorted by date, one card otherwise;
+  a **Show more** button paginates (no infinite scroll). Row: optional emoji, name, badges, amount;
+  caption of short facts joined with " · ". Pending rows are italic.
+- **Empty:** icon bubble + title + one line; when filtered, "Nothing matches" and a **Clear filters**
+  button.
+- **Select mode:** rows become 24px checkboxes; a **sticky bottom bar** shows `Select all` (→
+  "Loading…" → "Clear"), `N selected`, a bulk action (disabled at zero) and Done. A bulk cap shows
+  one clay line.
+- **Desktop:** a table (Date · Name · Category pill-button · Account · Amount) with hover tint; the
+  category cell opens the picker; row click opens detail.
+- **Filter sheet:** root page of rows (date range presets with Custom From/To, sort, then filter
+  rows each opening an in-sheet page with the left slot becoming `‹`); multi-select pages can
+  negate ("Not X"). **Nothing applies until Apply**; pinned footer `Clear all · Apply`.
+- **Add sheet:** segmented control (Expense / Income), amount field, text rows with right-aligned
+  inputs, nav rows that open pickers, date, notes ("Add notes…").
+- **Detail:** hero amount; a ⋯ options menu listing only the actions that apply; rows are static /
+  edit / nav per §8; notes commit on Enter or blur; delete opens a sheet naming the consequence.
+  Splitting is a stack of typed rows with an auto-filled last row.
 
 ## Accounts
 
-- **Header actions:** ⋯ **Account options** (Refresh all / "Refreshing…"; disabled when sync is
-  off with hint "Connect SimpleFIN first"; Bank connection → Settings with origin) and **+** (Add a
-  manual account).
-- **Net worth first:** title, big whole-dollar number (debt tone if negative; "No balances yet"
-  when empty), a delta line (`+$X (pct) over 6M` / `since {date}`; first-ever balance says "History
-  starts {date}, the first balance Rise saw."), `· as of {date}` when the newest point is
-  estimated), chart with range chips (**default 6M**). Percent only with ≥ 90 days of real
-  history.
-- Health and stale notes appear above the groups (not dismissible here).
-- **Groups in order:** Cash · Credit cards · Loans · Investments · Other. Each is one card: group
-  name + group total in a header, then **nav rows**: logo, name (+ `··mask`), caption (the
-  institution, "Manual", "Not up to date" in the warm text, "Last synced {date}" for slow feeds,
-  "· not in net worth"), balance (muted when negative).
-- Empty: "No accounts yet. Synced accounts appear after the first sync; add anything else by
-  hand."
-- **Sync:** Refresh all → floater "Syncing banks…" (busy, spinner, indeterminate bar) → result
-  (OK tone fades after a few seconds; warn tone persists until dismissed). Continues if you leave.
-- **Account detail:** hero balance; history chart (dashed between reports); **Summary** group with
-  Name, Type (Cash / Credit card / Loan / Investment / Other), Balance/Owed, As of, Monthly
-  payment (loans), edits held until **Save**; switching Type first re-signs balances. Balance
-  entries list (newest first, "Updated by hand"; a mistyped one can be removed, the last can't);
-  "All transactions" row; Manage: detach a synced account to manual, **Close** (keeps history in
-  net worth) vs **Delete** (erases it) as separate confirmed sheets. Matching-transfer manual
-  accounts (savings that never report) adjust from transfers elsewhere.
-- Liabilities are typed as positive "owed"; a card paid past zero shows a credit.
+- **Header actions:** ⋯ menu (refresh, connection) and +.
+- **Hero** big number with a delta line and chart with range chips (default 6M).
+- **Groups:** one card each, header = serif group name + total; rows = logo, name (+ masked number),
+  caption (status in a warm tone when stale), value (muted when negative); each row a nav row.
+- **Sync:** the **floater** (§6): "Syncing banks…" with spinner and indeterminate bar, then a
+  result that fades; warnings persist until dismissed; runs on if you leave.
+- **Detail:** hero; chart (dashed where estimated); a Summary group of edit rows that are **held
+  until Save**; list of entries; Manage zone with separate Close and Delete sheets, each naming
+  its consequence.
 
 ## Reports
 
-- Bar with month navigation (`‹`, label, `›`) or the full 6-month window ("May – Oct 2026"; tap the
-  selected bar again, or "6 months"). One period drives every chart.
-- **View picker:** *Cash flow* / *Spending* (pressed-state chips), then a **Chart** picker (cash
-  flow: Bar / Sankey; spending: Pie / Bar / Treemap).
-- Cash flow bars are buttons (`aria-pressed`): tap selects (others fade), tap again returns to the
-  window; an optional cumulative-savings line sits over them. Summary block above.
-- Pie: top categories + "Everything else"; Treemap: squarified tiles; Sankey: pinch/wheel zoom,
-  drag to pan, double-tap to reset (the only zoomable chart).
+Bar with period navigation (`‹ label ›`), a view picker (pressed-state chips), then a **Chart**
+picker (bar, flow, pie, treemap). Bars are buttons: tap selects (others fade), tap again returns to
+the whole window. The flow diagram is the only zoomable chart (pinch/wheel, drag to pan,
+double-tap reset).
 
-## Surplus (cash to payday)
+## Cash projection screen
 
-- Bar `‹ Dashboard · Surplus`. Hero **On hand until payday** (the free-to-move number) with the
-  lowest-point sentence beneath. No pay schedule → "Confirm your pay dates", plus guidance to add
-  income below.
-- Facts: **Cash accounts** (a nav row showing the names or "All checking"; opens a picker
-  sheet), **Cushion held back** (the shared money field).
-- **To review** (anchor `#review`): sync-detected suggestions that count only after you add them;
-  each opens an edit sheet (amount, days/name; **Remove** deletes a saved schedule, a suggestion
-  is **dismissed**).
-- **Upcoming income** / **Upcoming expenses** lists ("Nothing expected yet.") each ending in a
-  full-width add row (**Add income** / **Add expense**).
-- Chart: 14 days of end-of-day balance bars above/below zero; tap or drag across for that day's
-  items; tooltip pins to the side nearest the bar.
-- Card payments are never projected; card info is context only.
+Hero number with a one-line caption; facts rows (one opens a picker sheet, one is an edit box);
+a "to review" list where each row opens an edit sheet (Remove/Dismiss inside); two lists ending in
+full-width add rows; a 14-day bar chart above/below a zero line (tap or drag across bars; tooltip
+pins to the side nearest the bar).
 
-## Financial health hub and planning tools
+## Planning tools
 
-- **Hub:** a column of tiles (icon badge, name, state value, chevron): Retirement
-  (`$X/mo` or "Set up"), Debt ("Debt-free {month}" / "Add payments" / "Set up"), Mortgage
-  (equity / "Paid off {month}" / "Add payment" / "Set up"), Savings ("N months covered" / "N
-  goals"), Taxes, Binder ("Start one" / "N entries"). Anything not started shows its state as a
-  **gold button** instead. Offline with nothing cached shows "—"; "Set up" is only claimed from
-  settings known to be current. Swipe-back goes to the Dashboard.
-- **Retirement:** hero "Monthly spending at {age}" with a retirement-age control; a **fan chart**
-  (touch/drag reads any age; readout under it); facts (Today, At {age}, Social Security a month,
-  Set aside until checks start, Money lasts to {age}, Needed for goal, Gap to goal or "On track");
-  **Life events** list (tap to edit, add row; sheet "New life event"). ⋯ **Retirement settings**
-  sheet in sections You / Spouse / Plan, both of you / Contributions by account.
-- **Debt:** header actions **Set up** / **What if**; hero "Student loans debt-free {month}"; loan
-  rows tap to edit; strategy choice (Smallest / Highest rate); **What if** redraws live and has
-  **Apply** and a quiet skip; an auto-applied change offers Undo. "Add a loan" sheet lists loan
-  accounts not already in the plan.
-- **Mortgage:** choose the loan account then optionally a home-value account; hero "Mortgage paid
-  off {month}"; view toggle Payoff schedule / balance, principal, interest lines; one-time
-  payments sheet ("Add").
-- **Savings:** goals (sheet "Add a goal"/goal name → Save), hero "Saved toward goals", emergency
-  fund shows months covered.
-- **Taxes:** tax-year stepper (previous/next year arrows), totals per tax heading with their
-  transactions, and nav rows to Categories and Tags that return here. **Binder:** household records with
-  "Passwords live in" (where, never the passwords) and "Last 4 digits only." validation.
-- **Investments:** Accounts list and a chart with ranges `1W 1M 3M 6M YTD 1Y`. **Tags:** list +
-  "New tag"/"Edit tag" sheet; empty "No tags yet — Add one here or from any transaction."
-  **Recurring:** hero "A year of recurring charges"; rows "Expected/Due {date} · Category" with
-  price-up/duplicate notes, then missed bills. **Monarch import:** guided groups (Import, Imported,
-  Split accounts, Counted twice, Past imports); history imports never touch the carry chain.
-- **Health (Settings):** one row per check with a status dot (ok / needs a look / loading), title,
-  text, and the fix in small type; the app-version check has an **Update** button ("Updating…").
+A hub of tiles (icon badge, name, state value, chevron); a not-started tool shows its state as a
+**gold button**. Each tool is a detail page: hero number, one chart (fan chart or line, scrub to
+read), facts, a list with an add row, and header actions that open settings / what-if sheets.
+What-if inputs **redraw the chart live** and finish with **Apply** or a quiet skip; automatic
+changes offer **Undo**. Offline with nothing cached shows "—" instead of a claim.
+
+## Lists and utility screens
+
+Tags, recurring items, imports and the health page all use the same rows: list with an add row,
+a form sheet (`Cancel · Title · Save`), an empty state ("No X yet" + one line). The health page is a
+column of check rows with a status dot, title, text and, when failing, a small fix line; one row
+can carry a primary **Update** button ("Updating…").
 
 ## Settings
 
-An index, not a stock grouped list: each area is a card leading with its state as a quiet
-right-hand value (tinted when something needs attention). Page header shows the owner's display
-name and email. Groups: **Data** (Bank sync, Health, Your data), **Budget**, **Preferences**
-(Alerts, Appearance, Security). Sections are `/settings/:section` pushes with `‹ Settings`.
-- *Bank sync:* schedule (max 12 runs/day) and per-institution last-reported times.
-- *Budget:* "When you change a plan" default, Categories (Income / Expenses / Transfers tabs, grip
-  reorder, add via ⋯ with Add category / Add group, rename group sheet), Rules (edit replaces,
-  delete), Tags. Reordering a filtered tab keeps the other kind's groups where they were.
-- *Alerts:* "Show me" (quiet flags, each with a hint) and "Push me about"; push opt-in per
-  device; per-account **Deposits** vs **Any increase**.
-- *Appearance:* Match system / Light / Dark with hints; applies immediately, device-local.
-- *Security:* App lock (Off · Immediately · After 5 minutes away · After 1 hour away), Offline
-  PIN, Passkeys, Signed-in devices, Backup sign-in (authenticator sheet, Recovery codes sheet).
-- *Your data:* Database use (free daily limit, resets 7 pm Central), Export, Backups, Claude.
+An index, not a stock grouped list: each area is a card that leads with its **current state** as a
+quiet right-hand value (tinted when attention is needed). The page header shows the owner's name and
+email. Groups under small headings; sections are pushes with `‹ Settings`. Inside sections:
+rows with switches and hints, choice lists (radio rows with a hint line), reorderable lists with grips
+and an add menu, rename/new sheets, and confirm sheets. Appearance applies immediately.
 
 ### App lock screen
-Full-screen dialog: logo, "Rise is locked", button **Unlock** (→ "Waiting for passkey…") and, when
-a PIN exists, "Use PIN". Starts in PIN mode if a PIN exists and the device is offline. The PIN
-view says "Enter your PIN" ("PIN turned off" after the wipe), shows dots, and on a wrong entry
-shakes. While backgrounded the app is covered by the plain logo screen.
+Full-screen dialog: logo, "Rise is locked", **Unlock** ("Waiting for passkey…") and, when a PIN
+exists, "Use PIN". Starts in PIN mode if a PIN exists and the device is offline. The PIN view shows
+"Enter your PIN" and dots, shakes on a wrong entry, submits on the last digit. While backgrounded
+the app is covered by the plain logo screen.
 
-## First-run guide ("Set up Rise")
+## First-run guide
 
-Bar `‹ Dashboard · Set up Rise` with a Skip control; four step pills (aria "Step N: title"), the
-current step's label and title, a short body, and **Go** buttons to the real screen:
-1. *Connect your banks* — sync now, or the claim command when sync is off.
-2. *Add what doesn't sync* — Accounts, Debts.
-3. *Choose your spending cash* — Surplus.
-4. *Shape your budget* — Budget, Categories.
+Bar `‹ Dashboard · Set up Rise` with Skip; four step pills (aria "Step N: title"), the current
+step's label, title and short body, and **Go** buttons to the screen that does the work.
 
 ---
 
