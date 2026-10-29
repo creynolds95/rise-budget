@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { categoryPortion, splitEmojis, splitProblem, withRemainder } from './splits';
+import { categoryPortion, splitEmojis, splitRows, splitProblem, withRemainder } from './splits';
 
 describe('category portion of a split', () => {
   const splits = [
@@ -74,5 +74,32 @@ describe('split row emojis', () => {
   });
   it('dedupes and skips categories without an emoji', () => {
     expect(splitEmojis(parts('car', 'none', 'car', 'kid'), emoji)).toEqual(['🚙', '👱']);
+  });
+});
+
+describe('split list rows', () => {
+  const base = { id: 't1', isTransfer: false };
+  const splits = [
+    { categoryId: 'home', amountCents: 2_999 },
+    { categoryId: 'kids', amountCents: 5_438 },
+  ];
+  it('lists a split once per category with its own amount', () => {
+    const rows = splitRows({ ...base, splits }, 1);
+    expect(rows.map((r) => r.part)).toEqual(splits);
+    expect(rows.map((r) => r.key)).toEqual(['t1:home', 't1:kids']);
+    expect(rows.every((r) => r.t.id === 't1')).toBe(true);
+  });
+  it('merges rows in the same category', () => {
+    const rows = splitRows(
+      { ...base, splits: [...splits, { categoryId: 'home', amountCents: 1 }] },
+      1,
+    );
+    expect(rows[0]?.part?.amountCents).toBe(3_000);
+  });
+  it('leaves unsplit, transfer and spread transactions as one row', () => {
+    expect(splitRows({ ...base, splits: [splits[0]!] }, 1)).toHaveLength(1);
+    expect(splitRows({ ...base, isTransfer: true, splits }, 1)).toHaveLength(1);
+    expect(splitRows({ ...base, splits }, 3)).toHaveLength(1);
+    expect(splitRows({ ...base, splits }, 1)[0]?.key).not.toBe('t1');
   });
 });

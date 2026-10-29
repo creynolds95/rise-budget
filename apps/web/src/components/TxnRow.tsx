@@ -23,6 +23,7 @@ export function TxnRow({
   categoryId,
   selected,
   onToggle,
+  splitPart,
 }: {
   t: Transaction;
   /** Shown before the merchant name (a split joins its categories' with " / "); the category's name isn't repeated on the row. */
@@ -39,6 +40,8 @@ export function TxnRow({
   /** Select mode: the row is a checkbox, not a link. */
   selected?: boolean;
   onToggle?: (() => void) | undefined;
+  /** One category's part of a split: its amount and name replace the whole. */
+  splitPart?: { amountCents: number; label: string } | undefined;
 }) {
   const navigate = useNavigate();
   const alerts = useMe().data?.settings.alerts;
@@ -46,24 +49,28 @@ export function TxnRow({
   const months = spreadMonths(t);
   // In one category's list, a split shows only the part filed there.
   const inCategory = categoryId && !part ? categoryPortion(t.splits, categoryId) : null;
-  const shown = part
-    ? { ...t, amountCents: part.amountCents }
-    : inCategory !== null
-      ? { ...t, amountCents: inCategory }
-      : t;
+  const shown = splitPart
+    ? { ...t, amountCents: splitPart.amountCents }
+    : part
+      ? { ...t, amountCents: part.amountCents }
+      : inCategory !== null
+        ? { ...t, amountCents: inCategory }
+        : t;
   const caption = [
     hideDate ? null : shortDate(t.postedAt),
     t.isTransfer
       ? 'Transfer'
-      : part
-        ? `Spread, ${part.index} of ${part.months}`
-        : months > 1
-          ? `Spread over ${months} months`
-          : t.splits.length > 1
-            ? categoryEmoji
-              ? null
-              : 'Split'
-            : null,
+      : splitPart
+        ? splitPart.label
+        : part
+          ? `Spread, ${part.index} of ${part.months}`
+          : months > 1
+            ? `Spread over ${months} months`
+            : t.splits.length > 1
+              ? categoryEmoji
+                ? null
+                : 'Split'
+              : null,
     t.reviewState === 'needs_review' ? 'To review' : null,
     flagText(t.flag, alerts),
   ]
@@ -120,7 +127,7 @@ export function TxnRow({
             </span>
           )}
           {merchantName(t)}
-          <TxnBadges t={t} />
+          <TxnBadges t={t} split={!!splitPart} />
         </span>
         {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
       </Link>
