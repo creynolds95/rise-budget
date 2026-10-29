@@ -1,3 +1,4 @@
+import { applyTolerance } from '@rise/shared/budget';
 import { Loading } from '../components/Pending';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -110,7 +111,8 @@ function CategoryDetailBody({
   const open = true;
   // Income is stored as negative spending (SPEC §1.1); show it as what came in.
   const earnedCents = isIncome ? -row.spentCents : row.spentCents;
-  const remainingCents = isIncome ? row.availableCents - earnedCents : row.remainingCents;
+  const tol = applyTolerance(row);
+  const remainingCents = isIncome ? row.availableCents - earnedCents : tol.remainingCents;
   const list = txns.data?.pages.flatMap((p) => p.items) ?? [];
   const yearly = yearBars(history.data ?? [], month);
   const bars = isIncome ? earnedBars(yearly) : yearly;
@@ -155,7 +157,7 @@ function CategoryDetailBody({
                 <Rail
                   carriedInCents={row.carriedInCents}
                   plannedCents={row.plannedCents}
-                  spentCents={row.spentCents}
+                  spentCents={tol.spentCents}
                   availableCents={row.availableCents}
                   tick={null}
                 />
@@ -198,6 +200,7 @@ function CategoryDetailBody({
                   key={t.id}
                   t={t}
                   periodId={month}
+                  categoryId={categoryId}
                   from={`${cat.name}|/budget/${categoryId}?m=${month}`}
                 />
               ))}

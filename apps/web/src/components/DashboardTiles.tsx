@@ -61,7 +61,7 @@ export function RetirementTile() {
         <NotSetUp />
       ) : (
         <>
-          <p className="type-label text-ink-muted">Monthly spending at {plan.goalAge}</p>
+          <p className="type-label text-ink-muted">Monthly spending at {plan.goalAge}, pre-tax</p>
           <p className="type-display">
             <MoneyText cents={view.v.incomeCents} whole />
           </p>

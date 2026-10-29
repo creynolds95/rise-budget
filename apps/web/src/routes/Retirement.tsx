@@ -156,7 +156,7 @@ export function Retirement() {
           ),
         }}
         identity={{
-          label: `Monthly spending at ${shownAge}`,
+          label: `Monthly spending at ${shownAge}, pre-tax`,
           hero: <MoneyText cents={v.incomeCents} whole />,
           context:
             v.pctOfGoal === null ? undefined : (
