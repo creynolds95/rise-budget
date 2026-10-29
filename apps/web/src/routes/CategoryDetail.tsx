@@ -200,6 +200,7 @@ function CategoryDetailBody({
                   key={t.id}
                   t={t}
                   periodId={month}
+                  categoryId={categoryId}
                   from={`${cat.name}|/budget/${categoryId}?m=${month}`}
                 />
               ))}

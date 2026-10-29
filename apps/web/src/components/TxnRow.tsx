@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router';
 import { flagText } from '../lib/alerts';
 import { shortDate } from '../lib/dates';
 import { useMe } from '../lib/queries';
+import { categoryPortion } from '../lib/splits';
 import { spreadMonths, spreadPart } from '../lib/spread';
 import { transitionClick } from '../lib/transition';
 import { TxnAmount } from './TxnAmount';
@@ -19,6 +20,7 @@ export function TxnRow({
   hideDate = false,
   onRecategorize,
   periodId,
+  categoryId,
   selected,
   onToggle,
 }: {
@@ -32,6 +34,8 @@ export function TxnRow({
   onRecategorize?: (() => void) | undefined;
   /** In one month's list, a spread charge shows the part it draws that month. */
   periodId?: string | undefined;
+  /** In one category's list, a split shows only the amount filed to this category. */
+  categoryId?: string | undefined;
   /** Select mode: the row is a checkbox, not a link. */
   selected?: boolean;
   onToggle?: (() => void) | undefined;
@@ -40,6 +44,13 @@ export function TxnRow({
   const alerts = useMe().data?.settings.alerts;
   const part = periodId ? spreadPart(t, periodId) : null;
   const months = spreadMonths(t);
+  // In one category's list, a split shows only the part filed there.
+  const inCategory = categoryId && !part ? categoryPortion(t.splits, categoryId) : null;
+  const shown = part
+    ? { ...t, amountCents: part.amountCents }
+    : inCategory !== null
+      ? { ...t, amountCents: inCategory }
+      : t;
   const caption = [
     hideDate ? null : shortDate(t.postedAt),
     t.isTransfer
@@ -89,7 +100,7 @@ export function TxnRow({
           </span>
           {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
         </span>
-        <TxnAmount t={part ? { ...t, amountCents: part.amountCents } : t} />
+        <TxnAmount t={shown} />
       </button>
     );
   }
@@ -114,7 +125,7 @@ export function TxnRow({
         {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
       </Link>
       <span className="flex items-center gap-2">
-        <TxnAmount t={part ? { ...t, amountCents: part.amountCents } : t} />
+        <TxnAmount t={shown} />
         {onRecategorize ? (
           <button
             type="button"

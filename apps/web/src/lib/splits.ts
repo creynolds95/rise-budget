@@ -28,6 +28,18 @@ export function splitProblem(totalCents: number, rows: readonly DraftSplit[]): S
   return null;
 }
 
+/**
+ * What a split transaction puts in one category: the sum of that category's splits, or null
+ * when the transaction isn't split across categories (the full amount is already the answer).
+ */
+export function categoryPortion(
+  splits: readonly { categoryId: string; amountCents: number }[],
+  categoryId: string,
+): number | null {
+  if (new Set(splits.map((s) => s.categoryId)).size < 2) return null;
+  return splits.filter((s) => s.categoryId === categoryId).reduce((n, s) => n + s.amountCents, 0);
+}
+
 /** The distinct category emojis of a split, in split order; categories without one are skipped. */
 export function splitEmojis(
   splits: readonly { categoryId: string }[],
