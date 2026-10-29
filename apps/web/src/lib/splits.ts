@@ -52,3 +52,32 @@ export function splitEmojis(
   }
   return out;
 }
+
+/** One list row of a transaction: the whole thing, or one category's part of a split. */
+export interface SplitRow<T> {
+  key: string;
+  t: T;
+  part: { categoryId: string; amountCents: number } | null;
+}
+
+/**
+ * A transaction split across categories lists once per category, each with its own amount,
+ * so a category sees one figure per row. Everything else stays a single row. The parent
+ * transaction is untouched: every row still opens and selects it.
+ */
+export function splitRows<
+  T extends {
+    id: string;
+    isTransfer: boolean;
+    splits: readonly { categoryId: string; amountCents: number }[];
+  },
+>(t: T, spreadMonths: number): SplitRow<T>[] {
+  const parts = new Map<string, number>();
+  for (const s of t.splits) parts.set(s.categoryId, (parts.get(s.categoryId) ?? 0) + s.amountCents);
+  if (t.isTransfer || spreadMonths > 1 || parts.size < 2) return [{ key: t.id, t, part: null }];
+  return [...parts].map(([categoryId, amountCents]) => ({
+    key: `${t.id}:${categoryId}`,
+    t,
+    part: { categoryId, amountCents },
+  }));
+}

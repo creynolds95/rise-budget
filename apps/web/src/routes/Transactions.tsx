@@ -11,7 +11,7 @@ import { CategoryPicker } from '../components/CategoryPicker';
 import { TagSheet } from '../components/TagSheet';
 import { FilterSheet } from '../components/FilterSheet';
 import { TxnAmount } from '../components/TxnAmount';
-import { splitEmojis } from '../lib/splits';
+import { splitRows, type SplitRow } from '../lib/splits';
 import { TxnRow } from '../components/TxnRow';
 import { Button } from '../components/primitives/Button';
 import { Icon, IconButton } from '../components/primitives/Icon';
@@ -150,18 +150,22 @@ export function Transactions() {
     }
   };
 
-  const row = (t: (typeof items)[number]) => {
-    const c =
-      spreadMonths(t) > 1 || t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
+  // A split lists once per category; each row still opens and selects its one parent.
+  const rowsOf = (list: typeof items) => list.flatMap((t) => splitRows(t, spreadMonths(t)));
+  const row = ({ key, t, part }: SplitRow<(typeof items)[number]>) => {
+    const c = part
+      ? cat(part.categoryId)
+      : spreadMonths(t) > 1 || t.splits.length === 1
+        ? cat(t.splits[0]?.categoryId)
+        : undefined;
     return (
       <TxnRow
-        key={t.id}
+        key={key}
         t={t}
-        categoryEmoji={
-          t.splits.length > 1 && !t.isTransfer && spreadMonths(t) <= 1
-            ? splitEmojis(t.splits, (id) => cat(id)?.emoji).join(' / ')
-            : c?.emoji
+        splitPart={
+          part ? { amountCents: part.amountCents, label: c?.name ?? 'Uncategorized' } : undefined
         }
+        categoryEmoji={c?.emoji}
         from={back}
         hideDate={byDate}
         onRecategorize={batchReview && !picking ? () => setRecategorizing(t.id) : undefined}
@@ -186,13 +190,16 @@ export function Transactions() {
         </tr>
       </thead>
       <tbody>
-        {items.map((t) => {
-          const c =
-            spreadMonths(t) > 1 || t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
+        {rowsOf(items).map(({ key, t, part }) => {
+          const c = part
+            ? cat(part.categoryId)
+            : spreadMonths(t) > 1 || t.splits.length === 1
+              ? cat(t.splits[0]?.categoryId)
+              : undefined;
           const to = `/transactions/${t.id}?from=${encodeURIComponent(back)}`;
           return (
             <tr
-              key={t.id}
+              key={key}
               onClick={picking ? () => toggle(t.id) : transitionClick(navigate, to)}
               className={`cursor-pointer border-b border-hairline last:border-0 hover:bg-sage-100/50 ${t.isPending ? 'italic' : ''}`}
             >
@@ -212,14 +219,20 @@ export function Transactions() {
               </td>
               <td className="max-w-72 truncate px-4 py-2.5">
                 {merchantName(t)}
-                <TxnBadges t={t} />
+                <TxnBadges t={t} split={!!part} />
                 {t.reviewState === 'needs_review' && (
                   <span className="ml-2 type-caption text-ink-faint not-italic">To review</span>
                 )}
               </td>
               <td className="px-4 py-1.5">
-                {t.isTransfer || t.splits.length > 1 ? (
-                  <span className="text-ink-muted">{t.isTransfer ? 'Transfer' : 'Split'}</span>
+                {t.isTransfer || part || t.splits.length > 1 ? (
+                  <span className="text-ink-muted">
+                    {t.isTransfer
+                      ? 'Transfer'
+                      : part
+                        ? `${c?.emoji ? `${c.emoji} ` : ''}${c?.name ?? 'Uncategorized'}`
+                        : 'Split'}
+                  </span>
                 ) : (
                   <button
                     type="button"
@@ -237,7 +250,7 @@ export function Transactions() {
                 {accounts.find((a) => a.id === t.accountId)?.name}
               </td>
               <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                <TxnAmount t={t} />
+                <TxnAmount t={part ? { ...t, amountCents: part.amountCents } : t} />
               </td>
             </tr>
           );
@@ -423,19 +436,19 @@ export function Transactions() {
         {desktop && items.length > 0 ? (
           table
         ) : byDate ? (
-          groupByDay(items).map(([day, rows]) => (
+          groupByDay(items).map(([day, dayItems]) => (
             <section key={day}>
               <h2 className="sticky max-lg:top-[60px] lg:top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px)+60px)] z-[1] -mx-4 bg-canvas px-4 pt-4 pb-1 type-label text-ink-muted md:-mx-6 md:px-6">
                 {dayLabel(day, today)}
               </h2>
               <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-                {rows.map(row)}
+                {rowsOf(dayItems).map(row)}
               </div>
             </section>
           ))
         ) : (
           <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-            {items.map(row)}
+            {rowsOf(items).map(row)}
           </div>
         )}
         {list.hasNextPage && (
