@@ -33,9 +33,18 @@ export const PENDING_MATCH_DAYS = 7;
 export const PENDING_DROP_DAYS = 14;
 export const MERCHANT_SIMILARITY = 0.8;
 
-/** `|P − Q| ≤ max($1, 2% of P)`, in integers. */
+/** Most a tip can add: the larger of $20 or the pending amount itself (a 100% tip). */
+export const TIP_MAX_CENTS = 2_000;
+
+/**
+ * `|P − Q| ≤ max($1, 2% of P)`, in integers. A posted amount larger than the pending one (same
+ * sign) is a tip or a final total, so it may exceed P by up to `max($20, |P|)` instead.
+ */
 export function withinTolerance(pendingCents: number, postedCents: number): boolean {
-  return 100 * Math.abs(pendingCents - postedCents) <= Math.max(10_000, 2 * Math.abs(pendingCents));
+  const pending = Math.abs(pendingCents);
+  if (100 * Math.abs(pendingCents - postedCents) <= Math.max(10_000, 2 * pending)) return true;
+  const grew = pendingCents * postedCents > 0 && Math.abs(postedCents) > pending;
+  return grew && Math.abs(postedCents) - pending <= Math.max(TIP_MAX_CENTS, pending);
 }
 
 export function sameMerchant(a: string, b: string): boolean {

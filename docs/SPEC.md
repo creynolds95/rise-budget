@@ -262,6 +262,7 @@ match pending P to posted Q when:
     P.account_id == Q.account_id
     Q.posted_at BETWEEN P.posted_at - 7 days AND P.posted_at + 7 days
     |P.amount_cents - Q.amount_cents| <= MAX(100, ABS(P.amount_cents) * 0.02)
+        OR (Q is larger than P, same sign, and Q - P <= MAX(2000, ABS(P.amount_cents)))  -- tip
     normalized_merchant matches, or trigram similarity >= 0.8
     neither already matched
 ```

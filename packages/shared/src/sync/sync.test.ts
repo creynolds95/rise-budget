@@ -46,10 +46,23 @@ describe('trigram similarity', () => {
 describe('pending → posted (SPEC §3.2)', () => {
   it('tolerance is max($1, 2%) of the pending amount', () => {
     expect(withinTolerance(5_000, 5_100)).toBe(true); // $1 on $50
-    expect(withinTolerance(5_000, 5_101)).toBe(false);
+    expect(withinTolerance(5_000, 4_900)).toBe(true);
+    expect(withinTolerance(5_000, 4_899)).toBe(false); // decreases keep the strict band
     expect(withinTolerance(10_000, 10_200)).toBe(true); // 2% of $100
-    expect(withinTolerance(10_000, 10_201)).toBe(false);
+    expect(withinTolerance(10_000, 9_800)).toBe(true);
+    expect(withinTolerance(10_000, 9_799)).toBe(false);
     expect(withinTolerance(-10_000, -9_800)).toBe(true);
+  });
+
+  it('a tip may add up to max($20, 100%) to the pending amount, never a decrease or a refund', () => {
+    expect(withinTolerance(825, 1_125)).toBe(true); // $8.25 → $11.25
+    expect(withinTolerance(825, 2_825)).toBe(true); // +$20 on a small pending
+    expect(withinTolerance(825, 2_826)).toBe(false);
+    expect(withinTolerance(4_000, 8_000)).toBe(true); // +100%
+    expect(withinTolerance(4_000, 8_001)).toBe(false);
+    expect(withinTolerance(-4_000, -4_800)).toBe(true);
+    expect(withinTolerance(4_000, 1_000)).toBe(false); // decreases keep the strict band
+    expect(withinTolerance(4_000, -4_800)).toBe(false);
   });
 
   it('matches within 7 days either side of the pending date', () => {
@@ -75,7 +88,21 @@ describe('pending → posted (SPEC §3.2)', () => {
     ]);
   });
 
-  it('a tip beyond tolerance is a new row, and the pending one waits', () => {
+  it('a big tip on a small pending charge updates the row in place, no duplicate', () => {
+    const p = stored({
+      id: 'cafe',
+      sourceId: 'pend',
+      isPending: true,
+      merchant: 'Corner Cafe',
+      amountCents: 825,
+    });
+    const q = inc({ sourceId: 'post', merchant: 'Corner Cafe Co', amountCents: 1_125 });
+    expect(planAccountSync([p], [q], '2026-09-11')).toEqual([
+      { kind: 'update', id: 'cafe', incoming: q, matchedPending: true },
+    ]);
+  });
+
+  it('an amount beyond the tip band is a new row, and the pending one waits', () => {
     const p = stored({
       id: 'meal',
       sourceId: 'pend',
@@ -83,7 +110,7 @@ describe('pending → posted (SPEC §3.2)', () => {
       merchant: 'Olive Garden',
       amountCents: 4_000,
     });
-    const q = inc({ sourceId: 'post', merchant: 'Olive Garden', amountCents: 4_800 });
+    const q = inc({ sourceId: 'post', merchant: 'Olive Garden', amountCents: 8_001 });
     expect(planAccountSync([p], [q], '2026-09-11')).toEqual([{ kind: 'insert', incoming: q }]);
   });
 
