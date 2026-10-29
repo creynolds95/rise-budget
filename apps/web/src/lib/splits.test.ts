@@ -97,7 +97,7 @@ describe('split list rows', () => {
     expect(rows[0]?.part?.amountCents).toBe(3_000);
   });
   it('leaves unsplit, transfer and spread transactions as one row', () => {
-    expect(splitRows({ ...base, splits: [splits[0]!] }, 1)).toHaveLength(1);
+    expect(splitRows({ ...base, splits: splits.slice(0, 1) }, 1)).toHaveLength(1);
     expect(splitRows({ ...base, isTransfer: true, splits }, 1)).toHaveLength(1);
     expect(splitRows({ ...base, splits }, 3)).toHaveLength(1);
     expect(splitRows({ ...base, splits }, 1)[0]?.key).not.toBe('t1');
