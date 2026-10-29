@@ -1,5 +1,5 @@
 import { Loading } from '../components/Pending';
-import type { ViewCategory } from '@rise/shared/budget';
+import { applyTolerance, type ViewCategory } from '@rise/shared/budget';
 import type { Category, CategoryGroup, Reallocation } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type MouseEvent as ReactMouseEvent } from 'react';
@@ -25,6 +25,9 @@ import { useCategories, useGroups, useInvalidateMoney, usePeriod, useToday } fro
 import type { PeriodResponse } from '../lib/types';
 
 /** The Budget tab (T37): pool, groups with roll-ups, and a rail per category. */
+/** Under this much left (but not zero) the remaining pill warns in gold. */
+const LOW_REMAINING_CENTS = 1000;
+
 export function Budget() {
   const today = useToday();
   const navigate = useNavigate();
@@ -266,6 +269,9 @@ export function SummaryCard({
         doneLabel="spent"
         tick={p.pace}
         carriedCents={expenseCarriedCents}
+        toleranceCents={p.categories
+          .filter((c) => c.groupKind === 'expense')
+          .reduce((n, c) => n + applyTolerance(c).spentCents - c.spentCents, 0)}
       />
     </div>
   );
@@ -279,6 +285,7 @@ function SummaryRow({
   tick,
   good = false,
   carriedCents = 0,
+  toleranceCents = 0,
 }: {
   label: string;
   plannedCents: number;
@@ -288,8 +295,10 @@ function SummaryRow({
   /** Income: going past `plannedCents` is a good thing, never an overspend warning. */
   good?: boolean;
   carriedCents?: number;
+  /** Rounding tolerance already applied per category: lifts the spend used for over/remaining. */
+  toleranceCents?: number;
 }) {
-  const remainingCents = plannedCents - filledCents;
+  const remainingCents = plannedCents - filledCents - toleranceCents;
   const over = remainingCents < 0;
   return (
     <div className="border-b border-hairline py-3 last:border-b-0">
@@ -301,7 +310,7 @@ function SummaryRow({
       </div>
       <div className="mt-1.5">
         <FillBar
-          filledCents={filledCents}
+          filledCents={filledCents + toleranceCents}
           targetCents={plannedCents}
           tick={tick}
           over={!good && over}
@@ -404,7 +413,7 @@ function GroupSection({
   const plannedTotal = rows.reduce((n, r) => n + r.plannedCents, 0);
   const remainingTotal = rows.reduce((n, r) => {
     const earned = kind === 'income' ? -r.spentCents : r.spentCents;
-    return n + (kind === 'income' ? r.availableCents - earned : r.remainingCents);
+    return n + (kind === 'income' ? r.availableCents - earned : applyTolerance(r).remainingCents);
   }, 0);
   const groupOver = remainingTotal < 0;
   return (
@@ -508,7 +517,8 @@ function BudgetRow({
   // For income, "spent" is money received, stored negative (SPEC §2.1's engine is spending-
   // shaped); earned/remaining-to-earn flip that back to what the row shows.
   const earnedCents = kind === 'income' ? -row.spentCents : row.spentCents;
-  const remainingCents = kind === 'income' ? row.availableCents - earnedCents : row.remainingCents;
+  const tol = applyTolerance(row);
+  const remainingCents = kind === 'income' ? row.availableCents - earnedCents : tol.remainingCents;
   // Earning more than planned is good, never an overspend warning (DESIGN-SYSTEM.md §1).
   const over = remainingCents < 0 && kind !== 'income';
   const navigate = useNavigate();
@@ -565,10 +575,12 @@ function BudgetRow({
           aria-label={`${over ? 'Over' : 'Remaining'}: ${formatCents(Math.abs(remainingCents))}`}
           className={`flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-full px-2 text-sm font-semibold ${
             balanceIsZero(remainingCents)
-              ? 'bg-sage-100 text-ink-muted'
+              ? 'bg-hairline text-ink-muted'
               : over
                 ? 'bg-clay-100 text-clay-text'
-                : 'bg-sage-100 text-sage-700'
+                : remainingCents < LOW_REMAINING_CENTS
+                  ? 'bg-gold-100 text-gold-text'
+                  : 'bg-sage-100 text-sage-700'
           }`}
         >
           <span className="money">{formatBalance(remainingCents, { sign: 'never' })}</span>
@@ -581,7 +593,7 @@ function BudgetRow({
           <Rail
             carriedInCents={row.carriedInCents}
             plannedCents={row.plannedCents}
-            spentCents={row.spentCents}
+            spentCents={tol.spentCents}
             availableCents={row.availableCents}
             tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
           />

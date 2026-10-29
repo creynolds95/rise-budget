@@ -42,11 +42,15 @@ export function sameMerchant(a: string, b: string): boolean {
   return a === b || similarity(a, b) >= MERCHANT_SIMILARITY;
 }
 
-/** SPEC §3.2: could pending P have become posted Q? */
+/**
+ * SPEC §3.2: could pending P have become posted Q? Rows carry the transaction date, which the
+ * bank may have only on the posted side; Q can then predate a pending P that was dated by the
+ * day it was first seen, so the window opens `PENDING_MATCH_DAYS` before P as well.
+ */
 export function pendingMatches(p: StoredTxn, q: IncomingWithMerchant): boolean {
   const gap = dayNumber(q.postedAt) - dayNumber(p.postedAt);
   return (
-    gap >= 0 &&
+    gap >= -PENDING_MATCH_DAYS &&
     gap <= PENDING_MATCH_DAYS &&
     withinTolerance(p.amountCents, q.amountCents) &&
     sameMerchant(p.merchant, q.merchant)

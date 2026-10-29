@@ -73,7 +73,11 @@ export function revealField(el: HTMLElement) {
     delta -= p.scrollTop - before;
   }
   // Whatever the inner scrollers couldn't absorb falls to the page (a no-op while it's frozen).
-  if (delta !== 0) window.scrollBy(0, delta);
+  // Not in the installed app: its document is screen-tall and unfrozen, so scrolling it would
+  // strand the layout shifted up after the keyboard closes.
+  if (delta !== 0 && !document.documentElement.classList.contains('app-full')) {
+    window.scrollBy(0, delta);
+  }
 }
 
 export function installKeyboardAvoidance() {
@@ -89,6 +93,11 @@ export function installKeyboardAvoidance() {
   const clear = () => {
     timers.forEach((t) => window.clearTimeout(t));
     timers = [];
+  };
+  // The installed app's document can end up scrolled by the keyboard; put it back once it's gone.
+  const resetPage = () => {
+    if (active() || !root.classList.contains('app-full')) return;
+    if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
   };
   const padPage = () => {
     const kb = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
@@ -113,11 +122,19 @@ export function installKeyboardAvoidance() {
   });
   document.addEventListener('focusout', () => {
     clear();
-    timers.push(window.setTimeout(padPage, 50));
+    for (const ms of [50, 350, 700]) {
+      timers.push(
+        window.setTimeout(() => {
+          padPage();
+          resetPage();
+        }, ms),
+      );
+    }
   });
   vv?.addEventListener('resize', () => {
     padPage();
     reveal();
+    resetPage();
   });
   // Typing can grow a field (a textarea) or reflow the form under it.
   document.addEventListener('input', () => window.requestAnimationFrame(reveal));

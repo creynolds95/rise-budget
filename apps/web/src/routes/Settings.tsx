@@ -271,7 +271,9 @@ export function SettingsSection() {
     <div className="mx-auto max-w-2xl pb-16">
       <PageBar>
         <BackLink to={back.to} label={back.label} />
-        <h1 className="type-body font-semibold">{SECTIONS[s]}</h1>
+        <h1 className="type-body font-semibold" data-bar-title>
+          {SECTIONS[s]}
+        </h1>
         <span id="settings-action" className="justify-self-end" />
       </PageBar>
       <Suspense fallback={<SectionFallback />}>

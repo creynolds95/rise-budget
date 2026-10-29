@@ -65,6 +65,7 @@ export function localDate(unixSeconds: number, timeZone: string): string {
 
 export interface IncomingTxn {
   sourceId: string;
+  /** The transaction date (when the purchase happened), or the posted date when the bank sends none. */
   postedAt: string;
   /** Rise convention: expense positive, income negative (SPEC §1.1). */
   amountCents: number;
@@ -83,7 +84,10 @@ export function toIncomingTxn(
   /** A pending row with no date at all is dated now, not 1970 (where it would sit in 1969-12). */
   nowSeconds = 0,
 ): IncomingTxn {
-  const when = t.posted > 0 ? t.posted : (t.transacted_at ?? nowSeconds);
+  // The day the purchase happened (SPEC §3.2.1), not the day it settled; the bank sends
+  // transacted_at as 0 or omits it when it doesn't know.
+  const when =
+    t.transacted_at && t.transacted_at > 0 ? t.transacted_at : t.posted > 0 ? t.posted : nowSeconds;
   return {
     sourceId: t.id,
     postedAt: localDate(when, timeZone),

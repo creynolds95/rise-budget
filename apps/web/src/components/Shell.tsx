@@ -54,10 +54,12 @@ export function Shell() {
   const [menuOpen, setMenuOpen] = useState(false);
   // Created up front and handed to the screens as a stable element, so a title bar portals into
   // it from its very first render; the placeholder below puts it in the page before paint.
+  // Sticky and banner-green at every width, like the tab head: iOS 26 colours the status bar
+  // solid only when a sticky or fixed box sits at the top edge, and fades it otherwise.
   const [barSlot] = useState(() => {
     const el = document.createElement('div');
     el.className =
-      'mx-auto w-full max-w-2xl shrink-0 lg:sticky lg:top-[var(--banner-h,0px)] lg:z-10';
+      'mx-auto w-full max-w-2xl shrink-0 sticky top-[var(--banner-h,0px)] z-10 bg-banner';
     return el;
   });
   const closeMenu = () => setMenuOpen(false);
@@ -205,7 +207,7 @@ export function Shell() {
                   <Icon name="menu" />
                 </button>
               )}
-              <span className="type-page">
+              <span className="type-page" data-bar-title>
                 {currentTab?.label ??
                   (location.pathname === '/settings'
                     ? 'Settings'
