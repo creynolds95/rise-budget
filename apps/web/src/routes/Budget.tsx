@@ -25,6 +25,9 @@ import { useCategories, useGroups, useInvalidateMoney, usePeriod, useToday } fro
 import type { PeriodResponse } from '../lib/types';
 
 /** The Budget tab (T37): pool, groups with roll-ups, and a rail per category. */
+/** Under this much left (but not zero) the remaining pill warns in gold. */
+const LOW_REMAINING_CENTS = 1000;
+
 export function Budget() {
   const today = useToday();
   const navigate = useNavigate();
@@ -572,10 +575,12 @@ function BudgetRow({
           aria-label={`${over ? 'Over' : 'Remaining'}: ${formatCents(Math.abs(remainingCents))}`}
           className={`flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-full px-2 text-sm font-semibold ${
             balanceIsZero(remainingCents)
-              ? 'bg-sage-100 text-ink-muted'
+              ? 'bg-hairline text-ink-muted'
               : over
                 ? 'bg-clay-100 text-clay-text'
-                : 'bg-sage-100 text-sage-700'
+                : remainingCents < LOW_REMAINING_CENTS
+                  ? 'bg-gold-100 text-gold-text'
+                  : 'bg-sage-100 text-sage-700'
           }`}
         >
           <span className="money">{formatBalance(remainingCents, { sign: 'never' })}</span>
