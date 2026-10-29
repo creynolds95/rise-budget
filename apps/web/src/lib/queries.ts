@@ -7,7 +7,9 @@ import type {
   RecurringSeries,
   Rule,
   SpendingReport,
+  TagSummary,
   Transaction,
+  TransactionTotals,
   UsageStatus,
   User,
 } from '@rise/shared/schemas';
@@ -18,7 +20,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { api, get } from './api';
+import { api, get, outbox } from './api';
 import { localToday } from './dates';
 import type {
   AccountWithStaleness,
@@ -118,11 +120,14 @@ export const useSpendingReport = (month: string) =>
     staleTime: SLOW,
   });
 
-/** The Budget tab's "money flow" screen: income → expense groups → categories. */
-export const useMoneyFlow = (month: string) =>
+/** Money flow: income → expense groups → categories, for `month` or `from` through `month`. */
+export const useMoneyFlow = (month: string, from = month) =>
   useQuery({
-    queryKey: ['reports', 'money-flow', month],
-    queryFn: () => get<MoneyFlowReport>(`/reports/money-flow?month=${month}`),
+    queryKey: ['reports', 'money-flow', month, from],
+    queryFn: () =>
+      get<MoneyFlowReport>(
+        `/reports/money-flow?month=${month}${from === month ? '' : `&from=${from}`}`,
+      ),
     placeholderData: keepPreviousData,
     staleTime: SLOW,
   });
@@ -145,6 +150,8 @@ export type TxnFilters = Partial<
     | 'q'
     | 'account'
     | 'category'
+    | 'tag'
+    | 'period'
     | 'reviewState'
     | 'from'
     | 'to'
@@ -170,6 +177,23 @@ export function useTransactions(f: TxnFilters) {
   });
 }
 
+/** Out, in and count for a filter; only asked for when the list is narrowed. */
+export const useTxnTotals = (f: TxnFilters, enabled: boolean) =>
+  useQuery({
+    queryKey: ['txns', 'totals', f],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(f)) if (v && k !== 'sort') qs.set(k, v);
+      return get<TransactionTotals>(`/transactions/totals?${qs}`);
+    },
+    enabled,
+    staleTime: SLOW,
+    placeholderData: keepPreviousData,
+  });
+
+export const useTags = () =>
+  useQuery({ queryKey: ['tags'], queryFn: () => get<TagSummary[]>('/tags'), staleTime: SLOW });
+
 export const useNetWorth = (from: string, to: string) =>
   useQuery({
     queryKey: ['networth', from, to],
@@ -189,10 +213,13 @@ export function useInvalidateMoney() {
         'accounts',
         'recurring',
         'networth',
+        'snapshots',
         'categories',
         'groups',
         'cash-to-payday',
         'reports',
+        'category-history',
+        'tags',
       ].map((k) => qc.invalidateQueries({ queryKey: [k] })),
     );
 }
@@ -209,7 +236,13 @@ export function usePatchTransaction() {
       notes?: string | null;
       reviewState?: 'reviewed' | 'needs_review';
       postedAt?: string;
+      clearFlag?: true;
     }) => api<PatchedTransaction>('PATCH', `/transactions/${id}`, body),
-    onSuccess: invalidate,
+    onSuccess: async (_, { id, ...body }) => {
+      // This edit reached the server; an older offline edit to the same field must not
+      // replay over it.
+      await outbox.supersede('PATCH', `/transactions/${id}`, body);
+      await invalidate();
+    },
   });
 }

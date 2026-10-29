@@ -6,12 +6,21 @@ import {
   type ChainMonth,
   type RolledInto,
 } from '@rise/shared/budget';
-import { allocationsBetween, listCategories, listGroups, planDefaultOf, spentBetween } from '../db';
+import {
+  allocationsBetween,
+  getUser,
+  listCategories,
+  listGroups,
+  planDefaultOf,
+  spentBetween,
+} from '../db';
 import type { Env } from '../env';
+import { localToday } from './dates';
 
 /**
  * Every month's carry-in from the chain start through `to`, keyed by month. Empty when `to` is
- * before the start: those months are history, and nothing carries into or out of them.
+ * before the start: those months are history, and nothing carries into or out of them. Only
+ * months that have ended (before the user's current month) roll forward.
  */
 export async function loadRollover(
   env: Env,
@@ -20,7 +29,8 @@ export async function loadRollover(
 ): Promise<Map<string, RolledInto>> {
   if (to < ROLLOVER_START) return new Map();
   const db = env.DB;
-  const [groups, categories, allocations, spent] = await Promise.all([
+  const [user, groups, categories, allocations, spent] = await Promise.all([
+    getUser(userId, db),
     listGroups(userId, db),
     listCategories(userId, db),
     allocationsBetween(userId, db, ROLLOVER_START, to),
@@ -47,6 +57,7 @@ export async function loadRollover(
       }),
     });
   }
-  const rolled = rollChain(months);
+  const current = localToday(user?.timezone ?? 'America/Chicago').slice(0, 7);
+  const rolled = rollChain(months, current);
   return new Map(rolled.map((r) => [r.periodId, r]));
 }

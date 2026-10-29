@@ -24,6 +24,11 @@ export interface BalancePoint {
 /** Days since 1970-01-01 for a valid ISO date, in pure integer arithmetic. */
 export function dayNumber(date: IsoDate): number {
   const { year, month, day } = parseIsoDate(date);
+  return daysFromCivil(year, month, day);
+}
+
+/** `dayNumber` from a year, month (1-12) and day already in hand: no string parsing. */
+export function daysFromCivil(year: number, month: number, day: number): number {
   // Howard Hinnant's days_from_civil.
   const y = month <= 2 ? year - 1 : year;
   const era = Math.floor(y / 400);
@@ -104,6 +109,31 @@ export function netWorthSeries(
       netWorthCents: sumCents(points.map((p) => p.balanceCents)),
       inferred: points.some((p) => p.kind !== 'measured'),
     });
+  }
+  return out;
+}
+
+/**
+ * What accounts joined the series on each day of [from, to]: an included account's first
+ * balance, keyed by its first snapshot date, when that date is after `from` (the range's first
+ * day is the base everything is measured from). A growth line subtracts it so an account
+ * appearing is not read as a gain: before its first snapshot it contributes nothing, so the
+ * day it arrives the total jumps by its whole balance.
+ */
+export function joinedCents(
+  accounts: readonly NetWorthAccount[],
+  from: IsoDate,
+  to: IsoDate,
+): Map<IsoDate, Cents> {
+  const out = new Map<IsoDate, Cents>();
+  for (const a of accounts) {
+    if (!a.includeInNetWorth) continue;
+    const first = a.snapshots.reduce<Snapshot | null>(
+      (m, s) => (m === null || s.asOf < m.asOf ? s : m),
+      null,
+    );
+    if (!first || first.asOf <= from || first.asOf > to) continue;
+    out.set(first.asOf, (out.get(first.asOf) ?? 0) + first.balanceCents);
   }
   return out;
 }

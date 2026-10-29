@@ -4,11 +4,26 @@ export interface LinePoint {
   inferred: boolean;
   /** What a touch on this point reads out, e.g. the date. */
   label?: string;
+  /** Names of what finishes in the stretch of time this point stands for (a loan paid off). */
+  paid?: string[];
 }
 
 export interface Segment {
   dashed: boolean;
   points: [number, number][];
+}
+
+/**
+ * The value range a line is drawn across. Anchored at 0 (like sharedScalePaths below), or an
+ * all-negative series plots identically to an all-positive one. `zoom` drops the anchor and
+ * fits the data with a margin, for a balance that moves a little against its size (a loan).
+ */
+function bounds(values: number[], zoom: boolean): { lo: number; hi: number } {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (!zoom) return { lo: Math.min(0, min), hi: Math.max(0, max) };
+  const margin = Math.max(1, Math.round((max - min) * 0.15));
+  return { lo: min - margin, hi: max + margin };
 }
 
 /**
@@ -21,13 +36,11 @@ export function lineSegments(
   width: number,
   height: number,
   pad = 4,
+  zoom = false,
 ): Segment[] {
   if (points.length === 0) return [];
   const values = points.map((p) => p.cents);
-  // Anchored at 0 (like sharedScalePaths below), or an all-negative series plots identically
-  // to an all-positive one — there's nothing on the chart to show it's underwater.
-  const lo = Math.min(0, ...values);
-  const hi = Math.max(0, ...values);
+  const { lo, hi } = bounds(values, zoom);
   const span = hi - lo;
   const x = (i: number) => (points.length === 1 ? width / 2 : (i / (points.length - 1)) * width);
   // Only a series flat at exactly $0 has no scale to speak of; draw that through the middle.
@@ -60,8 +73,9 @@ export function linePositions(
   width: number,
   height: number,
   pad = 4,
+  zoom = false,
 ): [number, number][] {
-  return lineSegments(points, width, height, pad).flatMap((s, i) =>
+  return lineSegments(points, width, height, pad, zoom).flatMap((s, i) =>
     // A segment after the first starts on the previous one's last point; count it once.
     i === 0 ? s.points : s.points.slice(1),
   );
@@ -74,11 +88,16 @@ export function nearestIndex(fraction: number, count: number): number {
 }
 
 /** Where $0 falls on a `lineSegments` chart, so it can be drawn as a reference line. */
-export function zeroY(points: readonly LinePoint[], height: number, pad = 4): number | null {
-  if (points.length === 0) return null;
+export function zeroY(
+  points: readonly LinePoint[],
+  height: number,
+  pad = 4,
+  zoom = false,
+): number | null {
+  // A zoomed chart has no $0 to show.
+  if (points.length === 0 || zoom) return null;
   const values = points.map((p) => p.cents);
-  const lo = Math.min(0, ...values);
-  const hi = Math.max(0, ...values);
+  const { lo, hi } = bounds(values, false);
   const span = hi - lo;
   if (span === 0) return null;
   return pad + (1 - (0 - lo) / span) * (height - 2 * pad);
@@ -246,10 +265,12 @@ export function sharedScalePaths(
   width: number,
   height: number,
   pad = 4,
+  /** Force the top of the scale, e.g. to a gridline from `niceTicks`. */
+  top?: number,
 ): { points: [number, number][]; last: [number, number] | null }[] {
   const all = series.flat();
   const lo = Math.min(0, ...all);
-  const hi = Math.max(0, ...all);
+  const hi = Math.max(0, top ?? 0, ...all);
   const span = hi - lo || 1;
   const x = (i: number) => (slots <= 1 ? width / 2 : (i / (slots - 1)) * width);
   const y = (v: number) => pad + (1 - (v - lo) / span) * (height - 2 * pad);
@@ -257,4 +278,26 @@ export function sharedScalePaths(
     const points = s.map((v, i): [number, number] => [x(i), y(v)]);
     return { points, last: points.at(-1) ?? null };
   });
+}
+
+/**
+ * Round gridline values from $0 up past `maxCents`: a 1/2/5 step, three or four lines.
+ * The last tick is the top of the scale, so the data never touches the ceiling.
+ */
+export function niceTicks(maxCents: number): number[] {
+  const max = Math.max(maxCents, 100) / 100;
+  const raw = max / 4;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = ([1, 2, 5, 10].find((m) => m * mag >= raw) as number) * mag;
+  const ticks: number[] = [];
+  for (let v = 0; v < max + step; v += step) ticks.push(Math.round(v * 100));
+  return ticks;
+}
+
+/** "$2K", "$12K", "$1.5M": axis labels, whole dollars below a thousand. */
+export function axisLabel(cents: number): string {
+  const d = cents / 100;
+  if (d >= 1_000_000) return `$${+(d / 1_000_000).toFixed(1)}M`;
+  if (d >= 1_000) return `$${+(d / 1_000).toFixed(1)}K`;
+  return `$${Math.round(d)}`;
 }

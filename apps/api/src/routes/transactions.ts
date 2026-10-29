@@ -1,25 +1,30 @@
-import { periodOf, validateSplits } from '@rise/shared/budget';
-import { normalizeMerchant } from '@rise/shared/categorize';
+import { periodOf, spreadMonthsOf, spreadParts, validateSplits } from '@rise/shared/budget';
+import { allocateRefund, normalizeMerchant, refundFits } from '@rise/shared/categorize';
 import { nextScheduled } from '@rise/shared/recurring';
 import {
   BulkAcceptBody,
+  BulkTagBody,
   CreateTransactionBody,
   PatchTransactionBody,
   RecurringCashWithdrawalBody,
   ReplaceSplitsBody,
   TransactionQuery,
+  RefundLinkBody,
+  SetTagsBody,
+  SpreadBody,
   TransferLinkBody,
   type RuleOffer,
 } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
-  bumpMemoryStmt,
+  acceptSuggestions,
   categoryIdsExist,
+  addTxnTags,
+  countOwnTags,
   deleteManualRuleStmt,
   deleteTransaction,
   ensureCatchallCategory,
   ensureTransferCategory,
-  flagClosedPeriodStmt,
   getAccount,
   getTransaction,
   getTransactionRow,
@@ -27,16 +32,19 @@ import {
   insertManualTransaction,
   listAcceptable,
   listTransactions,
-  newId,
-  nowIso,
   reassignSplitStmts,
-  refreshAggregateStmts,
+  refundedCents,
   seriesId,
+  setRefundOf,
+  setTxnTags,
   sortKey,
+  totalTransactions,
   linkTransferStmts,
   movePostedAtStmts,
   replaceSplits,
+  revertTransferLegStmts,
   splitsFor,
+  spreadStmts,
   unlinkTransferStmts,
   markTransferStmt,
   unmarkTransferStmt,
@@ -71,26 +79,35 @@ function decodeCursor(cursor: string | undefined) {
 const encodeCursor = (key: string, id: string) =>
   b64urlEncode(new TextEncoder().encode(`${key}|${id}`));
 
-transactions.get('/', async (c) => {
-  const q = TransactionQuery.safeParse(c.req.query());
+const parseQuery = (raw: Record<string, string>) => {
+  const q = TransactionQuery.safeParse(raw);
   if (!q.success) throw new AppError(400, 'BAD_REQUEST', 'Invalid query', q.error.issues);
-  const f = q.data;
+  return q.data;
+};
+
+const filtersOf = (f: ReturnType<typeof parseQuery>) => ({
+  from: f.from,
+  to: f.to,
+  accountIds: f.account,
+  categoryIds: f.category,
+  notAccountIds: f.notAccount,
+  notCategoryIds: f.notCategory,
+  tagIds: f.tag,
+  period: f.period,
+  q: f.q,
+  reviewState: f.reviewState,
+  direction: f.direction,
+  minCents: f.min,
+  maxCents: f.max,
+  sort: f.sort,
+});
+
+transactions.get('/', async (c) => {
+  const f = parseQuery(c.req.query());
   const items = await listTransactions(
     c.get('userId'),
     c.env.DB,
-    {
-      from: f.from,
-      to: f.to,
-      accountIds: f.account,
-      categoryIds: f.category,
-      q: f.q,
-      reviewState: f.reviewState,
-      direction: f.direction,
-      minCents: f.min,
-      maxCents: f.max,
-      sort: f.sort,
-      after: decodeCursor(f.cursor),
-    },
+    { ...filtersOf(f), after: decodeCursor(f.cursor) },
     PAGE + 1,
   );
   const page = items.slice(0, PAGE);
@@ -99,6 +116,12 @@ transactions.get('/', async (c) => {
     items: page,
     nextCursor: items.length > PAGE && last ? encodeCursor(sortKey(last, f.sort), last.id) : null,
   });
+});
+
+/** Running totals for the same filter as the list (Copilot-style). */
+transactions.get('/totals', async (c) => {
+  const f = parseQuery(c.req.query());
+  return c.json(await totalTransactions(c.get('userId'), c.env.DB, filtersOf(f)));
 });
 
 transactions.get('/:id', async (c) => {
@@ -170,9 +193,18 @@ transactions.patch('/:id', async (c) => {
   if (b.categoryId) {
     if (!(await categoryIdsExist(userId, c.env.DB, [b.categoryId])))
       throw new AppError(400, 'BAD_REQUEST', 'Unknown category');
-    const changed = await replaceSplits(userId, c.env.DB, row, [
-      { categoryId: b.categoryId, amountCents: row.amount_cents },
-    ]);
+    // A spread charge keeps its months under the new category (SPEC §3.6).
+    const own = (await splitsFor(userId, c.env.DB, [id])).get(id) ?? [];
+    const months = spreadMonthsOf(
+      periodOf(row.posted_at),
+      own.map((s) => ({ categoryId: s.category_id, periodId: s.period_id })),
+    );
+    const changed = await replaceSplits(
+      userId,
+      c.env.DB,
+      row,
+      spreadParts(row.amount_cents, months, periodOf(row.posted_at), b.categoryId),
+    );
     if (changed || row.review_state === 'needs_review') {
       ruleOffer = await recordManualCategorisation(c.env.DB, userId, txnRef(row), b.categoryId);
     }
@@ -185,6 +217,53 @@ transactions.patch('/:id', async (c) => {
   return c.json({ ...(await getTransaction(userId, c.env.DB, id)), ruleOffer });
 });
 
+/**
+ * Spread one charge evenly over 1..12 months from its own (SPEC §3.6), so a yearly bill draws
+ * on a rollover category a month at a time. One category only; transfers have no budget to
+ * spread over. `months: 1` puts it back in its own month.
+ */
+transactions.post('/:id/spread', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  const row = await getTransactionRow(userId, c.env.DB, id);
+  if (!row) throw notFound();
+  const { months } = await body(c, SpreadBody);
+  if (row.is_transfer) throw new AppError(409, 'CONFLICT', 'A transfer can’t be spread');
+  if (row.review_state === 'dropped')
+    throw new AppError(409, 'CONFLICT', 'This pending charge no longer counts');
+  const own = (await splitsFor(userId, c.env.DB, [id])).get(id) ?? [];
+  const cats = new Set(own.map((s) => s.category_id));
+  const [categoryId] = cats;
+  if (cats.size !== 1 || !categoryId)
+    throw new AppError(409, 'CONFLICT', 'Only a charge in one category can be spread');
+  const stmts = await spreadStmts(userId, c.env.DB, row, categoryId, months);
+  if (stmts) await c.env.DB.batch(stmts);
+  return c.json(await getTransaction(userId, c.env.DB, id));
+});
+
+/** Add tags to many transactions (select all on Transactions). Labels only: no money moves. */
+transactions.post('/bulk-tags', async (c) => {
+  const userId = c.get('userId');
+  const { ids, tagIds: raw } = await body(c, BulkTagBody);
+  const tagIds = [...new Set(raw)];
+  if ((await countOwnTags(userId, c.env.DB, tagIds)) !== tagIds.length)
+    throw new AppError(400, 'BAD_REQUEST', 'Unknown tag');
+  await addTxnTags(userId, c.env.DB, [...new Set(ids)], tagIds);
+  return c.json({ tagged: ids.length });
+});
+
+/** Replace a transaction's tags. Labels only: no money moves. */
+transactions.put('/:id/tags', async (c) => {
+  const userId = c.get('userId');
+  const id = c.req.param('id');
+  if (!(await getTransactionRow(userId, c.env.DB, id))) throw notFound();
+  const tagIds = [...new Set((await body(c, SetTagsBody)).tagIds)];
+  if ((await countOwnTags(userId, c.env.DB, tagIds)) !== tagIds.length)
+    throw new AppError(400, 'BAD_REQUEST', 'Unknown tag');
+  await setTxnTags(userId, c.env.DB, id, tagIds);
+  return c.json(await getTransaction(userId, c.env.DB, id));
+});
+
 /** Remove a transaction for good. A linked transfer must be unlinked first. */
 transactions.delete('/:id', async (c) => {
   const userId = c.get('userId');
@@ -192,6 +271,8 @@ transactions.delete('/:id', async (c) => {
   if (!row) throw notFound();
   if (row.transfer_pair_id)
     throw new AppError(409, 'CONFLICT', 'Unlink this transfer from the other side before deleting');
+  if ((await refundedCents(userId, c.env.DB, row.id)) !== 0)
+    throw new AppError(409, 'CONFLICT', 'Unlink its refund before deleting');
   await deleteTransaction(userId, c.env.DB, row);
   return c.body(null, 204);
 });
@@ -242,80 +323,16 @@ transactions.post('/:id/splits', async (c) => {
  * teaches memory but doesn't count toward a rule offer.
  *
  * `listAcceptable` only ever returns rows with a live suggested category (it joins on
- * `category`), so every row here is accepted. Batched into one `db.batch` plus one
- * `refreshSuggestions` per distinct merchant, instead of ~5 round trips per row — the "accept
- * all confident" tap can cover hundreds of rows. The merchant-meta write `replaceSplits`'s
- * sibling path (`recordManualCategorisation` with `countTowardOffer: false`) would otherwise
- * do is skipped: with `countTowardOffer: false` it always writes back the same meta it read,
- * a no-op.
+ * `category`), so every row here is accepted: one batch (`acceptSuggestions`), then one
+ * `refreshSuggestions` per distinct merchant.
  */
 transactions.post('/bulk-accept', async (c) => {
   const userId = c.get('userId');
   const db = c.env.DB;
   const by = await body(c, BulkAcceptBody);
   const rows = await listAcceptable(userId, db, by);
-  if (rows.length === 0) return c.json({ accepted: [] });
-
-  const oldSplits = await splitsFor(
-    userId,
-    db,
-    rows.map((r) => r.id),
-  );
-  const { results: catRows } = await db
-    .prepare('SELECT id, budgeted FROM category WHERE user_id = ?1')
-    .bind(userId)
-    .all<{ id: string; budgeted: number }>();
-  const budgetedCats = new Set(catRows.filter((r) => r.budgeted === 1).map((r) => r.id));
-  const now = nowIso();
-  const periods = new Set<string>();
-  const merchants = new Set<string>();
-  const stmts: D1PreparedStatement[] = [];
-
-  for (const row of rows) {
-    const categoryId = row.suggested_category_id;
-    if (!categoryId) continue;
-    const periodId = periodOf(row.posted_at);
-    periods.add(periodId);
-    merchants.add(row.merchant_normalized);
-
-    const old = oldSplits.get(row.id) ?? [];
-    const same =
-      old.length === 1 &&
-      old[0]?.category_id === categoryId &&
-      old[0]?.amount_cents === row.amount_cents;
-    if (!same) {
-      const dropped = row.review_state === 'dropped';
-      const newCounted = !dropped && budgetedCats.has(categoryId) ? row.amount_cents : 0;
-      const oldCounted = dropped
-        ? 0
-        : old.reduce((n, s) => n + (budgetedCats.has(s.category_id) ? s.amount_cents : 0), 0);
-      const delta = newCounted - oldCounted;
-      stmts.push(
-        db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, row.id),
-        db
-          .prepare(
-            'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)',
-          )
-          .bind(newId(), userId, row.id, categoryId, row.amount_cents, periodId),
-      );
-      // Flag even at delta = 0 — a same-total recategorization still moves money between two
-      // categories' own carry in a closed period (M2); flagClosedPeriodStmt no-ops if open.
-      stmts.push(flagClosedPeriodStmt(userId, db, periodId, delta));
-    }
-    stmts.push(
-      db
-        .prepare(
-          "UPDATE txn SET review_state = 'reviewed', updated_at = ?3 WHERE user_id = ?1 AND id = ?2",
-        )
-        .bind(userId, row.id, now),
-      bumpMemoryStmt(userId, db, row.merchant_normalized, categoryId),
-    );
-  }
-  for (const periodId of periods) stmts.push(...refreshAggregateStmts(userId, db, periodId));
-
-  await db.batch(stmts);
+  const merchants = await acceptSuggestions(userId, db, rows);
   for (const merchant of merchants) await refreshSuggestions(db, userId, merchant);
-
   return c.json({ accepted: rows.map((r) => r.id) });
 });
 
@@ -355,6 +372,59 @@ transactions.post('/:id/transfer-link', async (c) => {
 });
 
 /**
+ * Tie a refund to the purchase it reverses. The refund takes the purchase's category (spread
+ * in proportion across its splits), so it offsets exactly what it undoes; partial refunds are
+ * fine up to what's left. The tap is the confirmation; unlink leaves the categories as they are.
+ */
+transactions.post('/:id/refund-link', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const { originalTxnId } = await body(c, RefundLinkBody);
+  const [refund, original] = await Promise.all([
+    getTransactionRow(userId, db, c.req.param('id')),
+    getTransactionRow(userId, db, originalTxnId),
+  ]);
+  if (!refund || !original) throw notFound();
+  if (refund.refund_of_id) throw new AppError(409, 'CONFLICT', 'Already linked to a purchase');
+  const asTxn = (r: TxnRow) => ({
+    id: r.id,
+    accountId: r.account_id,
+    postedAt: r.posted_at,
+    amountCents: r.amount_cents,
+    isTransfer: r.is_transfer === 1,
+  });
+  if (!refundFits(asTxn(refund), asTxn(original), await refundedCents(userId, db, original.id)))
+    throw new AppError(
+      422,
+      'BAD_REQUEST',
+      'A refund must come after its purchase and be no more than what is left of it',
+    );
+  const originalSplits = (await splitsFor(userId, db, [original.id])).get(original.id) ?? [];
+  if (originalSplits.length === 0)
+    throw new AppError(409, 'CONFLICT', 'That purchase has no category yet');
+  await replaceSplits(
+    userId,
+    db,
+    refund,
+    allocateRefund(
+      refund.amount_cents,
+      originalSplits.map((s) => ({ categoryId: s.category_id, amountCents: s.amount_cents })),
+    ).filter((s) => s.amountCents !== 0),
+  );
+  await setRefundOf(userId, db, refund.id, original.id);
+  return c.json(await getTransaction(userId, db, refund.id));
+});
+
+transactions.delete('/:id/refund-link', async (c) => {
+  const userId = c.get('userId');
+  const row = await getTransactionRow(userId, c.env.DB, c.req.param('id'));
+  if (!row) throw notFound();
+  if (!row.refund_of_id) throw new AppError(409, 'CONFLICT', 'Not linked to a purchase');
+  await setRefundOf(userId, c.env.DB, row.id, null);
+  return c.json(await getTransaction(userId, c.env.DB, row.id));
+});
+
+/**
  * One side of a transfer whose other side isn't here yet — typically a card payment from
  * checking to a card that reports monthly (Apple). It stops counting as spending now
  * (SPEC §3.4); the user's tap is the confirmation, and it can be linked or undone later.
@@ -381,16 +451,10 @@ transactions.delete('/:id/transfer-link', async (c) => {
   const a = await getTransactionRow(userId, db, c.req.param('id'));
   if (!a) throw notFound();
   const transferCat = await ensureTransferCategory(userId, db);
-  const catchall = await ensureCatchallCategory(userId, db);
   // Only revert a leg's category if it's still the default Transfer category from link time
-  // (A5) — a leg the user has since recategorized (e.g. to "Furniture") keeps that choice.
-  const revertIfDefault = async (leg: TxnRow): Promise<D1PreparedStatement[]> => {
-    const own = (await splitsFor(userId, db, [leg.id])).get(leg.id) ?? [];
-    if (own.length === 1 && own[0]?.category_id === transferCat.id) {
-      return reassignSplitStmts(userId, db, leg, own, catchall.id);
-    }
-    return [];
-  };
+  // (A5) — a leg the user has since recategorized (e.g. to "Furniture") keeps that choice. A
+  // deposit leg into a cash account goes to the income catch-all, like sync would file it (C2).
+  const revertIfDefault = (leg: TxnRow) => revertTransferLegStmts(userId, db, leg, transferCat.id);
   if (a.is_transfer === 1 && !a.transfer_pair_id) {
     await db.batch([...(await revertIfDefault(a)), unmarkTransferStmt(userId, db, a.id)]);
     return c.json({ items: [await getTransaction(userId, db, a.id)] });
@@ -408,10 +472,10 @@ transactions.delete('/:id/transfer-link', async (c) => {
 });
 
 /**
- * Caleb's "Recurring Cash Withdrawal" tag (cash-to-payday tool, SPEC-adjacent): a real cash
+ * The owner's "Recurring Cash Withdrawal" tag (cash-to-payday tool, SPEC-adjacent): a real cash
  * auto-draft too new or too easily confused with a sibling to auto-detect from 3 charges.
  * Also used the same way for a paycheck (income transactions carry a negative amount_cents,
- * SPEC §1.1) too new or irregular for auto-detection to pick up on its own — e.g. Caleb's
+ * SPEC §1.1) too new or irregular for auto-detection to pick up on its own — e.g. the owner's
  * semimonthly schedule paid the 5th and 20th. One rule per merchant — tagging again from
  * another of its transactions replaces it.
  */

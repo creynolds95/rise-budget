@@ -33,7 +33,7 @@ export function refreshCookie(headers: Headers): string {
 export async function newUser() {
   const userId = crypto.randomUUID();
   const email = `${userId.slice(0, 8)}@example.com`;
-  await createUser(userId, env.DB, { email, displayName: 'Caleb' });
+  await createUser(userId, env.DB, { email, displayName: 'Test User' });
   return { userId, email };
 }
 

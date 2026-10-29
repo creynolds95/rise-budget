@@ -1,6 +1,13 @@
-import { periodOf } from '@rise/shared/budget';
+import {
+  addPeriods,
+  monthsBetween,
+  periodOf,
+  spreadMonthsOf,
+  spreadParts,
+} from '@rise/shared/budget';
 import { Transaction, type ReviewState, type TxnSort } from '@rise/shared/schemas';
 import { refreshAggregateStmts } from './aggregates';
+import { bumpMemoryStmt } from './categorize';
 import { newId, nowIso, type UserId } from './util';
 
 export interface TxnRow {
@@ -15,11 +22,13 @@ export interface TxnRow {
   is_pending: number;
   is_transfer: number;
   transfer_pair_id: string | null;
+  refund_of_id: string | null;
   review_state: string;
   suggested_category_id: string | null;
   suggestion_confidence: number;
   source: string;
   source_id: string | null;
+  flag?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,7 +42,7 @@ export interface SplitRow {
   sort_order: number;
 }
 
-const toTransaction = (r: TxnRow, splits: SplitRow[]): Transaction =>
+const toTransaction = (r: TxnRow, splits: SplitRow[], tagIds: string[] = []): Transaction =>
   Transaction.parse({
     id: r.id,
     accountId: r.account_id,
@@ -46,11 +55,13 @@ const toTransaction = (r: TxnRow, splits: SplitRow[]): Transaction =>
     isPending: r.is_pending === 1,
     isTransfer: r.is_transfer === 1,
     transferPairId: r.transfer_pair_id,
+    refundOfId: r.refund_of_id,
     reviewState: r.review_state,
     suggestedCategoryId: r.suggested_category_id,
     suggestionConfidence: r.suggestion_confidence,
     source: r.source,
     sourceId: r.source_id,
+    flag: r.flag === 'cleared' ? null : (r.flag ?? null),
     splits: splits.map((s) => ({
       id: s.id,
       txnId: s.txn_id,
@@ -59,6 +70,7 @@ const toTransaction = (r: TxnRow, splits: SplitRow[]): Transaction =>
       periodId: s.period_id,
       sortOrder: s.sort_order,
     })),
+    tagIds,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   });
@@ -72,10 +84,12 @@ export async function splitsFor(
   if (txnIds.length === 0) return out;
   const { results } = await db
     .prepare(
-      // Driven from the id list so each lookup uses the txn_id index; filtering on user_id
-      // first made SQLite walk every split the user has.
+      // Driven from the id list so each lookup uses the txn_id index. CROSS JOIN pins that
+      // order: left to itself, production read every split the user has once per id (5M rows
+      // in a day, Oct 2026). No INDEXED BY: if the index were ever missing it would turn a
+      // slow query into a failing one.
       `SELECT s.id, s.txn_id, s.category_id, s.amount_cents, s.period_id, s.sort_order
-       FROM json_each(?2) j JOIN split s ON s.txn_id = j.value
+       FROM json_each(?2) j CROSS JOIN split s ON s.txn_id = j.value
        WHERE s.user_id = ?1 ORDER BY s.sort_order, s.id`,
     )
     .bind(userId, JSON.stringify(txnIds))
@@ -89,6 +103,11 @@ export interface TxnFilters {
   to?: string | undefined;
   accountIds?: string[] | undefined;
   categoryIds?: string[] | undefined;
+  notAccountIds?: string[] | undefined;
+  notCategoryIds?: string[] | undefined;
+  tagIds?: string[] | undefined;
+  /** With `categoryIds`: that category's splits in this month, spread parts included. */
+  period?: string | undefined;
   q?: string | undefined;
   reviewState?: ReviewState | undefined;
   direction?: 'in' | 'out' | undefined;
@@ -113,12 +132,12 @@ const SORTS: Record<TxnSort, { order: string; after: string }> = {
     after: '(t.posted_at > ? OR (t.posted_at = ? AND t.id > ?))',
   },
   amount_desc: {
-    order: 'ABS(t.amount_cents) DESC, t.id DESC',
+    order: 'ABS(t.amount_cents) DESC, t.id DESC /* scan-ok: sorting by size reads every row */',
     after:
       '(ABS(t.amount_cents) < CAST(? AS INTEGER) OR (ABS(t.amount_cents) = CAST(? AS INTEGER) AND t.id < ?))',
   },
   amount_asc: {
-    order: 'ABS(t.amount_cents) ASC, t.id ASC',
+    order: 'ABS(t.amount_cents) ASC, t.id ASC /* scan-ok: sorting by size reads every row */',
     after:
       '(ABS(t.amount_cents) > CAST(? AS INTEGER) OR (ABS(t.amount_cents) = CAST(? AS INTEGER) AND t.id > ?))',
   },
@@ -128,15 +147,74 @@ const SORTS: Record<TxnSort, { order: string; after: string }> = {
 export const sortKey = (t: Transaction, sort: TxnSort): string =>
   sort.startsWith('amount') ? String(Math.abs(t.amountCents)) : t.postedAt;
 
-export async function listTransactions(
+/**
+ * Where the rows come from. A narrow filter (a tag, or a category in one month) drives the read
+ * from its own index and looks each transaction up by id, so a rare tag reads its few rows
+ * instead of walking the whole history by date looking for them. CROSS JOIN pins that order.
+ */
+interface Driver {
+  from: string;
+  binds: unknown[];
+  /** The filter this driver already applies, left out of the WHERE. */
+  covers: 'tag' | 'category';
+}
+
+const driven = (sub: string) => `(${sub}) d CROSS JOIN txn t ON t.id = d.id`;
+
+function txnDriver(userId: UserId, f: TxnFilters, forTotals: boolean): Driver | null {
+  if (f.tagIds?.length)
+    return {
+      from: driven(
+        `SELECT DISTINCT tt.txn_id AS id FROM txn_tag tt INDEXED BY ix_txn_tag_tag
+         WHERE tt.user_id = ? AND tt.tag_id IN (SELECT value FROM json_each(?))`,
+      ),
+      binds: [userId, JSON.stringify(f.tagIds)],
+      covers: 'tag',
+    };
+  // A category in a month reads its splits there, spread parts included (SPEC §3.6).
+  if (f.categoryIds?.length && f.period)
+    return {
+      from: driven(
+        `SELECT DISTINCT s.txn_id AS id FROM split s INDEXED BY ix_split_period_cat
+         WHERE s.user_id = ? AND s.period_id = ? AND s.category_id IN (SELECT value FROM json_each(?))`,
+      ),
+      binds: [userId, f.period, JSON.stringify(f.categoryIds)],
+      covers: 'category',
+    };
+  // Totals sum every match, so they read a category's splits month by month off the
+  // (user, period, category) index rather than test every transaction. A split is never in a
+  // month before its transaction's, nor more than 11 after (a spread), so the dates bound it.
+  if (forTotals && f.categoryIds?.length)
+    return {
+      from: driven(
+        `WITH RECURSIVE m(id) AS (
+           SELECT COALESCE(substr(?, 1, 7),
+             (SELECT substr(MIN(posted_at), 1, 7) FROM txn WHERE user_id = ?))
+           UNION ALL SELECT strftime('%Y-%m', id || '-01', '+1 month') FROM m
+           WHERE id < COALESCE(strftime('%Y-%m', ?, '+11 months'),
+             (SELECT strftime('%Y-%m', MAX(posted_at), '+11 months') FROM txn WHERE user_id = ?)))
+         SELECT DISTINCT s.txn_id AS id FROM m
+         CROSS JOIN split s INDEXED BY ix_split_period_cat
+           ON s.user_id = ? AND s.period_id = m.id
+             AND s.category_id IN (SELECT value FROM json_each(?))`,
+      ),
+      binds: [f.from ?? null, userId, f.to ?? null, userId, userId, JSON.stringify(f.categoryIds)],
+      covers: 'category',
+    };
+  return null;
+}
+
+/**
+ * The WHERE clauses for a filter, each bound in order. Only the filters in use go into the
+ * SQL: an always-present "?n IS NULL OR …" clause stops SQLite using an index, so every list
+ * read and sorted the whole history.
+ */
+function txnWhere(
   userId: UserId,
-  db: D1Database,
   f: TxnFilters,
-  limit: number,
-): Promise<Transaction[]> {
-  const sort = SORTS[f.sort ?? 'date_desc'];
-  // Only the filters in use go into the SQL: an always-present "?n IS NULL OR …" clause
-  // stops SQLite using an index, so every list read and sorted the whole history.
+  sort: { after: string },
+  driver: Driver | null,
+): { where: string[]; binds: unknown[] } {
   const where: string[] = [];
   const binds: unknown[] = [];
   const add = (sql: string, ...values: unknown[]) => {
@@ -148,11 +226,29 @@ export async function listTransactions(
   if (f.accountIds?.length === 1) add('t.account_id = ?', f.accountIds[0]);
   else if (f.accountIds?.length)
     add('t.account_id IN (SELECT value FROM json_each(?))', JSON.stringify(f.accountIds));
-  if (f.categoryIds?.length)
+  if (driver?.covers !== 'category') {
+    if (f.categoryIds?.length && f.period)
+      add(
+        `t.id IN (SELECT s.txn_id FROM split s WHERE s.user_id = ? AND s.period_id = ?
+           AND s.category_id IN (SELECT value FROM json_each(?)))`,
+        userId,
+        f.period,
+        JSON.stringify(f.categoryIds),
+      );
+    else if (f.categoryIds?.length)
+      add(
+        `EXISTS (SELECT 1 FROM split s WHERE s.user_id = t.user_id AND s.txn_id = t.id
+           AND s.category_id IN (SELECT value FROM json_each(?)))`,
+        JSON.stringify(f.categoryIds),
+      );
+  }
+  if (f.notAccountIds?.length)
+    add('t.account_id NOT IN (SELECT value FROM json_each(?))', JSON.stringify(f.notAccountIds));
+  if (f.notCategoryIds?.length)
     add(
-      `EXISTS (SELECT 1 FROM split s WHERE s.user_id = t.user_id AND s.txn_id = t.id
+      `NOT EXISTS (SELECT 1 FROM split s WHERE s.user_id = t.user_id AND s.txn_id = t.id
          AND s.category_id IN (SELECT value FROM json_each(?)))`,
-      JSON.stringify(f.categoryIds),
+      JSON.stringify(f.notCategoryIds),
     );
   if (f.q) {
     const like = `%${f.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
@@ -171,19 +267,88 @@ export async function listTransactions(
   if (f.direction === 'in') add('t.amount_cents < 0');
   if (f.minCents != null) add('ABS(t.amount_cents) >= ?', f.minCents);
   if (f.maxCents != null) add('ABS(t.amount_cents) <= ?', f.maxCents);
+  return { where, binds };
+}
+
+export async function listTransactions(
+  userId: UserId,
+  db: D1Database,
+  f: TxnFilters,
+  limit: number,
+): Promise<Transaction[]> {
+  const sort = SORTS[f.sort ?? 'date_desc'];
+  const driver = txnDriver(userId, f, false);
+  const { where, binds } = txnWhere(userId, f, sort, driver);
   const { results } = await db
     .prepare(
-      `SELECT * FROM txn t WHERE t.user_id = ?${where.map((w) => ` AND ${w}`).join('')}
-       ORDER BY ${sort.order} LIMIT ?`,
+      `SELECT t.* FROM ${driver?.from ?? 'txn t'} WHERE t.user_id = ?${where
+        .map((w) => ` AND ${w}`)
+        .join('')}
+       ORDER BY ${sort.order}${driver ? ' /* scan-ok: sorts only the driven rows */' : ''} LIMIT ?`,
     )
-    .bind(userId, ...binds, limit)
+    .bind(...(driver?.binds ?? []), userId, ...binds, limit)
     .all<TxnRow>();
-  const splits = await splitsFor(
-    userId,
-    db,
-    results.map((r) => r.id),
-  );
-  return results.map((r) => toTransaction(r, splits.get(r.id) ?? []));
+  return withSplitsAndTags(userId, db, results);
+}
+
+/** Rows as transactions, with their splits and tags read in one round trip. */
+export async function withSplitsAndTags(
+  userId: UserId,
+  db: D1Database,
+  rows: TxnRow[],
+): Promise<Transaction[]> {
+  const ids = rows.map((r) => r.id);
+  const [splits, tags] = await Promise.all([
+    splitsFor(userId, db, ids),
+    tagIdsFor(userId, db, ids),
+  ]);
+  return rows.map((r) => toTransaction(r, splits.get(r.id) ?? [], tags.get(r.id) ?? []));
+}
+
+/**
+ * What a filter matches, summed: money out, money in, and how many. Transfers and dropped
+ * pending rows are left out, the same as spending everywhere else. Only asked for when a
+ * filter is on; with a search and no dates it reads the user's history once.
+ */
+export async function totalTransactions(
+  userId: UserId,
+  db: D1Database,
+  f: TxnFilters,
+): Promise<{ outCents: number; inCents: number; count: number }> {
+  const driver = txnDriver(userId, f, true);
+  const { where, binds } = txnWhere(userId, { ...f, after: undefined }, SORTS.date_desc, driver);
+  const row = await db
+    .prepare(
+      `SELECT COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents END), 0) AS out_cents,
+              COALESCE(-SUM(CASE WHEN t.amount_cents < 0 THEN t.amount_cents END), 0) AS in_cents,
+              COUNT(*) AS n
+       FROM ${driver?.from ?? 'txn t'} WHERE t.user_id = ? AND t.is_transfer = 0 AND t.review_state != 'dropped'${where
+         .map((w) => ` AND ${w}`)
+         .join('')} /* scan-ok: one pass over the filtered rows, on demand */`,
+    )
+    .bind(...(driver?.binds ?? []), userId, ...binds)
+    .first<{ out_cents: number; in_cents: number; n: number }>();
+  return { outCents: row?.out_cents ?? 0, inCents: row?.in_cents ?? 0, count: row?.n ?? 0 };
+}
+
+/** Tag ids per transaction, driven from the id list like `splitsFor`. */
+export async function tagIdsFor(
+  userId: UserId,
+  db: D1Database,
+  txnIds: string[],
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (txnIds.length === 0) return out;
+  const { results } = await db
+    .prepare(
+      `SELECT tt.txn_id, tt.tag_id FROM json_each(?2) j
+       CROSS JOIN txn_tag tt INDEXED BY sqlite_autoindex_txn_tag_1
+         ON tt.user_id = ?1 AND tt.txn_id = j.value`,
+    )
+    .bind(userId, JSON.stringify(txnIds))
+    .all<{ txn_id: string; tag_id: string }>();
+  for (const r of results) out.set(r.txn_id, [...(out.get(r.txn_id) ?? []), r.tag_id]);
+  return out;
 }
 
 /** How many transactions wait for review, read straight from the review index. */
@@ -213,7 +378,7 @@ export async function getTransaction(
 ): Promise<Transaction | null> {
   const row = await getTransactionRow(userId, db, id);
   if (!row) return null;
-  return toTransaction(row, (await splitsFor(userId, db, [id])).get(id) ?? []);
+  return (await withSplitsAndTags(userId, db, [row]))[0] ?? null;
 }
 
 export async function insertManualTransaction(
@@ -262,6 +427,7 @@ export async function updateTransactionFields(
     notes?: string | null | undefined;
     merchantDisplay?: string | null | undefined;
     reviewState?: ReviewState | undefined;
+    clearFlag?: true | undefined;
   },
 ): Promise<void> {
   await db
@@ -270,6 +436,7 @@ export async function updateTransactionFields(
          notes = CASE WHEN ?3 THEN ?4 ELSE notes END,
          merchant_display = CASE WHEN ?5 THEN ?6 ELSE merchant_display END,
          review_state = COALESCE(?7, review_state),
+         flag = CASE WHEN ?9 AND flag IS NOT NULL THEN 'cleared' ELSE flag END,
          updated_at = ?8
        WHERE user_id = ?1 AND id = ?2`,
     )
@@ -282,6 +449,7 @@ export async function updateTransactionFields(
       f.merchantDisplay ?? null,
       f.reviewState ?? null,
       nowIso(),
+      f.clearFlag ? 1 : 0,
     )
     .run();
 }
@@ -317,32 +485,64 @@ export async function replaceSplits(
   userId: UserId,
   db: D1Database,
   txn: TxnRow,
-  splits: { categoryId: string; amountCents: number }[],
+  splits: SplitWrite[],
 ): Promise<boolean> {
+  const stmts = await replaceSplitsStmts(userId, db, txn, splits);
+  if (!stmts) return false;
+  await db.batch(stmts);
+  return true;
+}
+
+/** A split to write. `periodId` defaults to the transaction's own month; a spread sets it. */
+export interface SplitWrite {
+  categoryId: string;
+  amountCents: number;
+  periodId?: string;
+}
+
+/**
+ * `replaceSplits` as statements, to batch atomically with whatever else changes alongside.
+ * Null when the split set is already exactly this. Every month the old or new splits sit in
+ * is refreshed, so un-spreading a charge clears the later months too.
+ */
+async function replaceSplitsStmts(
+  userId: UserId,
+  db: D1Database,
+  txn: TxnRow,
+  splits: SplitWrite[],
+): Promise<D1PreparedStatement[] | null> {
   const periodId = periodOf(txn.posted_at);
+  const rows = splits.map((s) => ({ ...s, periodId: s.periodId ?? periodId }));
   const old = (await splitsFor(userId, db, [txn.id])).get(txn.id) ?? [];
   const same =
-    old.length === splits.length &&
+    old.length === rows.length &&
     old.every(
       (o, i) =>
-        o.category_id === splits[i]?.categoryId && o.amount_cents === splits[i]?.amountCents,
+        o.category_id === rows[i]?.categoryId &&
+        o.amount_cents === rows[i]?.amountCents &&
+        o.period_id === rows[i]?.periodId,
     );
-  if (same) return false;
+  if (same) return null;
   const oldSplits = old.map((o) => ({ categoryId: o.category_id, amountCents: o.amount_cents }));
   const dropped = txn.review_state === 'dropped';
   const [newCounted, oldCounted] = await Promise.all([
-    dropped ? 0 : countedSum(userId, db, splits),
+    dropped ? 0 : countedSum(userId, db, rows),
     dropped ? 0 : countedSum(userId, db, oldSplits),
   ]);
   const delta = newCounted - oldCounted;
-  await db.batch([
+  const periods = new Set([
+    periodId,
+    ...old.map((o) => o.period_id),
+    ...rows.map((r) => r.periodId),
+  ]);
+  return [
     db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, txn.id),
-    ...splits.map((s, i) =>
+    ...rows.map((s, i) =>
       db
         .prepare(
           'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
         )
-        .bind(newId(), userId, txn.id, s.categoryId, s.amountCents, periodId, i),
+        .bind(newId(), userId, txn.id, s.categoryId, s.amountCents, s.periodId, i),
     ),
     db
       .prepare('UPDATE txn SET updated_at = ?3 WHERE user_id = ?1 AND id = ?2')
@@ -352,9 +552,23 @@ export async function replaceSplits(
     // (M2) — the closed period's carry-forward is stale either way. `flagClosedPeriodStmt`
     // is always safe to call; its own SQL no-ops on an open period.
     flagClosedPeriodStmt(userId, db, periodId, delta),
-    ...refreshAggregateStmts(userId, db, periodId),
-  ]);
-  return true;
+    ...[...periods].flatMap((p) => refreshAggregateStmts(userId, db, p)),
+  ];
+}
+
+/**
+ * Spread one charge evenly over `months` months from its own (SPEC §3.6); 1 puts it back in
+ * one month. Null when it's already spread that way.
+ */
+export async function spreadStmts(
+  userId: UserId,
+  db: D1Database,
+  txn: TxnRow,
+  categoryId: string,
+  months: number,
+): Promise<D1PreparedStatement[] | null> {
+  const parts = spreadParts(txn.amount_cents, months, periodOf(txn.posted_at), categoryId);
+  return replaceSplitsStmts(userId, db, txn, parts);
 }
 
 /**
@@ -368,12 +582,20 @@ export async function reassignSplitStmts(
   userId: UserId,
   db: D1Database,
   txn: { id: string; posted_at: string; amount_cents: number },
-  oldSplits: { category_id: string; amount_cents: number }[],
+  oldSplits: { category_id: string; amount_cents: number; period_id?: string }[],
   categoryId: string,
+  /** Keep a spread charge's months under the new category (SPEC §3.6); a transfer collapses. */
+  keepSpread = false,
 ): Promise<D1PreparedStatement[]> {
   if (oldSplits.length === 1 && oldSplits[0]?.category_id === categoryId) return [];
   const periodId = periodOf(txn.posted_at);
-  const newSplits = [{ categoryId, amountCents: txn.amount_cents }];
+  const months = keepSpread
+    ? spreadMonthsOf(
+        periodId,
+        oldSplits.map((s) => ({ categoryId: s.category_id, periodId: s.period_id ?? periodId })),
+      )
+    : 1;
+  const newSplits = spreadParts(txn.amount_cents, months, periodId, categoryId);
   const [newCounted, oldCounted] = await Promise.all([
     countedSum(userId, db, newSplits),
     countedSum(
@@ -383,18 +605,22 @@ export async function reassignSplitStmts(
     ),
   ]);
   const delta = newCounted - oldCounted;
+  const periods = new Set([periodId, ...newSplits.map((s) => s.periodId)]);
+  for (const s of oldSplits) if (s.period_id) periods.add(s.period_id);
   return [
     db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, txn.id),
-    db
-      .prepare(
-        'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)',
-      )
-      .bind(newId(), userId, txn.id, categoryId, txn.amount_cents, periodId),
+    ...newSplits.map((s, i) =>
+      db
+        .prepare(
+          'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+        )
+        .bind(newId(), userId, txn.id, categoryId, s.amountCents, s.periodId, i),
+    ),
     db
       .prepare('UPDATE txn SET updated_at = ?3 WHERE user_id = ?1 AND id = ?2')
       .bind(userId, txn.id, nowIso()),
     flagClosedPeriodStmt(userId, db, periodId, delta),
-    ...refreshAggregateStmts(userId, db, periodId),
+    ...[...periods].flatMap((p) => refreshAggregateStmts(userId, db, p)),
   ];
 }
 
@@ -418,12 +644,16 @@ export async function movePostedAtStmts(
     .bind(userId, row.id, newPostedAt, nowIso());
   if (oldPeriod === newPeriod) return [setDate];
   const counted = await countedCentsOf(userId, db, splits, row.review_state);
+  // Each split shifts by the same number of months, so a spread charge keeps its shape.
+  const shift = monthsBetween(oldPeriod, newPeriod);
+  const periods = new Set([oldPeriod, newPeriod]);
+  for (const s of splits) periods.add(s.period_id).add(addPeriods(s.period_id, shift));
   return [
     setDate,
     ...splits.map((s) =>
       db
         .prepare('UPDATE split SET period_id = ?3 WHERE user_id = ?1 AND id = ?2')
-        .bind(userId, s.id, newPeriod),
+        .bind(userId, s.id, addPeriods(s.period_id, shift)),
     ),
     ...(counted !== 0
       ? [
@@ -431,8 +661,7 @@ export async function movePostedAtStmts(
           flagClosedPeriodStmt(userId, db, newPeriod, counted),
         ]
       : []),
-    ...refreshAggregateStmts(userId, db, oldPeriod),
-    ...refreshAggregateStmts(userId, db, newPeriod),
+    ...[...periods].flatMap((p) => refreshAggregateStmts(userId, db, p)),
   ];
 }
 
@@ -514,17 +743,112 @@ export async function listAcceptable(
 }
 
 /**
- * Remove a transaction. Its splits go first through `replaceSplits` so the aggregates and a
+ * Accept each row's stored suggestion in one batch: its split becomes the suggested category
+ * (unless it already is exactly that), it's marked reviewed, and the merchant memory counts the
+ * choice. Returns the merchants touched, for the caller to refresh their suggestions.
+ *
+ * Batched instead of ~5 round trips per row — "accept all confident" can cover hundreds. The
+ * merchant-meta write that recordManualCategorisation (countTowardOffer: false) would do is
+ * skipped: it always writes back the same meta it read, a no-op.
+ */
+export async function acceptSuggestions(
+  userId: UserId,
+  db: D1Database,
+  rows: TxnRow[],
+): Promise<Set<string>> {
+  const merchants = new Set<string>();
+  if (rows.length === 0) return merchants;
+  const [oldSplits, { results: catRows }] = await Promise.all([
+    splitsFor(
+      userId,
+      db,
+      rows.map((r) => r.id),
+    ),
+    db
+      .prepare('SELECT id, budgeted FROM category WHERE user_id = ?1')
+      .bind(userId)
+      .all<{ id: string; budgeted: number }>(),
+  ]);
+  const budgetedCats = new Set(catRows.filter((r) => r.budgeted === 1).map((r) => r.id));
+  const now = nowIso();
+  const periods = new Set<string>();
+  const stmts: D1PreparedStatement[] = [];
+
+  for (const row of rows) {
+    const categoryId = row.suggested_category_id;
+    if (!categoryId) continue;
+    const periodId = periodOf(row.posted_at);
+    periods.add(periodId);
+    merchants.add(row.merchant_normalized);
+
+    const old = oldSplits.get(row.id) ?? [];
+    for (const o of old) periods.add(o.period_id);
+    // A spread charge keeps its months under the accepted category (SPEC §3.6).
+    const parts = spreadParts(
+      row.amount_cents,
+      spreadMonthsOf(
+        periodId,
+        old.map((o) => ({ categoryId: o.category_id, periodId: o.period_id })),
+      ),
+      periodId,
+      categoryId,
+    );
+    for (const p of parts) periods.add(p.periodId);
+    const same =
+      old.length === parts.length &&
+      parts.every(
+        (p, i) =>
+          old[i]?.category_id === p.categoryId &&
+          old[i]?.amount_cents === p.amountCents &&
+          old[i]?.period_id === p.periodId,
+      );
+    if (!same) {
+      const dropped = row.review_state === 'dropped';
+      const newCounted = !dropped && budgetedCats.has(categoryId) ? row.amount_cents : 0;
+      const oldCounted = dropped
+        ? 0
+        : old.reduce((n, s) => n + (budgetedCats.has(s.category_id) ? s.amount_cents : 0), 0);
+      stmts.push(
+        db.prepare('DELETE FROM split WHERE user_id = ?1 AND txn_id = ?2').bind(userId, row.id),
+        ...parts.map((p, i) =>
+          db
+            .prepare(
+              'INSERT INTO split (id, user_id, txn_id, category_id, amount_cents, period_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+            )
+            .bind(newId(), userId, row.id, categoryId, p.amountCents, p.periodId, i),
+        ),
+        // Flag even at delta = 0 — a same-total recategorization still moves money between two
+        // categories' own carry in a closed period (M2); flagClosedPeriodStmt no-ops if open.
+        flagClosedPeriodStmt(userId, db, periodId, newCounted - oldCounted),
+      );
+    }
+    stmts.push(
+      db
+        .prepare(
+          "UPDATE txn SET review_state = 'reviewed', updated_at = ?3 WHERE user_id = ?1 AND id = ?2",
+        )
+        .bind(userId, row.id, now),
+      bumpMemoryStmt(userId, db, row.merchant_normalized, categoryId),
+    );
+  }
+  for (const periodId of periods) stmts.push(...refreshAggregateStmts(userId, db, periodId));
+  await db.batch(stmts);
+  return merchants;
+}
+
+/**
+ * Remove a transaction. Its splits go first (as `replaceSplits` would) so the aggregates and a
  * closed month's recalculation flag stay right; a synced row leaves a tombstone so the next
- * sync doesn't bring it back.
+ * sync doesn't bring it back. One batch: if the row can't go, its splits and the spending
+ * cache stay exactly as they were.
  */
 export async function deleteTransaction(
   userId: UserId,
   db: D1Database,
   txn: TxnRow,
 ): Promise<void> {
-  await replaceSplits(userId, db, txn, []);
   await db.batch([
+    ...((await replaceSplitsStmts(userId, db, txn, [])) ?? []),
     db.prepare('DELETE FROM txn WHERE user_id = ?1 AND id = ?2').bind(userId, txn.id),
     ...(txn.source_id
       ? [
@@ -550,4 +874,132 @@ export async function deletedSourceIds(
     .bind(userId, accountId)
     .all<{ source_id: string }>();
   return new Set(results.map((r) => r.source_id));
+}
+
+export interface OutflowRow {
+  id: string;
+  accountId: string;
+  postedAt: string;
+  amountCents: number;
+  /** Lowercase description, normalized merchant and display name, for name matching. */
+  text: string;
+}
+
+/** Posted money out between two dates, newest first. A short window on the date index. */
+/** Posted rows in both directions over a short window, newest first, for rules that follow
+ *  transfers. Same index as `listOutflows`; bounded by date and by LIMIT. */
+export async function listPostedWindow(
+  userId: UserId,
+  db: D1Database,
+  from: string,
+  to: string,
+): Promise<OutflowRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, account_id, posted_at, amount_cents, descriptor_raw, merchant_normalized, merchant_display FROM txn
+       WHERE user_id = ?1 AND posted_at >= ?2 AND posted_at <= ?3 AND amount_cents != 0 AND is_pending = 0
+       ORDER BY posted_at DESC, id DESC LIMIT 500`,
+    )
+    .bind(userId, from, to)
+    .all<{
+      id: string;
+      account_id: string;
+      posted_at: string;
+      amount_cents: number;
+      descriptor_raw: string;
+      merchant_normalized: string;
+      merchant_display: string | null;
+    }>();
+  return results.map((r) => ({
+    id: r.id,
+    accountId: r.account_id,
+    postedAt: r.posted_at,
+    amountCents: r.amount_cents,
+    text: `${r.descriptor_raw} ${r.merchant_normalized} ${r.merchant_display ?? ''}`.toLowerCase(),
+  }));
+}
+
+export async function listOutflows(
+  userId: UserId,
+  db: D1Database,
+  from: string,
+  to: string,
+): Promise<OutflowRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, account_id, posted_at, amount_cents, descriptor_raw, merchant_normalized, merchant_display FROM txn
+       WHERE user_id = ?1 AND posted_at >= ?2 AND posted_at <= ?3 AND amount_cents > 0 AND is_pending = 0
+       ORDER BY posted_at DESC, id DESC LIMIT 500`,
+    )
+    .bind(userId, from, to)
+    .all<{
+      id: string;
+      account_id: string;
+      posted_at: string;
+      amount_cents: number;
+      descriptor_raw: string;
+      merchant_normalized: string;
+      merchant_display: string | null;
+    }>();
+  return results.map((r) => ({
+    id: r.id,
+    accountId: r.account_id,
+    postedAt: r.posted_at,
+    amountCents: r.amount_cents,
+    text: `${r.descriptor_raw} ${r.merchant_normalized} ${r.merchant_display ?? ''}`.toLowerCase(),
+  }));
+}
+
+/** What earlier refunds of this purchase already returned, as positive cents. */
+export async function refundedCents(
+  userId: UserId,
+  db: D1Database,
+  originalId: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      'SELECT COALESCE(-SUM(amount_cents), 0) AS n FROM txn WHERE user_id = ?1 AND refund_of_id = ?2',
+    )
+    .bind(userId, originalId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+export async function setRefundOf(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  originalId: string | null,
+): Promise<void> {
+  await db
+    .prepare('UPDATE txn SET refund_of_id = ?3, updated_at = ?4 WHERE user_id = ?1 AND id = ?2')
+    .bind(userId, id, originalId, nowIso())
+    .run();
+}
+
+export interface CashTxnRow {
+  posted_at: string;
+  amount_cents: number;
+  merchant_normalized: string;
+  is_pending: number;
+  source: string;
+  created_at: string;
+}
+
+/** One account's rows from `from` on (dropped ones aside): what moved its balance. */
+export async function accountTxnsSince(
+  userId: UserId,
+  db: D1Database,
+  accountId: string,
+  from: string,
+): Promise<CashTxnRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT posted_at, amount_cents, merchant_normalized, is_pending, source, created_at
+       FROM txn WHERE user_id = ?1 AND account_id = ?2 AND posted_at >= ?3
+         AND review_state != 'dropped'`,
+    )
+    .bind(userId, accountId, from)
+    .all<CashTxnRow>();
+  return results;
 }

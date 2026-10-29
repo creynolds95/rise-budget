@@ -16,6 +16,8 @@ const { values } = parseArgs({
   options: {
     yes: { type: 'boolean', default: false },
     print: { type: 'boolean', default: false },
+    // wrangler config to use; setup.ts passes the git-ignored wrangler.local.toml.
+    config: { type: 'string' },
   },
 });
 
@@ -55,7 +57,8 @@ if (values.print) {
   console.log(accessUrl);
 } else {
   try {
-    execFileSync('npx', ['wrangler', 'secret', 'put', 'SIMPLEFIN_ACCESS_URL'], {
+    const configArgs = values.config ? ['-c', values.config] : [];
+    execFileSync('npx', ['wrangler', 'secret', 'put', 'SIMPLEFIN_ACCESS_URL', ...configArgs], {
       input: accessUrl,
       stdio: ['pipe', 'inherit', 'inherit'],
     });

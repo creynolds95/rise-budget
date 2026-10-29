@@ -8,7 +8,8 @@ import { BrowserRouter } from 'react-router';
 import { App } from './App';
 import { ApiError, onAuthChange } from './lib/api';
 import { AuthProvider } from './lib/auth';
-import { installEdgeGuard, installNoZoom } from './lib/gestures';
+import { installEdgeGuard, installNoZoom, installSelectOnFocus } from './lib/gestures';
+import { installKeyboardAvoidance } from './lib/keyboard';
 import './styles.css';
 
 /**
@@ -24,6 +25,9 @@ const queryClient = new QueryClient({
       // Every refetch bills D1 rows against the free daily cap, so a screen revisited within
       // two minutes reuses what it has. Mutations invalidate the affected keys regardless.
       staleTime: 120_000,
+      // Switching back to the app refetches every query on screen. Data only changes through
+      // this app or a bank sync a few times a day, so a quick app switch reuses what it has.
+      refetchOnWindowFocus: (q) => Date.now() - q.state.dataUpdatedAt > 15 * 60_000,
       // Kept as long as the persisted copy, or a cold start offline would find nothing.
       gcTime: CACHE_MAX_AGE,
       retry: (n, e) =>
@@ -41,6 +45,8 @@ const persister = createAsyncStoragePersister({
 
 installNoZoom();
 installEdgeGuard();
+installSelectOnFocus();
+installKeyboardAvoidance();
 
 // Signing out takes this device's copy of the data with it.
 onAuthChange((signedIn) => {
@@ -56,7 +62,10 @@ createRoot(document.getElementById('root') as HTMLElement).render(
       persistOptions={{ persister, maxAge: CACHE_MAX_AGE, buster: __APP_VERSION__ }}
     >
       <AuthProvider>
-        <BrowserRouter>
+        {/* Navigations commit at once, not in a React transition: a screen slide (lib/transition.ts)
+            renders the next screen inside flushSync and starts moving it straight after, and a
+            transition would leave the old screen in place for the first part of the slide. */}
+        <BrowserRouter useTransitions={false}>
           <App />
         </BrowserRouter>
       </AuthProvider>

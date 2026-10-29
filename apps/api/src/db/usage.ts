@@ -5,21 +5,58 @@
 
 export const dayKey = (d: Date) => Number(d.toISOString().slice(0, 10).replaceAll('-', ''));
 
+/**
+ * A request that read fewer rows than this isn't worth its own per-route row: the routes table
+ * is for finding the heavy readers, and upserting it on every small request was a third of the
+ * meter's own writes.
+ */
+export const ROUTE_USAGE_MIN_ROWS = 500;
+
 export async function addUsage(
   db: D1Database,
   now: Date,
   rowsRead: number,
   rowsWritten: number,
   requests: number,
+  route?: string,
 ): Promise<void> {
-  await db
+  const day = dayKey(now);
+  const stmts = [
+    db
+      .prepare(
+        `INSERT INTO usage_day (day, rows_read, rows_written, requests) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(day) DO UPDATE SET rows_read = rows_read + ?2, rows_written = rows_written + ?3,
+           requests = requests + ?4 /* system:usage */`,
+      )
+      .bind(day, rowsRead, rowsWritten, requests),
+  ];
+  if (route && rowsRead >= ROUTE_USAGE_MIN_ROWS) {
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO usage_route (day, route, rows_read, requests) VALUES (?1, ?2, ?3, ?4)
+           ON CONFLICT(day, route) DO UPDATE SET rows_read = rows_read + ?3,
+             requests = requests + ?4 /* system:usage */`,
+        )
+        .bind(day, route, rowsRead, requests),
+    );
+  }
+  await db.batch(stmts);
+}
+
+/** The routes that read the most on one UTC day. */
+export async function listRouteUsage(
+  db: D1Database,
+  now: Date,
+  limit: number,
+): Promise<{ route: string; rows_read: number; requests: number }[]> {
+  const { results } = await db
     .prepare(
-      `INSERT INTO usage_day (day, rows_read, rows_written, requests) VALUES (?1, ?2, ?3, ?4)
-       ON CONFLICT(day) DO UPDATE SET rows_read = rows_read + ?2, rows_written = rows_written + ?3,
-         requests = requests + ?4 /* system:usage */`,
+      'SELECT route, rows_read, requests FROM usage_route WHERE day = ?1 ORDER BY rows_read DESC LIMIT ?2 /* system:usage */',
     )
-    .bind(dayKey(now), rowsRead, rowsWritten, requests)
-    .run();
+    .bind(dayKey(now), limit)
+    .all<{ route: string; rows_read: number; requests: number }>();
+  return results;
 }
 
 export async function listUsage(
@@ -38,8 +75,10 @@ export async function listUsage(
 }
 
 /** Keeps the table small; a year of daily rows is nothing, so this only runs nightly. */
-export function pruneUsageStmt(db: D1Database, now: Date): D1PreparedStatement {
-  return db
-    .prepare('DELETE FROM usage_day WHERE day < ?1 /* system:usage */')
-    .bind(dayKey(new Date(now.getTime() - 400 * 86_400_000)));
+export function pruneUsageStmts(db: D1Database, now: Date): D1PreparedStatement[] {
+  const before = dayKey(new Date(now.getTime() - 400 * 86_400_000));
+  return [
+    db.prepare('DELETE FROM usage_day WHERE day < ?1 /* system:usage */').bind(before),
+    db.prepare('DELETE FROM usage_route WHERE day < ?1 /* system:usage */').bind(before),
+  ];
 }

@@ -1,4 +1,4 @@
-import type { Account, Category, CategoryGroup } from '@rise/shared/schemas';
+import type { Account, Category, CategoryGroup, TagSummary } from '@rise/shared/schemas';
 import { useState, type ReactNode } from 'react';
 import { KIND_GROUPS } from '../routes/Accounts';
 import { centsToInput, parseMoney } from '../lib/money';
@@ -14,9 +14,9 @@ import { Button } from './primitives/Button';
 import { Group, RadioRow } from './primitives/Group';
 import { Icon } from './primitives/Icon';
 import { Chevron } from './primitives/Rows';
-import { Sheet } from './primitives/Sheet';
+import { Leaving, Sheet } from './primitives/Sheet';
 
-type Page = 'root' | 'accounts' | 'categories' | 'amount' | 'review';
+type Page = 'root' | 'accounts' | 'categories' | 'tags' | 'amount' | 'review';
 
 /**
  * Monarch-style filters: date, sort, then a list of things to narrow by, each opening its own
@@ -28,6 +28,7 @@ export function FilterSheet({
   accounts,
   categories,
   groups,
+  tags = [],
   onApply,
   onClose,
 }: {
@@ -36,19 +37,24 @@ export function FilterSheet({
   accounts: Account[];
   categories: Category[];
   groups: CategoryGroup[];
+  tags?: TagSummary[];
   onApply: (f: Filters) => void;
   onClose: () => void;
 }) {
-  if (!open) return null;
   return (
-    <Inner
-      value={value}
-      accounts={accounts}
-      categories={categories}
-      groups={groups}
-      onApply={onApply}
-      onClose={onClose}
-    />
+    <Leaving>
+      {open && (
+        <Inner
+          value={value}
+          accounts={accounts}
+          categories={categories}
+          groups={groups}
+          tags={tags}
+          onApply={onApply}
+          onClose={onClose}
+        />
+      )}
+    </Leaving>
   );
 }
 
@@ -57,6 +63,7 @@ function Inner({
   accounts,
   categories,
   groups,
+  tags,
   onApply,
   onClose,
 }: {
@@ -64,6 +71,7 @@ function Inner({
   accounts: Account[];
   categories: Category[];
   groups: CategoryGroup[];
+  tags: TagSummary[];
   onApply: (f: Filters) => void;
   onClose: () => void;
 }) {
@@ -75,6 +83,7 @@ function Inner({
     root: 'Filters',
     accounts: 'Accounts',
     categories: 'Categories',
+    tags: 'Tags',
     amount: 'Amount',
     review: 'Review status',
   };
@@ -84,9 +93,28 @@ function Inner({
       : ids.length === 1
         ? (name(ids[0] as string) ?? '1')
         : `${ids.length} of ${total}`;
+  const withNot = (s: string, not: boolean) => (not && s !== 'All' ? `Not ${s}` : s);
 
   return (
-    <Sheet open title={TITLES[page]} onClose={onClose}>
+    <Sheet
+      open
+      title={TITLES[page]}
+      onClose={onClose}
+      footer={
+        <div className="flex gap-3">
+          <Button
+            variant="quiet"
+            className="flex-1 border border-hairline bg-surface"
+            onClick={() => setF({ ...EMPTY, q: f.q })}
+          >
+            Clear all
+          </Button>
+          <Button className="flex-1" onClick={() => onApply(f)}>
+            Apply
+          </Button>
+        </div>
+      }
+    >
       {page !== 'root' && (
         <button
           onClick={() => setPage('root')}
@@ -157,18 +185,31 @@ function Inner({
           <Group title="Filter by">
             <DrillRow
               label="Accounts"
-              value={summary(f.accounts, live.length, (id) => live.find((a) => a.id === id)?.name)}
+              value={withNot(
+                summary(f.accounts, live.length, (id) => live.find((a) => a.id === id)?.name),
+                f.notAccounts,
+              )}
               onClick={() => setPage('accounts')}
             />
             <DrillRow
               label="Categories"
-              value={summary(
-                f.categories,
-                categories.length,
-                (id) => categories.find((c) => c.id === id)?.name,
+              value={withNot(
+                summary(
+                  f.categories,
+                  categories.length,
+                  (id) => categories.find((c) => c.id === id)?.name,
+                ),
+                f.notCategories,
               )}
               onClick={() => setPage('categories')}
             />
+            {tags.length > 0 && (
+              <DrillRow
+                label="Tags"
+                value={summary(f.tags, tags.length, (id) => tags.find((t) => t.id === id)?.name)}
+                onClick={() => setPage('tags')}
+              />
+            )}
             <DrillRow
               label="Amount"
               value={
@@ -200,6 +241,8 @@ function Inner({
           }))}
           selected={f.accounts}
           onChange={(accounts) => set({ accounts })}
+          not={f.notAccounts}
+          onNot={(notAccounts) => set({ notAccounts })}
         />
       )}
 
@@ -213,6 +256,16 @@ function Inner({
           }))}
           selected={f.categories}
           onChange={(categories) => set({ categories })}
+          not={f.notCategories}
+          onNot={(notCategories) => set({ notCategories })}
+        />
+      )}
+
+      {page === 'tags' && (
+        <CheckList
+          groups={[{ title: '', items: tags.map((t) => ({ id: t.id, label: t.name })) }]}
+          selected={f.tags}
+          onChange={(tags) => set({ tags })}
         />
       )}
 
@@ -238,19 +291,6 @@ function Inner({
           ))}
         </Group>
       )}
-
-      <div className="sticky bottom-0 -mx-4 mt-6 flex gap-3 bg-canvas px-4 pt-2 md:-mx-6 md:px-6">
-        <Button
-          variant="quiet"
-          className="flex-1 border border-hairline bg-surface"
-          onClick={() => setF({ ...EMPTY, q: f.q })}
-        >
-          Clear all
-        </Button>
-        <Button className="flex-1" onClick={() => onApply(f)}>
-          Apply
-        </Button>
-      </div>
     </Sheet>
   );
 }
@@ -269,7 +309,7 @@ function Pill({
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`min-h-9 rounded-full px-3.5 type-caption font-medium ${
+      className={`hit-44 min-h-9 rounded-full px-3.5 type-caption font-medium ${
         on ? 'bg-sage-700 text-surface' : 'bg-canvas text-ink ring-1 ring-hairline'
       }`}
     >
@@ -306,10 +346,15 @@ function CheckList({
   groups,
   selected,
   onChange,
+  not,
+  onNot,
 }: {
   groups: { title: string; items: { id: string; label: string }[] }[];
   selected: string[];
   onChange: (ids: string[]) => void;
+  /** Omitted for lists that only include (tags). */
+  not?: boolean;
+  onNot?: (not: boolean) => void;
 }) {
   const sel = new Set(selected);
   const toggle = (id: string) => {
@@ -321,10 +366,18 @@ function CheckList({
   const visible = groups.filter((g) => g.items.length > 0);
   return (
     <>
+      {onNot && (
+        <div className="flex gap-2 px-1">
+          <Pill on={!not} onClick={() => onNot(false)}>
+            Include
+          </Pill>
+          <Pill on={!!not} onClick={() => onNot(true)}>
+            Exclude
+          </Pill>
+        </div>
+      )}
       <p className="px-1 type-caption text-ink-muted">
-        {selected.length === 0
-          ? 'Showing all. Pick any to narrow it down.'
-          : `${selected.length} selected`}
+        {selected.length === 0 ? 'All' : `${selected.length} selected`}
         {selected.length > 0 && (
           <button className="ml-2 font-medium text-sage-700" onClick={() => onChange([])}>
             Clear
@@ -332,7 +385,7 @@ function CheckList({
         )}
       </p>
       {visible.map((g) => (
-        <Group key={g.title} title={g.title}>
+        <Group key={g.title} title={g.title || undefined}>
           {g.items.map((it) => (
             <label
               key={it.id}

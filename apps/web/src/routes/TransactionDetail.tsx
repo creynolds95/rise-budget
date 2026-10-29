@@ -1,3 +1,6 @@
+import { REFUND_MAX_DAYS, suggestRefundOriginals } from '@rise/shared/categorize';
+import { Loading } from '../components/Pending';
+import { surplusMatch, type Cadence } from '@rise/shared/recurring';
 import type { Transaction } from '@rise/shared/schemas';
 import { merchantName } from '../lib/merchant';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -5,6 +8,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { RuleOfferSheet } from '../components/RuleOfferSheet';
+import { RuleSheet } from '../components/RuleSheet';
+import { SpreadSheet } from '../components/SpreadSheet';
+import { TagSheet } from '../components/TagSheet';
 import { ScheduleFields } from '../components/ScheduleFields';
 import { TxnAmount } from '../components/TxnAmount';
 import { TxnRow } from '../components/TxnRow';
@@ -15,7 +21,7 @@ import { MoneyText } from '../components/primitives/MoneyText';
 import { Menu } from '../components/primitives/Menu';
 import { ValueRow } from '../components/primitives/Rows';
 import { navigateWithTransition } from '../lib/transition';
-import { Sheet } from '../components/primitives/Sheet';
+import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
 import { daysBetween, longDate, shortDate } from '../lib/dates';
@@ -23,15 +29,20 @@ import { formatCents } from '../lib/money';
 import { backFrom } from '../lib/nav';
 import {
   useAccounts,
+  useCashToPayday,
   useCategories,
   useInvalidateMoney,
+  useMe,
   usePatchTransaction,
   useRecurring,
+  useTags,
   useTransaction,
   useTransactions,
 } from '../lib/queries';
 import { draftFrom, schedulePayload, type ScheduleDraft } from '../lib/schedule';
 import { splitProblem, withRemainder, type DraftSplit } from '../lib/splits';
+import { spreadMonths } from '../lib/spread';
+import { flagText } from '../lib/alerts';
 import type { MerchantView, TransactionPage } from '../lib/types';
 
 const isAmazon = (m: string) => /AMAZON|AMZN/.test(m.toUpperCase());
@@ -45,6 +56,7 @@ export function TransactionDetail() {
   const accounts = useAccounts().data ?? [];
   const categories = useCategories().data ?? [];
   const patch = usePatchTransaction();
+  const me = useMe();
   const invalidate = useInvalidateMoney();
   const qc = useQueryClient();
   const [picking, setPicking] = useState(false);
@@ -52,7 +64,12 @@ export function TransactionDetail() {
   const [deleting, setDeleting] = useState(false);
   const navigate = useNavigate();
   const [linking, setLinking] = useState(false);
+  const [refunding, setRefunding] = useState(false);
   const [taggingWithdrawal, setTaggingWithdrawal] = useState(false);
+  const [ruling, setRuling] = useState(false);
+  const [tagging, setTagging] = useState(false);
+  const [spreading, setSpreading] = useState(false);
+  const allTags = useTags().data ?? [];
   const [offer, setOffer] = useState<Parameters<typeof RuleOfferSheet>[0]['offer']>(null);
   const [error, setError] = useState<string | null>(null);
   const recurring = useRecurring();
@@ -75,6 +92,13 @@ export function TransactionDetail() {
     enabled: !!t,
   });
   const same = useTransactions({ q: t?.merchantNormalized ?? '' });
+  const surplus = useCashToPayday();
+  // A transfer's other leg says whether it is a card payment, which Surplus never counts.
+  const pair = useQuery({
+    queryKey: ['txn', t?.transferPairId],
+    queryFn: () => get<Transaction>(`/transactions/${t?.transferPairId}`),
+    enabled: !!t?.transferPairId,
+  });
 
   if (!t) {
     return (
@@ -82,7 +106,13 @@ export function TransactionDetail() {
         header={{ back, title: '' }}
         identity={{
           label: txn.isError ? 'Not found' : 'Transaction',
-          hero: txn.isError ? '—' : <Skeleton className="h-11 w-40" />,
+          hero: txn.isError ? (
+            '—'
+          ) : (
+            <Loading compact>
+              <Skeleton className="h-11 w-40" />
+            </Loading>
+          ),
         }}
       />
     );
@@ -99,6 +129,32 @@ export function TransactionDetail() {
   const withdrawalRule = recurring.data?.find(
     (s) => s.source === 'manual' && s.merchantNormalized === t.merchantNormalized,
   );
+  // Only the cash accounts carry the row: anywhere else Surplus never counts anything.
+  const inSurplus =
+    surplus.data?.cashAccounts.some((a) => a.id === t.accountId) && (!t.transferPairId || pair.data)
+      ? surplusMatch(
+          {
+            merchant: t.merchantNormalized,
+            amountCents: t.amountCents,
+            date: t.postedAt,
+            accountId: t.accountId,
+            isTransfer: t.isTransfer,
+            pairAccountId: pair.data?.accountId ?? null,
+          },
+          surplus.data.schedules.map((s) => ({
+            merchant: s.merchant,
+            name: s.displayName,
+            amountCents: s.kind === 'income' ? -s.amountCents : s.amountCents,
+            cadence: s.cadence as Cadence,
+            anchorDays: s.anchorDays,
+            nextExpectedDate: s.nextExpectedDate,
+            isHandAdded: s.isHandAdded,
+          })),
+          new Map(surplus.data.suggestions.map((s) => [s.merchant, s.displayName])),
+          new Set(surplus.data.cashAccounts.map((a) => a.id)),
+          new Set(accounts.filter((a) => a.kind === 'credit').map((a) => a.id)),
+        )
+      : null;
   const refresh = async () => {
     await invalidate();
     await Promise.all(
@@ -122,6 +178,9 @@ export function TransactionDetail() {
     categories.some((x) => x.id === c),
   );
   const needsCategory = !t.isTransfer && t.splits.length === 0;
+  const spread = spreadMonths(t);
+  const flag = flagText(t.flag, me.data?.settings.alerts);
+  const oneCategory = new Set(t.splits.map((s) => s.categoryId)).size === 1;
   const amazon = isAmazon(t.merchantNormalized);
   const others = (same.data?.pages.flatMap((p) => p.items) ?? []).filter(
     (x) => x.id !== id && x.merchantNormalized === t.merchantNormalized,
@@ -137,12 +196,21 @@ export function TransactionDetail() {
             <Menu
               label="Transaction options"
               items={[
-                ...(!t.isTransfer
+                ...(!t.isTransfer && spread === 1
                   ? [
                       {
                         label: t.splits.length > 1 ? 'Edit split' : 'Split transaction',
                         icon: 'sliders' as const,
                         onSelect: () => setSplitting(true),
+                      },
+                    ]
+                  : []),
+                ...(!t.isTransfer && t.reviewState !== 'dropped' && oneCategory
+                  ? [
+                      {
+                        label: spread > 1 ? 'Change spread' : 'Spread over months',
+                        icon: 'calendar' as const,
+                        onSelect: () => setSpreading(true),
                       },
                     ]
                   : []),
@@ -182,6 +250,28 @@ export function TransactionDetail() {
                       icon: 'flow' as const,
                       onSelect: () => setLinking(true),
                     },
+                ...(income && !t.isTransfer
+                  ? [
+                      t.refundOfId
+                        ? {
+                            label: 'Unlink from purchase',
+                            icon: 'refresh' as const,
+                            onSelect: async () => {
+                              try {
+                                await api('DELETE', `/transactions/${id}/refund-link`);
+                                await refresh();
+                              } catch (e) {
+                                setError(e instanceof ApiError ? e.message : 'Could not unlink.');
+                              }
+                            },
+                          }
+                        : {
+                            label: 'Link as a refund',
+                            icon: 'refresh' as const,
+                            onSelect: () => setRefunding(true),
+                          },
+                    ]
+                  : []),
                 ...(!t.isTransfer
                   ? [
                       withdrawalRule
@@ -207,6 +297,11 @@ export function TransactionDetail() {
                           },
                     ]
                   : []),
+                {
+                  label: merchant.data?.rule ? 'Edit rule' : 'Create rule',
+                  icon: 'filter' as const,
+                  onSelect: () => setRuling(true),
+                },
                 {
                   label: 'Delete transaction',
                   icon: 'trash' as const,
@@ -259,10 +354,37 @@ export function TransactionDetail() {
               <span className="break-all">{t.descriptorRaw}</span>
             </ValueRow>
             <ValueRow label="Account">{account?.name ?? '—'}</ValueRow>
+            {flag && (
+              <div className="flex min-h-12 items-center justify-between gap-4 border-b border-hairline py-0.5">
+                <span className="flex items-center gap-2">
+                  <span aria-hidden className="size-2 shrink-0 rounded-full bg-gold" />
+                  {flag}
+                </span>
+                <button
+                  type="button"
+                  className="-mr-2 min-h-11 shrink-0 px-2 font-semibold text-sage-700"
+                  onClick={() => void save({ id, clearFlag: true })}
+                >
+                  Looks fine
+                </button>
+              </div>
+            )}
             {t.isTransfer ? (
               <ValueRow label="Category" muted>
                 Transfer, not spending
               </ValueRow>
+            ) : spread > 1 ? (
+              <>
+                <ValueRow label="Category" onClick={() => setPicking(true)}>
+                  {catName(t.splits[0]?.categoryId ?? '')}
+                </ValueRow>
+                <ValueRow label="Spread" onClick={() => setSpreading(true)}>
+                  <span className="tabular-nums">
+                    {spread} months · <MoneyText cents={Math.trunc(t.amountCents / spread)} /> a
+                    month
+                  </span>
+                </ValueRow>
+              </>
             ) : t.splits.length > 1 ? (
               t.splits.map((s) => (
                 <ValueRow
@@ -278,6 +400,14 @@ export function TransactionDetail() {
                 {t.splits[0] ? catName(t.splits[0].categoryId) : 'Choose…'}
               </ValueRow>
             )}
+            <ValueRow label="Tags" onClick={() => setTagging(true)}>
+              {t.tagIds.length
+                ? t.tagIds
+                    .map((tid) => allTags.find((x) => x.id === tid)?.name)
+                    .filter(Boolean)
+                    .join(', ')
+                : 'None'}
+            </ValueRow>
             <label className="relative block">
               <ValueRow label="Date" onClick={() => {}}>
                 {longDate(t.postedAt)}
@@ -290,6 +420,23 @@ export function TransactionDetail() {
                 className="absolute inset-0 size-full cursor-pointer opacity-0"
               />
             </label>
+            {inSurplus &&
+              (inSurplus.state === 'untracked' ? (
+                <ValueRow label="Surplus" muted>
+                  Not tracked
+                </ValueRow>
+              ) : (
+                <ValueRow
+                  label="Surplus"
+                  onClick={() => navigateWithTransition(navigate, '/cash-to-payday', 'forward')}
+                >
+                  {inSurplus.state === 'tracked'
+                    ? inSurplus.name
+                    : inSurplus.state === 'likely'
+                      ? `Likely ${inSurplus.name}`
+                      : 'Suggested, not added'}
+                </ValueRow>
+              ))}
             <div className="flex min-h-12 items-center justify-between gap-4 py-3">
               <span className="shrink-0 text-ink-muted">Notes</span>
               <NotesField value={t.notes} onCommit={(notes) => void save({ id, notes })} />
@@ -343,16 +490,18 @@ export function TransactionDetail() {
           void fileAs(c);
         }}
       />
-      {splitting && (
-        <SplitSheet
-          t={t}
-          onClose={() => setSplitting(false)}
-          onSaved={async () => {
-            setSplitting(false);
-            await refresh();
-          }}
-        />
-      )}
+      <Leaving>
+        {splitting && (
+          <SplitSheet
+            t={t}
+            onClose={() => setSplitting(false)}
+            onSaved={async () => {
+              setSplitting(false);
+              await refresh();
+            }}
+          />
+        )}
+      </Leaving>
       <RenameSheet
         open={renaming}
         merchant={t.merchantNormalized}
@@ -360,15 +509,59 @@ export function TransactionDetail() {
         onClose={() => setRenaming(false)}
         onSaved={refresh}
       />
-      {linking && <LinkTransferSheet t={t} onClose={() => setLinking(false)} onLinked={refresh} />}
-      {taggingWithdrawal && (
-        <RecurringWithdrawalSheet
-          t={t}
-          income={income}
-          onClose={() => setTaggingWithdrawal(false)}
-          onSaved={refresh}
-        />
-      )}
+      <Leaving>
+        {refunding && (
+          <LinkRefundSheet t={t} onClose={() => setRefunding(false)} onLinked={refresh} />
+        )}
+        {linking && (
+          <LinkTransferSheet t={t} onClose={() => setLinking(false)} onLinked={refresh} />
+        )}
+      </Leaving>
+      <Leaving>
+        {taggingWithdrawal && (
+          <RecurringWithdrawalSheet
+            t={t}
+            income={income}
+            onClose={() => setTaggingWithdrawal(false)}
+            onSaved={refresh}
+          />
+        )}
+      </Leaving>
+      <Leaving>
+        {ruling && (
+          <RuleSheet
+            rule={merchant.data?.rule ?? null}
+            initial={{
+              matchField: 'merchant',
+              matchType: 'equals',
+              matchValue: t.merchantNormalized,
+              categoryId: t.splits.length === 1 ? (t.splits[0]?.categoryId ?? '') : '',
+            }}
+            onClose={() => setRuling(false)}
+            onSaved={() =>
+              Promise.all(
+                ['rules', 'review-queue', 'queue-count', 'merchant'].map((k) =>
+                  qc.invalidateQueries({ queryKey: [k] }),
+                ),
+              )
+            }
+          />
+        )}
+      </Leaving>
+      <Leaving>
+        {tagging && (
+          <TagSheet
+            open
+            txnId={t.id}
+            selected={t.tagIds}
+            onClose={() => setTagging(false)}
+            onSaved={refresh}
+          />
+        )}
+      </Leaving>
+      <Leaving>
+        {spreading && <SpreadSheet t={t} onClose={() => setSpreading(false)} onSaved={refresh} />}
+      </Leaving>
       <RuleOfferSheet offer={offer} onClose={() => setOffer(null)} />
     </>
   );
@@ -586,7 +779,7 @@ function RenameSheet({
 }
 
 /**
- * Caleb's "Recurring Cash Withdrawal" tag, and the same for a paycheck: a real cash auto-draft
+ * The owner's "Recurring Cash Withdrawal" tag, and the same for a paycheck: a real cash auto-draft
  * (a specific student loan, a mortgage) or income (a semimonthly paycheck) too new or too
  * easily confused with a sibling for auto-detection to find on its own. The amount comes from
  * this transaction, never typed in. Feeds the cash-to-payday tool only — it doesn't touch this
@@ -643,6 +836,81 @@ function RecurringWithdrawalSheet({
       >
         {saving ? 'Saving…' : 'Save'}
       </Button>
+    </Sheet>
+  );
+}
+
+/** Purchases this refund could reverse: earlier outflows, best match first. */
+function LinkRefundSheet({
+  t,
+  onClose,
+  onLinked,
+}: {
+  t: Transaction;
+  onClose: () => void;
+  onLinked: () => Promise<void>;
+}) {
+  const accounts = useAccounts().data ?? [];
+  const [error, setError] = useState<string | null>(null);
+  const around = (d: number) =>
+    new Date(Date.parse(`${t.postedAt}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
+  const earlier = useQuery({
+    queryKey: ['txns', 'refund-candidates', t.id],
+    queryFn: () =>
+      get<TransactionPage>(`/transactions?from=${around(-REFUND_MAX_DAYS)}&to=${t.postedAt}`),
+  });
+  const pool = earlier.data?.items ?? [];
+  const asTxn = (o: Transaction) => ({
+    id: o.id,
+    accountId: o.accountId,
+    postedAt: o.postedAt,
+    amountCents: o.amountCents,
+    isTransfer: o.isTransfer,
+  });
+  const refunded = (id: string) =>
+    pool.reduce((sum, o) => (o.refundOfId === id ? sum - o.amountCents : sum), 0);
+  const candidates = suggestRefundOriginals(asTxn(t), pool.map(asTxn), refunded)
+    .map((c) => pool.find((o) => o.id === c.id))
+    .filter((o): o is Transaction => !!o)
+    .slice(0, 20);
+  return (
+    <Sheet open title="Link as a refund" onClose={onClose}>
+      <p className="text-ink-muted">Pick the purchase. This refund moves into its category.</p>
+      {earlier.isPending && <Skeleton className="mt-4 h-12 w-full" />}
+      {earlier.data && candidates.length === 0 && (
+        <p className="mt-4">
+          No purchase this refund could cover in the last {REFUND_MAX_DAYS} days.
+        </p>
+      )}
+      <ul className="mt-2">
+        {candidates.map((o) => (
+          <li key={o.id}>
+            <button
+              className="flex min-h-12 w-full items-center justify-between border-b border-hairline text-left active:bg-sage-100"
+              onClick={async () => {
+                try {
+                  await api('POST', `/transactions/${t.id}/refund-link`, {
+                    originalTxnId: o.id,
+                  });
+                  await onLinked();
+                  onClose();
+                } catch (e) {
+                  setError(e instanceof ApiError ? e.message : 'Could not link.');
+                }
+              }}
+            >
+              <span>
+                {merchantName(o)}
+                <span className="block type-caption text-ink-faint">
+                  {shortDate(o.postedAt)} · {accounts.find((a) => a.id === o.accountId)?.name}
+                </span>
+              </span>
+              <MoneyText cents={o.amountCents} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && <p className="mt-2 text-clay">{error}</p>}
     </Sheet>
   );
 }

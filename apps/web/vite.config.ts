@@ -7,13 +7,27 @@ import { defineConfig } from 'vitest/config';
 const env =
   (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
 
+const build = {
+  version: new Date().toISOString(),
+  commit: env['GITHUB_SHA']?.slice(0, 7) ?? 'local',
+};
+
 export default defineConfig({
   define: {
     // Each build busts the persisted cache, so old data shapes never meet new code.
-    __APP_VERSION__: JSON.stringify(new Date().toISOString()),
-    __APP_COMMIT__: JSON.stringify(env['GITHUB_SHA']?.slice(0, 7) ?? 'local'),
+    __APP_VERSION__: JSON.stringify(build.version),
+    __APP_COMMIT__: JSON.stringify(build.commit),
   },
   plugins: [
+    // The deployed build's identity, outside the service worker's precache, so Settings can
+    // tell a stale installed app from the latest deploy.
+    {
+      name: 'rise-version-file',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify(build) });
+      },
+    },
     react(),
     tailwindcss(),
     // ARCHITECTURE §7. The service worker precaches the app shell only. API reads are
@@ -30,8 +44,8 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#FAFAF7',
-        theme_color: '#FAFAF7',
+        background_color: '#4A6142',
+        theme_color: '#4A6142',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -47,6 +61,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
+        // Push and notification taps (SPEC §8.2); a plain file in public/.
+        importScripts: ['push-sw.js'],
         // Fonts come from Google; keep a copy so the app looks right offline.
         runtimeCaching: [
           {

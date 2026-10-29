@@ -37,7 +37,9 @@ export function projectCashFlow(
 ): CashProjection {
   const upcoming = [...events]
     .filter((e) => e.date >= today)
-    .sort((a, b) => a.date.localeCompare(b.date));
+    // Same day: money out before money in. A bill can draft before the paycheck lands, so the
+    // dip it makes is real until the bank says otherwise.
+    .sort((a, b) => a.date.localeCompare(b.date) || a.cashDeltaCents - b.cashDeltaCents);
   const points: CashPoint[] = [{ date: today, balanceCents: startBalanceCents, label: 'Today' }];
   let running = startBalanceCents;
   for (const e of upcoming) {

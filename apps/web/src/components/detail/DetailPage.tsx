@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { BackLink } from '../BackLink';
+import { PageBar } from '../../lib/pageBar';
 import { useSwipeBack } from '../../lib/gestures';
 
 /**
@@ -35,14 +36,13 @@ export function DetailPage(p: DetailPageProps) {
   useSwipeBack(p.header.back.to);
   return (
     <article className="mx-auto max-w-2xl pb-24">
-      <header
-        data-zone="header"
-        className="gutter sticky top-[var(--banner-h,0px)] z-10 grid grid-cols-[1fr_auto_1fr] items-center banner bg-banner text-banner-ink shadow-soft"
-      >
+      <PageBar data-zone="header">
         <BackLink to={p.header.back.to} label={p.header.back.label} />
-        <h1 className="truncate type-body font-semibold">{p.header.title}</h1>
+        <h1 className="truncate type-body font-semibold" data-bar-title>
+          {p.header.title}
+        </h1>
         <div className="justify-self-end">{p.header.action}</div>
-      </header>
+      </PageBar>
       {p.identity && (
         <section data-zone="identity" className="gutter pt-4 pb-6">
           <p className="type-label text-ink-muted">{p.identity.label}</p>
@@ -51,12 +51,15 @@ export function DetailPage(p: DetailPageProps) {
         </section>
       )}
       {p.shape && (
-        <section data-zone="shape" className="gutter pb-6">
+        // Without an identity zone above it, the shape needs its own room under the sticky
+        // header, or the tallest bar meets the banner.
+        <section data-zone="shape" className={`gutter pb-6 ${p.identity ? '' : 'pt-6'}`}>
           {p.shape}
         </section>
       )}
       {p.facts && (
-        <section data-zone="facts" className="gutter">
+        // Alone under the sticky header (no identity or shape above), it needs the same room.
+        <section data-zone="facts" className={`gutter ${p.identity || p.shape ? '' : 'pt-4'}`}>
           {p.factsTitle && (
             <h2 className="mb-2 type-label font-semibold text-ink-muted">{p.factsTitle}</h2>
           )}

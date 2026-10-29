@@ -10,6 +10,7 @@ import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
 import { detectTransfers, planAccountSync, type IncomingWithMerchant } from '@rise/shared/sync';
 import { z } from 'zod';
 import {
+  budgetedCategoryIds,
   displayNamesFor,
   dropPendingStmts,
   ensureCatchallCategory,
@@ -38,11 +39,19 @@ import {
 } from '../db';
 import { suggestFor } from '../lib/categorize';
 import { localToday } from '../lib/dates';
+import { trackBalanceSeen } from '../lib/balanceSeen';
 import { refreshRecurring } from '../lib/recurring';
 import type { FetchInfo, SimpleFinSource } from './source';
 
 /** Overlap re-fetched on every sync to absorb late posts (ARCHITECTURE §6). */
 export const OVERLAP_DAYS = 5;
+
+/**
+ * The wider overlap of the weekly deep re-read: a bank that backfills a row a week or more
+ * late (a slow merchant, a corrected statement) is otherwise never fetched again. The planner
+ * dedupes everything it has already seen, so a wide window costs reads, never duplicates.
+ */
+export const DEEP_OVERLAP_DAYS = 35;
 
 const Envelope = z.object({
   errors: z.array(z.string()).default([]),
@@ -104,17 +113,19 @@ export function describeSource(raw: unknown, fetch?: FetchInfo, startDate?: stri
  * re-read in full (about 175 rows), which catches late edits for free. A first sync
  * therefore starts at the 1st: Rise budgets from now on.
  */
-export function windowStart(accounts: SyncedAccountRow[], today: string, since?: string): string {
+export function windowStart(
+  accounts: SyncedAccountRow[],
+  today: string,
+  since?: string,
+  overlapDays = OVERLAP_DAYS,
+): string {
   if (since) return since;
   const monthStart = (date: string) => dayNumber(`${date.slice(0, 7)}-01`);
   const starts = accounts
     .filter((a) => !a.archived_at)
     .map((a) =>
       a.last_synced_at
-        ? Math.max(
-            dayNumber(a.last_synced_at.slice(0, 10)) - OVERLAP_DAYS,
-            monthStart(a.created_at),
-          )
+        ? Math.max(dayNumber(a.last_synced_at.slice(0, 10)) - overlapDays, monthStart(a.created_at))
         : monthStart(today),
     );
   return dateFromDayNumber(Math.min(monthStart(today), ...starts));
@@ -140,6 +151,8 @@ export async function runSync(
      * sync) and its inputs haven't changed. A manual sync always runs it.
      */
     skipRecurringWhenIdle?: boolean;
+    /** How far before each account's last report to re-read; the weekly cron widens it. */
+    overlapDays?: number;
   } = {},
 ): Promise<SyncResult> {
   const now = opts.now ?? new Date();
@@ -168,7 +181,12 @@ export async function runSync(
   ]);
   const tz = user?.timezone ?? 'America/Chicago';
   const today = localToday(tz, now);
-  const from = windowStart(known, today, opts.since);
+  const from = windowStart(
+    known.filter((a) => a.source === 'simplefin'),
+    today,
+    opts.since,
+    opts.overlapDays,
+  );
   // A day early in UTC so no local date in the window is missed; the planner dedupes.
   const startSec = (dayNumber(from) - 1) * 86_400;
 
@@ -185,6 +203,10 @@ export async function runSync(
   }
   for (const m of envelope.errors) errors.push({ message: m });
 
+  // Which categories count as spending, read once and only if some row is updated or dropped.
+  let budgeted: Promise<ReadonlySet<string>> | undefined;
+  const budgetedOnce = () => (budgeted ??= budgetedCategoryIds(userId, db));
+
   let earliest = today;
   for (const raw of envelope.accounts) {
     let label = 'unknown account';
@@ -194,17 +216,21 @@ export async function runSync(
       const acct: IncomingAccount = toIncomingAccount(sf, tz);
       const existing = known.find((a) => a.source_account_id === acct.sourceAccountId);
       if (existing?.archived_at) continue; // the user unlinked it
+      if (existing && existing.source !== 'simplefin') continue; // converted to manual
       const accountId = existing?.id ?? newId();
 
       const gone = existing ? await deletedSourceIds(userId, db, accountId) : new Set<string>();
       const incoming: IncomingWithMerchant[] = sf.transactions
         .map((t) => {
-          const i = toIncomingTxn(t, tz);
+          const i = toIncomingTxn(t, tz, Math.floor(now.getTime() / 1000));
           return { ...i, merchant: normalizeMerchant(i.descriptor) };
         })
         // What the user deleted stays deleted, even while the bank keeps reporting it.
         .filter((i) => !i.sourceId || !gone.has(i.sourceId));
-      const stored = existing ? await listStoredForSync(userId, db, accountId, from) : [];
+      // Stored rows from as far back as the bank sent any: a row it re-sends from just before
+      // the window is then seen as known, not planned as an insert that conflicts.
+      const sentFrom = incoming.reduce((d, i) => (i.postedAt < d ? i.postedAt : d), from);
+      const stored = existing ? await listStoredForSync(userId, db, accountId, sentFrom) : [];
       const ops = planAccountSync(stored, incoming, today);
 
       const inserts = ops.flatMap((o) => (o.kind === 'insert' ? [{ id: newId(), ...o }] : []));
@@ -236,6 +262,9 @@ export async function runSync(
       // Landing in a closed period is real money too (H1) — `flagClosedPeriodStmt` itself
       // no-ops on an open period, same as everywhere else that writes a split.
       const insertDeltaByPeriod = new Map<string, number>();
+      // Every period whose splits this batch changes; each is refreshed once, at the end of the
+      // same batch, so the aggregate cache commits (or fails) with the rows it summarises.
+      const touched = new Set<string>();
       for (const o of inserts) {
         const s = suggestions.get(o.id);
         const p = periodOf(o.incoming.postedAt);
@@ -262,33 +291,33 @@ export async function runSync(
         );
       }
       for (const [p, delta] of insertDeltaByPeriod) {
-        stmts.push(
-          flagClosedPeriodStmt(userId, db, p, delta),
-          ...refreshAggregateStmts(userId, db, p),
-        );
+        stmts.push(flagClosedPeriodStmt(userId, db, p, delta));
+        touched.add(p);
       }
       let updates = 0;
+      const counts = touchedIds.length > 0 ? await budgetedOnce() : new Set<string>();
       for (const o of ops) {
         if (o.kind === 'insert') continue;
         const row = rowById.get(o.id);
         if (!row) continue;
         const rowSplits = splits.get(o.id) ?? [];
-        if (o.kind === 'update') {
-          stmts.push(
-            ...(await updateSyncedTxnStmts(
-              userId,
-              db,
-              row,
-              rowSplits,
-              o.incoming,
-              o.incoming.merchant,
-            )),
-          );
-        } else {
-          stmts.push(...(await dropPendingStmts(userId, db, row, rowSplits)));
-        }
+        stmts.push(
+          ...(o.kind === 'update'
+            ? updateSyncedTxnStmts(
+                userId,
+                db,
+                row,
+                rowSplits,
+                o.incoming,
+                o.incoming.merchant,
+                counts,
+                touched,
+              )
+            : dropPendingStmts(userId, db, row, rowSplits, counts, touched)),
+        );
         updates++;
       }
+      for (const p of touched) stmts.push(...refreshAggregateStmts(userId, db, p));
       stmts.push(
         ...reportBalanceStmts(
           userId,
@@ -377,6 +406,12 @@ export async function runSync(
     if (!skip) await refreshRecurring(db, userId, today);
   } catch (e) {
     errors.push({ message: `Recurring detection: ${message(e)}` });
+  }
+  // Even an idle sync can bring a new balance: it may show a bill before its row arrives.
+  try {
+    await trackBalanceSeen(db, userId, today);
+  } catch (e) {
+    errors.push({ message: `Balance check: ${message(e)}` });
   }
 
   return finish();

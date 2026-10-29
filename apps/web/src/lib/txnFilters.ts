@@ -30,6 +30,10 @@ export interface Filters {
   to: string;
   accounts: string[];
   categories: string[];
+  /** When set, the account / category lists are exclusions rather than matches. */
+  notAccounts: boolean;
+  notCategories: boolean;
+  tags: string[];
   direction: Direction;
   minCents: number | null;
   maxCents: number | null;
@@ -44,6 +48,9 @@ export const EMPTY: Filters = {
   to: '',
   accounts: [],
   categories: [],
+  notAccounts: false,
+  notCategories: false,
+  tags: [],
   direction: 'any',
   minCents: null,
   maxCents: null,
@@ -66,8 +73,11 @@ export function parseFilters(p: URLSearchParams): Filters {
     ),
     from: p.get('from') ?? '',
     to: p.get('to') ?? '',
-    accounts: list(p.get('account')),
-    categories: list(p.get('category')),
+    accounts: list(p.get('notAccount') ?? p.get('account')),
+    categories: list(p.get('notCategory') ?? p.get('category')),
+    notAccounts: p.has('notAccount'),
+    notCategories: p.has('notCategory'),
+    tags: list(p.get('tag')),
     direction: oneOf(p.get('direction'), ['any', 'out', 'in'] as const, 'any'),
     minCents: cents(p.get('min')),
     maxCents: cents(p.get('max')),
@@ -92,8 +102,10 @@ export function filtersToParams(f: Filters): URLSearchParams {
     if (f.from) p.set('from', f.from);
     if (f.to) p.set('to', f.to);
   } else if (f.range !== 'all') p.set('range', f.range);
-  if (f.accounts.length) p.set('account', f.accounts.join(','));
-  if (f.categories.length) p.set('category', f.categories.join(','));
+  if (f.accounts.length) p.set(f.notAccounts ? 'notAccount' : 'account', f.accounts.join(','));
+  if (f.categories.length)
+    p.set(f.notCategories ? 'notCategory' : 'category', f.categories.join(','));
+  if (f.tags.length) p.set('tag', f.tags.join(','));
   if (f.direction !== 'any') p.set('direction', f.direction);
   if (f.minCents !== null) p.set('min', String(f.minCents));
   if (f.maxCents !== null) p.set('max', String(f.maxCents));
@@ -127,8 +139,10 @@ export function dateBounds(f: Filters, today: string): { from?: string; to?: str
 export function apiQuery(f: Filters, today: string): Record<string, string> {
   const out: Record<string, string> = { ...dateBounds(f, today) };
   if (f.q.trim()) out.q = f.q.trim();
-  if (f.accounts.length) out.account = f.accounts.join(',');
-  if (f.categories.length) out.category = f.categories.join(',');
+  if (f.accounts.length) out[f.notAccounts ? 'notAccount' : 'account'] = f.accounts.join(',');
+  if (f.categories.length)
+    out[f.notCategories ? 'notCategory' : 'category'] = f.categories.join(',');
+  if (f.tags.length) out.tag = f.tags.join(',');
   if (f.direction !== 'any') out.direction = f.direction;
   if (f.minCents !== null) out.min = String(f.minCents);
   if (f.maxCents !== null) out.max = String(f.maxCents);
@@ -146,7 +160,11 @@ export interface Chip {
 /** One removable chip per active filter (search has its own field, so it gets none). */
 export function chips(
   f: Filters,
-  names: { account: (id: string) => string; category: (id: string) => string },
+  names: {
+    account: (id: string) => string;
+    category: (id: string) => string;
+    tag?: (id: string) => string;
+  },
 ): Chip[] {
   const out: Chip[] = [];
   if (f.range !== 'all' && !(f.range === 'custom' && !f.from && !f.to)) {
@@ -165,14 +183,20 @@ export function chips(
   if (f.accounts.length)
     out.push({
       key: 'accounts',
-      label: many(f.accounts, names.account),
-      clear: (x) => ({ ...x, accounts: [] }),
+      label: (f.notAccounts ? 'Not ' : '') + many(f.accounts, names.account),
+      clear: (x) => ({ ...x, accounts: [], notAccounts: false }),
     });
   if (f.categories.length)
     out.push({
       key: 'categories',
-      label: many(f.categories, names.category),
-      clear: (x) => ({ ...x, categories: [] }),
+      label: (f.notCategories ? 'Not ' : '') + many(f.categories, names.category),
+      clear: (x) => ({ ...x, categories: [], notCategories: false }),
+    });
+  if (f.tags.length)
+    out.push({
+      key: 'tags',
+      label: many(f.tags, names.tag ?? (() => 'Tag')),
+      clear: (x) => ({ ...x, tags: [] }),
     });
   if (f.direction !== 'any')
     out.push({
@@ -231,3 +255,6 @@ export function groupByDay<T extends { postedAt: string }>(items: T[]): [string,
   }
   return out;
 }
+
+/** Whether totals mean anything: some filter or search narrows the list. */
+export const isFiltered = (f: Filters) => filtersToParams({ ...f, sort: 'date_desc' }).size > 0;

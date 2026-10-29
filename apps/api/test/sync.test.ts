@@ -2,7 +2,8 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { scheduled } from '../src/index';
 import { centsToDecimal, mockSimpleFin } from '../src/sync/mock';
-import { describeSource, runSync, windowStart } from '../src/sync/run';
+import { DEEP_OVERLAP_DAYS, describeSource, runSync, windowStart } from '../src/sync/run';
+import { SYNC_CRON, syncSlot } from '../src/sync/schedule';
 import { httpSimpleFin, sourceFromEnv, type SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
 
@@ -77,7 +78,7 @@ async function setup() {
 }
 
 describe('T27 SimpleFIN sync', () => {
-  it('discovers Caleb’s seven accounts from the mock bridge with sensible defaults', async () => {
+  it('discovers seven sample accounts from the mock bridge with sensible defaults', async () => {
     const s = await setup();
     const r = await runSync(
       env.DB,
@@ -98,19 +99,19 @@ describe('T27 SimpleFIN sync', () => {
     expect(Object.keys(by).sort()).toEqual([
       'Apple Card',
       'Apple Savings',
-      'Chase Credit',
       'Citi Credit',
-      'USAA Checking',
-      'USAA Credit',
-      'USAA Savings',
+      'Metro Credit',
+      'Summit Checking',
+      'Summit Credit',
+      'Summit Savings',
     ]);
-    expect(by['USAA Checking']).toMatchObject({
+    expect(by['Summit Checking']).toMatchObject({
       kind: 'depository',
       includeInBudget: true,
       syncCadenceHours: 24,
     });
-    expect(by['USAA Savings']).toMatchObject({ kind: 'depository', includeInBudget: false });
-    expect(by['Chase Credit']).toMatchObject({ kind: 'credit', includeInBudget: true });
+    expect(by['Summit Savings']).toMatchObject({ kind: 'depository', includeInBudget: false });
+    expect(by['Metro Credit']).toMatchObject({ kind: 'credit', includeInBudget: true });
     expect(by['Apple Card']).toMatchObject({ kind: 'credit', syncCadenceHours: 720 });
     expect(by['Apple Savings']).toMatchObject({
       kind: 'depository',
@@ -125,6 +126,38 @@ describe('T27 SimpleFIN sync', () => {
       .bind(s.userId)
       .first<{ n: number }>();
     expect(splits?.n).toBe(rows.length);
+  });
+
+  it('a synced account converted to manual stays put: sync adds no copy and writes nothing to it', async () => {
+    const t = await setup();
+    const bank = fake([{ id: 'sf-loan', name: 'LN0001', txns: [], balance: -100000 }]);
+    await runSync(env.DB, t.userId, bank, { now: at('2026-09-21T12:00:00Z') });
+    const acct = await env.DB.prepare(
+      "SELECT id FROM account WHERE user_id = ?1 AND source_account_id = 'sf-loan'",
+    )
+      .bind(t.userId)
+      .first<{ id: string }>();
+    const res = await t.api('POST', `/accounts/${acct?.id}/convert-to-manual`, {});
+    expect(res.status).toBe(200);
+    expect(res.json.source).toBe('manual');
+    expect((await t.api('POST', `/accounts/${acct?.id}/convert-to-manual`, {})).status).toBe(409);
+
+    await runSync(
+      env.DB,
+      t.userId,
+      fake([{ id: 'sf-loan', name: 'LN0001', txns: [], balance: -90000 }]),
+      {
+        now: at('2026-09-22T12:00:00Z'),
+      },
+    );
+    const rows = (
+      await env.DB.prepare(
+        "SELECT source, balance_cents FROM account WHERE user_id = ?1 AND source_account_id = 'sf-loan'",
+      )
+        .bind(t.userId)
+        .all<{ source: string; balance_cents: number }>()
+    ).results;
+    expect(rows).toEqual([{ source: 'manual', balance_cents: -100000 }]);
   });
 
   it('#12 re-running over the same window inserts zero rows (edge 12)', async () => {
@@ -197,7 +230,7 @@ describe('T27 SimpleFIN sync', () => {
       desc: 'QT 0412 OUTSIDE TULSA OK',
       pending: true,
     };
-    await runSync(env.DB, s.userId, fake([{ id: 'card', name: 'USAA Credit', txns: [hold] }]), {
+    await runSync(env.DB, s.userId, fake([{ id: 'card', name: 'Summit Credit', txns: [hold] }]), {
       now: at('2026-09-18T20:00:00Z'),
     });
     const [row] = await s.txns();
@@ -218,7 +251,7 @@ describe('T27 SimpleFIN sync', () => {
     const r = await runSync(
       env.DB,
       s.userId,
-      fake([{ id: 'card', name: 'USAA Credit', txns: [posted] }]),
+      fake([{ id: 'card', name: 'Summit Credit', txns: [posted] }]),
       {
         now: at('2026-09-20T20:00:00Z'),
       },
@@ -240,7 +273,7 @@ describe('T27 SimpleFIN sync', () => {
 
   it('a multi-split pending row: the last split absorbs the drift', async () => {
     const s = await setup();
-    const src = (t: FakeTxn) => fake([{ id: 'card', name: 'Chase Credit', txns: [t] }]);
+    const src = (t: FakeTxn) => fake([{ id: 'card', name: 'Metro Credit', txns: [t] }]);
     await runSync(
       env.DB,
       s.userId,
@@ -294,7 +327,7 @@ describe('T27 SimpleFIN sync', () => {
   it('a posted row landing in a past month changes that month and nothing needs confirming (edge 5 via sync)', async () => {
     const s = await setup();
     const card = (t: FakeTxn) =>
-      fake([{ id: 'card', name: 'Chase Credit', txns: [t], reported: '2026-09-02' }]);
+      fake([{ id: 'card', name: 'Metro Credit', txns: [t], reported: '2026-09-02' }]);
     await runSync(
       env.DB,
       s.userId,
@@ -327,7 +360,7 @@ describe('T27 SimpleFIN sync', () => {
       fake([
         {
           id: 'good',
-          name: 'USAA Checking',
+          name: 'Summit Checking',
           txns: [{ id: 'g1', date: '2026-09-10', cents: 1_000, desc: 'KROGER' }],
         },
         { id: 'bad', name: 'Points Card', currency: 'https://example.com/points', txns: [] },
@@ -372,9 +405,9 @@ describe('T27 SimpleFIN sync', () => {
     const r = await runSync(
       env.DB,
       s.userId,
-      fake([{ id: 'a', name: 'USAA Checking', txns: [] }], ['USAA needs attention']),
+      fake([{ id: 'a', name: 'Summit Checking', txns: [] }], ['Summit needs attention']),
     );
-    expect(r).toMatchObject({ status: 'partial', errors: [{ message: 'USAA needs attention' }] });
+    expect(r).toMatchObject({ status: 'partial', errors: [{ message: 'Summit needs attention' }] });
   });
 
   it('balances land as sync snapshots dated by the bank; last_synced_at is when the bank reported', async () => {
@@ -412,7 +445,7 @@ describe('T27 SimpleFIN sync', () => {
     const src = fake([
       {
         id: 'a',
-        name: 'USAA Checking',
+        name: 'Summit Checking',
         txns: [{ id: 't', date: '2026-09-05', cents: 100, desc: 'X' }],
       },
     ]);
@@ -441,7 +474,7 @@ describe('T27 SimpleFIN sync', () => {
       fake([
         {
           id: 'a',
-          name: 'Chase Credit',
+          name: 'Metro Credit',
           txns: [{ id: 't', date: '2026-09-05', cents: 4_210, desc: 'KROGER #512 TULSA OK' }],
         },
       ]),
@@ -465,6 +498,7 @@ describe('T27 SimpleFIN sync', () => {
       archived: string | null = null,
     ) => ({
       id: 'x',
+      source: 'simplefin',
       kind: 'depository',
       source_account_id: 'x',
       last_synced_at: last,
@@ -484,6 +518,89 @@ describe('T27 SimpleFIN sync', () => {
       windowStart([a('2026-08-03T12:00:00Z', '2026-07-01T00:00:00Z', '2026-09-01')], '2026-10-24'),
     ).toBe('2026-10-01');
     expect(windowStart([], '2026-09-24', '2026-07-01')).toBe('2026-07-01');
+    // The weekly deep re-read reaches five weeks back, still floored at the first-seen month.
+    expect(windowStart([a('2026-10-20T12:00:00Z')], '2026-10-24', undefined, 35)).toBe(
+      '2026-09-15',
+    );
+    expect(
+      windowStart([a('2026-10-20T12:00:00Z', '2026-10-02T00:00:00Z')], '2026-10-24', undefined, 35),
+    ).toBe('2026-10-01');
+  });
+
+  it('the weekly deep re-read is the earliest chosen time on Sunday, local time', () => {
+    const hours = [5 * 60 + 30, 7 * 60, 9 * 60];
+    const tz = 'America/Chicago';
+    expect(syncSlot(hours, tz, at('2026-10-04T10:30:00Z'))).toEqual({ due: true, deep: true }); // Sun 5:30am
+    expect(syncSlot(hours, tz, at('2026-10-04T12:00:00Z'))).toEqual({ due: true, deep: false });
+    expect(syncSlot(hours, tz, at('2026-10-05T10:30:00Z'))).toEqual({ due: true, deep: false }); // Mon
+    expect(syncSlot(hours, tz, at('2026-10-04T10:00:00Z'))).toEqual({ due: false, deep: false }); // off by a minute-of-hour
+    expect(syncSlot(hours, tz, at('2026-10-04T11:00:00Z'))).toEqual({ due: false, deep: false });
+  });
+
+  it('the per-minute tick syncs only at the chosen times and writes nothing otherwise', async () => {
+    const s = await setup();
+    await s.api('PATCH', '/me/settings', { syncTimes: [5 * 60 + 15] });
+    const e = { ...env, SIMPLEFIN_MOCK: '1', SIMPLEFIN_OWNER_EMAIL: s.email };
+    const tick = (iso: string) =>
+      scheduled({ cron: SYNC_CRON, scheduledTime: Date.parse(iso) } as ScheduledController, e);
+    await tick('2026-10-05T14:00:00Z'); // 9am Central: not chosen
+    expect((await s.api('GET', '/accounts')).json).toEqual([]);
+    expect((await s.api('GET', '/sync/status')).json.runs).toHaveLength(0);
+    await tick('2026-10-05T10:00:00Z'); // 5:00am Central: right hour, wrong minute
+    expect((await s.api('GET', '/accounts')).json).toEqual([]);
+    await tick('2026-10-05T10:15:00Z'); // 5:15am Central
+    expect((await s.api('GET', '/accounts')).json).toHaveLength(7);
+  });
+
+  it('settings reject duplicate, out-of-range and too many sync times', async () => {
+    const s = await setup();
+    for (const syncTimes of [[], [300, 300], [1440], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]])
+      expect((await s.api('PATCH', '/me/settings', { syncTimes })).status).toBe(400);
+  });
+
+  it('manual sync is refused after 20 runs in a day', async () => {
+    const s = await setup();
+    const now = new Date().toISOString();
+    for (let i = 0; i < 20; i++)
+      await env.DB.prepare(
+        "INSERT INTO sync_run (id, user_id, started_at, status, accounts_touched, rows_inserted, rows_updated) VALUES (?1, ?2, ?3, 'ok', 0, 0, 0)",
+      )
+        .bind(`r${i}`, s.userId, now)
+        .run();
+    expect((await s.api('POST', '/sync/run', {})).status).toBe(429);
+  });
+
+  it('a row the bank backfills weeks late arrives on the deep re-read, once', async () => {
+    const s = await setup();
+    const rows: FakeTxn[] = [{ id: 'r1', date: '2026-09-28', cents: 4_200, desc: 'KROGER #512' }];
+    // Like the real bridge: only rows posted on or after the start date asked for.
+    const bank: SimpleFinSource = {
+      mode: 'mock',
+      fetchAccounts: async (startSec) => {
+        const all = (await fake([{ id: 'chk', name: 'Checking', txns: rows }]).fetchAccounts(
+          startSec,
+        )) as { accounts: { transactions: { posted: number }[] }[] };
+        for (const a of all.accounts)
+          a.transactions = a.transactions.filter((t) => t.posted >= startSec);
+        return all;
+      },
+    };
+    await runSync(env.DB, s.userId, bank, { now: at('2026-09-30T20:00:00Z'), since: '2026-09-01' });
+    await env.DB.prepare(
+      `UPDATE account SET created_at = '2026-07-01T00:00:00.000Z',
+         last_synced_at = '2026-09-30T20:00:00.000Z' WHERE user_id = ?1`,
+    )
+      .bind(s.userId)
+      .run();
+    rows.push({ id: 'late', date: '2026-09-10', cents: 1_500, desc: 'SHELL OIL 5741' });
+    const now = at('2026-10-02T20:00:00Z');
+    expect((await runSync(env.DB, s.userId, bank, { now })).rowsInserted).toBe(0);
+    const deep = await runSync(env.DB, s.userId, bank, { now, overlapDays: DEEP_OVERLAP_DAYS });
+    expect(deep.rowsInserted).toBe(1);
+    expect((await s.txns()).map((t) => t.source_id)).toEqual(['late', 'r1']);
+    expect(
+      (await runSync(env.DB, s.userId, bank, { now, overlapDays: DEEP_OVERLAP_DAYS })).rowsInserted,
+    ).toBe(0);
   });
 });
 
@@ -492,16 +609,16 @@ describe('T29 transfers', () => {
     fake([
       {
         id: 'chk',
-        name: 'USAA Checking',
+        name: 'Summit Checking',
         balance: 100_000,
         txns: [
-          { id: 'c1', date: '2026-09-03', cents: 84_500, desc: 'CHASE CREDIT CRD AUTOPAY' },
-          { id: 'c2', date: '2026-09-15', cents: 20_000, desc: 'USAA FUNDS TRANSFER DB' },
+          { id: 'c1', date: '2026-09-03', cents: 84_500, desc: 'METRO CREDIT CRD AUTOPAY' },
+          { id: 'c2', date: '2026-09-15', cents: 20_000, desc: 'SUMMIT FUNDS TRANSFER DB' },
         ],
       },
       {
         id: 'card',
-        name: 'Chase Credit',
+        name: 'Metro Credit',
         balance: -5_000,
         txns: [
           { id: 'k1', date: '2026-09-03', cents: -84_500, desc: 'AUTOMATIC PAYMENT - THANK YOU' },
@@ -511,9 +628,9 @@ describe('T29 transfers', () => {
       },
       {
         id: 'sav',
-        name: 'USAA Savings',
+        name: 'Summit Savings',
         balance: 800_000,
-        txns: [{ id: 's1', date: '2026-09-15', cents: -20_000, desc: 'USAA FUNDS TRANSFER CR' }],
+        txns: [{ id: 's1', date: '2026-09-15', cents: -20_000, desc: 'SUMMIT FUNDS TRANSFER CR' }],
       },
     ]);
 
@@ -529,7 +646,9 @@ describe('T29 transfers', () => {
       review_state: 'needs_review',
     });
     expect(bySource.k1).toMatchObject({ is_transfer: 1, transfer_pair_id: bySource.c1?.id });
-    // Checking → savings is medium confidence: not auto-linked.
+    // Checking → savings, same day, is not auto-linked: an unmatched deposit into a cash account
+    // is filed under the income catch-all (C2), and only rows still on the expense catch-all
+    // (or their own guess) are transfer candidates. The owner files these moves by hand.
     expect(bySource.c2?.is_transfer).toBe(0);
 
     // Even if both legs get a category, only the purchase counts.
@@ -543,8 +662,8 @@ describe('T29 transfers', () => {
     const checking = fake([
       {
         id: 'chk',
-        name: 'USAA Checking',
-        txns: [{ id: 'c1', date: '2026-09-03', cents: 84_500, desc: 'CHASE CREDIT CRD AUTOPAY' }],
+        name: 'Summit Checking',
+        txns: [{ id: 'c1', date: '2026-09-03', cents: 84_500, desc: 'METRO CREDIT CRD AUTOPAY' }],
       },
     ]);
     await runSync(env.DB, s.userId, checking, { now: at('2026-09-03T20:00:00Z') });
@@ -714,7 +833,7 @@ describe('sync plumbing', () => {
   it('routes: not connected → 409; status reports mode and runs', async () => {
     const s = await setup();
     expect((await s.api('POST', '/sync/run', {})).status).toBe(409);
-    await runSync(env.DB, s.userId, fake([{ id: 'a', name: 'USAA Checking', txns: [] }]));
+    await runSync(env.DB, s.userId, fake([{ id: 'a', name: 'Summit Checking', txns: [] }]));
     const st = await s.api('GET', '/sync/status');
     expect(st.json.mode).toBe('off');
     expect(st.json.runs[0]).toMatchObject({ status: 'ok', accountsTouched: 1, errors: [] });
@@ -741,7 +860,7 @@ describe('lone transfer legs', () => {
     const checking = fake([
       {
         id: 'chk',
-        name: 'USAA Checking',
+        name: 'Summit Checking',
         txns: [{ id: 'c1', date: '2026-09-03', cents: 29_005, desc: 'APPLECARD GSBANK PAYMENT' }],
       },
     ]);
@@ -768,5 +887,48 @@ describe('lone transfer legs', () => {
     expect((await s.api('POST', `/transactions/${crypto.randomUUID()}/mark-transfer`)).status).toBe(
       404,
     );
+  });
+});
+
+describe('spread charges and sync (SPEC §3.6)', () => {
+  it('a spread pending row is re-spread at its posted amount; a drop clears every month', async () => {
+    const s = await setup();
+    const card = (txns: FakeTxn[]) => fake([{ id: 'card', name: 'Metro Credit', txns }]);
+    await runSync(
+      env.DB,
+      s.userId,
+      card([{ id: 'p', date: '2026-10-30', cents: 30_000, desc: 'TIRE SHOP', pending: true }]),
+      { now: at('2026-10-30T20:00:00Z') },
+    );
+    const id = String((await s.txns())[0]?.id);
+    await s.api('PATCH', `/transactions/${id}`, { categoryId: s.gas.id });
+    await s.api('POST', `/transactions/${id}/spread`, { months: 3 });
+    expect(await s.spent('2026-12', s.gas.id)).toBe(10_000);
+
+    // Posts a day later, into November, for a little more: same three months' shape, moved.
+    await runSync(
+      env.DB,
+      s.userId,
+      card([{ id: 'q', date: '2026-11-01', cents: 30_001, desc: 'TIRE SHOP' }]),
+      { now: at('2026-11-02T20:00:00Z') },
+    );
+    expect(await s.spent('2026-10', s.gas.id)).toBe(0);
+    expect(await s.spent('2026-11', s.gas.id)).toBe(10_001);
+    expect(await s.spent('2026-12', s.gas.id)).toBe(10_000);
+    expect(await s.spent('2027-01', s.gas.id)).toBe(10_000);
+
+    // A second spread pending row that vanishes: every month it drew on lets go.
+    await runSync(
+      env.DB,
+      s.userId,
+      card([{ id: 'p2', date: '2026-11-03', cents: 2_000, desc: 'OIL CHANGE', pending: true }]),
+      { now: at('2026-11-03T20:00:00Z') },
+    );
+    const id2 = String((await s.txns()).find((t) => t.source_id === 'p2')?.id);
+    await s.api('PATCH', `/transactions/${id2}`, { categoryId: s.gas.id });
+    await s.api('POST', `/transactions/${id2}/spread`, { months: 2 });
+    expect(await s.spent('2026-12', s.gas.id)).toBe(11_000);
+    await runSync(env.DB, s.userId, card([]), { now: at('2026-11-20T20:00:00Z') });
+    expect(await s.spent('2026-12', s.gas.id)).toBe(10_000);
   });
 });

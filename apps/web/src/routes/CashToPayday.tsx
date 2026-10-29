@@ -1,13 +1,14 @@
+import { Loading } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { axisPicks, surplusTone } from '../lib/surplus';
+import { dailySeries, inBalanceNote, surplusTone, tooltipLines } from '../lib/surplus';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Chevron, EditRow } from '../components/primitives/Rows';
-import { Sheet } from '../components/primitives/Sheet';
+import { Leaving, Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { Toggle } from '../components/primitives/Toggle';
 import { ApiError, api } from '../lib/api';
@@ -19,36 +20,70 @@ import type { ScheduleRow, SuggestionRow } from '../lib/types';
 import { ScheduleFields } from '../components/ScheduleFields';
 
 /**
- * Balance by day to payday, the lowest point marked. Bars rise above a zero line when the
- * balance is positive and hang below it when it isn't. A single day has no shape to show.
+ * End-of-day balance for the next 14 days. Bars rise above a zero line when the balance is
+ * positive and hang below it when it isn't. Tap a bar, or drag a finger across them, for that day's charges and income.
  */
 function Shape({
   points,
   lowestDate,
 }: {
-  points: { date: string; balanceCents: number }[];
+  points: { date: string; balanceCents: number; label: string }[];
   lowestDate: string;
 }) {
-  if (points.length < 2) return null;
-  const hi = Math.max(...points.map((p) => p.balanceCents), 0);
-  const lo = Math.min(...points.map((p) => p.balanceCents), 0);
+  const [picked, setPicked] = useState<number | null>(null);
+  const touched = useRef(false);
+  const days = dailySeries(points);
+  if (points.length < 2 || days.length === 0) return null;
+  const scrub = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const i = Math.floor(((e.clientX - r.left) / r.width) * days.length);
+    setPicked(Math.min(days.length - 1, Math.max(0, i)));
+  };
+  const hi = Math.max(...days.map((p) => p.balanceCents), 0);
+  const lo = Math.min(...days.map((p) => p.balanceCents), 0);
   const span = Math.max(hi - lo, 1);
   const zeroPct = (hi / span) * 100;
-  const picks = new Set(axisPicks(points.length));
+  const day = picked == null ? null : (days[picked] ?? null);
+  const lines = day ? tooltipLines(day) : null;
+  // Pin the tooltip to the side the bar is nearest so it never leaves the screen.
+  const side =
+    picked == null || picked < 4
+      ? 'left-0'
+      : picked > days.length - 5
+        ? 'right-0'
+        : 'left-1/2 -translate-x-1/2';
   return (
-    <figure className="m-0 overflow-hidden">
+    <figure className="relative m-0 overflow-hidden">
       <div className="relative h-28">
         <div
           aria-hidden
           className="absolute inset-x-0 border-t border-hairline"
           style={{ top: `${zeroPct}%` }}
         />
-        <div className="absolute inset-0 flex gap-1.5">
-          {points.map((p, i) => {
+        <div
+          className="absolute inset-0 flex gap-1.5 touch-pan-y select-none"
+          onPointerDown={(e) => {
+            if (e.pointerType !== 'touch') return;
+            touched.current = true;
+            scrub(e);
+          }}
+          onPointerMove={(e) => e.pointerType === 'touch' && scrub(e)}
+        >
+          {days.map((p, i) => {
             const h = Math.max(2, (Math.abs(p.balanceCents) / span) * 100);
             const up = p.balanceCents >= 0;
             return (
-              <div key={i} className="relative min-w-0 flex-1">
+              <button
+                key={p.date}
+                type="button"
+                aria-label={`${shortDate(p.date)}: ${formatCents(p.balanceCents)}`}
+                onClick={() => {
+                  // A touch already picked this bar on pointerdown; don't toggle it back off.
+                  if (touched.current) touched.current = false;
+                  else setPicked(picked === i ? null : i);
+                }}
+                className="relative min-w-0 flex-1 p-0"
+              >
                 <div
                   className={`absolute inset-x-0 ${up ? 'rounded-t-sm' : 'rounded-b-sm'} ${
                     p.balanceCents < 0
@@ -56,29 +91,54 @@ function Shape({
                       : p.date === lowestDate
                         ? 'bg-gold'
                         : 'bg-sage-600'
-                  }`}
+                  } ${picked === i ? 'opacity-80' : ''}`}
                   style={
                     up
                       ? { bottom: `${100 - zeroPct}%`, height: `${h}%` }
                       : { top: `${zeroPct}%`, height: `${h}%` }
                   }
-                >
-                  <span className="sr-only">
-                    {shortDate(p.date)}: {formatCents(p.balanceCents)}
-                  </span>
-                </div>
-              </div>
+                />
+              </button>
             );
           })}
         </div>
       </div>
       <div aria-hidden className="mt-1 flex gap-1.5">
-        {points.map((p, i) => (
-          <span key={i} className="min-w-0 flex-1 text-center type-caption text-ink-faint">
-            {picks.has(i) && <span className="block truncate">{shortDate(p.date)}</span>}
-          </span>
-        ))}
+        {days.map((p, i) => {
+          const dom = Number(p.date.slice(8));
+          return (
+            <span
+              key={p.date}
+              className="min-w-0 flex-1 text-center leading-tight type-caption text-ink-faint"
+            >
+              <span className="block">{dom}</span>
+              <span className="block h-4">
+                {i === 0 || dom === 1 ? shortDate(p.date).split(' ')[0] : ''}
+              </span>
+            </span>
+          );
+        })}
       </div>
+      {day && lines && (
+        <div
+          role="status"
+          className={`pointer-events-none absolute top-0 ${side} w-56 max-w-full rounded-card bg-surface p-3 shadow-soft`}
+        >
+          <div className="flex justify-between gap-3 font-medium">
+            <span>{shortDate(day.date)}</span>
+            <MoneyText cents={day.balanceCents} tone={day.balanceCents < 0 ? 'over' : 'ink'} />
+          </div>
+          {lines.shown.map((l, i) => (
+            <div key={i} className="mt-1 flex justify-between gap-3 type-caption">
+              <span className="min-w-0 truncate text-ink-muted">{l.label}</span>
+              <MoneyText cents={l.cents} tone={l.cents < 0 ? 'over' : 'in'} />
+            </div>
+          ))}
+          {lines.more > 0 && (
+            <div className="mt-1 type-caption text-ink-faint">+{lines.more} more</div>
+          )}
+        </div>
+      )}
     </figure>
   );
 }
@@ -173,7 +233,7 @@ function AddManualEventSheet({
       </label>
       <label className="mt-3 flex flex-col gap-1">
         <span className="type-caption text-ink-muted">Amount</span>
-        <MoneyField label="Amount" cents={amountCents} onCommit={setAmountCents} />
+        <MoneyField label="Amount" cents={amountCents} draft onCommit={setAmountCents} />
       </label>
       <ScheduleFields
         draft={draft}
@@ -238,6 +298,14 @@ function ScheduleList({
             <span className="block type-caption text-ink-faint">
               {describeSchedule(r.cadence, r.anchorDays)} · next {shortDate(r.nextExpectedDate)}
             </span>
+            {r.change && (
+              <span className="block type-caption text-ink-faint">
+                <MoneyText cents={r.change.amountCents} /> from {shortDate(r.change.on)}
+              </span>
+            )}
+            {r.inBalance && (
+              <span className="block type-caption text-gold-text">{inBalanceNote(r)}</span>
+            )}
           </span>
           <span className="flex shrink-0 items-center gap-2">
             <MoneyText cents={r.amountCents} tone={kind === 'income' ? 'in' : 'ink'} />
@@ -246,6 +314,19 @@ function ScheduleList({
         </button>
       ))}
     </>
+  );
+}
+
+/** The last row of a list: a full-width tap target that adds to it. */
+function AddRow({ onClick, children }: { onClick: () => void; children: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-12 w-full items-center py-3 text-left font-medium text-sage-700 active:bg-sage-100"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -270,6 +351,11 @@ function SuggestionList({
                 {r.accountName} · {describeSchedule(r.cadence, r.anchorDays)} · next{' '}
                 {shortDate(r.nextExpectedDate)}
               </span>
+              {r.likelySameAs && (
+                <span className="block type-caption text-gold-text">
+                  Looks like {r.likelySameAs}, already in Surplus
+                </span>
+              )}
             </span>
             <MoneyText cents={r.amountCents} tone={r.kind === 'income' ? 'in' : 'ink'} />
           </div>
@@ -307,6 +393,10 @@ function EditScheduleSheet({
   const [draft, setDraft] = useState<ScheduleDraft>(() =>
     draftFrom(row.cadence, row.anchorDays, row.nextExpectedDate),
   );
+  const [changing, setChanging] = useState(row.change != null);
+  const [changeCents, setChangeCents] = useState(row.change?.amountCents ?? row.amountCents);
+  const [changeOn, setChangeOn] = useState(row.change?.on ?? row.nextExpectedDate);
+  const changeInvalid = changing && (changeCents <= 0 || !changeOn);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const run = async (fn: () => Promise<unknown>) => {
@@ -337,8 +427,32 @@ function EditScheduleSheet({
       )}
       <label className="mt-3 flex flex-col gap-1">
         <span className="type-caption text-ink-muted">Amount</span>
-        <MoneyField label="Amount" cents={amountCents} onCommit={setAmountCents} />
+        <MoneyField label="Amount" cents={amountCents} draft onCommit={setAmountCents} />
       </label>
+      {row.id && (
+        <div className="mt-3 flex min-h-11 items-center justify-between gap-4">
+          <span>Amount changes</span>
+          <Toggle label="Amount changes" on={changing} onChange={setChanging} />
+        </div>
+      )}
+      {row.id && changing && (
+        <div className="mt-1 flex gap-3">
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="type-caption text-ink-muted">Starting</span>
+            <input
+              type="date"
+              aria-label="Starting"
+              value={changeOn}
+              onChange={(e) => setChangeOn(e.target.value)}
+              className="min-h-11 rounded-input border border-hairline bg-canvas px-2"
+            />
+          </label>
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="type-caption text-ink-muted">New amount</span>
+            <MoneyField label="New amount" cents={changeCents} draft onCommit={setChangeCents} />
+          </label>
+        </div>
+      )}
       <ScheduleFields
         draft={draft}
         onChange={setDraft}
@@ -347,7 +461,7 @@ function EditScheduleSheet({
       {error && <p className="mt-2 text-clay">{error}</p>}
       <Button
         className="mt-4 w-full"
-        disabled={saving || amountCents <= 0 || (row.isHandAdded && !label.trim())}
+        disabled={saving || amountCents <= 0 || changeInvalid || (row.isHandAdded && !label.trim())}
         onClick={() =>
           void run(() =>
             api('PUT', '/cash-to-payday/schedules', {
@@ -356,6 +470,9 @@ function EditScheduleSheet({
               amountCents,
               ...schedulePayload(draft),
               ...(row.isHandAdded ? { label: label.trim() } : {}),
+              ...(row.id
+                ? { change: changing ? { amountCents: changeCents, on: changeOn } : null }
+                : {}),
             }),
           )
         }
@@ -417,7 +534,14 @@ export function CashToPayday() {
     return (
       <DetailPage
         header={{ back, title: 'Surplus' }}
-        identity={{ label: 'Free to move right now', hero: <Skeleton className="h-11 w-40" /> }}
+        identity={{
+          label: 'On hand until payday',
+          hero: (
+            <Loading compact>
+              <Skeleton className="h-11 w-40" />
+            </Loading>
+          ),
+        }}
       />
     );
   }
@@ -441,7 +565,7 @@ export function CashToPayday() {
       <DetailPage
         header={{ back, title: 'Surplus' }}
         identity={{
-          label: 'Free to move right now',
+          label: 'On hand until payday',
           hero: noPaySchedule ? (
             <span className="text-2xl font-semibold text-ink-muted">Confirm your pay dates</span>
           ) : (
@@ -517,16 +641,6 @@ export function CashToPayday() {
             title: 'Upcoming income',
             children: (
               <>
-                <div className="flex items-center justify-between border-b border-hairline pb-3">
-                  <h3 className="type-title">Income</h3>
-                  <button
-                    type="button"
-                    className="text-sage-700"
-                    onClick={() => setAddingKind('income')}
-                  >
-                    Add
-                  </button>
-                </div>
                 {upcomingIncome.length === 0 ? (
                   <p className="py-3 text-ink-muted">Nothing expected yet.</p>
                 ) : (
@@ -547,6 +661,7 @@ export function CashToPayday() {
                 )}
 
                 <ScheduleList kind="income" rows={schedules} onEdit={setEditing} />
+                <AddRow onClick={() => setAddingKind('income')}>Add income</AddRow>
               </>
             ),
           },
@@ -554,16 +669,6 @@ export function CashToPayday() {
             title: 'Upcoming expenses',
             children: (
               <>
-                <div className="flex items-center justify-between border-b border-hairline pb-3">
-                  <h3 className="type-title">Expenses</h3>
-                  <button
-                    type="button"
-                    className="text-sage-700"
-                    onClick={() => setAddingKind('expense')}
-                  >
-                    Add
-                  </button>
-                </div>
                 {upcomingExpenses.length === 0 ? (
                   <p className="py-3 text-ink-muted">Nothing expected yet.</p>
                 ) : (
@@ -584,31 +689,36 @@ export function CashToPayday() {
                 )}
 
                 <ScheduleList kind="expense" rows={schedules} onEdit={setEditing} />
+                <AddRow onClick={() => setAddingKind('expense')}>Add expense</AddRow>
               </>
             ),
           },
         ]}
       />
-      {editing && (
-        <EditScheduleSheet
-          row={editing}
-          onClose={() => setEditing(null)}
-          onSaved={refresh}
-          onDismiss={() => {
-            dismiss(editing);
-            setEditing(null);
-          }}
-        />
-      )}
-      {addingKind && (
-        <AddManualEventSheet
-          kind={addingKind}
-          onClose={() => setAddingKind(null)}
-          onSaved={async () => {
-            await refresh();
-          }}
-        />
-      )}
+      <Leaving>
+        {editing && (
+          <EditScheduleSheet
+            row={editing}
+            onClose={() => setEditing(null)}
+            onSaved={refresh}
+            onDismiss={() => {
+              dismiss(editing);
+              setEditing(null);
+            }}
+          />
+        )}
+      </Leaving>
+      <Leaving>
+        {addingKind && (
+          <AddManualEventSheet
+            kind={addingKind}
+            onClose={() => setAddingKind(null)}
+            onSaved={async () => {
+              await refresh();
+            }}
+          />
+        )}
+      </Leaving>
     </>
   );
 }

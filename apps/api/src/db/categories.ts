@@ -5,9 +5,10 @@ import {
   type CategoryGroupKind,
   type RolloverPolicy,
   type SpendShape,
+  type TaxKind,
 } from '@rise/shared/schemas';
 import { refreshCategoryAggregateStmts } from './aggregates';
-import { reassignSplitStmts, splitsFor } from './transactions';
+import { reassignSplitStmts, splitsFor, type TxnRow } from './transactions';
 import { bool, newId, nowIso, type UserId } from './util';
 
 interface GroupRow {
@@ -32,6 +33,7 @@ interface CategoryRow {
   plan_default_from: string | null;
   is_catchall: number;
   budgeted: number;
+  tax_kind: string | null;
 }
 
 const toGroup = (r: GroupRow): CategoryGroup =>
@@ -53,6 +55,7 @@ const toCategory = (r: CategoryRow): Category =>
     planDefaultFrom: r.plan_default_from,
     isCatchall: r.is_catchall === 1,
     budgeted: r.budgeted === 1,
+    taxKind: r.tax_kind,
   });
 
 /** The category's plan default in the engine's shape, if it has one (SPEC §2.9). */
@@ -66,6 +69,24 @@ export async function listGroups(userId: UserId, db: D1Database): Promise<Catego
     .prepare(
       `SELECT id, name, kind, sort_order FROM category_group
        WHERE user_id = ?1 AND archived_at IS NULL ORDER BY sort_order, name`,
+    )
+    .bind(userId)
+    .all<GroupRow>();
+  return results.map(toGroup);
+}
+
+/**
+ * Every group, archived ones too: for reports over past months, where an archived group's
+ * money still happened and must still be counted (the cash-flow totals don't filter it).
+ */
+export async function listGroupsWithArchived(
+  userId: UserId,
+  db: D1Database,
+): Promise<CategoryGroup[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, name, kind, sort_order FROM category_group
+       WHERE user_id = ?1 ORDER BY sort_order, name`,
     )
     .bind(userId)
     .all<GroupRow>();
@@ -213,6 +234,18 @@ export async function listCategories(userId: UserId, db: D1Database): Promise<Ca
   return results.map(toCategory);
 }
 
+/** Every category, archived ones too: see `listGroupsWithArchived`. */
+export async function listCategoriesWithArchived(
+  userId: UserId,
+  db: D1Database,
+): Promise<Category[]> {
+  const { results } = await db
+    .prepare('SELECT * FROM category WHERE user_id = ?1 ORDER BY sort_order, name')
+    .bind(userId)
+    .all<CategoryRow>();
+  return results.map(toCategory);
+}
+
 export async function getCategory(
   userId: UserId,
   db: D1Database,
@@ -319,6 +352,45 @@ export async function ensureIncomeCatchallCategory(
  * can always recategorize either leg to a budgeted category later — nothing here is special
  * beyond its `budgeted` flag, and `is_transfer`/`transfer_pair_id` stay a pure pairing marker.
  */
+/**
+ * C2: the catch-all an ordinary row falls back to — the income one for money into a cash
+ * (depository) account, else the expense "Other". The same choice sync makes for a new row with
+ * no match (`sync/run.ts`); off a cash account a card's own ledger runs the other way, so
+ * direction means nothing there.
+ */
+export async function fallbackCategoryFor(
+  userId: UserId,
+  db: D1Database,
+  txn: { account_id: string; amount_cents: number },
+): Promise<Category> {
+  if (txn.amount_cents < 0) {
+    const acct = await db
+      .prepare('SELECT kind FROM account WHERE user_id = ?1 AND id = ?2')
+      .bind(userId, txn.account_id)
+      .first<{ kind: string }>();
+    if (acct?.kind === 'depository') return ensureIncomeCatchallCategory(userId, db);
+  }
+  return ensureCatchallCategory(userId, db);
+}
+
+/**
+ * A transfer leg being unlinked goes back to its fallback category (`fallbackCategoryFor`) only
+ * if it is still on the default Transfer category from link time (A5): a leg the person has
+ * since recategorized keeps that choice. Statements only; the caller batches them with the
+ * unlink itself.
+ */
+export async function revertTransferLegStmts(
+  userId: UserId,
+  db: D1Database,
+  leg: TxnRow,
+  transferCategoryId: string,
+): Promise<D1PreparedStatement[]> {
+  const own = (await splitsFor(userId, db, [leg.id])).get(leg.id) ?? [];
+  if (own.length !== 1 || own[0]?.category_id !== transferCategoryId) return [];
+  const fallback = await fallbackCategoryFor(userId, db, leg);
+  return reassignSplitStmts(userId, db, leg, own, fallback.id);
+}
+
 export async function ensureTransferCategory(userId: UserId, db: D1Database): Promise<Category> {
   const existing = await db
     .prepare(
@@ -396,6 +468,7 @@ export interface CategoryPatch {
   spendShape?: SpendShape | undefined;
   isBill?: boolean | undefined;
   budgeted?: boolean | undefined;
+  taxKind?: TaxKind | null | undefined;
   sortOrder?: number | undefined;
 }
 
@@ -407,6 +480,7 @@ const COLS: Record<keyof CategoryPatch, string> = {
   spendShape: 'spend_shape',
   isBill: 'is_bill',
   budgeted: 'budgeted',
+  taxKind: 'tax_kind',
   sortOrder: 'sort_order',
 };
 
@@ -528,7 +602,7 @@ export async function reassignOpenCategoryStmts(
   const stmts: D1PreparedStatement[] = [];
   for (const t of rows) {
     stmts.push(
-      ...(await reassignSplitStmts(userId, db, t, oldSplits.get(t.id) ?? [], toCategoryId)),
+      ...(await reassignSplitStmts(userId, db, t, oldSplits.get(t.id) ?? [], toCategoryId, true)),
     );
     stmts.push(
       db
@@ -550,11 +624,13 @@ export function archiveCategoryStmts(
     db.prepare('DELETE FROM rule WHERE user_id = ?1 AND category_id = ?2').bind(userId, id),
     // Learned suggestions must not point at a category the picker no longer shows.
     db
-      .prepare('DELETE FROM merchant_memory WHERE user_id = ?1 AND category_id = ?2')
+      .prepare(
+        'DELETE FROM merchant_memory WHERE user_id = ?1 AND category_id = ?2 /* scan-ok: category delete */',
+      )
       .bind(userId, id),
     db
       .prepare(
-        `UPDATE txn SET suggested_category_id = NULL, suggestion_confidence = 0
+        `UPDATE txn /* scan-ok: category delete */ SET suggested_category_id = NULL, suggestion_confidence = 0
          WHERE user_id = ?1 AND suggested_category_id = ?2`,
       )
       .bind(userId, id),

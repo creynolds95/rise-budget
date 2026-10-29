@@ -1,9 +1,15 @@
 import type { Transaction } from '@rise/shared/schemas';
+import { TxnBadges } from './TxnBadges';
 import { merchantName } from '../lib/merchant';
 import { Link, useNavigate } from 'react-router';
+import { flagText } from '../lib/alerts';
 import { shortDate } from '../lib/dates';
+import { useMe } from '../lib/queries';
+import { categoryPortion } from '../lib/splits';
+import { spreadMonths, spreadPart } from '../lib/spread';
 import { transitionClick } from '../lib/transition';
 import { TxnAmount } from './TxnAmount';
+import { Icon } from './primitives/Icon';
 import { Chevron } from './primitives/Rows';
 
 /** A transaction in a list: a NAV row. Pending shows italic with a P (SPEC §3.2). */
@@ -13,25 +19,98 @@ export function TxnRow({
   from,
   hideDate = false,
   onRecategorize,
+  periodId,
+  categoryId,
+  selected,
+  onToggle,
+  splitPart,
 }: {
   t: Transaction;
-  /** Shown before the merchant name; the category's name isn't repeated on the row. */
+  /** Shown before the merchant name (a split joins its categories' with " / "); the category's name isn't repeated on the row. */
   categoryEmoji?: string | null | undefined;
   from?: string;
   /** Under a date header the date would only repeat it. */
   hideDate?: boolean;
   /** Batch review: a tap on the category opens a picker here instead of navigating away. */
   onRecategorize?: (() => void) | undefined;
+  /** In one month's list, a spread charge shows the part it draws that month. */
+  periodId?: string | undefined;
+  /** In one category's list, a split shows only the amount filed to this category. */
+  categoryId?: string | undefined;
+  /** Select mode: the row is a checkbox, not a link. */
+  selected?: boolean;
+  onToggle?: (() => void) | undefined;
+  /** One category's part of a split: its amount and name replace the whole. */
+  splitPart?: { amountCents: number; label: string } | undefined;
 }) {
   const navigate = useNavigate();
+  const alerts = useMe().data?.settings.alerts;
+  const part = periodId ? spreadPart(t, periodId) : null;
+  const months = spreadMonths(t);
+  // In one category's list, a split shows only the part filed there.
+  const inCategory = categoryId && !part ? categoryPortion(t.splits, categoryId) : null;
+  const shown = splitPart
+    ? { ...t, amountCents: splitPart.amountCents }
+    : part
+      ? { ...t, amountCents: part.amountCents }
+      : inCategory !== null
+        ? { ...t, amountCents: inCategory }
+        : t;
   const caption = [
     hideDate ? null : shortDate(t.postedAt),
-    t.isTransfer ? 'Transfer' : t.splits.length > 1 ? 'Split' : null,
+    t.isTransfer
+      ? 'Transfer'
+      : splitPart
+        ? splitPart.label
+        : part
+          ? `Spread, ${part.index} of ${part.months}`
+          : months > 1
+            ? `Spread over ${months} months`
+            : t.splits.length > 1
+              ? categoryEmoji
+                ? null
+                : 'Split'
+              : null,
     t.reviewState === 'needs_review' ? 'To review' : null,
+    flagText(t.flag, alerts),
   ]
     .filter(Boolean)
     .join(' · ');
+  // A split's joined emojis run smaller so several don't crowd the merchant.
+  const emojiSize = categoryEmoji?.includes(' / ') ? 'text-[0.75em]' : '';
   const to = `/transactions/${t.id}${from ? `?from=${encodeURIComponent(from)}` : ''}`;
+  if (onToggle) {
+    return (
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={!!selected}
+        onClick={onToggle}
+        className={`flex min-h-14 w-full items-center gap-3 border-b border-hairline py-2 text-left ${t.isPending ? 'italic' : ''}`}
+      >
+        <span
+          aria-hidden
+          className={`flex size-6 shrink-0 items-center justify-center rounded-[7px] border-2 ${
+            selected ? 'border-sage-600 bg-sage-600 text-surface' : 'border-hairline'
+          }`}
+        >
+          {selected && <Icon name="check" size={16} />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">
+            {categoryEmoji && (
+              <span aria-hidden className={`mr-2 not-italic ${emojiSize}`}>
+                {categoryEmoji}
+              </span>
+            )}
+            {merchantName(t)}
+          </span>
+          {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
+        </span>
+        <TxnAmount t={shown} />
+      </button>
+    );
+  }
   return (
     <div
       className={`flex min-h-14 items-center justify-between gap-3 border-b border-hairline py-2 ${t.isPending ? 'italic' : ''}`}
@@ -43,30 +122,23 @@ export function TxnRow({
       >
         <span className="block truncate">
           {categoryEmoji && (
-            <span aria-hidden className="mr-2 not-italic">
+            <span aria-hidden className={`mr-2 not-italic ${emojiSize}`}>
               {categoryEmoji}
             </span>
           )}
           {merchantName(t)}
-          {t.isPending && (
-            <span
-              className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
-              title="Pending"
-            >
-              P
-            </span>
-          )}
+          <TxnBadges t={t} split={!!splitPart} />
         </span>
         {caption && <span className="block truncate type-caption text-ink-faint">{caption}</span>}
       </Link>
       <span className="flex items-center gap-2">
-        <TxnAmount t={t} />
+        <TxnAmount t={shown} />
         {onRecategorize ? (
           <button
             type="button"
             aria-label={`Change category for ${merchantName(t)}`}
             onClick={onRecategorize}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700"
+            className="hit-44 flex size-9 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700"
           >
             <svg
               aria-hidden
@@ -83,7 +155,8 @@ export function TxnRow({
             </svg>
           </button>
         ) : (
-          <Link to={to} onClick={transitionClick(navigate, to)}>
+          // The row's own link already goes here; this is the same target, out of the tab order.
+          <Link to={to} onClick={transitionClick(navigate, to)} tabIndex={-1} aria-hidden>
             <Chevron />
           </Link>
         )}

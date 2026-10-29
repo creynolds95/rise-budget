@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dropIndex, moveItem } from './reorder';
+import { dropIndex, edgeScroll, moveItem } from './reorder';
 
 const tops = [0, 50, 100, 150];
 const heights = [50, 50, 50, 50];
@@ -20,5 +20,17 @@ describe('reordering', () => {
     expect(dropIndex(tops, heights, 2, -60)).toBe(1);
     expect(dropIndex(tops, heights, 3, -999)).toBe(0);
     expect(dropIndex(tops, heights, 0, 999)).toBe(3);
+  });
+});
+
+describe('edge scroll while dragging', () => {
+  it('scrolls toward an edge, faster the closer the finger', () => {
+    expect(edgeScroll(400, 100, 800)).toBe(0);
+    expect(edgeScroll(172, 100, 800)).toBe(0);
+    expect(edgeScroll(136, 100, 800)).toBe(-4);
+    expect(edgeScroll(100, 100, 800)).toBe(-16);
+    expect(edgeScroll(40, 100, 800)).toBe(-16);
+    expect(edgeScroll(764, 100, 800)).toBe(4);
+    expect(edgeScroll(900, 100, 800)).toBe(16);
   });
 });

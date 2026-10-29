@@ -49,7 +49,7 @@ devices.delete('/passkeys/:id', requireStepUp, async (c) => {
   return c.body(null, 204);
 });
 
-/** Signs a device out: its refresh token stops working, so it's out within 15 minutes. */
+/** Signs a device out: its refresh and access tokens both stop working at once. */
 devices.delete('/sessions/:id', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');

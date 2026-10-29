@@ -11,6 +11,8 @@ import {
   PeriodId,
   RecurringSeries,
   User,
+  DebtPlan,
+  RetirementPlan,
 } from './index';
 
 describe('schemas', () => {
@@ -48,13 +50,63 @@ describe('schemas', () => {
       createdAt: '2026-09-23T20:00:00Z',
     });
     expect(u.settings).toEqual({
+      syncTimes: [300, 420, 540, 660, 780, 900, 1020, 1140, 1260, 1380],
       appLock: 'off',
       planChangesApplyToFuture: false,
       cushionCents: 50_000,
       cashAccountIds: [],
       dismissedPayMerchants: [],
+      dismissedMisses: [],
+      dashboard: null,
+      retirement: null,
+      debt: null,
+      savings: null,
+      follow: { rules: [], log: [] },
+      alerts: {
+        priceUp: true,
+        doubleCharge: true,
+        duplicate: true,
+        unusual: true,
+        firstTime: true,
+      },
+      binder: { passwordsLiveIn: '', entries: [] },
+      push: {
+        recap: true,
+        missedBill: true,
+        bankTrouble: true,
+        priceUp: false,
+        doubleCharge: false,
+        duplicate: false,
+        unusual: false,
+        firstTime: false,
+        surplusNegative: false,
+        toReview: false,
+        paycheck: false,
+        manualLoan: false,
+      },
+      balanceAlerts: { minCents: 10_000, accounts: [] },
     });
     expect(u.timezone).toBe('America/Chicago');
+  });
+
+  it('a retirement plan defaults to conservative rates and no contributions', () => {
+    const plan = RetirementPlan.parse({ currentAge: 31, goalAge: 65, spendTargetCents: 500_000 });
+    expect(plan.realGrowthBps).toBe(400);
+    expect(plan.withdrawalBps).toBe(350);
+    expect(plan.volatilityBps).toBe(1500);
+    expect(plan.contributions).toEqual([]);
+  });
+
+  it('a debt plan defaults to snowball with freed payments carried forward', () => {
+    const plan = DebtPlan.parse({});
+    expect(plan.strategy).toBe('snowball');
+    expect(plan.rollForward).toBe(true);
+    expect(plan.loans).toEqual([]);
+    expect(plan.extraCents).toBe(0);
+    expect(plan.mortgageExtraCents).toBe(0);
+    expect(plan.mortgageLumps).toEqual([]);
+    expect(plan.mortgageTermMonths).toBe(360);
+    expect(plan.homeValueAccountId).toBeNull();
   });
 
   it('error contract carries a stable code', () => {
@@ -67,7 +119,7 @@ describe('schemas', () => {
 
   it('PATCH bodies never inject defaults for absent keys', () => {
     expect(PatchSettingsBody.parse({ appLock: '5m' })).toEqual({ appLock: '5m' });
-    expect(PatchAccountBody.parse({ name: 'USAA Savings' })).toEqual({ name: 'USAA Savings' });
+    expect(PatchAccountBody.parse({ name: 'Summit Savings' })).toEqual({ name: 'Summit Savings' });
   });
 
   it('RecurringSeries accepts the `<userId>|<merchant>` id of a long merchant name', () => {

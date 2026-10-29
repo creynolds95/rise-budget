@@ -89,8 +89,8 @@ describe('parseMonarchCsv', () => {
   });
 
   it('keeps notes and the original statement', () => {
-    const { rows } = parseMonarchCsv([HEADER, line({ Notes: 'for Hannah' })].join('\n'));
-    expect(rows[0]).toMatchObject({ notes: 'for Hannah', originalStatement: 'BLUE GOOSE 123' });
+    const { rows } = parseMonarchCsv([HEADER, line({ Notes: 'for Sam' })].join('\n'));
+    expect(rows[0]).toMatchObject({ notes: 'for Sam', originalStatement: 'BLUE GOOSE 123' });
   });
 
   it('reports bad rows by line number and keeps the good ones', () => {

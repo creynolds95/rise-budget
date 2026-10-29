@@ -52,8 +52,8 @@ async function setup() {
 const netflix = (extra: [string, string, number, string][] = []) =>
   bridge([
     {
-      id: 'chase',
-      name: 'Chase Credit',
+      id: 'metro',
+      name: 'Metro Credit',
       reported: '2026-08-20',
       txns: [
         ['n6', '2026-06-07', 1_549, 'NETFLIX.COM LOS GATOS CA'],
@@ -72,16 +72,20 @@ describe('idle cron syncs skip recurring re-detection', () => {
     const s = await setup();
     const opts = { now: new Date('2026-08-20T20:00:00Z'), since: '2026-06-01' };
     const mark = async () => {
-      await env.DB.prepare("UPDATE recurring_series SET updated_at = 'MARK' WHERE user_id = ?1")
+      // A detected series is only rewritten when re-detection changes it, so the mark is a
+      // prediction re-detection would correct.
+      await env.DB.prepare(
+        "UPDATE recurring_series SET next_expected_date = 'MARK' WHERE user_id = ?1",
+      )
         .bind(s.userId)
         .run();
     };
     const stamp = async () =>
       (
-        await env.DB.prepare('SELECT updated_at FROM recurring_series WHERE user_id = ?1')
+        await env.DB.prepare('SELECT next_expected_date FROM recurring_series WHERE user_id = ?1')
           .bind(s.userId)
-          .first<{ updated_at: string }>()
-      )?.updated_at;
+          .first<{ next_expected_date: string }>()
+      )?.next_expected_date;
 
     // The first run of the day has no earlier sync to lean on, so it always detects.
     await runSync(env.DB, s.userId, netflix(), { ...opts, skipRecurringWhenIdle: true });
@@ -100,6 +104,35 @@ describe('idle cron syncs skip recurring re-detection', () => {
     expect(await stamp()).not.toBe('MARK'); // new rows: detected
   });
 });
+
+describe('re-detection writes only what changed', () => {
+  it('a series that comes out the same is not rewritten', async () => {
+    const s = await setup();
+    const opts = { now: new Date('2026-08-20T20:00:00Z'), since: '2026-06-01' };
+    await runSync(env.DB, s.userId, netflix(), opts);
+    await env.DB.prepare("UPDATE recurring_series SET updated_at = 'MARK' WHERE user_id = ?1")
+      .bind(s.userId)
+      .run();
+    await runSync(env.DB, s.userId, netflix(), opts);
+    const row = await env.DB.prepare(
+      'SELECT updated_at, next_expected_date FROM recurring_series WHERE user_id = ?1',
+    )
+      .bind(s.userId)
+      .first<{ updated_at: string; next_expected_date: string }>();
+    expect(row).toEqual({ updated_at: 'MARK', next_expected_date: '2026-09-07' });
+  });
+});
+
+/** The card keeps reporting (groceries on Sep 12), so a missed Netflix there is knowable. */
+const reportThrough = (userId: string, extra: [string, string, number, string][] = []) =>
+  runSync(
+    env.DB,
+    userId as never,
+    netflix([['k4', '2026-09-12', 3_100, 'KROGER #512'], ...extra]),
+    {
+      now: new Date('2026-09-14T20:00:00Z'),
+    },
+  );
 
 describe('T31 recurring detection', () => {
   it('sync detects a monthly series from 3 charges and predicts the next', async () => {
@@ -147,6 +180,7 @@ describe('T31 recurring detection', () => {
       now: new Date('2026-08-20T20:00:00Z'),
       since: '2026-06-01',
     });
+    await reportThrough(s.userId);
     await refreshRecurring(env.DB, s.userId, '2026-09-14');
     expect((await s.api('GET', '/recurring')).json[0].status).toBe('active');
     await refreshRecurring(env.DB, s.userId, '2026-09-15');
@@ -174,11 +208,69 @@ describe('T31 recurring detection', () => {
         now: new Date('2026-08-21T20:00:00Z'),
       },
     );
+    await reportThrough(s.userId);
     await refreshRecurring(env.DB, s.userId, '2026-09-15');
     expect((await s.api('GET', '/recurring')).json[0]).toMatchObject({
       status: 'broken',
       nextExpectedDate: '2026-09-07',
     });
+  });
+
+  it("a miss on a card that hasn't reported past the due date isn't flagged (Apple Card)", async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, netflix(), {
+      now: new Date('2026-08-20T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('active');
+  });
+
+  it('a charge under a drifted name keeps the series quiet', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, netflix(), {
+      now: new Date('2026-08-20T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    await reportThrough(s.userId, [['np', '2026-09-08', 1_549, 'NETFLIX PREMIUM']]);
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    const netflixRow = (await s.api('GET', '/recurring')).json.find(
+      (r: { merchantNormalized: string }) => r.merchantNormalized === 'Netflix',
+    );
+    expect(netflixRow.status).toBe('active');
+  });
+
+  it('a series that missed two cycles lapses instead of nagging; a new charge revives it', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, netflix(), {
+      now: new Date('2026-08-20T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    await reportThrough(s.userId);
+    await refreshRecurring(env.DB, s.userId, '2026-10-15');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('broken');
+    await refreshRecurring(env.DB, s.userId, '2026-10-16');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('lapsed');
+  });
+
+  it('"It ended" sticks through refresh; "Track again" hands it back', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, netflix(), {
+      now: new Date('2026-08-20T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    await reportThrough(s.userId);
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    const [row] = (await s.api('GET', '/recurring')).json;
+    const path = `/recurring/${encodeURIComponent(row.id)}`;
+    expect((await s.api('PATCH', path, { status: 'ended' })).status).toBe(204);
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('ended');
+    expect((await s.api('PATCH', path, { status: 'active' })).status).toBe(204);
+    await refreshRecurring(env.DB, s.userId, '2026-09-20');
+    expect((await s.api('GET', '/recurring')).json[0].status).toBe('broken');
+    expect((await s.api('PATCH', '/recurring/nope', { status: 'ended' })).status).toBe(404);
+    expect((await s.api('PATCH', path, { status: 'broken' })).status).toBe(400);
   });
 
   it('refresh route re-detects on demand', async () => {
@@ -197,8 +289,8 @@ describe('T32 late arrivals through sync', () => {
       s.userId,
       bridge([
         {
-          id: 'chase',
-          name: 'Chase Credit',
+          id: 'metro',
+          name: 'Metro Credit',
           reported: '2026-09-05',
           txns: [['late', '2026-08-30', 1_549, 'NETFLIX.COM']],
         },

@@ -1,9 +1,8 @@
-import { periodOf } from '@rise/shared/budget';
+import { periodOf, spreadMonthsOf, spreadParts } from '@rise/shared/budget';
 import type { IncomingAccount, IncomingTxn } from '@rise/shared/import';
 import type { StoredTxn } from '@rise/shared/sync';
-import { refreshAggregateStmts } from './aggregates';
 import { putSnapshotStmts } from './accounts';
-import { countedCentsOf, flagClosedPeriodStmt, type SplitRow, type TxnRow } from './transactions';
+import { flagClosedPeriodStmt, type SplitRow, type TxnRow } from './transactions';
 import { newId, nowIso, type UserId } from './util';
 
 /**
@@ -15,6 +14,7 @@ import { newId, nowIso, type UserId } from './util';
 
 export interface SyncedAccountRow {
   id: string;
+  source: string;
   kind: string;
   source_account_id: string;
   last_synced_at: string | null;
@@ -23,14 +23,16 @@ export interface SyncedAccountRow {
   created_at: string;
 }
 
+/** Synced accounts, plus ones converted to manual: sync must still recognise those and leave
+ *  them alone, or a bank that keeps reporting them would create a second copy. */
 export async function listSyncedAccounts(
   userId: UserId,
   db: D1Database,
 ): Promise<SyncedAccountRow[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, kind, source_account_id, last_synced_at, include_in_budget, archived_at, created_at FROM account
-       WHERE user_id = ?1 AND source = 'simplefin'`,
+      `SELECT id, source, kind, source_account_id, last_synced_at, include_in_budget, archived_at, created_at FROM account
+       WHERE user_id = ?1 AND (source = 'simplefin' OR (source = 'manual' AND source_account_id IS NOT NULL))`,
     )
     .bind(userId)
     .all<SyncedAccountRow>();
@@ -92,7 +94,11 @@ export function reportBalanceStmts(
 
 // ── transactions ──────────────────────────────────────────────────────────────
 
-/** Rows the planner needs: the fetch window, plus every still-open pending row. */
+/**
+ * Rows the planner needs: the fetch window, plus every still-open pending row older than it.
+ * Two lookups, not one `OR`: an `OR is_pending` can't use the date index, and read the
+ * account's whole history on every sync. The pending half has its own partial index (0025).
+ */
 export async function listStoredForSync(
   userId: UserId,
   db: D1Database,
@@ -101,8 +107,10 @@ export async function listStoredForSync(
 ): Promise<(StoredTxn & { row: TxnRow })[]> {
   const { results } = await db
     .prepare(
-      `SELECT * FROM txn WHERE user_id = ?1 AND account_id = ?2
-         AND (posted_at >= ?3 OR (is_pending = 1 AND review_state != 'dropped'))`,
+      `SELECT * FROM txn WHERE user_id = ?1 AND account_id = ?2 AND posted_at >= ?3
+       UNION ALL
+       SELECT * FROM txn WHERE user_id = ?1 AND account_id = ?2
+         AND is_pending = 1 AND review_state != 'dropped' AND posted_at < ?3`,
     )
     .bind(userId, accountId, fromDate)
     .all<TxnRow>();
@@ -184,9 +192,35 @@ export function insertSyncedTxnStmt(
 }
 
 /**
+ * The ids of the user's budgeted categories (pre-deploy A4): what decides whether a split
+ * counts as spending. Read once per sync, so updating or dropping a row costs no query.
+ */
+export async function budgetedCategoryIds(
+  userId: UserId,
+  db: D1Database,
+): Promise<ReadonlySet<string>> {
+  const { results } = await db
+    .prepare('SELECT id FROM category WHERE user_id = ?1 AND budgeted = 1')
+    .bind(userId)
+    .all<{ id: string }>();
+  return new Set(results.map((r) => r.id));
+}
+
+/** The part of a split set that counts as spending: budgeted categories, row not dropped. */
+export function countedWith(
+  budgeted: ReadonlySet<string>,
+  splits: { category_id: string; amount_cents: number }[],
+  reviewState: string,
+): number {
+  if (reviewState === 'dropped') return 0;
+  return splits.reduce((n, s) => n + (budgeted.has(s.category_id) ? s.amount_cents : 0), 0);
+}
+
+/**
  * Spending effects of moving a transaction's splits from one (period, counted-cents) state to
- * another: flag closed periods, refresh aggregates for both. `countedCents` is already the
- * budgeted (pre-deploy A4), non-dropped amount — callers compute it with `countedCentsOf`.
+ * another: flag closed periods, and add both periods to `touched` — the caller refreshes each
+ * touched period's aggregates once, in the same batch. `countedCents` is already the budgeted
+ * (pre-deploy A4), non-dropped amount — callers compute it with `countedWith`.
  */
 export function splitEffectStmts(
   userId: UserId,
@@ -194,21 +228,18 @@ export function splitEffectStmts(
   before: { period: string; countedCents: number },
   after: { period: string; countedCents: number },
   hasSplits: boolean,
+  touched: Set<string>,
 ): D1PreparedStatement[] {
   if (!hasSplits) return [];
   const b = before.countedCents;
   const a = after.countedCents;
   const stmts: D1PreparedStatement[] = [];
+  touched.add(before.period).add(after.period);
   if (before.period === after.period) {
     if (b !== a) stmts.push(flagClosedPeriodStmt(userId, db, after.period, a - b));
-    stmts.push(...refreshAggregateStmts(userId, db, after.period));
   } else {
     if (b !== 0) stmts.push(flagClosedPeriodStmt(userId, db, before.period, -b));
     if (a !== 0) stmts.push(flagClosedPeriodStmt(userId, db, after.period, a));
-    stmts.push(
-      ...refreshAggregateStmts(userId, db, before.period),
-      ...refreshAggregateStmts(userId, db, after.period),
-    );
   }
   return stmts;
 }
@@ -218,16 +249,19 @@ export function splitEffectStmts(
  * pending row that posted under a new id (SPEC §3.2). Category, splits, notes and review
  * state are preserved. Splits follow the row: they move period with it, and an amount
  * drift is absorbed by the last split so they still sum to the transaction (§3.5).
- * A dropped row that comes back returns to the review queue.
+ * A dropped row that comes back returns to the review queue. The periods whose aggregates
+ * need a refresh are added to `touched`.
  */
-export async function updateSyncedTxnStmts(
+export function updateSyncedTxnStmts(
   userId: UserId,
   db: D1Database,
   row: TxnRow,
   splits: SplitRow[],
   incoming: IncomingTxn,
   merchant: string,
-): Promise<D1PreparedStatement[]> {
+  budgeted: ReadonlySet<string>,
+  touched: Set<string>,
+): D1PreparedStatement[] {
   const reviewState = row.review_state === 'dropped' ? 'needs_review' : row.review_state;
   const oldPeriod = periodOf(row.posted_at);
   const newPeriod = periodOf(incoming.postedAt);
@@ -252,45 +286,60 @@ export async function updateSyncedTxnStmts(
         nowIso(),
       ),
   ];
+  // A spread charge is re-spread over the same number of months from its new month, at its
+  // new amount (SPEC §3.6); anything else moves whole and the last split absorbs the drift.
+  const months = spreadMonthsOf(
+    oldPeriod,
+    splits.map((s) => ({ categoryId: s.category_id, periodId: s.period_id })),
+  );
+  const parts =
+    months > 1
+      ? spreadParts(incoming.amountCents, months, newPeriod, splits[0]?.category_id ?? '')
+      : null;
   const last = splits.at(-1);
-  for (const s of splits) {
+  const next = splits.map((s, i) => ({
+    id: s.id,
+    category_id: s.category_id,
+    amount_cents: parts?.[i]?.amountCents ?? s.amount_cents + (s === last ? drift : 0),
+    period_id: parts?.[i]?.periodId ?? newPeriod,
+  }));
+  for (const s of next) {
     stmts.push(
       db
         .prepare(
           'UPDATE split SET amount_cents = ?3, period_id = ?4 WHERE user_id = ?1 AND id = ?2',
         )
-        .bind(userId, s.id, s.amount_cents + (s === last ? drift : 0), newPeriod),
+        .bind(userId, s.id, s.amount_cents, s.period_id),
     );
   }
-  const newSplits = splits.map((s) => ({
-    category_id: s.category_id,
-    amount_cents: s.amount_cents + (s === last ? drift : 0),
-  }));
-  const [beforeCounted, afterCounted] = await Promise.all([
-    countedCentsOf(userId, db, splits, row.review_state),
-    countedCentsOf(userId, db, newSplits, reviewState),
-  ]);
+  for (const s of splits) touched.add(s.period_id);
+  for (const s of next) touched.add(s.period_id);
+  const newSplits = next;
   stmts.push(
     ...splitEffectStmts(
       userId,
       db,
-      { period: oldPeriod, countedCents: beforeCounted },
-      { period: newPeriod, countedCents: afterCounted },
+      { period: oldPeriod, countedCents: countedWith(budgeted, splits, row.review_state) },
+      { period: newPeriod, countedCents: countedWith(budgeted, newSplits, reviewState) },
       splits.length > 0,
+      touched,
     ),
   );
   return stmts;
 }
 
 /** SPEC §3.2: a pending row with no match after 14 days no longer counts. */
-export async function dropPendingStmts(
+export function dropPendingStmts(
   userId: UserId,
   db: D1Database,
   row: TxnRow,
   splits: SplitRow[],
-): Promise<D1PreparedStatement[]> {
+  budgeted: ReadonlySet<string>,
+  touched: Set<string>,
+): D1PreparedStatement[] {
   const period = periodOf(row.posted_at);
-  const beforeCounted = await countedCentsOf(userId, db, splits, row.review_state);
+  const beforeCounted = countedWith(budgeted, splits, row.review_state);
+  for (const s of splits) touched.add(s.period_id);
   return [
     db
       .prepare(
@@ -303,6 +352,7 @@ export async function dropPendingStmts(
       { period, countedCents: beforeCounted },
       { period, countedCents: 0 },
       splits.length > 0,
+      touched,
     ),
   ];
 }
