@@ -1,22 +1,33 @@
 import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
 import {
   advanceManualRule,
-  BROKEN_AFTER_DAYS,
+  amountOn,
+  cashMovements,
+  chargeFlags,
+  seriesRadar,
   detectSemimonthly,
+  firstUpcoming,
   detectSeries,
+  latestByAccount,
+  missState,
   surplusSuggestions,
   typicalPostDay,
+  type AccountOccurrence,
   type DetectedSeries,
 } from '@rise/shared/recurring';
 import {
   advanceManualRuleStmt,
+  changeOf,
   getUser,
   listAccounts,
   listManualRules,
   listOccurrences,
+  listDetectedStatuses,
   manualRuleMerchants,
-  markOverdueBrokenStmt,
   replaceSuggestionsStmts,
+  setChargeFlagStmt,
+  setSeriesRadarStmt,
+  setSeriesStatusStmt,
   setTypicalPostDayStmt,
   upsertSeriesStmt,
   type UserId,
@@ -32,16 +43,43 @@ export const LOOKBACK_DAYS = 3 * 366 + 8;
  */
 export async function refreshRecurring(db: D1Database, userId: UserId, today: string) {
   const from = dateFromDayNumber(dayNumber(today) - LOOKBACK_DAYS);
-  const [byMerchant, manual, manualMerchants, user, accounts] = await Promise.all([
+  const [withTransfers, manual, manualMerchants, user, accounts, existing] = await Promise.all([
     listOccurrences(userId, db, from),
     listManualRules(userId, db),
     manualRuleMerchants(userId, db),
     getUser(userId, db),
     listAccounts(userId, db),
+    listDetectedStatuses(userId, db),
   ]);
+  // Spending and income only: a transfer is never a bill, a paycheck, or a budget series.
+  const byMerchant = new Map<string, AccountOccurrence[]>();
+  for (const [merchant, occ] of withTransfers) {
+    const spent = occ.filter((o) => !o.isTransfer);
+    if (spent.length > 0) byMerchant.set(merchant, spent);
+  }
+  const latest = latestByAccount(byMerchant);
+  // A miss is only clay when it's knowable and unexplained (shared/recurring/miss.ts).
+  const stateOf = (
+    merchant: string,
+    cadence: DetectedSeries['cadence'],
+    due: string,
+    cents: number,
+  ) =>
+    missState(
+      {
+        merchant,
+        cadence,
+        nextExpectedDate: due,
+        expectedAmountCents: cents,
+        accountId: byMerchant.get(merchant)?.at(-1)?.accountId ?? null,
+      },
+      byMerchant,
+      latest,
+      today,
+    );
   const found: [string, DetectedSeries][] = [];
   for (const [merchant, occ] of byMerchant) {
-    // A merchant Caleb has tagged "Recurring Cash Withdrawal" owns its own rule — never
+    // A merchant the owner has tagged "Recurring Cash Withdrawal" owns its own rule — never
     // let auto-detection reassign or overwrite it, even once it naturally clears the
     // 3-occurrence bar.
     if (manualMerchants.has(merchant)) continue;
@@ -60,33 +98,112 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
     if (!prev || size > prev.size) billDay.set(s.categoryId, { day, size });
   }
   const manualUpdates = manual.map((r) => {
-    const advanced = advanceManualRule(
-      {
-        cadence: r.cadence as DetectedSeries['cadence'],
-        anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
-        expectedAmountCents: r.expected_amount_cents,
-        nextExpectedDate: r.next_expected_date,
-      },
-      byMerchant.get(r.merchant_normalized) ?? [],
-      today,
+    const anchorDays = r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null;
+    const cadence = r.cadence as DetectedSeries['cadence'];
+    // Hand-added: no transaction will ever confirm it, so it simply moves on with the calendar.
+    const advanced =
+      r.label != null
+        ? {
+            nextExpectedDate: firstUpcoming(cadence, r.next_expected_date, anchorDays, today),
+            status: 'active' as const,
+          }
+        : advanceManualRule(
+            {
+              cadence,
+              anchorDays,
+              // A paycheck due after a pending change is matched against its new amount.
+              expectedAmountCents: amountOn(
+                r.expected_amount_cents,
+                changeOf(r),
+                r.next_expected_date,
+              ),
+              nextExpectedDate: r.next_expected_date,
+            },
+            // Transfers included: a savings or loan transfer confirms its rule like a bill does.
+            withTransfers.get(r.merchant_normalized) ?? [],
+            today,
+          );
+    return advanceManualRuleStmt(
+      userId,
+      db,
+      r.id,
+      advanced.nextExpectedDate,
+      advanced.status,
+      'anchorDays' in advanced ? advanced.anchorDays : null,
     );
-    return advanceManualRuleStmt(userId, db, r.id, advanced.nextExpectedDate, advanced.status);
   });
-  const suggestions = user
-    ? surplusSuggestions(
-        byMerchant,
-        new Set(cashAccountsOf(user.settings, accounts).map((a) => a.id)),
-        new Set([
-          ...manualMerchants,
-          ...user.settings.dismissedPayMerchants.map((d) => d.merchant),
-        ]),
-        today,
-      )
-    : [];
+  const cashIds = user ? new Set(cashAccountsOf(user.settings, accounts).map((a) => a.id)) : null;
+  const suggestions =
+    user && cashIds
+      ? surplusSuggestions(
+          cashMovements(
+            withTransfers,
+            cashIds,
+            new Set(accounts.filter((a) => a.kind === 'credit').map((a) => a.id)),
+          ),
+          cashIds,
+          new Set([
+            ...manualMerchants,
+            ...user.settings.dismissedPayMerchants.map((d) => d.merchant),
+          ]),
+          today,
+        )
+      : [];
+  // Quiet flags on new charges (SPEC §8.1): compared against each merchant's own history.
+  const flags = [...byMerchant.values()].flatMap((occ) => [
+    ...chargeFlags(
+      occ.flatMap((o) =>
+        o.id
+          ? [
+              {
+                id: o.id,
+                date: o.date,
+                amountCents: o.amountCents,
+                accountId: o.accountId,
+                needsReview: o.needsReview ?? false,
+              },
+            ]
+          : [],
+      ),
+      today,
+    ),
+  ]);
+  // A series that no longer fits keeps its last prediction; only its status moves on.
+  const detected = new Set(found.map(([merchant]) => merchant));
+  const stale = existing.flatMap((r) => {
+    if (r.source !== 'detected' || r.status === 'ended' || !r.next_expected_date) return [];
+    if (detected.has(r.merchant_normalized)) return [];
+    // A price hike or a double charge is exactly what stops a series fitting for a while, so
+    // the radar reads every known series' own charges, not only the ones detected this time.
+    const radar = seriesRadar(byMerchant.get(r.merchant_normalized) ?? [], r.cadence, today);
+    const radarStmt =
+      radar.previousAmountCents === r.previous_amount_cents &&
+      radar.priceChangedOn === r.price_changed_on &&
+      radar.doubleChargedOn === r.double_charged_on
+        ? []
+        : [setSeriesRadarStmt(userId, db, r.id, radar)];
+    const next = stateOf(
+      r.merchant_normalized,
+      r.cadence,
+      r.next_expected_date,
+      r.expected_amount_cents,
+    );
+    return [
+      ...radarStmt,
+      ...(next === r.status ? [] : [setSeriesStatusStmt(userId, db, r.id, next)]),
+    ];
+  });
   await db.batch([
-    ...found.map(([merchant, s]) => upsertSeriesStmt(userId, db, merchant, s)),
+    ...found.map(([merchant, s]) =>
+      upsertSeriesStmt(userId, db, merchant, {
+        ...s,
+        status: stateOf(merchant, s.cadence, s.nextExpectedDate, s.expectedAmountCents),
+        ...seriesRadar(byMerchant.get(merchant) ?? [], s.cadence, today),
+      }),
+    ),
+    ...flags.map(([id, flag]) => setChargeFlagStmt(userId, db, id, flag)),
     ...manualUpdates,
-    markOverdueBrokenStmt(userId, db, dateFromDayNumber(dayNumber(today) - BROKEN_AFTER_DAYS)),
+    ...stale,
     ...[...billDay].map(([categoryId, b]) => setTypicalPostDayStmt(userId, db, categoryId, b.day)),
     ...replaceSuggestionsStmts(userId, db, suggestions),
   ]);

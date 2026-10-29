@@ -14,7 +14,9 @@
     "coverage": "pnpm -r coverage",
     "dev": "pnpm -r --parallel dev",
     "seed:user": "pnpm --filter @rise/api seed:user",
-    "simplefin:claim": "pnpm --filter @rise/api simplefin:claim"
+    "simplefin:claim": "pnpm --filter @rise/api simplefin:claim",
+    "rise:setup": "node --experimental-strip-types apps/api/scripts/setup.ts",
+    "rise:update": "pnpm --filter @rise/web build && cd apps/api && npx wrangler d1 migrations apply rise --remote -c wrangler.local.toml && npx wrangler deploy -c wrangler.local.toml"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

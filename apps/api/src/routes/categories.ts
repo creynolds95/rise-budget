@@ -1,4 +1,5 @@
 import { categoryDefaults, forgiveDeficit, resolvePlanned } from '@rise/shared/budget';
+import { budgetedInGroup } from '@rise/shared/categorize';
 import {
   CreateCategoryBody,
   CreateCategoryGroupBody,
@@ -85,14 +86,14 @@ categories.get('/', async (c) => c.json(await listCategories(c.get('userId'), c.
 categories.post('/', async (c) => {
   const userId = c.get('userId');
   const b = await body(c, CreateCategoryBody);
-  if (!(await getGroup(userId, c.env.DB, b.groupId)))
-    throw new AppError(400, 'BAD_REQUEST', 'Unknown group');
+  const group = await getGroup(userId, c.env.DB, b.groupId);
+  if (!group) throw new AppError(400, 'BAD_REQUEST', 'Unknown group');
   const created = await createCategory(userId, c.env.DB, {
     groupId: b.groupId,
     name: b.name,
     emoji: b.emoji,
     isBill: b.isBill,
-    budgeted: b.budgeted,
+    budgeted: budgetedInGroup(group.name, b.budgeted),
     ...categoryDefaults(b),
   });
   return c.json(created, 201);
@@ -107,12 +108,16 @@ categories.get('/:id', async (c) => {
 categories.patch('/:id', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
-  if (!(await getCategory(userId, c.env.DB, id)))
-    throw new AppError(404, 'NOT_FOUND', 'Category not found');
+  const cat = await getCategory(userId, c.env.DB, id);
+  if (!cat) throw new AppError(404, 'NOT_FOUND', 'Category not found');
   const b = await body(c, PatchCategoryBody);
-  if (b.groupId && !(await getGroup(userId, c.env.DB, b.groupId)))
-    throw new AppError(400, 'BAD_REQUEST', 'Unknown group');
-  return c.json(await updateCategory(userId, c.env.DB, id, b));
+  const group = await getGroup(userId, c.env.DB, b.groupId ?? cat.groupId);
+  if (!group) throw new AppError(400, 'BAD_REQUEST', 'Unknown group');
+  // Moving into Transfers, or asking to count while there, turns counting off.
+  const wants = b.budgeted ?? cat.budgeted;
+  const budgeted = budgetedInGroup(group.name, wants);
+  const patch = budgeted !== wants ? { ...b, budgeted } : b;
+  return c.json(await updateCategory(userId, c.env.DB, id, patch));
 });
 
 /**

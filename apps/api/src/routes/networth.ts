@@ -23,7 +23,7 @@ networth.get('/', async (c) => {
   const userId = c.get('userId');
   const [accts, snaps] = await Promise.all([
     listAccountsForNetWorth(userId, c.env.DB),
-    listSnapshots(userId, c.env.DB, { to }),
+    listSnapshots(userId, c.env.DB, { from, to }),
   ]);
   const byAccount = new Map<string, { asOf: string; balanceCents: number }[]>();
   for (const s of snaps) {

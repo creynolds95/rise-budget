@@ -1,11 +1,16 @@
 import { env } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
-import { upsertManualRuleStmt } from '../src/db';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { linkTransferStmts, upsertManualEventStmt, upsertManualRuleStmt } from '../src/db';
 import { buildCashToPaydayProjection } from '../src/lib/cashToPayday';
+import { localToday } from '../src/lib/dates';
+import { refreshRecurring } from '../src/lib/recurring';
 import { centsToDecimal } from '../src/sync/mock';
 import { runSync } from '../src/sync/run';
 import type { SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
+
+const shiftDay = (day: string, by: number): string =>
+  new Date(Date.parse(`${day}T00:00:00Z`) + by * 86_400_000).toISOString().slice(0, 10);
 
 const sec = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10), 18) / 1000;
 
@@ -43,7 +48,7 @@ async function setup() {
   const u = await signedInUser();
   const api = (method: string, path: string, body?: unknown) =>
     call(method, path, { access: u.access, body });
-  const checking = (await api('POST', '/accounts', { name: 'USAA Checking', kind: 'depository' }))
+  const checking = (await api('POST', '/accounts', { name: 'Summit Checking', kind: 'depository' }))
     .json;
   await api('POST', `/accounts/${checking.id}/snapshots`, {
     asOf: '2026-09-25',
@@ -57,7 +62,7 @@ const feed = () =>
   bridge([
     {
       id: 'chk',
-      name: 'USAA Checking',
+      name: 'Summit Checking',
       reported: '2026-09-25',
       txns: [
         ['p1', '2026-07-20', -310_000, 'ACME CORP PAYROLL'],
@@ -130,12 +135,16 @@ describe('cash to payday', () => {
 
   it('a dismissed suggestion stays gone, and the page names its account', async () => {
     const s = await setup();
-    await runSync(env.DB, s.userId, feed(), { since: '2026-06-01' });
+    // Pinned to a day the feed's series are current; on the wall clock they lapse.
+    await runSync(env.DB, s.userId, feed(), {
+      now: new Date('2026-09-10T20:00:00Z'),
+      since: '2026-06-01',
+    });
     const listed = (await s.api('GET', '/cash-to-payday')).json;
     const mortgage = listed.suggestions.find(
       (r: { merchant: string }) => r.merchant === 'MORTGAGE SERVICING',
     );
-    expect(mortgage?.accountName).toBe('USAA Checking');
+    expect(mortgage?.accountName).toBe('Summit Checking');
     await s.api('PATCH', '/me/settings', {
       dismissedPayMerchants: [{ merchant: 'MORTGAGE SERVICING', displayName: 'Mortgage' }],
     });
@@ -147,7 +156,10 @@ describe('cash to payday', () => {
 
   it('suggests nothing from an account outside the cash accounts', async () => {
     const s = await setup();
-    await runSync(env.DB, s.userId, feed(), { since: '2026-06-01' });
+    await runSync(env.DB, s.userId, feed(), {
+      now: new Date('2026-09-10T20:00:00Z'),
+      since: '2026-06-01',
+    });
     await s.api('PATCH', '/me/settings', { cashAccountIds: [s.checking.id] });
     expect((await s.api('GET', '/cash-to-payday')).json.suggestions).toEqual([]);
   });
@@ -155,7 +167,7 @@ describe('cash to payday', () => {
   it('a plain empty settings default counts every budgeted depository account as cash', async () => {
     const s = await setup();
     const res = await s.api('GET', '/cash-to-payday');
-    expect(res.json.cashAccounts).toEqual([{ id: s.checking.id, name: 'USAA Checking' }]);
+    expect(res.json.cashAccounts).toEqual([{ id: s.checking.id, name: 'Summit Checking' }]);
     expect(res.json.cushionCents).toBe(50_000);
   });
 
@@ -208,6 +220,38 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
     const after = (await s.api('GET', '/cash-to-payday/manual-events')).json;
     expect(after).toHaveLength(1);
     expect(after[0].label).toBe('Car payment');
+  });
+
+  it('ends the horizon where the soonest schedule runs out, so mixed pay cadences stay whole', async () => {
+    const s = await setup();
+    const add = (
+      label: string,
+      kind: string,
+      amountCents: number,
+      cadence: string,
+      anchorDate: string,
+    ) =>
+      s.api('POST', '/cash-to-payday/manual-events', {
+        label,
+        kind,
+        amountCents,
+        cadence,
+        anchorDate,
+      });
+    // Dated from the real clock: adding a rule walks its anchor forward from the real today.
+    const today = localToday('America/Chicago');
+    const first = shiftDay(today, 2);
+    const third = shiftDay(first, 28);
+    await add('Biweekly pay', 'income', 150_000, 'biweekly', first);
+    await add('Side income', 'income', 20_000, 'monthly', shiftDay(today, 25));
+    await add('Rent', 'expense', 250_000, 'monthly', shiftDay(today, 25));
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, today, 200_000, 0);
+    // The biweekly run's third paycheck ends it. Running to the monthly run's third
+    // (about two months out) would count three rents against three of the biweekly pays and
+    // dip below zero.
+    expect(p.points.at(-1)?.date).toBe(third);
+    expect(p.points.every((x) => x.date <= third)).toBe(true);
+    expect(p.lowestPoint.balanceCents).toBeGreaterThanOrEqual(0);
   });
 
   it('404s deleting an event that is not yours or does not exist', async () => {
@@ -318,5 +362,307 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
       });
       expect(res.status).toBe(400);
     });
+  });
+});
+
+describe('Surplus counts every non-card dollar leaving checking (owner, 2026-10-04)', () => {
+  const TODAY = '2026-09-20';
+  const months = ['2026-07', '2026-08', '2026-09'];
+  // Checking pays a synced loan, moves money to synced savings, and pays a card. Each pair
+  // links as a transfer at sync.
+  const feedWithTransfers = () =>
+    bridge([
+      {
+        id: 'chk',
+        name: 'Summit Checking',
+        reported: '2026-09-25',
+        txns: months.flatMap((m, i) => [
+          [`l${i}`, `${m}-14`, 106_054, 'THECB LOAN PYMT'],
+          [`s${i}`, `${m}-15`, 25_000, 'SUMMIT FUNDS TRANSFER DB'],
+          [`c${i}`, `${m}-10`, 80_000 + i * 13_117, 'CITI CARD PAYMENT'],
+        ]) as [string, string, number, string][],
+      },
+      {
+        id: 'loan',
+        name: 'THECB Student Loan',
+        reported: '2026-09-25',
+        txns: months.map((m, i) => [`L${i}`, `${m}-14`, -106_054, 'PAYMENT RECEIVED']) as [
+          string,
+          string,
+          number,
+          string,
+        ][],
+      },
+      {
+        id: 'sav',
+        name: 'Summit Savings',
+        reported: '2026-09-25',
+        txns: months.map((m, i) => [`S${i}`, `${m}-15`, -25_000, 'SUMMIT FUNDS TRANSFER CR']) as [
+          string,
+          string,
+          number,
+          string,
+        ][],
+      },
+      {
+        id: 'citi',
+        name: 'Citi Credit Card',
+        reported: '2026-09-25',
+        txns: months.map((m, i) => [
+          `C${i}`,
+          `${m}-10`,
+          -(80_000 + i * 13_117),
+          'PAYMENT THANK YOU',
+        ]) as [string, string, number, string][],
+      },
+    ]);
+
+  async function synced() {
+    const s = await setup();
+    await runSync(env.DB, s.userId, feedWithTransfers(), {
+      now: new Date('2026-09-20T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    const accounts = (await s.api('GET', '/accounts')).json as {
+      id: string;
+      name: string;
+      kind: string;
+      source: string;
+    }[];
+    const id = (name: string) => accounts.find((a) => a.name === name && a.source !== 'manual')?.id;
+    // Sync links the loan and card pairs itself; the savings pair is linked by hand in review.
+    const idOf = async (sourceId: string) =>
+      (
+        await env.DB.prepare('SELECT id FROM txn WHERE user_id = ?1 AND source_id = ?2')
+          .bind(s.userId, sourceId)
+          .first<{ id: string }>()
+      )?.id as string;
+    for (const i of [0, 1, 2]) {
+      await env.DB.batch(
+        linkTransferStmts(s.userId, env.DB, await idOf(`s${i}`), await idOf(`S${i}`)),
+      );
+    }
+    const txns = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM txn WHERE user_id = ?1 AND is_transfer = 1',
+    )
+      .bind(s.userId)
+      .first<{ n: number }>();
+    return { ...s, id, transfers: txns?.n ?? 0 };
+  }
+
+  it('suggests the loan payment and the savings transfer from checking, never the card payment', async () => {
+    const s = await synced();
+    expect(s.transfers).toBe(18); // every leg linked: the case that used to hide them
+    await s.api('PATCH', '/me/settings', { cashAccountIds: [s.id('Summit Checking')] });
+    await refreshRecurring(env.DB, s.userId, TODAY);
+    const { suggestions } = await buildCashToPaydayProjection(env.DB, s.userId, TODAY, 0, 0);
+    expect(suggestions.map((r: { merchant: string }) => r.merchant).sort()).toEqual([
+      'SUMMIT FUNDS TRANSFER DB',
+      'THECB LOAN PYMT',
+    ]);
+  });
+
+  it('a transfer between two cash accounts nets to nothing', async () => {
+    const s = await synced();
+    await s.api('PATCH', '/me/settings', {
+      cashAccountIds: [s.id('Summit Checking'), s.id('Summit Savings')],
+    });
+    await refreshRecurring(env.DB, s.userId, TODAY);
+    const { suggestions } = await buildCashToPaydayProjection(env.DB, s.userId, TODAY, 0, 0);
+    expect(suggestions.map((r: { merchant: string }) => r.merchant)).toEqual(['THECB LOAN PYMT']);
+  });
+
+  it('a tagged loan rule on a transfer advances when its debit posts', async () => {
+    const s = await synced();
+    await env.DB.batch([
+      upsertManualRuleStmt(s.userId, env.DB, 'THECB LOAN PYMT', 'monthly', 106_054, '2026-09-14'),
+    ]);
+    await refreshRecurring(env.DB, s.userId, TODAY);
+    const row = await env.DB.prepare(
+      "SELECT next_expected_date, status FROM recurring_series WHERE user_id = ?1 AND merchant_normalized = 'THECB LOAN PYMT'",
+    )
+      .bind(s.userId)
+      .first();
+    expect(row).toEqual({ next_expected_date: '2026-10-14', status: 'active' });
+  });
+});
+
+describe('Surplus never drops a schedule whose date has passed', () => {
+  it('a late mortgage still counts today; a hand-added paycheck walks on', async () => {
+    const s = await setup();
+    await env.DB.batch([
+      upsertManualRuleStmt(
+        s.userId,
+        env.DB,
+        'MORTGAGE SERVICING',
+        'monthly',
+        196_811,
+        '2026-10-01',
+      ),
+    ]);
+    await s.api('POST', '/cash-to-payday/manual-events', {
+      label: 'Church payroll',
+      kind: 'income',
+      amountCents: 230_840,
+      cadence: 'monthly',
+      anchorDate: '2026-09-15',
+    });
+    // Months later, nothing has posted: the hand-added date is stale in the database.
+    await env.DB.prepare(
+      "UPDATE recurring_series SET next_expected_date = '2026-06-15' WHERE user_id = ?1 AND label IS NOT NULL",
+    )
+      .bind(s.userId)
+      .run();
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-03', 200_000, 0);
+    expect(p.points.slice(0, 3)).toEqual([
+      { date: '2026-10-03', balanceCents: 200_000, label: 'Today' },
+      { date: '2026-10-03', balanceCents: 3_189, label: 'MORTGAGE SERVICING' },
+      { date: '2026-10-15', balanceCents: 234_029, label: 'Church payroll' },
+    ]);
+    expect(p.freeToMoveCents).toBe(3_189);
+    expect(p.schedules.find((r) => r.isHandAdded)?.nextExpectedDate).toBe('2026-10-15');
+  });
+
+  it('refresh keeps a hand-added schedule current and never flags it missed', async () => {
+    const s = await setup();
+    await s.api('POST', '/cash-to-payday/manual-events', {
+      label: 'Church payroll',
+      kind: 'income',
+      amountCents: 230_840,
+      cadence: 'semimonthly',
+      anchorDate: '2026-10-01',
+      anchorDays: [15, 31],
+    });
+    await env.DB.prepare(
+      "UPDATE recurring_series SET next_expected_date = '2026-06-15' WHERE user_id = ?1",
+    )
+      .bind(s.userId)
+      .run();
+    await refreshRecurring(env.DB, s.userId, '2026-10-04');
+    const row = await env.DB.prepare(
+      'SELECT next_expected_date, status FROM recurring_series WHERE user_id = ?1',
+    )
+      .bind(s.userId)
+      .first<{ next_expected_date: string; status: string }>();
+    expect(row?.status).toBe('active');
+    expect(row?.next_expected_date).toBe('2026-10-15');
+  });
+});
+
+describe('a paycheck that changes from a date on (owner, 2026-10-05)', () => {
+  it('projects the old amount before the date, the new one from it, then folds it in', async () => {
+    // The routes advance schedules by the real date; pin it to the day the test is written for.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-04T18:00:00Z'));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const s = await setup();
+    const { id } = (
+      await s.api('POST', '/cash-to-payday/manual-events', {
+        label: 'Payroll',
+        kind: 'income',
+        amountCents: 207_000,
+        cadence: 'semimonthly',
+        anchorDate: '2026-10-05',
+        anchorDays: [5, 20],
+      })
+    ).json;
+    const put = await s.api('PUT', '/cash-to-payday/schedules', {
+      id,
+      kind: 'income',
+      amountCents: 207_000,
+      cadence: 'semimonthly',
+      anchorDate: '2026-10-05',
+      anchorDays: [5, 20],
+      label: 'Payroll',
+      change: { amountCents: 170_025, on: '2026-11-05' },
+    });
+    expect(put.status).toBe(200);
+    // The route files the next date from the real clock; pin it so the test doesn't rot.
+    await env.DB.prepare(
+      "UPDATE recurring_series SET next_expected_date = '2026-10-05' WHERE user_id = ?1",
+    )
+      .bind(s.userId)
+      .run();
+
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-10-04', 0, 0);
+    expect(p.points.slice(1).map((x) => [x.date, x.balanceCents])).toEqual([
+      ['2026-10-05', 207_000],
+      ['2026-10-20', 414_000],
+      ['2026-11-05', 584_025],
+    ]);
+    expect(p.schedules[0]).toEqual(
+      expect.objectContaining({
+        amountCents: 207_000,
+        change: { amountCents: 170_025, on: '2026-11-05' },
+      }),
+    );
+
+    // Once every date ahead is past the change, it simply is the amount.
+    await refreshRecurring(env.DB, s.userId, '2026-10-19');
+    let row = await env.DB.prepare(
+      'SELECT expected_amount_cents AS a, amount_changes_on AS on_ FROM recurring_series WHERE user_id = ?1',
+    )
+      .bind(s.userId)
+      .first<{ a: number; on_: string | null }>();
+    expect(row).toEqual({ a: -207_000, on_: '2026-11-05' });
+    await refreshRecurring(env.DB, s.userId, '2026-10-21');
+    row = await env.DB.prepare(
+      'SELECT expected_amount_cents AS a, amount_changes_on AS on_ FROM recurring_series WHERE user_id = ?1',
+    )
+      .bind(s.userId)
+      .first<{ a: number; on_: string | null }>();
+    expect(row).toEqual({ a: -170_025, on_: null });
+  });
+
+  it('saving without a change clears one', async () => {
+    const s = await setup();
+    const body = {
+      kind: 'expense',
+      amountCents: 50_000,
+      cadence: 'monthly',
+      anchorDate: '2026-10-10',
+      label: 'Daycare',
+    };
+    const { id } = (await s.api('POST', '/cash-to-payday/manual-events', body)).json;
+    await s.api('PUT', '/cash-to-payday/schedules', {
+      ...body,
+      id,
+      change: { amountCents: 60_000, on: '2026-12-10' },
+    });
+    await s.api('PUT', '/cash-to-payday/schedules', { ...body, id });
+    const { schedules } = (await s.api('GET', '/cash-to-payday')).json;
+    expect(schedules[0].change).toBeNull();
+  });
+});
+
+describe('a suggestion already in Surplus under another name', () => {
+  it('a suggestion that looks like a hand-added mortgage says so, and still shows', async () => {
+    const s = await setup();
+    await runSync(env.DB, s.userId, feed(), {
+      now: new Date('2026-09-10T20:00:00Z'),
+      since: '2026-06-01',
+    });
+    const names = async () =>
+      (await buildCashToPaydayProjection(env.DB, s.userId, '2026-09-10', 0, 0)).suggestions.map(
+        (r) => [r.merchant, r.likelySameAs],
+      );
+    expect(await names()).toContainEqual(['MORTGAGE SERVICING', null]);
+    await env.DB.batch([
+      upsertManualEventStmt(
+        s.userId,
+        env.DB,
+        'hand1',
+        'Mortgage',
+        'monthly',
+        180_000,
+        '2026-09-27',
+      ),
+    ]);
+    expect(await names()).toEqual([
+      ['ACME CORP PAYROLL', null],
+      ['MORTGAGE SERVICING', 'Mortgage'],
+    ]);
   });
 });

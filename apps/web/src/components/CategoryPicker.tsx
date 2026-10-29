@@ -1,22 +1,27 @@
 import { useState } from 'react';
 import { useCategories, useGroups } from '../lib/queries';
 import { Sheet } from './primitives/Sheet';
+import { Toggle } from './primitives/Toggle';
 
 /** Every category, grouped, with a filter. The swipe-left and "Other…" target (SPEC §8). */
 export function CategoryPicker({
   open,
   title = 'Choose a category',
+  always,
   onPick,
   onClose,
 }: {
   open: boolean;
   title?: string;
-  onPick: (categoryId: string) => void;
+  /** Offer "Always file this merchant here"; the pick then says whether it was on. */
+  always?: { merchant: string } | undefined;
+  onPick: (categoryId: string, always: boolean) => void;
   onClose: () => void;
 }) {
   const groups = useGroups().data ?? [];
   const categories = useCategories().data ?? [];
   const [q, setQ] = useState('');
+  const [rule, setRule] = useState(false);
   const match = (name: string) => name.toLowerCase().includes(q.trim().toLowerCase());
   return (
     <Sheet
@@ -24,11 +29,19 @@ export function CategoryPicker({
       title={title}
       onClose={() => {
         setQ('');
+        setRule(false);
         onClose();
       }}
     >
+      {always && (
+        <div className="mb-3 flex min-h-12 items-center justify-between gap-3 rounded-card bg-surface px-4 shadow-soft">
+          <span className="min-w-0 truncate">Always file {always.merchant} here</span>
+          <Toggle label="Always file this merchant here" on={rule} onChange={setRule} />
+        </div>
+      )}
+      {/* No autofocus: the keyboard rising mid-slide makes the sheet stutter and, on iOS,
+          can leave the page's height short afterwards. Tap Search to type. */}
       <input
-        autoFocus
         aria-label="Filter categories"
         className="min-h-11 w-full rounded-input border border-hairline bg-surface px-3"
         placeholder="Search"
@@ -51,7 +64,8 @@ export function CategoryPicker({
                     className="flex min-h-12 w-full items-center border-b border-hairline text-left active:bg-sage-100"
                     onClick={() => {
                       setQ('');
-                      onPick(c.id);
+                      onPick(c.id, rule);
+                      setRule(false);
                     }}
                   >
                     {c.emoji && <span className="mr-2">{c.emoji}</span>}

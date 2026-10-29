@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
+  ApiError,
   isDbLimited,
   isOnline,
   onDbLimitChange,
@@ -46,6 +47,40 @@ function stuckCount(qc: QueryClient): number {
   return qc.getQueryCache().getAll().filter(isStuck).length;
 }
 
+/**
+ * An on-screen read whose refresh failed while it still shows its last good answer. The
+ * daily-limit bar covers that one cause already.
+ */
+function isRefreshFailed(q: Query): boolean {
+  const e = q.state.error;
+  return (
+    q.getObserversCount() > 0 &&
+    q.state.data !== undefined &&
+    q.state.status === 'error' &&
+    q.state.fetchStatus === 'idle' &&
+    !(e instanceof ApiError && e.code === 'DB_LIMIT')
+  );
+}
+
+/** When the oldest answer on screen that failed to refresh was fetched, or 0 for none. */
+function failedSince(qc: QueryClient): number {
+  const at = qc
+    .getQueryCache()
+    .getAll()
+    .filter(isRefreshFailed)
+    .map((q) => q.state.dataUpdatedAt);
+  return at.length ? Math.min(...at) : 0;
+}
+
+export function useRefreshFailedSince(): number {
+  const qc = useQueryClient();
+  return useSyncExternalStore(
+    (fn) => qc.getQueryCache().subscribe(fn),
+    () => failedSince(qc),
+    () => 0,
+  );
+}
+
 /** How many on-screen reads have nothing to show and no way to get it without help (C5). */
 export function useStuckQueries(): number {
   const qc = useQueryClient();
@@ -76,6 +111,7 @@ export function OfflineBar() {
   const [refused, setRefused] = useState<string[]>([]);
   const stuck = useStuckQueries();
   const limited = useDbLimited();
+  const staleSince = useRefreshFailedSince();
   const retry = () => {
     void probe();
     void qc.refetchQueries({ predicate: isStuck });
@@ -152,7 +188,12 @@ export function OfflineBar() {
         ? "Couldn't load this screen"
         : "This screen isn't saved on this device yet"
       : null;
-  const show = text !== null || refused.length > 0 || failed !== null || limited;
+  // SPEC §10 again: data shown after a failed refresh is stale, and says so, quietly.
+  const stale =
+    online && !limited && staleSince > 0
+      ? `Couldn't refresh · data from ${stamp(staleSince)}`
+      : null;
+  const show = text !== null || refused.length > 0 || failed !== null || limited || stale !== null;
 
   // Sticky headers sit below the bar rather than under it, however many rows it has.
   const bar = useRef<HTMLDivElement>(null);
@@ -187,6 +228,17 @@ export function OfflineBar() {
         <p className="flex items-center justify-center bg-surface px-4 py-1 type-caption text-ink shadow-soft">
           Daily database limit reached. It resets at 7 pm Central. Saved data still shows.
         </p>
+      )}
+      {stale && !failed && (
+        <div className="flex items-center justify-between gap-3 bg-surface px-4 type-caption text-ink-muted shadow-soft">
+          <span>{stale}</span>
+          <button
+            className="min-h-11 shrink-0 font-semibold text-sage-700"
+            onClick={() => void qc.refetchQueries({ predicate: isRefreshFailed })}
+          >
+            Retry
+          </button>
+        </div>
       )}
       {failed && (
         <div className="flex items-center justify-between gap-3 bg-surface px-4 py-1 type-caption text-clay shadow-soft">

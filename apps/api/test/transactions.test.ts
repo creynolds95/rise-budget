@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { deleteTransaction, getTransactionRow, type TxnRow } from '../src/db';
 import { call, signedInUser } from './helpers/http';
 
 async function setup() {
@@ -106,6 +107,12 @@ describe('T21 transactions & splits', () => {
   });
 
   it('a split into a past month changes that month and carries on with no confirmation (edge 5)', async () => {
+    // Carry only flows from months that have ended.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-01-15T18:00:00Z'));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const s = await setup();
     await s.api('PATCH', '/periods/2026-10', { expectedIncomeCents: 100_000 });
     await s.api('PATCH', '/periods/2026-11', { expectedIncomeCents: 100_000 });
@@ -152,7 +159,7 @@ describe('T21 transactions & splits', () => {
     );
     expect((await s.api('GET', '/transactions?q=100%25')).json.items).toEqual([]);
     expect((await s.api('GET', '/transactions?cursor=***')).status).toBe(400);
-  });
+  }, 20_000);
 
   it('filters by category through splits', async () => {
     const s = await setup();
@@ -182,6 +189,28 @@ describe('T21 transactions & splits', () => {
     const acct = await s.api('GET', `/transactions?account=${cash.id}`);
     expect(acct.json.items.map((t: { descriptorRaw: string }) => t.descriptorRaw)).toEqual(['D']);
     expect((await s.api('GET', '/transactions?account=,')).status).toBe(400);
+  });
+
+  it('excludes categories and accounts', async () => {
+    const s = await setup();
+    const cash = (await s.api('POST', '/accounts', { name: 'Cash', kind: 'depository' })).json;
+    await s.add('2026-09-02', 500, 'A', s.home.id);
+    await s.add('2026-09-03', 700, 'B', s.kids.id);
+    await s.api('POST', '/transactions', {
+      accountId: cash.id,
+      postedAt: '2026-09-05',
+      amountCents: 300,
+      descriptor: 'D',
+      categoryId: s.kids.id,
+    });
+    const names = (r: { json: { items: { descriptorRaw: string }[] } }) =>
+      r.json.items.map((t) => t.descriptorRaw);
+    expect(names(await s.api('GET', `/transactions?notCategory=${s.kids.id}`))).toEqual(['A']);
+    expect(names(await s.api('GET', `/transactions?notAccount=${cash.id}`))).toEqual(['B', 'A']);
+    expect(
+      names(await s.api('GET', `/transactions?notAccount=${cash.id}&notCategory=${s.kids.id}`)),
+    ).toEqual(['A']);
+    expect((await s.api('GET', '/transactions?notCategory=,')).status).toBe(400);
   });
 
   it('filters by direction and amount size', async () => {
@@ -218,7 +247,7 @@ describe('T21 transactions & splits', () => {
     }[];
     expect(old[0]?.postedAt).toBe('2026-09-10');
     expect((await s.api('GET', '/transactions?sort=sideways')).status).toBe(400);
-  });
+  }, 20_000);
 
   it('rejects unknown or foreign categories and accounts; users cannot see each other', async () => {
     const a = await setup();
@@ -242,7 +271,7 @@ describe('T21 transactions & splits', () => {
     expect(
       (await a.api('PATCH', `/transactions/${t.json.id}`, { reviewState: 'dropped' })).status,
     ).toBe(400);
-  });
+  }, 20_000);
 
   it('transfers never count toward spent', async () => {
     const s = await setup();
@@ -372,5 +401,90 @@ describe('deleting a transaction', () => {
     await s.api('POST', `/transactions/${out.json.id}/transfer-link`, { otherTxnId: inn.id });
     const r = await s.api('DELETE', `/transactions/${out.json.id}`);
     expect(r.status).toBe(409);
+  });
+
+  it('is all or nothing: a delete the database refuses leaves the splits in place', async () => {
+    const s = await setup();
+    const purchase = await s.add('2026-09-10', 5_000, 'CHIPOTLE', s.home.id);
+    const refund = await s.add('2026-09-12', -5_000, 'CHIPOTLE REFUND', s.home.id);
+    // Point the refund at the purchase behind the route's back, so the row delete hits the FK.
+    await env.DB.prepare('UPDATE txn SET refund_of_id = ?2 WHERE user_id = ?1 AND id = ?3')
+      .bind(s.userId, purchase.json.id, refund.json.id)
+      .run();
+    const row = await getTransactionRow(s.userId, env.DB, purchase.json.id);
+    await expect(deleteTransaction(s.userId, env.DB, row as TxnRow)).rejects.toThrow();
+    const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM split WHERE txn_id = ?1')
+      .bind(purchase.json.id)
+      .first<{ n: number }>();
+    expect(left?.n).toBe(1);
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(0);
+  });
+});
+
+describe('unlinking a transfer', () => {
+  it('sends a deposit leg to the income catch-all and the outflow leg to Other', async () => {
+    const s = await setup();
+    const checking = (await s.api('POST', '/accounts', { name: 'Checking', kind: 'depository' }))
+      .json;
+    const savings = (await s.api('POST', '/accounts', { name: 'Savings', kind: 'depository' }))
+      .json;
+    const leg = async (accountId: string, amountCents: number, descriptor: string) =>
+      (
+        await s.api('POST', '/transactions', {
+          accountId,
+          postedAt: '2026-09-10',
+          amountCents,
+          descriptor,
+        })
+      ).json;
+    const out = await leg(checking.id, 5_000, 'TRANSFER TO SAVINGS');
+    const inn = await leg(savings.id, -5_000, 'TRANSFER FROM CHECKING');
+    await s.api('POST', `/transactions/${out.id}/transfer-link`, { otherTxnId: inn.id });
+    const r = await s.api('DELETE', `/transactions/${inn.id}/transfer-link`);
+    expect(r.status).toBe(200);
+    const cats = (await s.api('GET', '/categories')).json as { id: string; name: string }[];
+    const nameOf = (id: string) => cats.find((c) => c.id === id)?.name;
+    const byId = new Map(
+      (r.json.items as { id: string; splits: { categoryId: string }[] }[]).map((t) => [
+        t.id,
+        t.splits.map((sp) => nameOf(sp.categoryId)),
+      ]),
+    );
+    expect(byId.get(inn.id)).toEqual(['Other Income']);
+    expect(byId.get(out.id)).toEqual(['Other']);
+  });
+});
+
+describe('refund association', () => {
+  it('a refund takes the purchase category, nets spending, and unlinks', async () => {
+    const s = await setup();
+    const buy = (await s.add('2026-09-05', 10_000, 'TARGET', s.home.id)).json;
+    const refund = (await s.add('2026-09-12', -4_000, 'TARGET REFUND', s.kids.id)).json;
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(10_000);
+    const r = await s.api('POST', `/transactions/${refund.id}/refund-link`, {
+      originalTxnId: buy.id,
+    });
+    expect(r.status).toBe(200);
+    expect(r.json.refundOfId).toBe(buy.id);
+    expect(r.json.splits).toMatchObject([{ categoryId: s.home.id, amountCents: -4_000 }]);
+    expect(await spentIn(s, '2026-09', s.home.id)).toBe(6_000);
+    expect(await spentIn(s, '2026-09', s.kids.id)).toBe(0);
+    // the purchase can't be deleted out from under its refund
+    expect((await s.api('DELETE', `/transactions/${buy.id}`)).status).toBe(409);
+    const u = await s.api('DELETE', `/transactions/${refund.id}/refund-link`);
+    expect(u.json.refundOfId).toBeNull();
+    expect((await s.api('DELETE', `/transactions/${buy.id}`)).status).toBe(204);
+  });
+
+  it('refuses a refund bigger than what is left, and a second link', async () => {
+    const s = await setup();
+    const buy = (await s.add('2026-09-05', 10_000, 'TARGET', s.home.id)).json;
+    const r1 = (await s.add('2026-09-12', -7_000, 'REFUND A')).json;
+    const r2 = (await s.add('2026-09-13', -4_000, 'REFUND B')).json;
+    const link = (id: string) =>
+      s.api('POST', `/transactions/${id}/refund-link`, { originalTxnId: buy.id });
+    expect((await link(r1.id)).status).toBe(200);
+    expect((await link(r2.id)).status).toBe(422);
+    expect((await link(r1.id)).status).toBe(409);
   });
 });

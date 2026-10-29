@@ -24,10 +24,25 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      - name: Set JWT_SECRET and TOTP_KEY worker secrets
+      # Never overwrite: on a live install a new JWT_SECRET signs everyone out and a new
+      # TOTP_KEY breaks every authenticator code. Only secrets the Worker lacks are set.
+      - name: Set JWT_SECRET and TOTP_KEY worker secrets (only if missing)
         working-directory: apps/api
         run: |
+          # Fail closed: if the list can't be read, set nothing (a brand-new Worker is the
+          # one expected error, and has no secrets yet).
+          if ! existing=$(npx wrangler secret list 2>&1); then
+            if printf '%s' "$existing" | grep -Eq 'code: 10007|does not exist'; then
+              existing='[]'
+            else
+              echo "$existing"; echo "Could not list secrets; not setting any."; exit 1
+            fi
+          fi
           for name in JWT_SECRET TOTP_KEY; do
+            if printf '%s' "$existing" | grep -q "\"name\": *\"$name\""; then
+              echo "$name is already set; leaving it alone."
+              continue
+            fi
             value=$(openssl rand -hex 32)
             echo "::add-mask::$value"
             printf '%s' "$value" | npx wrangler secret put "$name"

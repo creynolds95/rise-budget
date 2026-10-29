@@ -1,4 +1,4 @@
-import type { ViewCategory } from '@rise/shared/budget';
+import { applyTolerance, type ViewCategory } from '@rise/shared/budget';
 import { cumulativeSpend, sameDayTotal } from '@rise/shared/reports';
 import type { Category } from '@rise/shared/schemas';
 import { Link, useNavigate } from 'react-router';
@@ -21,50 +21,34 @@ const ordinal = (n: number) =>
  * spending faster than last month (the line), on what (the categories). Every comparison is
  * in dollars — no percentages over one month (§7).
  */
-export function SpendingSection(props: {
-  month: string;
-  spentCents: number;
-  elapsedDays: number;
-  categories: ViewCategory[];
-  lastCategories: ViewCategory[] | undefined;
-  names: Category[] | undefined;
-}) {
+export function SpendingSection(props: { month: string; spentCents: number; elapsedDays: number }) {
   const { month, elapsedDays } = props;
   const prevMonth = addMonths(month, -1);
   const report = useSpendingReport(month).data;
 
   return (
-    <>
-      <section className="mt-10" aria-labelledby="spending-h">
-        <h2 id="spending-h" className="type-title">
-          Spending
-        </h2>
-        <div className="mt-2 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-          {report ? (
-            <PaceAgainstLastMonth
-              month={month}
-              prevMonth={prevMonth}
-              elapsedDays={elapsedDays}
-              spentCents={props.spentCents}
-              days={report.days}
-            />
-          ) : (
-            <>
-              <Skeleton className="h-9 w-40" />
-              <Skeleton className="mt-2 h-4 w-64" />
-              <Skeleton className="mt-5 h-40 w-full" />
-            </>
-          )}
-        </div>
-      </section>
-
-      <WhereItWent
-        categories={props.categories}
-        lastCategories={props.lastCategories}
-        names={props.names}
-        prevMonth={prevMonth}
-      />
-    </>
+    <section aria-labelledby="spending-h">
+      <h2 id="spending-h" className="type-title">
+        Spending
+      </h2>
+      <div className="mt-2 overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+        {report ? (
+          <PaceAgainstLastMonth
+            month={month}
+            prevMonth={prevMonth}
+            elapsedDays={elapsedDays}
+            spentCents={props.spentCents}
+            days={report.days}
+          />
+        ) : (
+          <>
+            <Skeleton className="h-9 w-40" />
+            <Skeleton className="mt-2 h-4 w-64" />
+            <Skeleton className="mt-5 h-40 w-full" />
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -107,6 +91,7 @@ function PaceAgainstLastMonth(props: {
           kind="lines"
           label={`Running spending total: ${name} against ${prevName}`}
           slots={slots}
+          detailed
           xLabels={['1', ordinal(Math.ceil(slots / 2)), ordinal(slots)]}
           lines={[
             { label: prevName, values: previous, color: series[1] as string },
@@ -115,11 +100,7 @@ function PaceAgainstLastMonth(props: {
         />
       </div>
       <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 type-caption text-ink-muted">
-        <Legend color={series[0]} label={name}>
-          <span>
-            <MoneyText cents={props.spentCents} tone="muted" whole /> so far
-          </span>
-        </Legend>
+        <Legend color={series[0]} label={name} />
         <Legend color={series[1]} label={prevName}>
           <span>
             <MoneyText cents={previous.at(-1) ?? 0} tone="muted" whole /> all month
@@ -141,12 +122,16 @@ function Legend(props: { color: string; label: string; children?: React.ReactNod
 }
 
 /** The biggest categories this month, each against itself last month. */
-function WhereItWent(props: {
+export function WhereItWent(props: {
+  month: string;
   categories: ViewCategory[];
   lastCategories: ViewCategory[] | undefined;
   names: Category[] | undefined;
-  prevMonth: string;
 }) {
+  const prevMonth = addMonths(props.month, -1);
+  // Before the early return: a hook after it is skipped on an empty month, and React throws
+  // when the next render (spending arrives) calls one more hook than the last.
+  const navigate = useNavigate();
   const spent = props.categories
     .filter((c) => c.groupKind === 'expense' && c.spentCents > 0)
     .sort((a, b) => b.spentCents - a.spentCents);
@@ -156,10 +141,9 @@ function WhereItWent(props: {
   const lastBy = new Map((props.lastCategories ?? []).map((c) => [c.categoryId, c.spentCents]));
   const cat = (id: string) => props.names?.find((c) => c.id === id);
   const rest = spent.length - top.length;
-  const navigate = useNavigate();
 
   return (
-    <section className="mt-10" aria-labelledby="where-h">
+    <section aria-labelledby="where-h">
       <h2 id="where-h" className="type-title">
         Where it went
       </h2>
@@ -186,7 +170,7 @@ function WhereItWent(props: {
                   </span>
                   <MoneyText
                     cents={c.spentCents}
-                    tone={c.remainingCents < 0 ? 'over' : 'ink'}
+                    tone={applyTolerance(c).remainingCents < 0 ? 'over' : 'ink'}
                     className="font-semibold"
                     whole
                   />
@@ -194,16 +178,16 @@ function WhereItWent(props: {
                 <span className="mt-2 flex items-center gap-3">
                   <span className="h-1 flex-1 overflow-hidden rounded-full bg-sage-100">
                     <span
-                      className={`block h-full rounded-full ${c.remainingCents < 0 ? 'bg-clay' : 'bg-sage-600'}`}
+                      className={`block h-full rounded-full ${applyTolerance(c).remainingCents < 0 ? 'bg-clay' : 'bg-sage-600'}`}
                       style={{ width: `${Math.max(2, (c.spentCents / max) * 100)}%` }}
                     />
                   </span>
                   <span className="w-24 shrink-0 text-right type-caption text-ink-faint">
                     {was === undefined || was === 0 ? (
-                      `none in ${short(props.prevMonth)}`
+                      `none in ${short(prevMonth)}`
                     ) : (
                       <>
-                        {short(props.prevMonth)} <MoneyText cents={was} tone="muted" whole />
+                        {short(prevMonth)} <MoneyText cents={was} tone="muted" whole />
                       </>
                     )}
                   </span>

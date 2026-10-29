@@ -1,6 +1,6 @@
 # Rise app icon
 
-Fraunces R under a gold dome: dough rising before it bakes, the way savings build before they're ready.
+Fraunces R under a gold loaf scored along the top: dough rising before it bakes, the way savings build before they're ready.
 
 - `rise-icon.svg` — master, full-bleed square (the OS applies its own mask). The R is outlined, no font needed.
 - `rise-icon-maskable.svg` — mark scaled to the maskable safe zone.

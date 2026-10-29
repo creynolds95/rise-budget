@@ -33,6 +33,59 @@ describe('T17 accounts & snapshots', () => {
     });
   });
 
+  it('sets and clears a custom badge; the three parts move together', async () => {
+    const u = await signedInUser();
+    const created = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'Credit union', kind: 'depository' },
+    });
+    expect(created.json.badge).toBeNull();
+    const id = created.json.id;
+
+    const set = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { text: 'CU', bg: '#1A4D2E', fg: '#FFFFFF' } },
+    });
+    expect(set.json.badge).toEqual({ text: 'CU', bg: '#1a4d2e', fg: '#ffffff' });
+
+    const renamed = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { name: 'My credit union' },
+    });
+    expect(renamed.json.badge).toEqual({ text: 'CU', bg: '#1a4d2e', fg: '#ffffff' });
+
+    const bad = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { text: 'TOOLONG', bg: 'red', fg: '#fff' } },
+    });
+    expect(bad.status).toBe(400);
+
+    const symbol = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { icon: 'home' } },
+    });
+    expect(symbol.json.badge).toEqual({ icon: 'home' });
+
+    const backToLetters = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { text: 'CU', bg: '#1A4D2E', fg: '#FFFFFF' } },
+    });
+    expect(backToLetters.json.badge).toEqual({ text: 'CU', bg: '#1a4d2e', fg: '#ffffff' });
+
+    const unknownSymbol = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: { icon: 'rocket' } },
+    });
+    expect(unknownSymbol.status).toBe(400);
+
+    await call('PATCH', `/accounts/${id}`, { access: u.access, body: { badge: { icon: 'car' } } });
+    const cleared = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { badge: null },
+    });
+    expect(cleared.json.badge).toBeNull();
+  });
+
   it("returns 404 for another user's account", async () => {
     const a = await signedInUser();
     const b = await signedInUser();
@@ -83,6 +136,56 @@ describe('T17 accounts & snapshots', () => {
     expect((await call('GET', `/accounts/${id}`, { access: u.access })).json.balanceCents).toBe(
       30_500_000,
     );
+  });
+
+  it('removing a dated balance re-points the current balance; the last one stays', async () => {
+    const u = await signedInUser();
+    const acct = await call('POST', '/accounts', {
+      access: u.access,
+      body: { name: 'House', kind: 'other' },
+    });
+    const id = acct.json.id;
+    const snap = (asOf: string, balanceCents: number) =>
+      call('POST', `/accounts/${id}/snapshots`, { access: u.access, body: { asOf, balanceCents } });
+    const del = (asOf: string, access = u.access) =>
+      call('DELETE', `/accounts/${id}/snapshots/${asOf}`, { access });
+    const balance = async () =>
+      (await call('GET', `/accounts/${id}`, { access: u.access })).json.balanceCents;
+
+    await snap('2026-06-01', 29_000_000);
+    await snap('2026-09-01', 31_000_000); // a typo
+
+    // Another user can't touch it.
+    expect((await del('2026-09-01', (await signedInUser()).access)).status).toBe(404);
+    expect((await del('not-a-date')).status).toBe(400);
+
+    expect((await del('2026-09-01')).status).toBe(200);
+    expect(await balance()).toBe(29_000_000);
+    expect((await call('GET', `/accounts/${id}/snapshots`, { access: u.access })).json).toEqual([
+      { asOf: '2026-06-01', balanceCents: 29_000_000 },
+    ]);
+
+    // Removing an older entry leaves the current balance alone.
+    await snap('2026-09-02', 30_000_000);
+    await del('2026-06-01');
+    expect(await balance()).toBe(30_000_000);
+
+    // The only balance left can't be removed.
+    expect((await del('2026-09-02')).status).toBe(409);
+    expect(await balance()).toBe(30_000_000);
+  });
+
+  it('a synced account keeps its balances', async () => {
+    const u = await signedInUser();
+    const id = 'acct-synced-' + crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO account (id, user_id, source, source_account_id, name, kind, balance_cents, created_at)
+       VALUES (?1, ?2, 'simplefin', ?1, 'Checking', 'depository', 100, ?3)`,
+    )
+      .bind(id, u.userId, new Date().toISOString())
+      .run();
+    const r = await call('DELETE', `/accounts/${id}/snapshots/2026-09-01`, { access: u.access });
+    expect(r.status).toBe(409);
   });
 
   it('flips the stored sign when kind crosses the liability boundary', async () => {
@@ -153,7 +256,7 @@ describe('T17 accounts & snapshots', () => {
     const id = crypto.randomUUID();
     await env.DB.prepare(
       `INSERT INTO account (id, user_id, name, kind, source, balance_cents, include_in_net_worth,
-         include_in_budget, created_at) VALUES (?1, ?2, 'Chase', 'credit', 'simplefin', 0, 1, 1, ?3)`,
+         include_in_budget, created_at) VALUES (?1, ?2, 'Metro', 'credit', 'simplefin', 0, 1, 1, ?3)`,
     )
       .bind(id, u.userId, new Date().toISOString())
       .run();
@@ -261,5 +364,36 @@ describe('T17 net worth', () => {
     expect(
       (await call('GET', '/networth?from=2026-09-03&to=2026-09-01', { access: u.access })).status,
     ).toBe(400);
+  });
+});
+
+describe('investments', () => {
+  it('says how much joined each day, so a new account is not read as growth', async () => {
+    const u = await signedInUser();
+    const add = async (name: string) =>
+      (await call('POST', '/accounts', { access: u.access, body: { name, kind: 'investment' } }))
+        .json.id as string;
+    const snap = (id: string, asOf: string, balanceCents: number) =>
+      call('POST', `/accounts/${id}/snapshots`, { access: u.access, body: { asOf, balanceCents } });
+    const old = await add('Index fund');
+    const fresh = await add('Brokerage');
+    await snap(old, '2026-09-01', 10_000_000);
+    await snap(old, '2026-09-03', 10_000_000);
+    await snap(fresh, '2026-09-02', 5_000_000);
+    await snap(fresh, '2026-09-03', 5_000_000);
+    const r = await call('GET', '/investments?from=2026-09-01&to=2026-09-03', {
+      access: u.access,
+    });
+    expect(r.status).toBe(200);
+    expect(
+      r.json.points.map((p: { balanceCents: number; joinedCents: number }) => [
+        p.balanceCents,
+        p.joinedCents,
+      ]),
+    ).toEqual([
+      [10_000_000, 0],
+      [15_000_000, 5_000_000],
+      [15_000_000, 0],
+    ]);
   });
 });

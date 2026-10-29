@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addPeriods,
+  monthsBetween,
   comparePeriods,
   daysInPeriod,
   hasEnded,
@@ -69,5 +70,13 @@ describe('pace', () => {
     expect(pace('2026-09', '2026-09-01')).toEqual({ elapsedDays: 1, totalDays: 30 });
     expect(pace('2026-09', '2026-09-15')).toEqual({ elapsedDays: 15, totalDays: 30 });
     expect(pace('2026-09', '2026-11-02')).toEqual({ elapsedDays: 30, totalDays: 30 });
+  });
+});
+
+describe('monthsBetween', () => {
+  it('counts whole months either way across a year', () => {
+    expect(monthsBetween('2026-11', '2027-02')).toBe(3);
+    expect(monthsBetween('2027-02', '2026-11')).toBe(-3);
+    expect(monthsBetween('2026-10', '2026-10')).toBe(0);
   });
 });

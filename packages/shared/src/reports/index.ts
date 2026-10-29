@@ -104,11 +104,22 @@ export interface MoneyFlow {
 
 /**
  * Income categories → a single "Income" node → expense groups → expense categories, plus
- * whatever wasn't spent as a final "Left over" link. Pure shaping only — the caller filters
+ * whatever wasn't spent as a final "Left over" link — or, when more went out than came in, a
+ * "From savings or credit" inflow for the difference, so Income's two sides always balance. Pure shaping only — the caller filters
  * to budgeted categories and excludes dropped transactions (same rule as the rest of
  * reporting, `aggregates.ts`).
  */
-export function buildMoneyFlow(categories: readonly MoneyFlowCategoryInput[]): MoneyFlow {
+export function buildMoneyFlow(rows: readonly MoneyFlowCategoryInput[]): MoneyFlow {
+  // A range of months repeats each category once per month; one flow per category.
+  const merged = new Map<string, MoneyFlowCategoryInput>();
+  for (const r of rows) {
+    const prev = merged.get(r.categoryId);
+    merged.set(
+      r.categoryId,
+      prev ? { ...prev, spentCents: sumCents([prev.spentCents, r.spentCents]) } : r,
+    );
+  }
+  const categories = [...merged.values()];
   const nodes = new Map<string, MoneyFlowNode>();
   const addNode = (id: string, name: string) => {
     if (!nodes.has(id)) nodes.set(id, { id, name });
@@ -147,7 +158,14 @@ export function buildMoneyFlow(categories: readonly MoneyFlowCategoryInput[]): M
   if (leftoverCents > 0) {
     addNode('leftover', 'Left over');
     links.push({ source: 'income', target: 'leftover', valueCents: leftoverCents as Cents });
+  } else if (leftoverCents < 0) {
+    // Spent more than came in: the difference came from somewhere (savings, a card balance).
+    // Without this inflow the Income node's sides would not balance.
+    addNode('shortfall', 'From savings or credit');
+    links.push({ source: 'shortfall', target: 'income', valueCents: -leftoverCents as Cents });
   }
 
   return { nodes: [...nodes.values()], links };
 }
+
+export * from './tax';

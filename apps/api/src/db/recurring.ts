@@ -1,4 +1,11 @@
-import type { AccountOccurrence, DetectedSeries, SurplusSuggestion } from '@rise/shared/recurring';
+import type {
+  AccountOccurrence,
+  AmountChange,
+  ChargeFlag,
+  DetectedSeries,
+  Radar,
+  SurplusSuggestion,
+} from '@rise/shared/recurring';
 import { RecurringSeries } from '@rise/shared/schemas';
 import { nowIso, type UserId } from './util';
 
@@ -15,26 +22,35 @@ export async function listOccurrences(
 ): Promise<Map<string, AccountOccurrence[]>> {
   // H1: every occurrence always has a split now (a guess or the catch-all), so a category
   // only counts here once the user has actually reviewed it — otherwise every merchant would
-  // "establish" whatever its unconfirmed guess happened to be.
+  // "establish" whatever its unconfirmed guess happened to be. Transfers come back too, with
+  // their other leg's account: a transfer out to savings or a loan is real cash for Surplus.
   const { results } = await db
     .prepare(
-      `SELECT t.merchant_normalized, t.account_id, t.posted_at, t.amount_cents,
+      `SELECT t.id, t.review_state, t.flag, t.merchant_normalized, t.account_id, t.posted_at,
+         t.amount_cents, t.is_transfer,
          CASE WHEN t.review_state = 'reviewed' THEN
            (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(s.category_id) END FROM split s
              WHERE s.user_id = ?1 AND s.txn_id = t.id)
-         END AS category_id
+         END AS category_id,
+         (SELECT p.account_id FROM txn p WHERE p.id = t.transfer_pair_id AND p.user_id = ?1)
+           AS pair_account_id
        FROM txn t
-       WHERE t.user_id = ?1 AND t.posted_at >= ?2 AND t.is_transfer = 0 AND t.is_pending = 0
+       WHERE t.user_id = ?1 AND t.posted_at >= ?2 AND t.is_pending = 0
          AND t.review_state != 'dropped'
        ORDER BY t.posted_at`,
     )
     .bind(userId, from)
     .all<{
+      id: string;
+      review_state: string;
+      flag: string | null;
       merchant_normalized: string;
       account_id: string;
       posted_at: string;
       amount_cents: number;
+      is_transfer: number;
       category_id: string | null;
+      pair_account_id: string | null;
     }>();
   const out = new Map<string, AccountOccurrence[]>();
   for (const r of results) {
@@ -43,6 +59,11 @@ export async function listOccurrences(
       amountCents: r.amount_cents,
       categoryId: r.category_id,
       accountId: r.account_id,
+      isTransfer: r.is_transfer === 1,
+      pairAccountId: r.pair_account_id,
+      id: r.id,
+      // Already flagged (or cleared) rows are history to compare against, never re-flagged.
+      needsReview: r.review_state === 'needs_review' && r.flag === null,
     };
     out.set(r.merchant_normalized, [...(out.get(r.merchant_normalized) ?? []), o]);
   }
@@ -62,7 +83,7 @@ export async function manualRuleMerchants(userId: UserId, db: D1Database): Promi
   return new Set(results.map((r) => r.merchant_normalized));
 }
 
-interface ManualRuleRow {
+export interface ManualRuleRow {
   id: string;
   merchant_normalized: string;
   cadence: string;
@@ -70,14 +91,29 @@ interface ManualRuleRow {
   next_expected_date: string;
   anchor_days: string | null;
   label: string | null;
+  next_amount_cents: number | null;
+  amount_changes_on: string | null;
+  /** The due date the bank balance already shows, still waiting on its transaction. */
+  balance_seen_due: string | null;
+  balance_seen_on: string | null;
+  balance_seen_twice: number;
+  /** Days its transaction usually trails the balance (learned). */
+  balance_lag_days: number | null;
 }
 
-/** Every manual rule (Caleb's "Recurring Cash Withdrawal" tag), for `refreshRecurring`. */
+/** A rule's pending amount change, if any (both columns set together). */
+export const changeOf = (r: ManualRuleRow): AmountChange | null =>
+  r.next_amount_cents != null && r.amount_changes_on != null
+    ? { amountCents: r.next_amount_cents, on: r.amount_changes_on }
+    : null;
+
+/** Every manual rule (the owner's "Recurring Cash Withdrawal" tag), for `refreshRecurring`. */
 export async function listManualRules(userId: UserId, db: D1Database): Promise<ManualRuleRow[]> {
   const { results } = await db
     .prepare(
       `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
-         anchor_days, label
+         anchor_days, label, next_amount_cents, amount_changes_on,
+         balance_seen_due, balance_seen_on, balance_seen_twice, balance_lag_days
        FROM recurring_series WHERE user_id = ?1 AND source = 'manual'`,
     )
     .bind(userId)
@@ -130,13 +166,15 @@ export function updateManualRuleStmt(
     nextExpectedDate: string;
     anchorDays: [number, number] | null;
     label?: string | undefined;
+    change: AmountChange | null;
   },
 ): D1PreparedStatement {
   return db
     .prepare(
       `UPDATE recurring_series SET cadence = ?3, expected_amount_cents = ?4,
          next_expected_date = ?5, anchor_days = ?6, status = 'active', updated_at = ?7,
-         label = CASE WHEN label IS NULL THEN NULL ELSE COALESCE(?8, label) END
+         label = CASE WHEN label IS NULL THEN NULL ELSE COALESCE(?8, label) END,
+         next_amount_cents = ?9, amount_changes_on = ?10
        WHERE user_id = ?1 AND id = ?2 AND source = 'manual'`,
     )
     .bind(
@@ -148,6 +186,8 @@ export function updateManualRuleStmt(
       v.anchorDays ? JSON.stringify(v.anchorDays) : null,
       nowIso(),
       v.label ?? null,
+      v.change?.amountCents ?? null,
+      v.change?.on ?? null,
     );
 }
 
@@ -169,7 +209,7 @@ export async function listManualEvents(userId: UserId, db: D1Database): Promise<
   const { results } = await db
     .prepare(
       `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date,
-         anchor_days, label
+         anchor_days, label, next_amount_cents, amount_changes_on
        FROM recurring_series WHERE user_id = ?1 AND source = 'manual' AND label IS NOT NULL
        ORDER BY next_expected_date`,
     )
@@ -218,13 +258,31 @@ export function advanceManualRuleStmt(
   id: string,
   nextExpectedDate: string,
   status: 'active' | 'broken',
+  anchorDays: [number, number] | null = null,
 ): D1PreparedStatement {
+  // A rule saved without its days keeps the ones it was first due on (never re-anchored).
+  // Once every date still ahead is on or after a pending amount change, it becomes the amount.
+  // A refresh that moves nothing writes nothing (the last WHERE line).
   return db
     .prepare(
-      `UPDATE recurring_series SET next_expected_date = ?3, status = ?4, updated_at = ?5
-       WHERE user_id = ?1 AND id = ?2`,
+      `UPDATE recurring_series SET next_expected_date = ?3, status = ?4, updated_at = ?5,
+         anchor_days = COALESCE(anchor_days, ?6),
+         expected_amount_cents = CASE WHEN ?3 >= amount_changes_on
+           THEN next_amount_cents ELSE expected_amount_cents END,
+         next_amount_cents = CASE WHEN ?3 >= amount_changes_on THEN NULL ELSE next_amount_cents END,
+         amount_changes_on = CASE WHEN ?3 >= amount_changes_on THEN NULL ELSE amount_changes_on END
+       WHERE user_id = ?1 AND id = ?2
+         AND (next_expected_date IS NOT ?3 OR status IS NOT ?4
+           OR (anchor_days IS NULL AND ?6 IS NOT NULL) OR ?3 >= amount_changes_on)`,
     )
-    .bind(userId, id, nextExpectedDate, status, nowIso());
+    .bind(
+      userId,
+      id,
+      nextExpectedDate,
+      status,
+      nowIso(),
+      anchorDays ? JSON.stringify(anchorDays) : null,
+    );
 }
 
 /** Untag: delete the manual rule (never a detected one — the route checks `source` first). */
@@ -238,25 +296,37 @@ export function deleteManualRuleStmt(
     .bind(userId, id);
 }
 
-/** A series the user marked `ended` stays ended. */
+/** A series the user marked `ended` stays ended. A row that would not change is not rewritten. */
 export function upsertSeriesStmt(
   userId: UserId,
   db: D1Database,
   merchant: string,
-  s: DetectedSeries,
+  s: Omit<DetectedSeries, 'status'> & { status: 'active' | 'broken' | 'lapsed' } & Radar,
 ): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO recurring_series (id, user_id, merchant_normalized, category_id, cadence,
-         expected_amount_cents, next_expected_date, status, updated_at)
-       VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         expected_amount_cents, next_expected_date, status, updated_at, previous_amount_cents,
+         price_changed_on, double_charged_on)
+       VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
        ON CONFLICT (id) DO UPDATE SET
          category_id = excluded.category_id, cadence = excluded.cadence,
          expected_amount_cents = excluded.expected_amount_cents,
          next_expected_date = excluded.next_expected_date,
          status = CASE WHEN recurring_series.status = 'ended' THEN 'ended' ELSE excluded.status END,
+         previous_amount_cents = excluded.previous_amount_cents,
+         price_changed_on = excluded.price_changed_on,
+         double_charged_on = excluded.double_charged_on,
          updated_at = excluded.updated_at
-       WHERE recurring_series.user_id = ?1`,
+       WHERE recurring_series.user_id = ?1 AND (
+         recurring_series.category_id IS NOT excluded.category_id
+         OR recurring_series.cadence IS NOT excluded.cadence
+         OR recurring_series.expected_amount_cents IS NOT excluded.expected_amount_cents
+         OR recurring_series.next_expected_date IS NOT excluded.next_expected_date
+         OR recurring_series.status NOT IN ('ended', excluded.status)
+         OR recurring_series.previous_amount_cents IS NOT excluded.previous_amount_cents
+         OR recurring_series.price_changed_on IS NOT excluded.price_changed_on
+         OR recurring_series.double_charged_on IS NOT excluded.double_charged_on)`,
     )
     .bind(
       userId,
@@ -268,21 +338,80 @@ export function upsertSeriesStmt(
       s.nextExpectedDate,
       s.status,
       nowIso(),
+      s.previousAmountCents,
+      s.priceChangedOn,
+      s.doubleChargedOn,
     );
 }
 
-/** A known series that stopped fitting and is past due by more than a week is broken. */
-export function markOverdueBrokenStmt(
+/** The radar's view of a series refresh no longer detects (SPEC §7.1). */
+export function setSeriesRadarStmt(
   userId: UserId,
   db: D1Database,
-  brokenBefore: string,
+  id: string,
+  r: Radar,
 ): D1PreparedStatement {
   return db
     .prepare(
-      `UPDATE recurring_series SET status = 'broken', updated_at = ?3
-       WHERE user_id = ?1 AND status = 'active' AND next_expected_date < ?2`,
+      `UPDATE recurring_series SET previous_amount_cents = ?3, price_changed_on = ?4,
+         double_charged_on = ?5
+       WHERE user_id = ?1 AND id = ?2`,
     )
-    .bind(userId, brokenBefore, nowIso());
+    .bind(userId, id, r.previousAmountCents, r.priceChangedOn, r.doubleChargedOn);
+}
+
+/** Set a quiet flag once (SPEC §8.1); a row already flagged or cleared keeps what it has. */
+export function setChargeFlagStmt(
+  userId: UserId,
+  db: D1Database,
+  txnId: string,
+  flag: ChargeFlag,
+): D1PreparedStatement {
+  return db
+    .prepare('UPDATE txn SET flag = ?3 WHERE user_id = ?1 AND id = ?2 AND flag IS NULL')
+    .bind(userId, txnId, flag);
+}
+
+/**
+ * A detected series' status: recomputed by refresh (`active` / `broken` / `lapsed`), or the
+ * user's own call (`ended`, or `active` to track it again). Never touches a manual rule.
+ */
+export function setSeriesStatusStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  status: 'active' | 'broken' | 'lapsed' | 'ended',
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE recurring_series SET status = ?3, updated_at = ?4
+       WHERE user_id = ?1 AND id = ?2 AND source = 'detected'`,
+    )
+    .bind(userId, id, status, nowIso());
+}
+
+/** What refresh needs to re-judge a detected series it no longer finds. Raw rows: no parse. */
+export async function listDetectedStatuses(userId: UserId, db: D1Database) {
+  const { results } = await db
+    .prepare(
+      `SELECT id, merchant_normalized, cadence, expected_amount_cents, next_expected_date, status,
+         source, previous_amount_cents, price_changed_on, double_charged_on
+       FROM recurring_series WHERE user_id = ?1`,
+    )
+    .bind(userId)
+    .all<{
+      id: string;
+      merchant_normalized: string;
+      cadence: DetectedSeries['cadence'];
+      expected_amount_cents: number;
+      next_expected_date: string | null;
+      status: string;
+      source: string;
+      previous_amount_cents: number | null;
+      price_changed_on: string | null;
+      double_charged_on: string | null;
+    }>();
+  return results;
 }
 
 interface SeriesRow {
@@ -295,6 +424,9 @@ interface SeriesRow {
   status: string;
   updated_at: string;
   source: string;
+  previous_amount_cents: number | null;
+  price_changed_on: string | null;
+  double_charged_on: string | null;
 }
 
 export async function listSeries(userId: UserId, db: D1Database): Promise<RecurringSeries[]> {
@@ -315,6 +447,9 @@ export async function listSeries(userId: UserId, db: D1Database): Promise<Recurr
       status: r.status,
       source: r.source,
       updatedAt: r.updated_at,
+      previousAmountCents: r.previous_amount_cents,
+      priceChangedOn: r.price_changed_on,
+      doubleChargedOn: r.double_charged_on,
     }),
   );
 }
@@ -334,7 +469,10 @@ export function setTypicalPostDayStmt(
     .bind(userId, categoryId, day);
 }
 
-/** Rebuild the user's Surplus suggestions from scratch (one refresh's whole answer). */
+/**
+ * Make the user's Surplus suggestions exactly one refresh's whole answer: drop the ones no
+ * longer suggested, and write a suggestion only when it is new or has changed.
+ */
 export function replaceSuggestionsStmts(
   userId: UserId,
   db: D1Database,
@@ -342,13 +480,29 @@ export function replaceSuggestionsStmts(
 ): D1PreparedStatement[] {
   const now = nowIso();
   return [
-    db.prepare('DELETE FROM surplus_suggestion WHERE user_id = ?1').bind(userId),
+    db
+      .prepare(
+        `DELETE FROM surplus_suggestion WHERE user_id = ?1
+         AND id NOT IN (SELECT value FROM json_each(?2))`,
+      )
+      .bind(userId, JSON.stringify(suggestions.map((s) => seriesId(userId, s.merchant)))),
     ...suggestions.map(({ merchant, accountId, series: s }) =>
       db
         .prepare(
           `INSERT INTO surplus_suggestion (id, user_id, merchant_normalized, account_id, cadence,
              expected_amount_cents, next_expected_date, anchor_days, updated_at)
-           VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+           VALUES (?2, ?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+           ON CONFLICT (id) DO UPDATE SET
+             account_id = excluded.account_id, cadence = excluded.cadence,
+             expected_amount_cents = excluded.expected_amount_cents,
+             next_expected_date = excluded.next_expected_date,
+             anchor_days = excluded.anchor_days, updated_at = excluded.updated_at
+           WHERE surplus_suggestion.user_id = ?1 AND (
+             surplus_suggestion.account_id IS NOT excluded.account_id
+             OR surplus_suggestion.cadence IS NOT excluded.cadence
+             OR surplus_suggestion.expected_amount_cents IS NOT excluded.expected_amount_cents
+             OR surplus_suggestion.next_expected_date IS NOT excluded.next_expected_date
+             OR surplus_suggestion.anchor_days IS NOT excluded.anchor_days)`,
         )
         .bind(
           userId,
@@ -384,4 +538,20 @@ export async function listSuggestions(userId: UserId, db: D1Database): Promise<S
     .bind(userId)
     .all<SuggestionRow>();
   return results;
+}
+
+/** Records (or clears) what the balance shows of a manual rule, and its learned lag. */
+export function setBalanceSeenStmt(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  seen: { due: string | null; on: string | null; twice: boolean; lagDays: number | null },
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE recurring_series SET balance_seen_due = ?3, balance_seen_on = ?4,
+         balance_seen_twice = ?5, balance_lag_days = ?6
+       WHERE user_id = ?1 AND id = ?2 AND source = 'manual'`,
+    )
+    .bind(userId, id, seen.due, seen.on, seen.twice ? 1 : 0, seen.lagDays);
 }

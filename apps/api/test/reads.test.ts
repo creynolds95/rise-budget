@@ -4,6 +4,7 @@ import { centsToDecimal } from '../src/sync/mock';
 import { runSync } from '../src/sync/run';
 import type { SimpleFinSource } from '../src/sync/source';
 import { call, signedInUser } from './helpers/http';
+import { seedProdShape } from './helpers/prodShape';
 import { rowsRead } from './helpers/reads';
 
 const sec = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10), 18) / 1000;
@@ -95,5 +96,92 @@ describe('D1 rows read', () => {
       expect(status, path).toBe(200);
       expect(reads, `${path} read ${reads} rows`).toBeLessThan(budget);
     }
+  }, 60_000);
+});
+
+describe('split lookup plan', () => {
+  it('walks the id list and searches split by txn_id, never scanning split', async () => {
+    const { results } = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN SELECT s.id FROM json_each(?2) j CROSS JOIN split s ON s.txn_id = j.value WHERE s.user_id = ?1`,
+    )
+      .bind('u', '["a"]')
+      .all<{ detail: string }>();
+    const plan = results.map((r) => r.detail);
+    expect(plan[0]).toContain('SCAN j');
+    expect(plan.join('\n')).toContain('SEARCH s USING INDEX ix_split_txn');
+  });
+});
+
+/**
+ * Deleting a transaction makes D1 check every foreign key pointing at it, and an unindexed
+ * child key turns that check into a scan of the table, once per row deleted: 200 deletes read
+ * 1.5M rows before `ix_txn_pair`, and undoing a Monarch import deletes thousands.
+ */
+describe('D1 rows read for deletes', () => {
+  it('undoing an import costs rows per row removed, not per row times history', async () => {
+    const s = await signedInUser();
+    await seedProdShape(s.userId, 'del');
+    await env.DB.prepare(
+      `UPDATE txn SET source = 'csv', import_batch_id = 'b1'
+       WHERE user_id = ?1 AND CAST(substr(id, 5) AS INTEGER) < 500`,
+    )
+      .bind(s.userId)
+      .run();
+    let status = 0;
+    const reads = await rowsRead(async () => {
+      status = (await call('DELETE', '/import/monarch/batches/b1', { access: s.access })).status;
+    });
+    expect(status).toBe(204);
+    // A few passes over the history are fine (finding the batch's rows has no index); one
+    // pass per deleted row (500 × 7.4k = 3.7M) is the bug.
+    expect(reads, `undo read ${reads} rows`).toBeLessThan(60_000);
+
+    const one = await rowsRead(async () => {
+      status = (await call('DELETE', '/transactions/delt7000', { access: s.access })).status;
+    });
+    expect(status).toBe(204);
+    expect(one, `delete read ${one} rows`).toBeLessThan(2_000);
+  }, 60_000);
+});
+
+/**
+ * Making a rule re-guesses the review queue, and the one-off memory backfill reads the
+ * reviewed history once. Neither may cost a pass per row.
+ */
+describe('D1 rows read for rules and the memory backfill', () => {
+  const files = import.meta.glob('../migrations/0018_memory_from_history.sql', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  });
+
+  it('a new rule reads the queue, not the history; the backfill reads the history about once', async () => {
+    const s = await signedInUser();
+    await seedProdShape(s.userId, 'rul');
+    const cat = await env.DB.prepare('SELECT id FROM category WHERE user_id = ?1 LIMIT 1')
+      .bind(s.userId)
+      .first<{ id: string }>();
+    let status = 0;
+    const made = await rowsRead(async () => {
+      status = (
+        await call('POST', '/rules', {
+          access: s.access,
+          body: {
+            matchField: 'merchant',
+            matchType: 'equals',
+            matchValue: 'Benchmark Mortgage',
+            categoryId: cat?.id,
+          },
+        })
+      ).status;
+    });
+    expect(status).toBe(201);
+    expect(made, `rule creation read ${made} rows`).toBeLessThan(3_000);
+
+    const backfill = await rowsRead(async () => {
+      await env.DB.prepare(Object.values(files)[0] as string).run();
+    });
+    // One-off at deploy (about 13 rows per transaction, 2% of a day). A pass per row would be 55M.
+    expect(backfill, `backfill read ${backfill} rows`).toBeLessThan(150_000);
   }, 60_000);
 });

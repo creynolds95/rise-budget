@@ -24,6 +24,22 @@ export async function sha256Hex(input: string): Promise<string> {
   return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** HMAC-SHA-256 of `input` under a server secret, as raw bytes. */
+export async function hmacSha256(key: string, input: string): Promise<Uint8Array<ArrayBuffer>> {
+  const k = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(key),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  return new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(input)));
+}
+
+export async function hmacSha256Hex(key: string, input: string): Promise<string> {
+  return [...(await hmacSha256(key, input))].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** Constant-time string comparison for secrets and hashes. */
 export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

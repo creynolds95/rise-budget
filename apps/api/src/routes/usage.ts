@@ -1,6 +1,6 @@
 import { D1_DAILY_LIMITS, UsageStatus } from '@rise/shared/schemas';
 import { Hono } from 'hono';
-import { listUsage } from '../db';
+import { listRouteUsage, listUsage } from '../db';
 import type { AppEnv } from '../env';
 
 /** Settings' database meter: D1 rows read and written per UTC day, against the free allowance. */
@@ -12,7 +12,11 @@ const iso = (day: number) => {
 };
 
 usage.get('/', async (c) => {
-  const rows = await listUsage(c.env.DB, new Date(), 14);
+  const now = new Date();
+  const [rows, routes] = await Promise.all([
+    listUsage(c.env.DB, now, 14),
+    listRouteUsage(c.env.DB, now, 5),
+  ]);
   return c.json(
     UsageStatus.parse({
       limits: D1_DAILY_LIMITS,
@@ -22,6 +26,7 @@ usage.get('/', async (c) => {
         rowsWritten: r.rows_written,
         requests: r.requests,
       })),
+      routes: routes.map((r) => ({ route: r.route, rowsRead: r.rows_read, requests: r.requests })),
     }),
   );
 });

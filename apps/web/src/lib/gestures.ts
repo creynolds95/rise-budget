@@ -86,7 +86,16 @@ export function useLinkTransitions() {
       const to = internalPath(a);
       if (!to) return;
       const here = window.location.pathname;
-      const direction = isPushRoute(to) ? 'forward' : isPushRoute(here) ? 'back' : null;
+      // A back link says so: going back to a deeper screen (Categories → Budget settings) is
+      // still a pop, though its target is a push route.
+      const direction =
+        a.dataset['transition'] === 'back'
+          ? 'back'
+          : isPushRoute(to)
+            ? 'forward'
+            : isPushRoute(here)
+              ? 'back'
+              : null;
       if (!direction) return;
       e.preventDefault();
       navigateWithTransition(navigate, to, direction);
@@ -100,9 +109,10 @@ export function useLinkTransitions() {
  * Swipe right from the left part of the screen to go back, on a screen that slid in from
  * the side. The edge strip is included: `installEdgeGuard` keeps iOS's own gesture out of it.
  */
-export function useSwipeBack(to: string) {
+export function useSwipeBack(to: string | null) {
   const navigate = useNavigate();
   useEffect(() => {
+    if (!to) return;
     let start: { x: number; y: number } | null = null;
     const onStart = (e: TouchEvent) => {
       const t = e.touches[0];
@@ -149,4 +159,31 @@ export function useTabRootTrap(pathname: string) {
     window.addEventListener('popstate', trap);
     return () => window.removeEventListener('popstate', trap);
   }, [pathname]);
+}
+
+/** True for a field that takes a number: `type=number` or a numeric/decimal keyboard. */
+export function isNumberField(el: EventTarget | null): el is HTMLInputElement {
+  if (!(el instanceof HTMLInputElement)) return false;
+  return el.type === 'number' || el.inputMode === 'numeric' || el.inputMode === 'decimal';
+}
+
+/**
+ * Tapping into a number field selects all of it, so typing replaces the value without
+ * moving the caret first. iOS places the caret after focus fires, so the selection is
+ * deferred a tick and set with `setSelectionRange` (`select()` alone is ignored there;
+ * `type=number` rejects ranges, so it falls back to `select()`).
+ */
+export function installSelectOnFocus() {
+  document.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (!isNumberField(el)) return;
+    setTimeout(() => {
+      if (document.activeElement !== el || !el.value) return;
+      try {
+        el.setSelectionRange(0, el.value.length);
+      } catch {
+        el.select();
+      }
+    }, 0);
+  });
 }

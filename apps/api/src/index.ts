@@ -18,15 +18,23 @@ import { allocations, periods } from './routes/periods';
 import { cashToPayday } from './routes/cashToPayday';
 import { recurring } from './routes/recurring';
 import { reports } from './routes/reports';
+import { tags } from './routes/tags';
+import { push } from './routes/push';
+import { connector } from './routes/connector';
+import { mcp } from './routes/mcp';
 import { review } from './routes/review';
 import { sync } from './routes/sync';
 import { transactions } from './routes/transactions';
 import { dataExport } from './routes/export';
 import { devices } from './routes/devices';
-import { findUserIdByEmail } from './db';
+import { findUserIdByEmail, getUser } from './db';
 import type { Env } from './env';
-import { BACKUP_CRON, runBackup } from './backup/run';
-import { runSync } from './sync/run';
+import { HOUSEKEEPING_CRON, runHousekeeping } from './backup/run';
+import { applyFollows } from './lib/follow';
+import { applyLoanPayments } from './lib/loanPayments';
+import { runPush } from './lib/push';
+import { DEEP_OVERLAP_DAYS, OVERLAP_DAYS, runSync } from './sync/run';
+import { SYNC_CRON, syncSlot } from './sync/schedule';
 import { sourceFromEnv } from './sync/source';
 
 /** Everything is under /api; the rest of the origin is the web app (Workers Static Assets). */
@@ -47,6 +55,8 @@ app.use('*', meter);
 // Public: health and the auth handshake. There is no signup route (SPEC §9).
 app.get('/health', (c) => c.json({ ok: true as const }));
 app.route('/auth', auth);
+// The optional Claude connector: its link carries its own secret (SPEC §12.3).
+app.route('/mcp', mcp);
 
 // Everything else requires a valid access token (T16).
 app.use('*', requireAuth);
@@ -64,6 +74,9 @@ app.route('/merchants', merchants);
 app.route('/periods', periods);
 app.route('/allocations', allocations);
 app.route('/transactions', transactions);
+app.route('/tags', tags);
+app.route('/push', push);
+app.route('/connector', connector);
 app.route('/sync', sync);
 app.route('/recurring', recurring);
 app.route('/cash-to-payday', cashToPayday);
@@ -78,23 +91,22 @@ app.notFound((c) =>
 app.onError(renderError);
 
 /**
- * Crons: SimpleFIN sync 3× daily (ARCHITECTURE §6), and the nightly backup (§8) at 09:30 UTC
- * (early morning Central), well after the evening sync. Single-user, so sync runs for the configured owner.
+ * Crons: SimpleFIN sync 3× daily (ARCHITECTURE §6), and nightly housekeeping (§8) at 09:30 UTC
+ * (early morning Central), well after the evening sync and before the GitHub backup job. Single-user, so sync runs for the configured owner.
  */
 export async function scheduled(event: ScheduledController, env: Env): Promise<void> {
-  const job = event.cron === BACKUP_CRON ? 'backup' : 'sync';
+  const job = event.cron === HOUSEKEEPING_CRON ? 'housekeeping' : 'sync';
   const started = Date.now();
   const tally: Tally = { read: 0, written: 0 };
   const db = meterDb(env.DB, tally);
   try {
-    if (job === 'backup') {
-      const r = await runBackup(db, env.BACKUPS, new Date(event.scheduledTime));
+    if (job === 'housekeeping') {
+      const r = await runHousekeeping(db, env.BACKUPS, new Date(event.scheduledTime));
       log({
         job,
         ok: true,
         ms: Date.now() - started,
-        key: r.key,
-        bytes: r.bytes,
+        backupsPruned: r.pruned.length,
         rowsPruned: r.rowsPruned,
       });
       return;
@@ -103,7 +115,53 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
     if (!source || !env.SIMPLEFIN_OWNER_EMAIL) return;
     const userId = await findUserIdByEmail(db, env.SIMPLEFIN_OWNER_EMAIL);
     if (!userId) return;
-    const r = await runSync(db, userId, source);
+    let deep = false;
+    if (event.cron === SYNC_CRON) {
+      // The per-minute tick only syncs at the owner's chosen times. Skipped ticks write nothing
+      // (not even the usage row), so idle minutes cost one small read each.
+      const user = await getUser(userId, env.DB);
+      if (!user) return;
+      const slot = syncSlot(user.settings.syncTimes, user.timezone, new Date(event.scheduledTime));
+      if (!slot.due) {
+        tally.read = tally.written = 0;
+        return;
+      }
+      deep = slot.deep;
+    }
+    // An idle cron run (nothing new from the bank) skips the CPU-heavy recurring re-detection.
+    // Once a week it re-reads five weeks back, for rows a bank backfills late.
+    const r = await runSync(db, userId, source, {
+      skipRecurringWhenIdle: true,
+      overlapDays: deep ? DEEP_OVERLAP_DAYS : OVERLAP_DAYS,
+    });
+    if (r.status !== 'failed') {
+      // A loan-payment hiccup must not fail the sync; the Debt page still offers Apply by hand.
+      await applyLoanPayments(db, userId, new Date(event.scheduledTime)).catch((e: unknown) =>
+        log({
+          job,
+          ok: false,
+          step: 'loan-payments',
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+      await applyFollows(db, userId, new Date(event.scheduledTime)).catch((e: unknown) =>
+        log({
+          job,
+          ok: false,
+          step: 'follow',
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
+    }
+    // After every sync, failed ones too: a bank needing a look is itself an alert.
+    await runPush(
+      userId,
+      db,
+      new Date(event.scheduledTime),
+      r.rowsInserted > 0 ? r.id : undefined,
+    ).catch((e: unknown) =>
+      log({ job, ok: false, step: 'push', error: e instanceof Error ? e.message : String(e) }),
+    );
     log({ job, ok: r.status !== 'failed', ms: Date.now() - started, status: r.status });
   } catch (e) {
     // Rethrown so the Cron Trigger is marked failed in Cloudflare too; the Dashboard flags a
@@ -116,7 +174,7 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
     });
     throw e;
   } finally {
-    await flushUsage(env.DB, tally, 0);
+    await flushUsage(env.DB, tally, 0, `cron ${job}`);
   }
 }
 

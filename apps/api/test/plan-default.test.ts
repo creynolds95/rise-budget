@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { refreshAggregateStmts } from '../src/db';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { call, signedInUser } from './helpers/http';
 
 async function setup() {
@@ -94,6 +94,12 @@ describe('SPEC §2.9 apply to all future months', () => {
   });
 
   it('a month with no row of its own still carries into the next and uses the default plan', async () => {
+    // Carry only flows from months that have ended.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-01-15T18:00:00Z'));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const s = await setup();
     await s.plan('2026-10', 40_000, true); // default from November
     await spend(s.userId, s.food.id, 10_000, '2026-10-12');

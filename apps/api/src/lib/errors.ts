@@ -44,5 +44,25 @@ export function renderError(err: Error, c: Context) {
       ),
       503,
     );
+  logInternal(err, c);
   return c.json(errorBody('INTERNAL', 'Something went wrong'), 500);
+}
+
+/**
+ * An unexpected error is otherwise invisible: the client only sees INTERNAL. One structured line
+ * for Workers Logs — method, route path, and the error itself. Never the request body, query
+ * string or headers, which can carry amounts, search text or tokens.
+ */
+function logInternal(err: Error, c: Context) {
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      method: c.req.method,
+      // The matched pattern (`/api/merchants/:name`) over the literal path where there is one.
+      path: c.req.routePath && !c.req.routePath.endsWith('*') ? c.req.routePath : c.req.path,
+      name: err.name,
+      message: err.message.slice(0, 500),
+      stack: err.stack?.split('\n').slice(0, 6).join('\n'),
+    }),
+  );
 }

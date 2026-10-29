@@ -11,10 +11,14 @@
     <meta name="theme-color" content="#4A6142" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#2C3A25" media="(prefers-color-scheme: dark)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- No apple-mobile-web-app-status-bar-style=black-translucent: with it the installed app
+         draws under the status bar, and iOS 26 lays a Liquid Glass fade over the banner there.
+         Without it the status bar is solid (theme-color) and the app starts below it; styles.css
+         sizes #root for both. iOS reads this only when the app is added to the Home Screen, from
+         the page Safari is showing, which the service worker may serve from an older build. -->
     <meta name="apple-mobile-web-app-title" content="Rise" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
     <title>Rise</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -25,7 +29,7 @@
     <style>
       /*
        * A cold PWA launch shows a blank canvas-colored screen while the JS bundle parses.
-       * This covers that gap with the app icon; main.tsx fades and removes it once mounted.
+       * This covers that gap with the app icon on the header green; main.tsx fades and removes it once mounted.
        */
       #splash {
         position: fixed;
@@ -34,13 +38,13 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #fafaf7;
+        background: #4a6142;
         transition: opacity 240ms ease-out;
       }
       #splash img {
-        width: 72px;
-        height: 72px;
-        border-radius: 16px;
+        width: 160px;
+        height: 160px;
+        border-radius: 36px;
         animation: splash-rise 1400ms ease-in-out infinite;
       }
       @keyframes splash-rise {
@@ -59,11 +63,11 @@
       }
       @media (prefers-color-scheme: dark) {
         html:not([data-theme='light']) #splash {
-          background: #14160f;
+          background: #2c3a25;
         }
       }
       html[data-theme='dark'] #splash {
-        background: #14160f;
+        background: #2c3a25;
       }
     </style>
   </head>
@@ -71,7 +75,7 @@
     <!-- On a warm cache the app can mount in a handful of milliseconds — too fast to read
          anything as a splash. main.tsx uses this to hold it visible for a minimum stretch. -->
     <script src="/boot.js"></script>
-    <div id="splash" aria-hidden="true"><img src="/icon-192.png" alt="" /></div>
+    <div id="splash" aria-hidden="true"><img src="/icon-512.png" alt="" /></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

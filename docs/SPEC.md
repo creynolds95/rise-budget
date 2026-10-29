@@ -68,7 +68,7 @@ remaining = available - spent
 Each category has `rollover_policy ∈ { roll, return_to_pool }`, changeable at any time.
 In the UI this is one switch: **Rolls over to next month**.
 
-**Only a rolling category carries, in both directions** (Caleb, 2026-10-01). Credit or debit,
+**Only a rolling category carries, in both directions** (owner, 2026-10-01). Credit or debit,
 a category that is not marked to roll starts every month fresh: its leftover and its overspend
 both stay in the month they happened in. Neither goes to the pool.
 
@@ -126,29 +126,20 @@ to confirm and no banner.
 
 ### 2.6 Reallocation
 
-The signature interaction. When the user raises `planned` on a category:
+The signature interaction. When the user changes `planned` on a category:
 
 ```
 delta = new_planned - old_planned
 if delta <= 0:
-    apply directly; if policy allows, the freed money returns to the pool
-elif delta <= pool(P):
-    apply directly, funded from the pool
+    apply directly; the freed money returns to the pool
 else:
-    REQUIRE a funding source before committing
+    apply directly; any funding the user names comes from those categories,
+    the rest from the pool, even past zero
 ```
 
-When a source is required, the app presents candidate categories ranked by **slack**:
-
-```
-slack(c) = remaining(c) - projected_remaining_spend(c)
-
-projected_remaining_spend(c) =
-    if c.spend_shape == fixed:  0 if the bill has posted this period, else planned - spent
-    else:                        available(c) * (1 - pace_fraction)
-```
-
-Rank descending by slack; exclude categories with `slack <= 0`; exclude the target.
+Planning past income is allowed (owner, 2026-10-06). Nothing is blocked: the pool goes
+negative and the Budget tab's bar reads "Over budget" on a solid clay fill until plans come
+back under income.
 
 Every applied reallocation writes a `reallocation` row: `from_category_id` (nullable = pool),
 `to_category_id` (nullable = pool), `amount_cents`, `note`, `created_at`. The month's
@@ -173,8 +164,12 @@ single month, which trains the user to ignore the indicator.
 (`account.sync_cadence_hours`), never a global threshold. An account is stale when:
 
 ```
-last_synced_at < now - (sync_cadence_hours * 1.5)
+last_synced_at < now - max(sync_cadence_hours * 1.5, 96 hours)
 ```
+
+The 4-day floor exists because SimpleFIN re-polls each bank about once a day, some lag more,
+and a connection needing re-auth stays quiet until the owner fixes it. The Dashboard note is
+dismissible per account until that account's next sync moves its last-synced time.
 
 This distinction matters. Apple Card updates **monthly by design** — a global 48-hour rule
 would mark it permanently stale, and a warning that is always on is a warning the user
@@ -253,12 +248,19 @@ review fast, never to skip it.
 
 ### 3.2 Pending → posted matching
 
+`posted_at` holds the **transaction date** (SimpleFIN `transacted_at`, when the purchase
+happened), falling back to the bank's posted date when none is sent. The window opens 7 days
+before P because a pending row the bank sent without a transaction date is dated the day it
+was first seen, and its posted row may then carry an earlier transaction date. A synced row
+whose date changes this way is updated in place on its next sync, inside the sync window
+only, moving months if the date crosses a boundary.
+
 SimpleFIN returns pending transactions. They may change amount (tips, fuel holds) or vanish.
 
 ```
 match pending P to posted Q when:
     P.account_id == Q.account_id
-    Q.posted_at BETWEEN P.posted_at AND P.posted_at + 7 days
+    Q.posted_at BETWEEN P.posted_at - 7 days AND P.posted_at + 7 days
     |P.amount_cents - Q.amount_cents| <= MAX(100, ABS(P.amount_cents) * 0.02)
     normalized_merchant matches, or trigram similarity >= 0.8
     neither already matched
@@ -314,6 +316,24 @@ mechanism that makes Amazon usable.
 
 A split inherits the parent's `posted_at` and `account_id`. Reporting always reads splits,
 never transactions — a transaction without explicit splits is treated as one implicit split.
+
+### 3.6 Spreading one charge across months
+
+A charge in one category can be spread evenly over 2–12 months, starting with its own month,
+so a yearly bill draws on a rollover category a month at a time. It is stored as one split per
+month (same category, `period_id` set to each month); the cents that don't divide evenly land
+on the first month, so the parts always sum exactly. The budget, carry and reports read each
+part in its own month; the transaction keeps its real date and amount everywhere else.
+
+- Spreading is always the user's explicit choice; nothing spreads on its own. "None" undoes it.
+- Changing the category, or accepting a review suggestion, keeps the spread under the new
+  category. Moving the date shifts every part by the same number of months.
+- A pending charge that posts is re-spread at its posted amount from its posted month; one
+  that is dropped stops counting in every month.
+- Transfers can't be spread, and linking or marking one as a transfer puts it back in one
+  month. A charge split across categories can't be spread; the split editor is hidden while
+  a charge is spread.
+- A category's month shows the spread charges drawing on it that month, with their part.
 
 ---
 
@@ -519,7 +539,40 @@ A series yields `next_expected_date` and `expected_amount_cents`, which feed:
 A series is marked `broken` if an expected occurrence is >7 days late, surfaced as
 "Netflix hasn't charged since July."
 
+### 7.1 Subscription radar
+
+Recurring shows what a year of live recurring charges costs (money out only), and two quiet
+notes per series, each for 60 days after it happened:
+
+- **Price went up**: the latest price is over 5% above the charge before it started.
+- **Charged twice**: two charges within 5% of each other inside a quarter of one cycle
+  (never for weekly series, which sit too close together to tell).
+
+A price change or a double charge is exactly what stops a series fitting detection for a
+while, so the radar reads every known series' own charges, not only the ones detected on this
+refresh. Notes are a gold dot and plain text: never clay, never a badge, never a push unless
+the owner turns that on. Each kind can be turned off in Settings → Alerts.
+
 ---
+
+### 7.2 Surplus: bills the balance already shows
+
+SimpleFIN can report a balance that already has a bill (or paycheck) in it a day or more
+before that transaction reaches Rise. Counting the bill as still to come would subtract it
+twice. So, for a manual schedule from 3 days before its due date to 2 days after (plus its
+learned lag, at most 7 more), Surplus compares the cash accounts' balance now with one from
+before the due date. Whatever the imported rows don't explain is the unexplained gap. When
+due schedules (each once or twice, within 5%) add up to that gap, they are **in balance**:
+not projected again, and marked on the Surplus page. A pending row may or may not be in a
+bank's balance, so both readings are weighed. A schedule counts as in balance only when
+every reading and every fitting set agrees. A gap nothing explains leaves every schedule
+counted (cautious, never reading high).
+
+Each sync remembers when a schedule was first seen in balance. When its row arrives, the
+days between are the schedule's lag, averaged with what was learned before. With no row
+after 2 days (or one day past its lag), the owner is told. A gap of twice a bill is told as
+a possible double charge. Both alerts fall under the missed-bill switch (§8.2). After 14 days
+with no row, it is let go.
 
 ## 8. Review queue
 
@@ -532,6 +585,49 @@ The primary daily interaction. At ~175 transactions/month this must be fast.
 - Transfer pairs render as a single linked row.
 - Splits are reachable in one tap from the row.
 - The queue count is the app's only badge. It should reach zero weekly.
+
+### 8.1 Quiet charge flags
+
+Every charge is reviewed anyway, so a flag is a caption on the row and a line on the
+transaction, not an interruption. Recurring refresh sets at most one flag on a charge still
+waiting for review, posted in the last 10 days, money out, comparing it with the same
+merchant's own history:
+
+- **Possible duplicate**: the same amount at the same account within two days of another
+  charge, $20 or more.
+- **More than usual here**: at least three earlier charges, and this one is over 2.5× their
+  median and at least $50 more.
+- **First charge here**: no earlier charge at this merchant, and $300 or more.
+
+A flag is set once and never recomputed. "Looks fine" clears it for good. Each kind can be
+turned off in Settings → Alerts, which hides it everywhere.
+
+### 8.2 Push notifications
+
+Optional, per device: Settings → Alerts → Push to this device asks the browser, then signs the
+device up (on iPhone, only from the app added to the Home Screen). After each scheduled sync the
+server works out what is new and pushes it:
+
+- **On by default**: the weekly recap (Sunday: last week's money out and how many to review),
+  a bill that didn't charge (a recurring series gone broken; also a bill the balance shows whose
+  row hasn't come, or that came out twice, §7.2), and a bank sync needing a look.
+- **Off by default**: price went up, charged twice, and the three charge flags of §8.1. A kind
+  turned off under "Show me" never pushes either. Also off by default: Surplus going negative
+  (once when the projected lowest point first goes under zero, again only after it has
+  recovered and dipped anew) and transactions to review (one count per sync that brings in new rows, never one per
+  transaction, nothing at zero). Money in, all off by default: a paycheck (money into a bank account, filed under
+  an income category or from a merchant that pays on a schedule), and a manual loan's balance changing (a scheduled paydown counts, any
+  amount). Per account, under "Account alerts", the owner picks **Deposits** (each new money-in
+  transaction on that account, transfers included; right for retirement, where a market move
+  is not news) or **Any increase** (`balance`: the reported balance rose from the one before; for a loan or card, a rise means less owed). Never the reverse: debt going up, savings or retirement dipping are not told. Both skip
+  anything under a minimum (default $100). Only the last three days count as new. Deposits
+  rely on the bank sending transactions for that account; where it sends balances only, use
+  Balance with a minimum, which cannot tell a contribution from a market move.
+
+Every notice has a key and is told once; at most five go out per run and the rest wait in the
+app. A device signing up starts from now, not with a backlog. A device the browser has dropped
+is removed on the next send. The sender's key pair is made on first use and never rotated,
+since a new one would orphan every device.
 
 ---
 
@@ -579,7 +675,7 @@ The PWA must be readable offline — the user checks it at arbitrary times.
 | 5 | Transaction posts into a past month | That month's spending and every later month's carry read the new numbers; nothing to confirm |
 | 6 | Rollover policy changed | Applies across the whole chain from October 2026 |
 | 7 | Overspent category | Carries only if it is marked to roll; otherwise it resets next month |
-| 8 | Reallocation exceeding pool | Funding source required before commit |
+| 8 | Reallocation exceeding pool | Commits; pool goes negative and the month shows "Over budget" |
 | 9 | Fixed-shape category on day 1 | Pace does not report "overspent" |
 | 10 | Monthly-cadence account 20 days since sync | **Not** marked stale — within its expected cadence |
 | 10b | Monthly-cadence account 45 days since sync | Marked stale with reason; no estimate of missing spend |
@@ -589,3 +685,43 @@ The PWA must be readable offline — the user checks it at arbitrary times.
 | 13 | Refund posted to a category | Reduces `spent`; may push `remaining` positive |
 | 14 | Period with no allocations | Pool equals expected income; no divide-by-zero in pace |
 | 15 | Offline mutation replayed twice | Idempotency key prevents double-apply |
+
+---
+
+## 12. Planning tools
+
+### 12.1 Retirement: Social Security and life events
+
+Everything is in today's dollars and the owner's own numbers; nothing is fetched or guessed.
+
+- **Social Security.** The owner types each person's monthly benefit at full retirement age
+  (67) from their ssa.gov statement, and the age each will claim (62–70). Rise applies SSA's
+  rules: 5/9 of 1% off a month for the first 36 months early and 5/12 of 1% beyond (30% off
+  at 62), and 2/3 of 1% more a month after 67 (124% at 70). Each person gets their own
+  check or half the other's full benefit, whichever is more; the spousal half is cut 25/36 of
+  1% a month early (35% at 62) and never grows by waiting. A "count on" share (default 100%)
+  plans for a cut to benefits.
+- **What it changes.** The monthly goal less the household's checks is what savings must pay.
+  Until each check starts, savings stand in for it: the months between retiring and that
+  claim, times the check, are set aside on top of what the goal needs.
+- **Life events.** One-time money in or out at the owner's age. Before retiring, each lands
+  in the projection (and the range of outcomes) at the end of its year. At or after
+  retiring, money out adds to what savings must hold and money in reduces it.
+
+### 12.2 Household binder
+
+One place for whoever has to step in: who to call and where things are. Every open account
+is listed automatically so none is forgotten; insurance, people to call, documents and
+anything else are added by hand. Each entry holds a name, the last four digits, a phone, a
+website, where the paper copy is, and notes. It never holds a password, a full account
+number or a PIN: the binder records only where passwords live. It is stored with the
+owner's settings and is part of the data export.
+
+### 12.3 Claude connector
+
+Optional and off by default; nothing in Rise depends on it. Settings › Your data › Claude
+turns on a read-only MCP server after a passkey check and shows its link once. The link
+carries a 32-byte secret, stored only as a hash; turning it on again replaces the link, and
+turning it off deletes it. Its tools read through the app's own GET routes (budget month,
+transactions and their totals, accounts, categories, recurring, Surplus, net worth). There is
+no tool that writes.

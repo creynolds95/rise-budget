@@ -1,4 +1,4 @@
-import { pruneUsageStmt } from './usage';
+import { pruneUsageStmts } from './usage';
 import type { UserId } from './util';
 
 /**
@@ -108,6 +108,8 @@ export const EXPORT_TABLES = [
   'reallocation',
   'txn',
   'split',
+  'tag',
+  'txn_tag',
   'rule',
   'merchant_memory',
   'merchant_meta',
@@ -148,7 +150,7 @@ export async function exportUserData(
     ...EXPORT_TABLES.map((t) =>
       db
         .prepare(
-          `SELECT json_group_array(json(o)) AS chunk FROM
+          `SELECT json_group_array(json(o)) AS chunk FROM /* scan-ok: user's own export */
            (SELECT rowid / ${CHUNK} AS g, ${jsonObject(columns.get(t) ?? [])} AS o
             FROM ${q(t)} WHERE user_id = ?1 ORDER BY rowid)
            GROUP BY g ORDER BY g`,
@@ -202,7 +204,7 @@ export async function transactionsCsv(userId: UserId, db: D1Database): Promise<s
   const { results } = await db
     .prepare(
       `SELECT group_concat(l, char(13) || char(10)) AS chunk FROM
-       (SELECT (row_number() OVER (ORDER BY t.posted_at DESC, t.id, s.sort_order) - 1) / ${CHUNK} AS g,
+       (SELECT /* scan-ok: user's own export */ (row_number() OVER (ORDER BY t.posted_at DESC, t.id, s.sort_order) - 1) / ${CHUNK} AS g,
                ${line} AS l
         FROM txn t
         JOIN account a ON a.id = t.account_id AND a.user_id = t.user_id
@@ -218,7 +220,12 @@ export async function transactionsCsv(userId: UserId, db: D1Database): Promise<s
 }
 
 /** How long operational rows are kept (C19). Money history — txns, splits, money audit — is never pruned. */
-export const RETENTION = { idempotencyDays: 30, syncRunDays: 90, authAuditDays: 90 } as const;
+export const RETENTION = {
+  idempotencyDays: 30,
+  syncRunDays: 90,
+  authAuditDays: 90,
+  pushSentDays: 120,
+} as const;
 
 /**
  * Nightly housekeeping before the backup, across all users like the dump itself: replay
@@ -241,7 +248,10 @@ export async function pruneOperational(db: D1Database, now: Date): Promise<numbe
         "DELETE FROM audit_log WHERE created_at < ?1 AND action LIKE 'auth.%' /* system:backup */",
       )
       .bind(before(RETENTION.authAuditDays)),
-    pruneUsageStmt(db, now),
+    db
+      .prepare('DELETE FROM push_sent WHERE sent_at < ?1 /* system:backup */')
+      .bind(before(RETENTION.pushSentDays)),
+    ...pruneUsageStmts(db, now),
   ]);
   return results.reduce((n, r) => n + (r.meta.changes ?? 0), 0);
 }

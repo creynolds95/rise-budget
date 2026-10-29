@@ -52,7 +52,7 @@ export interface MonarchPlan {
 }
 
 const key = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
-/** "(...1335)", "(1335)" or "(...3107-CL0001)": the part that survives renames between providers. */
+/** "(...4821)", "(4821)" or "(...5502-LN0001)": the part that survives renames between providers. */
 export const maskOf = (s: string) =>
   /\((?:\.\.\.)?([\w-]{3,})\)\s*$/.exec(s.trim())?.[1]?.toLowerCase() ?? null;
 

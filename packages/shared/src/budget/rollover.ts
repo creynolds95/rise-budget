@@ -4,7 +4,7 @@ import { assertCents, type Cents } from './money';
 import { nextPeriod, type PeriodId } from './period';
 
 /**
- * Live rollover (Caleb, 2026-10-01). There is no closing: every month's carry-in is worked out
+ * Live rollover (owner, 2026-10-01). There is no closing: every month's carry-in is worked out
  * from the month before, so the 1st rolls over on its own and a late recategorisation flows
  * forward into every later month. The chain starts at `ROLLOVER_START`; nothing carries into
  * it or out of any month before it (those are history). Income never rolls: a month that
@@ -44,7 +44,10 @@ export interface ChainCategory {
   rolloverPolicy: RolloverPolicy;
   plannedCents: Cents;
   spentCents: Cents;
-  /** A forgiven deficit, added to this month's carry-in (SPEC §2.8). */
+  /**
+   * A forgiven deficit (SPEC §2.8). It only ever lifts a negative carry-in toward zero; see
+   * `applyForgiveness`.
+   */
   adjustCents: Cents;
 }
 
@@ -60,11 +63,28 @@ export interface RolledInto {
 }
 
 /**
- * Walk the chain: what every month in `months` starts with. `months` runs from the chain start,
- * contiguous and ascending; the first month starts from nothing but its own adjustment. The
- * same categories should appear in every month.
+ * SPEC §2.8: a forgiveness was written to bring a deficit up to zero, never to create money.
+ * The carry is live, so the deficit it forgave can later shrink (a recategorisation) or vanish
+ * (the category stops rolling, so carries 0). The adjustment is therefore capped every read at
+ * whatever deficit is there now: carry + min(adjust, max(0, −carry)). A non-`roll` category's
+ * carry is always 0, so it gets nothing from an old forgiveness either. (A negative
+ * adjustment, which forgiveness never writes, passes through as it is.)
  */
-export function rollChain(months: readonly ChainMonth[]): RolledInto[] {
+export function applyForgiveness(carriedCents: Cents, adjustCents: Cents): Cents {
+  assertCents(adjustCents, 'adjustCents');
+  return carriedCents + Math.min(adjustCents, Math.max(0, -carriedCents));
+}
+
+/**
+ * Walk the chain: what every month in `months` starts with. `months` runs from the chain start,
+ * contiguous and ascending; the first month starts from nothing, so an adjustment on it
+ * has nothing to lift. The same categories should appear in every month.
+ *
+ * A month only rolls over once it has ended: months from `current` on pass nothing forward, so
+ * every later month starts with the carry as of the last ended month (plus its own adjustment, capped as above).
+ * Unspent plans are never projected forward. Without `current`, every month counts as ended.
+ */
+export function rollChain(months: readonly ChainMonth[], current?: PeriodId): RolledInto[] {
   const out: RolledInto[] = [];
   let carried = new Map<string, Cents>();
   let expected = months[0]?.periodId;
@@ -73,10 +93,12 @@ export function rollChain(months: readonly ChainMonth[]): RolledInto[] {
     const withCarry = new Map(
       m.categories.map((c) => [
         c.categoryId,
-        (carried.get(c.categoryId) ?? 0) + assertCents(c.adjustCents, 'adjustCents'),
+        applyForgiveness(carried.get(c.categoryId) ?? 0, c.adjustCents),
       ]),
     );
     out.push({ periodId: m.periodId, carriedIn: withCarry });
+    expected = nextPeriod(m.periodId);
+    if (current !== undefined && m.periodId >= current) continue;
     carried = new Map(
       computeMonthEnd(
         m.categories.map((c) => ({
@@ -88,7 +110,6 @@ export function rollChain(months: readonly ChainMonth[]): RolledInto[] {
         })),
       ).map((c) => [c.categoryId, c.carriedInCents]),
     );
-    expected = nextPeriod(m.periodId);
   }
   return out;
 }

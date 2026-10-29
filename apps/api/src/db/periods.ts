@@ -140,7 +140,9 @@ export async function allocationPeriods(
   categoryId: string,
 ): Promise<string[]> {
   const { results } = await db
-    .prepare('SELECT period_id FROM allocation WHERE user_id = ?1 AND category_id = ?2')
+    .prepare(
+      'SELECT period_id FROM allocation WHERE user_id = ?1 AND category_id = ?2 /* scan-ok: "apply to future months" edit */',
+    )
     .bind(userId, categoryId)
     .all<{ period_id: string }>();
   return results.map((r) => r.period_id);

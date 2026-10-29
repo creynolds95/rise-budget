@@ -62,12 +62,22 @@ export async function totpAt(secretB32: string, timeMs: number): Promise<string>
   return String(bin % 1_000_000).padStart(6, '0');
 }
 
-/** Accepts the current step and one either side, for clock drift. */
-export async function verifyTotp(secretB32: string, code: string, nowMs: number): Promise<boolean> {
+export const totpStep = (timeMs: number) => Math.floor(timeMs / 1000 / 30);
+
+/**
+ * Accepts the current step and one either side, for clock drift. Returns the 30-second step
+ * the code belongs to, or null. The caller records the step so the same code (or an older
+ * one) can't be used again inside its window.
+ */
+export async function verifyTotp(
+  secretB32: string,
+  code: string,
+  nowMs: number,
+): Promise<number | null> {
   for (const drift of [0, -30_000, 30_000]) {
-    if ((await totpAt(secretB32, nowMs + drift)) === code) return true;
+    if ((await totpAt(secretB32, nowMs + drift)) === code) return totpStep(nowMs + drift);
   }
-  return false;
+  return null;
 }
 
 export function otpauthUri(secretB32: string, account: string, issuer: string): string {
