@@ -1,13 +1,21 @@
+import { Loading } from '../components/Pending';
+import { TxnBadges } from '../components/TxnBadges';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { listOrigin } from '../lib/nav';
+import { useSwipeBack } from '../lib/gestures';
+import { BackLink } from '../components/BackLink';
 import { useNavigate, useSearchParams } from 'react-router';
 import { AddTransactionSheet } from '../components/AddTransactionSheet';
 import { CategoryPicker } from '../components/CategoryPicker';
+import { TagSheet } from '../components/TagSheet';
 import { FilterSheet } from '../components/FilterSheet';
 import { TxnAmount } from '../components/TxnAmount';
+import { splitRows, type SplitRow } from '../lib/splits';
 import { TxnRow } from '../components/TxnRow';
 import { Button } from '../components/primitives/Button';
 import { Icon, IconButton } from '../components/primitives/Icon';
+import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { api } from '../lib/api';
 import { shortDate } from '../lib/dates';
@@ -20,8 +28,10 @@ import {
   useCategories,
   useGroups,
   useInvalidateMoney,
+  useTags,
   useToday,
   useTransactions,
+  useTxnTotals,
 } from '../lib/queries';
 import {
   apiQuery,
@@ -29,9 +39,13 @@ import {
   dayLabel,
   filtersToParams,
   groupByDay,
+  isFiltered,
   parseFilters,
   type Filters,
 } from '../lib/txnFilters';
+import { spreadMonths } from '../lib/spread';
+
+const MAX_BULK = 1000;
 
 /** The Transactions tab: everything, searchable, filterable. Filters live in the URL. */
 export function Transactions() {
@@ -46,9 +60,22 @@ export function Transactions() {
   const [adding, setAdding] = useState(false);
   const [recategorizing, setRecategorizing] = useState<string | null>(null);
   const [marking, setMarking] = useState(false);
+  // Select mode: pick rows, or everything the search and filters match, then tag them together.
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [tagging, setTagging] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const qc = useQueryClient();
   const invalidate = useInvalidateMoney();
-  const apply = (f: Filters) => setParams(filtersToParams(f), { replace: true });
+  const origin = listOrigin(params.get('back'));
+  useSwipeBack(origin?.to ?? null);
+  const apply = (f: Filters) => {
+    const next = filtersToParams(f);
+    const back = params.get('back');
+    if (back) next.set('back', back);
+    setParams(next, { replace: true });
+  };
 
   // Search as you type, without a request per keystroke.
   useEffect(() => {
@@ -58,16 +85,51 @@ export function Transactions() {
     return () => clearTimeout(h);
   }, [q]);
 
-  const list = useTransactions(apiQuery(filters, today));
+  const tags = useTags().data ?? [];
+  const query = apiQuery(filters, today);
+  const list = useTransactions(query);
+  const filtered = isFiltered(filters);
+  const totals = useTxnTotals(query, filtered);
   const items = list.data?.pages.flatMap((p) => p.items) ?? [];
   const cat = (id: string | undefined) => categories.find((c) => c.id === id);
   const active = chips(filters, {
     account: (id) => accounts.find((a) => a.id === id)?.name ?? 'Account',
     category: (id) => cat(id)?.name ?? 'Category',
+    tag: (id) => tags.find((t) => t.id === id)?.name ?? 'Tag',
   });
   const back = `Transactions|/transactions${params.size ? `?${params}` : ''}`;
   const byDate = filters.sort.startsWith('date');
   const batchReview = filters.review === 'needs_review';
+
+  const toggle = (id: string) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const stopPicking = () => {
+    setPicking(false);
+    setPicked(new Set());
+    setNotice(null);
+  };
+  const selectAll = async () => {
+    setLoadingAll(true);
+    setNotice(null);
+    try {
+      let r = { hasNextPage: list.hasNextPage, data: list.data };
+      while (r.hasNextPage) r = await list.fetchNextPage();
+      const all = r.data?.pages.flatMap((p) => p.items.map((t) => t.id)) ?? [];
+      if (all.length > MAX_BULK) {
+        setNotice(`That's ${all.length}. Narrow the search to ${MAX_BULK} or fewer.`);
+        return;
+      }
+      setPicked(new Set(all));
+    } finally {
+      setLoadingAll(false);
+    }
+  };
+  const allPicked = items.length > 0 && picked.size >= items.length && !list.hasNextPage;
 
   const afterChange = () =>
     Promise.all([
@@ -88,16 +150,26 @@ export function Transactions() {
     }
   };
 
-  const row = (t: (typeof items)[number]) => {
-    const c = t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
+  // A split lists once per category; each row still opens and selects its one parent.
+  const rowsOf = (list: typeof items) => list.flatMap((t) => splitRows(t, spreadMonths(t)));
+  const row = ({ key, t, part }: SplitRow<(typeof items)[number]>) => {
+    const c = part
+      ? cat(part.categoryId)
+      : spreadMonths(t) > 1 || t.splits.length === 1
+        ? cat(t.splits[0]?.categoryId)
+        : undefined;
     return (
       <TxnRow
-        key={t.id}
+        key={key}
         t={t}
+        splitPart={
+          part ? { amountCents: part.amountCents, label: c?.name ?? 'Uncategorized' } : undefined
+        }
         categoryEmoji={c?.emoji}
         from={back}
         hideDate={byDate}
-        onRecategorize={batchReview ? () => setRecategorizing(t.id) : undefined}
+        onRecategorize={batchReview && !picking ? () => setRecategorizing(t.id) : undefined}
+        {...(picking ? { selected: picked.has(t.id), onToggle: () => toggle(t.id) } : {})}
       />
     );
   };
@@ -109,6 +181,7 @@ export function Transactions() {
     <table className="w-full overflow-hidden rounded-card bg-surface shadow-soft">
       <thead>
         <tr className="border-b border-hairline text-left type-label text-ink-muted">
+          {picking && <th className="w-10" />}
           <th className="px-4 py-2 font-normal">Date</th>
           <th className="px-4 py-2 font-normal">Merchant</th>
           <th className="px-4 py-2 font-normal">Category</th>
@@ -117,35 +190,49 @@ export function Transactions() {
         </tr>
       </thead>
       <tbody>
-        {items.map((t) => {
-          const c = t.splits.length === 1 ? cat(t.splits[0]?.categoryId) : undefined;
+        {rowsOf(items).map(({ key, t, part }) => {
+          const c = part
+            ? cat(part.categoryId)
+            : spreadMonths(t) > 1 || t.splits.length === 1
+              ? cat(t.splits[0]?.categoryId)
+              : undefined;
           const to = `/transactions/${t.id}?from=${encodeURIComponent(back)}`;
           return (
             <tr
-              key={t.id}
-              onClick={transitionClick(navigate, to)}
+              key={key}
+              onClick={picking ? () => toggle(t.id) : transitionClick(navigate, to)}
               className={`cursor-pointer border-b border-hairline last:border-0 hover:bg-sage-100/50 ${t.isPending ? 'italic' : ''}`}
             >
+              {picking && (
+                <td className="w-10 pl-4">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${merchantName(t)}`}
+                    checked={picked.has(t.id)}
+                    onChange={() => toggle(t.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </td>
+              )}
               <td className="px-4 py-2.5 whitespace-nowrap text-ink-muted money">
                 {shortDate(t.postedAt)}
               </td>
               <td className="max-w-72 truncate px-4 py-2.5">
                 {merchantName(t)}
-                {t.isPending && (
-                  <span
-                    className="ml-2 rounded-sm border border-gold px-1 type-caption not-italic text-gold-text"
-                    title="Pending"
-                  >
-                    P
-                  </span>
-                )}
+                <TxnBadges t={t} split={!!part} />
                 {t.reviewState === 'needs_review' && (
                   <span className="ml-2 type-caption text-ink-faint not-italic">To review</span>
                 )}
               </td>
               <td className="px-4 py-1.5">
-                {t.isTransfer || t.splits.length > 1 ? (
-                  <span className="text-ink-muted">{t.isTransfer ? 'Transfer' : 'Split'}</span>
+                {t.isTransfer || part || t.splits.length > 1 ? (
+                  <span className="text-ink-muted">
+                    {t.isTransfer
+                      ? 'Transfer'
+                      : part
+                        ? `${c?.emoji ? `${c.emoji} ` : ''}${c?.name ?? 'Uncategorized'}`
+                        : 'Split'}
+                  </span>
                 ) : (
                   <button
                     type="button"
@@ -163,7 +250,7 @@ export function Transactions() {
                 {accounts.find((a) => a.id === t.accountId)?.name}
               </td>
               <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                <TxnAmount t={t} />
+                <TxnAmount t={part ? { ...t, amountCents: part.amountCents } : t} />
               </td>
             </tr>
           );
@@ -180,28 +267,40 @@ export function Transactions() {
       onClick={() => setSheet(true)}
     />
   );
+  const selectButton = (
+    <IconButton
+      icon="select"
+      label={picking ? 'Done selecting' : 'Select transactions'}
+      onClick={() => (picking ? stopPicking() : setPicking(true))}
+    />
+  );
   const addButton = (
     <IconButton icon="plus" label="Add transaction" onClick={() => setAdding(true)} />
   );
   useHeaderActions(
     <>
-      {filterButton}
+      {selectButton}
       {addButton}
     </>,
   );
 
   return (
     <div className={`mx-auto pb-12 ${desktop ? 'max-w-5xl' : 'max-w-2xl'}`}>
+      {origin && (
+        <div className="gutter pt-1">
+          <BackLink to={origin.to} label={origin.label} />
+        </div>
+      )}
       <header className="gutter hidden items-center justify-between pt-3 lg:flex">
         <h1 className="type-page">Transactions</h1>
         <div className="-mr-2 flex">
-          {filterButton}
+          {selectButton}
           {addButton}
         </div>
       </header>
 
       {/* Stays under the tab title while the list scrolls. */}
-      <div className="gutter sticky top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px))] z-[5] bg-canvas py-2">
+      <div className="gutter sticky max-lg:top-0 lg:top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px))] z-[5] bg-canvas py-2">
         <label className="flex min-h-11 items-center gap-2 rounded-full bg-surface px-4 shadow-soft focus-within:ring-2 focus-within:ring-sage-600">
           <span className="text-ink-faint">
             <svg
@@ -225,17 +324,18 @@ export function Transactions() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          <span className="-mr-3 shrink-0">{filterButton}</span>
         </label>
       </div>
 
       {active.length > 0 && (
-        <div className="mt-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:px-6">
+        <div className="mt-2 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none] md:px-6">
           {active.map((c) => (
             <button
               key={c.key}
               onClick={() => apply(c.clear(filters))}
               aria-label={`Remove filter: ${c.label}`}
-              className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-sage-100 pr-2.5 pl-3.5 type-caption font-medium text-sage-700 active:bg-sage-300"
+              className="hit-44 flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-sage-100 pr-2.5 pl-3.5 type-caption font-medium text-sage-700 active:bg-sage-300"
             >
               {c.label}
               <svg
@@ -252,7 +352,7 @@ export function Transactions() {
           {active.length > 1 && (
             <button
               onClick={() => apply({ ...parseFilters(new URLSearchParams()), q: filters.q })}
-              className="min-h-9 shrink-0 px-2 type-caption font-medium text-ink-muted"
+              className="hit-44 min-h-9 shrink-0 px-2 type-caption font-medium text-ink-muted"
             >
               Clear all
             </button>
@@ -260,7 +360,37 @@ export function Transactions() {
         </div>
       )}
 
-      {batchReview && items.length > 0 && (
+      {filtered && totals.data && totals.data.count > 0 && (
+        <div
+          className="gutter mt-2 flex flex-wrap items-baseline gap-x-5 gap-y-1 type-caption text-ink-muted"
+          aria-label="Totals for these filters"
+        >
+          <span>
+            {totals.data.count} {totals.data.count === 1 ? 'transaction' : 'transactions'}
+          </span>
+          {totals.data.outCents > 0 && (
+            <span>
+              Out <MoneyText cents={totals.data.outCents} className="font-medium" />
+            </span>
+          )}
+          {totals.data.inCents > 0 && (
+            <span>
+              In <MoneyText cents={totals.data.inCents} tone="in" className="font-medium" />
+            </span>
+          )}
+          {totals.data.outCents > 0 && totals.data.inCents > 0 && (
+            <span>
+              Net{' '}
+              <MoneyText
+                cents={totals.data.outCents - totals.data.inCents}
+                className="font-medium"
+              />
+            </span>
+          )}
+        </div>
+      )}
+
+      {batchReview && !picking && items.length > 0 && (
         <div className="gutter mt-3">
           <Button className="w-full" onClick={() => void markAllReviewed()} disabled={marking}>
             {marking ? 'Marking…' : `Mark all reviewed (${items.length})`}
@@ -269,8 +399,13 @@ export function Transactions() {
       )}
 
       <div className="gutter mt-3">
-        {list.isPending &&
-          [0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="mb-2 h-12 w-full" />)}
+        {list.isPending && (
+          <Loading>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="mb-2 h-12 w-full" />
+            ))}
+          </Loading>
+        )}
         {list.data && items.length === 0 && (
           <div className="py-12 text-center">
             <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-sage-100 text-sage-700">
@@ -301,19 +436,19 @@ export function Transactions() {
         {desktop && items.length > 0 ? (
           table
         ) : byDate ? (
-          groupByDay(items).map(([day, rows]) => (
+          groupByDay(items).map(([day, dayItems]) => (
             <section key={day}>
-              <h2 className="sticky top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px)+60px)] z-[1] -mx-4 bg-canvas px-4 pt-4 pb-1 type-label text-ink-muted md:-mx-6 md:px-6">
+              <h2 className="sticky max-lg:top-[60px] lg:top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px)+60px)] z-[1] -mx-4 bg-canvas px-4 pt-4 pb-1 type-label text-ink-muted md:-mx-6 md:px-6">
                 {dayLabel(day, today)}
               </h2>
               <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-                {rows.map(row)}
+                {rowsOf(dayItems).map(row)}
               </div>
             </section>
           ))
         ) : (
           <div className="overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-            {items.map(row)}
+            {rowsOf(items).map(row)}
           </div>
         )}
         {list.hasNextPage && (
@@ -328,6 +463,43 @@ export function Transactions() {
         )}
       </div>
 
+      {items.length > 0 && picking && (
+        <div className="sticky bottom-0 z-[6] border-t border-hairline bg-surface">
+          <div className="gutter flex items-center gap-x-4 py-1">
+            <button
+              type="button"
+              disabled={loadingAll}
+              onClick={() => (allPicked ? setPicked(new Set()) : void selectAll())}
+              className="hit-44 min-h-11 type-caption font-medium text-sage-700"
+            >
+              {loadingAll ? 'Loading…' : allPicked ? 'Clear' : 'Select all'}
+            </button>
+            <span className="type-caption text-ink-muted">{picked.size} selected</span>
+            <span className="ml-auto flex gap-1">
+              <Button variant="quiet" disabled={picked.size === 0} onClick={() => setTagging(true)}>
+                Tag
+              </Button>
+              <Button variant="quiet" onClick={stopPicking}>
+                Done
+              </Button>
+            </span>
+          </div>
+          {notice && <p className="gutter pb-2 type-caption text-clay">{notice}</p>}
+        </div>
+      )}
+
+      {tagging && (
+        <TagSheet
+          open
+          bulkIds={[...picked]}
+          selected={[]}
+          onClose={() => setTagging(false)}
+          onSaved={async () => {
+            await qc.invalidateQueries({ queryKey: ['txns'] });
+            stopPicking();
+          }}
+        />
+      )}
       <AddTransactionSheet open={adding} onClose={() => setAdding(false)} />
       <FilterSheet
         open={sheet}
@@ -335,6 +507,7 @@ export function Transactions() {
         accounts={accounts}
         categories={categories}
         groups={groups}
+        tags={tags}
         onClose={() => setSheet(false)}
         onApply={(f) => {
           apply({ ...f, q: q.trim() });

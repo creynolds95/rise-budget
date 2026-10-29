@@ -57,6 +57,69 @@ describe('offline outbox (SPEC §10)', () => {
     expect(calls).toBe(1);
   });
 
+  it('a change queued while a replay is removing a sent entry is kept', async () => {
+    // A store whose reads and writes each take a moment, like IndexedDB, so a separate
+    // load-then-save from add() can land between the replay's own load and save.
+    let entries: OutboxEntry[] = [entry('a')];
+    const tick = () => new Promise((r) => setTimeout(r, 1));
+    const slow = {
+      load: async () => {
+        const copy = [...entries];
+        await tick();
+        return copy;
+      },
+      save: async (e: OutboxEntry[]) => {
+        await tick();
+        entries = [...e];
+      },
+    };
+    const box = new Outbox(slow);
+    const seen: string[] = [];
+    let added: Promise<void> | undefined;
+    await box.replay(async (e) => {
+      seen.push(e.key);
+      added ??= tick().then(() => box.add(entry('b')));
+      return 'ok';
+    });
+    await added;
+    const rest = (await box.pending()).map((e) => e.key);
+    // b was either sent in the same pass or is still waiting; never lost.
+    expect([...seen, ...rest].sort()).toEqual(['a', 'b']);
+  });
+
+  it("uses the store's atomic update when it has one", async () => {
+    const mem = memoryStore([entry('a')]);
+    let updates = 0;
+    const box = new Outbox({
+      ...mem,
+      update: async (fn) => {
+        updates++;
+        await mem.save(fn(await mem.load()));
+      },
+    });
+    await box.add(entry('b'));
+    await box.replay(async () => 'ok');
+    expect(updates).toBe(3);
+    expect(await box.pending()).toEqual([]);
+  });
+
+  it('a newer online edit to the same field drops the older queued one', async () => {
+    const box = new Outbox(
+      memoryStore([
+        { ...entry('a'), body: { categoryId: 'groceries', notes: 'kept' } },
+        { ...entry('b'), body: { categoryId: 'dining' } },
+        { ...entry('c', '/transactions/other'), body: { categoryId: 'fuel' } },
+      ]),
+    );
+    await box.supersede('PATCH', '/transactions/a', { categoryId: 'travel' });
+    await box.supersede('PATCH', '/transactions/b', { categoryId: 'travel' });
+    await box.supersede('POST', '/transactions/other', { categoryId: 'travel' });
+    expect((await box.pending()).map((e) => [e.key, e.body])).toEqual([
+      ['a', { notes: 'kept' }],
+      ['c', { categoryId: 'fuel' }],
+    ]);
+  });
+
   it('queues only changes safe to apply late', () => {
     expect(isQueueable('PATCH', '/transactions/abc')).toBe(true);
     expect(isQueueable('POST', '/transactions/abc/splits')).toBe(true);

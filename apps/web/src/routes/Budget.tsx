@@ -1,4 +1,5 @@
-import type { ViewCategory } from '@rise/shared/budget';
+import { Loading } from '../components/Pending';
+import { applyTolerance, type ViewCategory } from '@rise/shared/budget';
 import type { Category, CategoryGroup, Reallocation } from '@rise/shared/schemas';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type MouseEvent as ReactMouseEvent } from 'react';
@@ -17,13 +18,16 @@ import { ApiError, api, get } from '../lib/api';
 import { addMonths, monthName, shortDate } from '../lib/dates';
 import { useHeaderActions } from '../lib/headerActions';
 import { useIsDesktop } from '../lib/media';
-import { formatCents } from '../lib/money';
+import { balanceIsZero, formatBalance, formatCents } from '../lib/money';
 import { transitionClick } from '../lib/transition';
 
 import { useCategories, useGroups, useInvalidateMoney, usePeriod, useToday } from '../lib/queries';
 import type { PeriodResponse } from '../lib/types';
 
 /** The Budget tab (T37): pool, groups with roll-ups, and a rail per category. */
+/** Under this much left (but not zero) the remaining pill warns in gold. */
+const LOW_REMAINING_CENTS = 1000;
+
 export function Budget() {
   const today = useToday();
   const navigate = useNavigate();
@@ -35,7 +39,7 @@ export function Budget() {
   const invalidate = useInvalidateMoney();
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const plan = usePlanFlow(month, categories.data ?? []);
+  const plan = usePlanFlow(month);
   const isDesktop = useIsDesktop();
   const selected = params.get('category');
 
@@ -51,7 +55,12 @@ export function Budget() {
     </Link>,
   );
 
-  if (!period.data || !groups.data || !categories.data) return <BudgetSkeleton />;
+  if (!period.data || !groups.data || !categories.data)
+    return (
+      <Loading>
+        <BudgetSkeleton />
+      </Loading>
+    );
   const p = period.data;
   const byId = new Map(categories.data.map((c) => [c.id, c]));
   const expenseGroups = groups.data.filter((g) => g.kind === 'expense');
@@ -85,20 +94,17 @@ export function Budget() {
       <div
         className={`mx-auto max-w-2xl pb-16 ${selected ? 'hidden lg:block lg:mx-0 lg:max-w-[560px] lg:flex-shrink-0' : ''}`}
       >
-        <MonthSwitcher
-          month={month}
-          today={today}
-          onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
-        />
+        {/* Month and balance stay in view while the lists scroll. */}
+        <div className="sticky max-lg:top-0 lg:top-[calc(var(--banner-h,0px)+var(--tabhead-h,0px))] z-[5] bg-canvas pb-1.5">
+          <MonthSwitcher
+            month={month}
+            today={today}
+            onChange={(m) => setParams(m === today.slice(0, 7) ? {} : { m })}
+          />
+          <LeftToBudget poolCents={p.poolCents} />
+        </div>
 
         <div className="gutter -mr-2 mt-2 flex items-center justify-end">
-          <Link
-            to={`/settings/reports${month === today.slice(0, 7) ? '' : `?m=${month}`}`}
-            aria-label="Reports"
-            className="flex size-11 items-center justify-center rounded-full text-ink-muted active:bg-sage-100"
-          >
-            <Icon name="flow" />
-          </Link>
           <Link
             to={settingsHref}
             onClick={transitionClick(navigate, settingsHref)}
@@ -108,8 +114,6 @@ export function Budget() {
             <Icon name="more" />
           </Link>
         </div>
-
-        <LeftToBudget poolCents={p.poolCents} />
 
         <section className="gutter mt-4">
           <h2 className="type-title">Summary</h2>
@@ -122,7 +126,7 @@ export function Budget() {
 
         <section className="mt-8">
           {/* Expected income is the sum of the income categories below (Paychecks is the
-              source of truth, per Caleb 2026-09-25) — no separate editable total. */}
+              source of truth, per the owner 2026-09-25) — no separate editable total. */}
           <h2 className="gutter type-title">Income</h2>
           {incomeGroups.length > 0 && <ColumnHeadings />}
           {incomeGroups.length === 0 ? (
@@ -265,6 +269,9 @@ export function SummaryCard({
         doneLabel="spent"
         tick={p.pace}
         carriedCents={expenseCarriedCents}
+        toleranceCents={p.categories
+          .filter((c) => c.groupKind === 'expense')
+          .reduce((n, c) => n + applyTolerance(c).spentCents - c.spentCents, 0)}
       />
     </div>
   );
@@ -278,6 +285,7 @@ function SummaryRow({
   tick,
   good = false,
   carriedCents = 0,
+  toleranceCents = 0,
 }: {
   label: string;
   plannedCents: number;
@@ -287,8 +295,10 @@ function SummaryRow({
   /** Income: going past `plannedCents` is a good thing, never an overspend warning. */
   good?: boolean;
   carriedCents?: number;
+  /** Rounding tolerance already applied per category: lifts the spend used for over/remaining. */
+  toleranceCents?: number;
 }) {
-  const remainingCents = plannedCents - filledCents;
+  const remainingCents = plannedCents - filledCents - toleranceCents;
   const over = remainingCents < 0;
   return (
     <div className="border-b border-hairline py-3 last:border-b-0">
@@ -300,7 +310,7 @@ function SummaryRow({
       </div>
       <div className="mt-1.5">
         <FillBar
-          filledCents={filledCents}
+          filledCents={filledCents + toleranceCents}
           targetCents={plannedCents}
           tick={tick}
           over={!good && over}
@@ -341,19 +351,19 @@ function MonthSwitcher({
   // H6/A9: plan up to 12 months ahead of the current month.
   const furthest = addMonths(current, 12);
   return (
-    <nav aria-label="Month" className="gutter pt-4">
-      <div className="flex items-center justify-between rounded-card bg-surface p-1.5 shadow-soft ring-1 ring-hairline">
+    <nav aria-label="Month" className="gutter pt-1">
+      <div className="flex items-center justify-between rounded-card bg-surface p-1 shadow-soft ring-1 ring-hairline">
         <button
-          className="min-h-11 rounded-button bg-sage-100 px-4 text-sage-700 active:opacity-70"
+          className="hit-44 min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70"
           onClick={() => onChange(addMonths(month, -1))}
         >
           ‹ {monthName(addMonths(month, -1), false).slice(0, 3)}
         </button>
-        <h1 className="type-title">
+        <h1 className="font-serif text-lg">
           {monthName(month, month.slice(0, 4) !== current.slice(0, 4))}
         </h1>
         <button
-          className="min-h-11 rounded-button bg-sage-100 px-4 text-sage-700 active:opacity-70 disabled:opacity-30"
+          className="hit-44 min-h-9 rounded-button bg-sage-100 px-3 text-sm text-sage-700 active:opacity-70 disabled:opacity-30"
           disabled={month >= furthest}
           onClick={() => onChange(addMonths(month, 1))}
         >
@@ -403,7 +413,7 @@ function GroupSection({
   const plannedTotal = rows.reduce((n, r) => n + r.plannedCents, 0);
   const remainingTotal = rows.reduce((n, r) => {
     const earned = kind === 'income' ? -r.spentCents : r.spentCents;
-    return n + (kind === 'income' ? r.availableCents - earned : r.remainingCents);
+    return n + (kind === 'income' ? r.availableCents - earned : applyTolerance(r).remainingCents);
   }, 0);
   const groupOver = remainingTotal < 0;
   return (
@@ -507,7 +517,8 @@ function BudgetRow({
   // For income, "spent" is money received, stored negative (SPEC §2.1's engine is spending-
   // shaped); earned/remaining-to-earn flip that back to what the row shows.
   const earnedCents = kind === 'income' ? -row.spentCents : row.spentCents;
-  const remainingCents = kind === 'income' ? row.availableCents - earnedCents : row.remainingCents;
+  const tol = applyTolerance(row);
+  const remainingCents = kind === 'income' ? row.availableCents - earnedCents : tol.remainingCents;
   // Earning more than planned is good, never an overspend warning (DESIGN-SYSTEM.md §1).
   const over = remainingCents < 0 && kind !== 'income';
   const navigate = useNavigate();
@@ -551,7 +562,7 @@ function BudgetRow({
           <button
             onClick={onEdit}
             aria-label={`Planned for ${category?.name ?? 'category'}: ${formatCents(row.plannedCents)}. Change`}
-            className="flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
+            className="hit-44 flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-input border border-hairline px-2 text-sm font-semibold text-ink active:bg-sage-100"
           >
             <MoneyText cents={row.plannedCents} whole={row.plannedCents % 100 === 0} />
           </button>
@@ -563,16 +574,16 @@ function BudgetRow({
         <span
           aria-label={`${over ? 'Over' : 'Remaining'}: ${formatCents(Math.abs(remainingCents))}`}
           className={`flex min-h-9 w-[72px] shrink-0 items-center justify-end rounded-full px-2 text-sm font-semibold ${
-            remainingCents === 0
-              ? 'bg-sage-100 text-ink-muted'
+            balanceIsZero(remainingCents)
+              ? 'bg-hairline text-ink-muted'
               : over
-                ? 'bg-clay-100 text-clay'
-                : 'bg-sage-100 text-sage-700'
+                ? 'bg-clay-100 text-clay-text'
+                : remainingCents < LOW_REMAINING_CENTS
+                  ? 'bg-gold-100 text-gold-text'
+                  : 'bg-sage-100 text-sage-700'
           }`}
         >
-          <span className="money">
-            {formatCents(Math.abs(remainingCents), { whole: remainingCents % 100 === 0 })}
-          </span>
+          <span className="money">{formatBalance(remainingCents, { sign: 'never' })}</span>
         </span>
       </div>
       <Link to={to} onClick={open} tabIndex={-1} aria-hidden className="block pb-3">
@@ -582,7 +593,7 @@ function BudgetRow({
           <Rail
             carriedInCents={row.carriedInCents}
             plannedCents={row.plannedCents}
-            spentCents={row.spentCents}
+            spentCents={tol.spentCents}
             availableCents={row.availableCents}
             tick={row.spendShape === 'linear' ? (row.pace?.tick ?? null) : null}
           />
@@ -600,14 +611,14 @@ function LeftToBudget({ poolCents }: { poolCents: number }) {
   const over = poolCents < 0;
   return (
     <div
-      className={`gutter mt-2 flex items-center justify-between rounded-card px-4 py-3 ${over ? 'bg-clay-100' : poolCents > 0 ? 'bg-sage-100' : 'bg-surface shadow-soft'}`}
+      className={`gutter mt-1.5 flex items-center justify-between rounded-card px-4 py-1.5 text-sm ${over ? 'bg-clay text-surface' : poolCents > 0 ? 'bg-sage-100' : 'bg-surface shadow-soft'}`}
       role="status"
     >
       <span className="font-medium">{over ? 'Over budget' : 'Left to budget'}</span>
       <MoneyText
         cents={Math.abs(poolCents)}
-        tone={over ? 'over' : poolCents > 0 ? 'in' : 'ink'}
-        className="text-lg font-semibold"
+        tone={over ? 'onClay' : poolCents > 0 ? 'in' : 'ink'}
+        className="text-base font-semibold"
       />
     </div>
   );

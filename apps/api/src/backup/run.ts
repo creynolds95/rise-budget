@@ -1,35 +1,33 @@
-import { dumpDatabase, pruneOperational } from '../db/backup';
-import { backupDate, backupKey, expiredBackups, gzip } from './sql';
+import { pruneOperational } from '../db/backup';
+import { backupDate, expiredBackups } from './sql';
 
 /**
- * Must match the backup entry in wrangler.toml [triggers]. Kept out of src/index.ts: any
+ * Must match the housekeeping entry in wrangler.toml [triggers]. Kept out of src/index.ts: any
  * named export of the Worker's entry module has to be a handler function (or `default`), and
  * Wrangler/Miniflare reject a plain constant there ("not of type function or ExportedHandler").
  */
-export const BACKUP_CRON = '30 9 * * *';
+export const HOUSEKEEPING_CRON = '30 9 * * *';
 
-export type BackupResult = { key: string; bytes: number; pruned: string[]; rowsPruned: number };
+export type HousekeepingResult = { pruned: string[]; rowsPruned: number };
 
-/** The nightly job (ARCHITECTURE §8): prune ops rows → dump → gzip → R2, then drop old backups. */
-export async function runBackup(
+/**
+ * The nightly cleanup (ARCHITECTURE §8): prune operational rows, then drop backups past 90
+ * days. The backup itself is written by the `backup` GitHub workflow (`wrangler d1 export`),
+ * which runs after this: a whole-database dump doesn't fit a free-plan Worker's CPU limit.
+ */
+export async function runHousekeeping(
   db: D1Database,
   bucket: R2Bucket,
   now: Date,
-): Promise<BackupResult> {
+): Promise<HousekeepingResult> {
   const rowsPruned = await pruneOperational(db, now);
-  const body = await gzip(await dumpDatabase(db, now));
-  const key = backupKey(now);
-  await bucket.put(key, body, {
-    httpMetadata: { contentType: 'application/sql', contentEncoding: 'gzip' },
-    customMetadata: { createdAt: now.toISOString() },
-  });
   const keys = await listBackups(bucket);
   const pruned = expiredBackups(
     keys.map((k) => k.key),
     now,
   );
   if (pruned.length) await bucket.delete(pruned);
-  return { key, bytes: body.byteLength, pruned, rowsPruned };
+  return { pruned, rowsPruned };
 }
 
 export async function listBackups(

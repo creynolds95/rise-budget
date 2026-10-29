@@ -1,12 +1,37 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { daysBetween, shortDate } from '../lib/dates';
+import type { UsageStatus } from '@rise/shared/schemas';
 import type { SyncStatus } from '../lib/types';
 
 /** A backup is late once a night has been missed (C6). */
 export const BACKUP_LATE_DAYS = 2;
 
 type Backups = { latest: { date: string; bytes: number } | null; count: number };
+
+/**
+ * Normal days use a few percent of the free database allowance. Well past that, something is
+ * reading or writing far more than it should, and it should be seen hours before the cap.
+ */
+export const USAGE_WARN = 0.4;
+
+export function usageNote(
+  usage: UsageStatus | undefined,
+  utcDay = new Date().toISOString().slice(0, 10), // the allowance resets at 00:00 UTC
+) {
+  const day = usage?.days.find((d) => d.day === utcDay);
+  if (!usage || !day) return null;
+  const share = Math.max(
+    day.rowsRead / usage.limits.rowsRead,
+    day.rowsWritten / usage.limits.rowsWritten,
+  );
+  if (share < USAGE_WARN) return null;
+  const top = usage.routes[0]?.route;
+  return {
+    text: `Database use today is ${Math.round(share * 100)}% of the free limit${top ? `, mostly ${top}` : ''}.`,
+    to: '/settings/data',
+  };
+}
 
 /**
  * The background jobs failing out of sight (C6): the last bank sync failed outright or a bank
@@ -17,8 +42,11 @@ export function healthNotes(
   backups: Backups | undefined,
   today: string,
   quiet: string[] = [],
+  usage?: UsageStatus,
 ): { text: string; to: string }[] {
   const out: { text: string; to: string }[] = [];
+  const heavy = usageNote(usage);
+  if (heavy) out.push(heavy);
   const last = sync?.runs[0];
   if (sync && sync.mode !== 'off' && last?.status === 'failed') {
     const why = last.errors[0]?.message;
@@ -61,12 +89,17 @@ export function HealthNotes(props: {
   backups: Backups | undefined;
   today: string;
   quiet?: string[];
+  usage?: UsageStatus | undefined;
   dismissible?: boolean;
 }) {
   const [dismissed, setDismissed] = useState(readDismissed);
-  const notes = healthNotes(props.sync, props.backups, props.today, props.quiet).filter(
-    (n) => !props.dismissible || !dismissed.includes(n.text),
-  );
+  const notes = healthNotes(
+    props.sync,
+    props.backups,
+    props.today,
+    props.quiet,
+    props.usage,
+  ).filter((n) => !props.dismissible || !dismissed.includes(n.text));
   const dismiss = (text: string) => {
     const next = [...dismissed, text];
     setDismissed(next);

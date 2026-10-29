@@ -31,6 +31,7 @@ element identical visual weight and no hierarchy. Rise does not.
 
   --clay:         #A8563C;  /* overspend / carried deficit — NOT red */
   --clay-100:     #F6E7E1;
+  --clay-text:    #97492F;  /* clay text on --clay-100 (plain --clay is 4.29:1 there) */
 }
 ```
 
@@ -90,8 +91,10 @@ information hierarchy — not decoration.
 
 ## 4. Navigation
 
-Four bottom tabs. **No hamburger drawer.** Monarch runs both a drawer of 12 items and a tab
-bar; for a single user most of that drawer is settings.
+Four bottom tabs, and a three-line menu at the top-left of each tab (Surplus, Financial
+health, Review, Recurring, Reports, Investments, Categories, Rules, Settings). The menu is on
+the four tab screens only; pushed screens show their back arrow there instead. On desktop the
+same items sit in the sidebar under the tabs.
 
 ```
 Dashboard      Accounts        Transactions      Budget
@@ -100,8 +103,7 @@ this month     net worth       search            the rail
   (scrolls in)  + goals         + rules            + recurring
 ```
 
-Everything else — Categories, Merchants, Rules, Institutions, Preferences — lives behind a
-single avatar control top-right.
+Everything else lives behind the menu.
 
 **Depth limit: two pushes from a tab.** Beyond that, use a sheet or a filtered list.
 **The back control always names its origin** — `‹ Budget`, `‹ Gas`, `‹ USAA Checking` —

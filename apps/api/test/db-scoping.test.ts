@@ -51,7 +51,7 @@ describe('cross-user isolation', () => {
     await createUser('alice', env.DB, { email: 'alice@example.com', displayName: 'Alice' });
     await createUser('bob', env.DB, { email: 'bob@example.com', displayName: 'Bob' });
     const acct = await createAccount('alice', env.DB, {
-      name: 'USAA Checking',
+      name: 'Summit Checking',
       kind: 'depository',
       source: 'manual',
     });

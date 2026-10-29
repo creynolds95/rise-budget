@@ -385,7 +385,7 @@ PATCH  /periods/:id                       expected_income
 GET    /periods/:id/reallocations
 
 PATCH  /allocations/:id                   { planned_cents, funding: [{from_category_id, amount_cents}] }
-                                          → 409 INSUFFICIENT_POOL if funding is required and absent
+                                          funding optional; the pool may go negative
 
 GET    /categories
 POST   /categories
@@ -413,14 +413,19 @@ GET    /export                            full SQLite dump or JSON bundle
 ```
 
 **Error contract.** Every error returns `{ error: { code, message, detail? } }` with a
-stable machine-readable `code`. `INSUFFICIENT_POOL` carries the ranked funding candidates
-so the client can render the reallocation sheet without a second round-trip.
+stable machine-readable `code`.
 
 ## 5. Auth & secrets
 
 **Token model.** Access JWT, 15 min, signed HS256 with a Worker secret. Refresh token is
 opaque, 30 days, stored hashed in `session`, rotated on every use with reuse-detection
-(a replayed refresh revokes the whole session family).
+(a replayed refresh revokes the whole session family). The token current just before the
+last rotation stays good for 60 s and gets the same successor (derived under the Worker
+secret), so two tabs refreshing together or a lost response don't sign the owner out; tabs
+also take turns through a Web Lock. Every authenticated request checks its session row
+(one primary-key read), so a revoked device is out at once, not after 15 minutes. The
+whole-database backup download needs a passkey step-up. TOTP codes are single-use;
+recovery codes are stored as HMAC-SHA-256 under `TOTP_KEY`.
 
 **Web storage.** Refresh token in an `httpOnly; Secure; SameSite=Strict` cookie. Access
 token in memory only — never `localStorage`.
@@ -441,17 +446,19 @@ full descriptors, or amounts joined to identity.
 
 ## 6. Sync
 
-Cron trigger `0 8,14,22 * * *` (UTC) → 3× daily, plus `POST /sync/run`.
+Per-minute cron `* * * * *`; a tick syncs only at the owner's chosen times (`syncTimes`, minutes after local midnight, default every 2 h from 5am to 11pm, max 12), skipped ticks write nothing. Weekly deep re-read at the earliest chosen time on Sunday. Manual `POST /sync/run` is refused after 20 runs in 24 h (SimpleFIN allows 24).
 
 ```
 for each synced account:
     fetch window = [last_synced_at - 5 days, now]      # overlap absorbs late posts
+                                                       # (35 days on Sunday's first run: late backfills)
     upsert by (account_id, source, source_id)
     reconcile pending → posted   (SPEC §3.2)
     run transfer detection over the affected window
     run categorisation for new rows
     update account.balance_cents and last_synced_at
-    recompute period_aggregate for touched periods
+    recompute period_aggregate for touched periods     # once each, in the account's batch;
+                                                       # only changed rows are written
 write sync_run
 ```
 
@@ -470,8 +477,12 @@ is recorded in `sync_run.error_json` with `status = partial`.
 
 ## 8. Backups
 
-Nightly cron: `wrangler d1 export` equivalent via the D1 REST API → gzip → R2, keyed
-`backups/YYYY-MM-DD.sql.gz`, 90-day retention. `GET /export` gives the user the same dump
+Nightly GitHub workflow (`.github/workflows/backup.yml`, 10:15 UTC): `wrangler d1 export`
+→ gzip → R2, keyed `backups/YYYY-MM-DD.sql.gz`. A whole-database dump doesn't fit a free-plan
+Worker's 10 ms CPU limit, so it doesn't run in the Worker. The Worker's 09:30 UTC cron does the
+housekeeping before it: prunes operational rows (C19) and drops backups past 90 days. The
+workflow re-enables its own schedule each run, so GitHub's 60-day inactivity pause never
+stops it; a missed night shows on the Dashboard once the newest backup is two days old. `GET /export` gives the user the same dump
 on demand. The user must always be able to walk away with their data.
 
 ## 9. CI/CD

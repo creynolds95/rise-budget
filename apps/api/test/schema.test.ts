@@ -29,6 +29,13 @@ const TABLES = [
   'period_aggregate',
   'surplus_suggestion',
   'usage_day',
+  'usage_route',
+  'tag',
+  'txn_tag',
+  'push_vapid',
+  'push_subscription',
+  'push_sent',
+  'mcp_token',
 ];
 
 const INDEXES = [
@@ -47,6 +54,19 @@ const INDEXES = [
   'ix_txn_user_date',
   // 0014
   'ix_surplus_suggestion_user',
+  // 0016
+  'ix_txn_pair',
+  // 0023
+  'ix_txn_refund_of',
+  'ix_txn_feed',
+  'ix_txn_csv_source',
+  // 0025
+  'ix_txn_open_pending',
+  // 0027
+  'ux_tag_name',
+  'ix_txn_tag_tag',
+  // 0029
+  'ux_push_subscription',
 ];
 
 describe('migration 0001', () => {

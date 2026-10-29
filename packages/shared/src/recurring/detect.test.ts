@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { dateFromDayNumber, dayNumber } from '../networth';
 import {
+  MAX_SERIES_OCCURRENCES,
   addMonths,
   advanceManualRule,
   detectSemimonthly,
@@ -144,6 +146,64 @@ describe('recurring detection (SPEC §7)', () => {
   });
 });
 
+describe('long histories stay cheap (a Worker has 10 ms of CPU per sync)', () => {
+  const every = (n: number, days: number, from = '2001-01-05', cents = (_: number) => 999) =>
+    Array.from({ length: n }, (_, i) => o(dateFromDayNumber(dayNumber(from) + days * i), cents(i)));
+
+  it('1,000 weekly charges still detect, from the most recent ones, in a few ms', () => {
+    const charges = every(1_000, 7);
+    const t = Date.now();
+    const s = detectSemimonthly(charges, '2020-03-01') ?? detectSeries(charges, '2020-03-01');
+    expect(Date.now() - t).toBeLessThan(100);
+    expect(s).toMatchObject({
+      cadence: 'weekly',
+      lastDate: '2020-02-28',
+      nextExpectedDate: '2020-03-06',
+      occurrences: MAX_SERIES_OCCURRENCES,
+      status: 'active',
+    });
+  });
+
+  it('a near-daily merchant with 1,000 irregular charges finds nothing, quickly', () => {
+    const charges = Array.from({ length: 1_000 }, (_, i) =>
+      o(dateFromDayNumber(dayNumber('2024-01-01') + i + (i % 3)), 300 + ((i * 7919) % 4_000)),
+    );
+    const t = Date.now();
+    expect(
+      detectSemimonthly(charges, '2026-10-01') ?? detectSeries(charges, '2026-10-01'),
+    ).toBeNull();
+    expect(Date.now() - t).toBeLessThan(100);
+  });
+
+  it('a steady price creep never settles into a series, and stays bounded doing so', () => {
+    const charges = every(1_000, 7, '2001-01-05', (i) => 1_000 + 10 * i);
+    const t = Date.now();
+    const s = detectSeries(charges, '2020-03-01');
+    expect(Date.now() - t).toBeLessThan(100);
+    // Only the latest few charges are within 5% of each other.
+    expect(s?.occurrences).toBeLessThan(MAX_SERIES_OCCURRENCES);
+    expect(s?.expectedAmountCents).toBe(1_000 + 10 * 999);
+  });
+
+  it('a long semimonthly history detects from its most recent charges', () => {
+    const charges: Occurrence[] = [];
+    for (let m = 0; m < 300; m++) {
+      const y = 2001 + Math.floor(m / 12);
+      const mm = String((m % 12) + 1).padStart(2, '0');
+      charges.push(o(shiftWeekendToFriday(`${y}-${mm}-05`), -250_000));
+      charges.push(o(shiftWeekendToFriday(`${y}-${mm}-20`), -250_000));
+    }
+    const t = Date.now();
+    const s = detectSemimonthly(charges, '2025-12-21');
+    expect(Date.now() - t).toBeLessThan(100);
+    expect(s).toMatchObject({
+      cadence: 'semimonthly',
+      anchorDays: [5, 20],
+      occurrences: MAX_SERIES_OCCURRENCES,
+    });
+  });
+});
+
 describe('semimonthly pay detection (5th & 20th, 1st & 15th, ...)', () => {
   it('shifts a weekend payday to the Friday before, never later', () => {
     expect(shiftWeekendToFriday('2026-06-20')).toBe('2026-06-19'); // Saturday
@@ -231,6 +291,12 @@ describe('semimonthly pay detection (5th & 20th, 1st & 15th, ...)', () => {
       o('2026-02-20', 500),
     ];
     expect(detectSemimonthly(unsteady, '2026-03-01')).toBeNull();
+    // Every 13 days: each gap passes, but over time the days of month fill in with no two
+    // clusters left to anchor on.
+    const everyThirteen = Array.from({ length: 14 }, (_, i) =>
+      o(dateFromDayNumber(dayNumber('2026-01-01') + 13 * i), 500),
+    );
+    expect(detectSemimonthly(everyThirteen, '2026-07-01')).toBeNull();
   });
 
   it('carries the category once two charges share it, same as detectSeries', () => {
@@ -275,7 +341,7 @@ describe('projecting a series forward (cash-to-payday)', () => {
   });
 });
 
-describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to auto-detect)', () => {
+describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to auto-detect)', () => {
   it('walks a monthly anchor forward to the first date on or after today', () => {
     expect(firstUpcoming('monthly', '2026-09-01', null, '2026-09-25')).toBe('2026-10-01');
     // Already in the future: stays put.
@@ -297,14 +363,14 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
   });
 
   it('stays active and unchanged with no confirming charge yet, before the grace period', () => {
-    expect(advanceManualRule(rule(), [], '2026-10-02')).toEqual({
+    expect(advanceManualRule(rule(), [], '2026-10-02')).toMatchObject({
       nextExpectedDate: '2026-10-01',
       status: 'active',
     });
   });
 
   it('goes broken 3+ days late with nothing confirming it', () => {
-    expect(advanceManualRule(rule(), [], '2026-10-04')).toEqual({
+    expect(advanceManualRule(rule(), [], '2026-10-04')).toMatchObject({
       nextExpectedDate: '2026-10-01',
       status: 'broken',
     });
@@ -312,7 +378,7 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
 
   it('a confirming charge rolls the due date to the next month and stays active', () => {
     const occ: Occurrence[] = [{ date: '2026-10-01', amountCents: 106_054, categoryId: null }];
-    expect(advanceManualRule(rule(), occ, '2026-10-02')).toEqual({
+    expect(advanceManualRule(rule(), occ, '2026-10-02')).toMatchObject({
       nextExpectedDate: '2026-11-01',
       status: 'active',
     });
@@ -328,7 +394,7 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
     expect(advanceManualRule(rule(), occ, '2026-10-04').status).toBe('broken');
   });
 
-  it('a charge more than 4 days before the due date is too early to confirm it', () => {
+  it('a charge more than a week before a monthly due date is too early to confirm it', () => {
     const occ: Occurrence[] = [{ date: '2026-09-20', amountCents: 106_054, categoryId: null }];
     expect(advanceManualRule(rule(), occ, '2026-10-04').status).toBe('broken');
   });
@@ -338,8 +404,9 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
       { date: '2026-10-01', amountCents: 106_054, categoryId: null },
       { date: '2026-11-02', amountCents: 106_054, categoryId: null },
     ];
-    expect(advanceManualRule(rule(), occ, '2026-11-03')).toEqual({
-      nextExpectedDate: '2026-12-02',
+    // The late Nov 2 charge paid the Nov 1 due date; December stays on the 1st.
+    expect(advanceManualRule(rule(), occ, '2026-11-03')).toMatchObject({
+      nextExpectedDate: '2026-12-01',
       status: 'active',
     });
   });
@@ -353,10 +420,73 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
       { date: '2026-10-05', amountCents: 106_054, categoryId: null },
       { date: '2026-11-01', amountCents: 106_054, categoryId: null },
     ];
-    expect(advanceManualRule(rule(), occ, '2026-11-02')).toEqual({
+    expect(advanceManualRule(rule(), occ, '2026-11-02')).toMatchObject({
       nextExpectedDate: '2026-12-01',
       status: 'active',
     });
+  });
+
+  it('a paycheck that lands early moves on to the next payday, not back to the one it paid', () => {
+    // owner, 2026-10-04: paid Friday Oct 2 for Monday Oct 5; Surplus still expected it on the 5th.
+    const occ: Occurrence[] = [{ date: '2026-10-02', amountCents: -289_039, categoryId: null }];
+    const r = rule({
+      cadence: 'semimonthly',
+      anchorDays: [5, 20],
+      nextExpectedDate: '2026-10-05',
+      expectedAmountCents: -289_038,
+    });
+    expect(advanceManualRule(r, occ, '2026-10-03')).toMatchObject({
+      nextExpectedDate: '2026-10-20',
+      status: 'active',
+    });
+  });
+
+  it('a bill paid up to a week early pays that month', () => {
+    const occ: Occurrence[] = [{ date: '2026-09-24', amountCents: 106_054, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-09-25')).toMatchObject({
+      nextExpectedDate: '2026-11-01',
+      status: 'active',
+    });
+  });
+
+  it('a weekly charge only matches up to 3 days early, never the week before', () => {
+    const r = rule({ cadence: 'weekly', nextExpectedDate: '2026-10-08' });
+    const at = (date: string) =>
+      advanceManualRule(r, [{ date, amountCents: 106_054, categoryId: null }], '2026-10-06')
+        .nextExpectedDate;
+    expect(at('2026-10-05')).toBe('2026-10-15');
+    expect(at('2026-10-04')).toBe('2026-10-08');
+  });
+
+  it('a bill that posts late keeps its due day', () => {
+    // Due Friday Oct 2, posted Monday Oct 5: November's is still due the 2nd, not the 5th.
+    const occ: Occurrence[] = [{ date: '2026-10-05', amountCents: 106_054, categoryId: null }];
+    const r = rule({ nextExpectedDate: '2026-10-02' });
+    expect(advanceManualRule(r, occ, '2026-10-06').nextExpectedDate).toBe('2026-11-02');
+  });
+
+  it('a skipped cycle is passed over: the charge pays the cycle it falls in', () => {
+    // September never charged (a free month); Oct 2's charge pays October, not September.
+    const occ: Occurrence[] = [{ date: '2026-10-02', amountCents: 1_500, categoryId: null }];
+    const r = rule({ nextExpectedDate: '2026-09-02', expectedAmountCents: 1_500 });
+    expect(advanceManualRule(r, occ, '2026-10-04')).toEqual({
+      nextExpectedDate: '2026-11-02',
+      status: 'active',
+      anchorDays: [2, 2],
+    });
+  });
+
+  it('a monthly rule saved without days keeps its first day from then on', () => {
+    expect(advanceManualRule(rule(), [], '2026-10-02').anchorDays).toEqual([1, 1]);
+    const weekly = rule({ cadence: 'weekly' });
+    expect(advanceManualRule(weekly, [], '2026-10-02').anchorDays).toBeNull();
+    const pinned = rule({ anchorDays: [31, 31] });
+    expect(advanceManualRule(pinned, [], '2026-10-02').anchorDays).toEqual([31, 31]);
+  });
+
+  it('an early monthly charge keeps the scheduled day', () => {
+    const occ: Occurrence[] = [{ date: '2026-09-29', amountCents: 106_054, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-09-30').nextExpectedDate).toBe('2026-11-01');
   });
 
   it('advances a semimonthly manual rule from its confirming charge', () => {
@@ -367,7 +497,7 @@ describe('manual cash-withdrawal rules (Caleb: mortgage/student loans too new to
       nextExpectedDate: '2026-10-05',
       expectedAmountCents: 1_000,
     });
-    expect(advanceManualRule(r, occ, '2026-10-06')).toEqual({
+    expect(advanceManualRule(r, occ, '2026-10-06')).toMatchObject({
       nextExpectedDate: '2026-10-20',
       status: 'active',
     });

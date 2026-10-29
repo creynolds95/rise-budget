@@ -1,9 +1,10 @@
 import { addPeriods } from '@rise/shared/budget';
-import { buildMoneyFlow, monthlySeries } from '@rise/shared/reports';
+import { buildMoneyFlow, monthlySeries, taxLines } from '@rise/shared/reports';
 import {
   CashFlowReportQuery,
   MoneyFlowReportQuery,
   SpendingReportQuery,
+  TaxYearQuery,
   type CashFlowReport,
   type MoneyFlowReport,
   type SpendingReport,
@@ -12,10 +13,11 @@ import { Hono } from 'hono';
 import {
   incomeByPeriod,
   listAggregates,
-  listCategories,
-  listGroups,
+  listCategoriesWithArchived,
+  listGroupsWithArchived,
   spendingByDay,
   spendingByPeriod,
+  taxRows,
 } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
@@ -39,17 +41,19 @@ reports.get('/spending', async (c) => {
   return c.json(body);
 });
 
-/** T-Sankey: where a month's money came from and where it went. */
+/** T-Sankey: where a month's (or a range of months') money came from and where it went. */
 reports.get('/money-flow', async (c) => {
   const q = MoneyFlowReportQuery.safeParse(c.req.query());
   if (!q.success) throw new AppError(400, 'BAD_REQUEST', 'month is required (YYYY-MM)');
-  const { month } = q.data;
+  const { month, from = month } = q.data;
   const userId = c.get('userId');
   const db = c.env.DB;
   const [aggregates, categories, groups] = await Promise.all([
-    listAggregates(userId, db, month, month),
-    listCategories(userId, db),
-    listGroups(userId, db),
+    listAggregates(userId, db, from, month),
+    // Archived too: a category archived since still spent that money, and the cash-flow chart
+    // counts it. Only categories with amounts in the range reach the flow.
+    listCategoriesWithArchived(userId, db),
+    listGroupsWithArchived(userId, db),
   ]);
   const catById = new Map(categories.map((cat) => [cat.id, cat]));
   const groupById = new Map(groups.map((g) => [g.id, g]));
@@ -96,4 +100,13 @@ reports.get('/cash-flow', async (c) => {
     })),
   };
   return c.json(body);
+});
+
+/** The year-end tax pack: every line a category or tag with a tax heading marked, by date. */
+reports.get('/tax', async (c) => {
+  const q = TaxYearQuery.safeParse(c.req.query());
+  if (!q.success) throw new AppError(400, 'BAD_REQUEST', 'year is required');
+  const { year } = q.data;
+  const rows = await taxRows(c.get('userId'), c.env.DB, `${year}-01-01`, `${year}-12-31`);
+  return c.json({ year, lines: taxLines(rows.byCategory, rows.byTag) });
 });

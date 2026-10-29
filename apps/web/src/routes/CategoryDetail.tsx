@@ -1,3 +1,5 @@
+import { applyTolerance } from '@rise/shared/budget';
+import { Loading } from '../components/Pending';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -81,12 +83,12 @@ function CategoryDetailBody({
     queryKey: ['category-history', categoryId, 13],
     queryFn: () => get<MonthSpend[]>(`/categories/${categoryId}/history?months=13`),
   });
-  const txns = useTransactions({ category: categoryId, from: `${month}-01`, to: monthEnd(month) });
+  const txns = useTransactions({ category: categoryId, period: month });
   const [forgiving, setForgiving] = useState(false);
   const [editingCat, setEditingCat] = useState(false);
   const groups = useGroups();
   const navigate = useNavigate();
-  const plan = usePlanFlow(month, categories.data ?? []);
+  const plan = usePlanFlow(month);
 
   const cat = categories.data?.find((c) => c.id === categoryId);
   const isIncome = groups.data?.find((g) => g.id === cat?.groupId)?.kind === 'income';
@@ -95,14 +97,22 @@ function CategoryDetailBody({
     return (
       <DetailPage
         header={{ back, title: cat?.name ?? '' }}
-        identity={{ label: 'Available this month', hero: <Skeleton className="h-11 w-40" /> }}
+        identity={{
+          label: 'Available this month',
+          hero: (
+            <Loading compact>
+              <Skeleton className="h-11 w-40" />
+            </Loading>
+          ),
+        }}
       />
     );
   }
   const open = true;
   // Income is stored as negative spending (SPEC §1.1); show it as what came in.
   const earnedCents = isIncome ? -row.spentCents : row.spentCents;
-  const remainingCents = isIncome ? row.availableCents - earnedCents : row.remainingCents;
+  const tol = applyTolerance(row);
+  const remainingCents = isIncome ? row.availableCents - earnedCents : tol.remainingCents;
   const list = txns.data?.pages.flatMap((p) => p.items) ?? [];
   const yearly = yearBars(history.data ?? [], month);
   const bars = isIncome ? earnedBars(yearly) : yearly;
@@ -127,6 +137,7 @@ function CategoryDetailBody({
             <ValueRow label={isIncome ? `Left to earn in ${name}` : `Left in ${name}`}>
               <MoneyText
                 cents={remainingCents}
+                balance
                 tone={remainingCents < 0 && !isIncome ? 'over' : 'ink'}
               />
             </ValueRow>
@@ -134,6 +145,7 @@ function CategoryDetailBody({
               <ValueRow label="Rolled over from last month">
                 <MoneyText
                   cents={row.carriedInCents}
+                  balance
                   tone={row.carriedInCents < 0 ? 'over' : 'ink'}
                 />
               </ValueRow>
@@ -145,7 +157,7 @@ function CategoryDetailBody({
                 <Rail
                   carriedInCents={row.carriedInCents}
                   plannedCents={row.plannedCents}
-                  spentCents={row.spentCents}
+                  spentCents={tol.spentCents}
                   availableCents={row.availableCents}
                   tick={null}
                 />
@@ -155,7 +167,7 @@ function CategoryDetailBody({
               label="Planned"
               {...(open ? { onClick: () => plan.open(cat, row, period.data?.poolCents ?? 0) } : {})}
             >
-              <MoneyText cents={row.plannedCents} />
+              <MoneyText cents={row.plannedCents} whole={row.plannedCents % 100 === 0} />
             </ValueRow>
             <ValueRow label={isIncome ? 'Earned' : 'Total amount'}>
               <MoneyText cents={earnedCents} />
@@ -184,11 +196,17 @@ function CategoryDetailBody({
             <>
               {list.length === 0 && <p className="py-3 text-ink-muted">Nothing filed here yet.</p>}
               {list.slice(0, 5).map((t) => (
-                <TxnRow key={t.id} t={t} from={`${cat.name}|/budget/${categoryId}`} />
+                <TxnRow
+                  key={t.id}
+                  t={t}
+                  periodId={month}
+                  categoryId={categoryId}
+                  from={`${cat.name}|/budget/${categoryId}?m=${month}`}
+                />
               ))}
               {list.length > 5 && (
                 <NavRow
-                  to={`/transactions?category=${categoryId}`}
+                  to={`/transactions?category=${categoryId}&from=${month}-01&to=${monthEnd(month)}&back=${encodeURIComponent(`${cat.name}|/budget/${categoryId}?m=${month}`)}`}
                   label={`All ${list.length}${txns.hasNextPage ? '+' : ''} transactions`}
                 />
               )}

@@ -4,7 +4,7 @@
  */
 import type { PeriodView, Staleness } from '@rise/shared/budget';
 import type { NetWorthPoint } from '@rise/shared/networth';
-import type { Account, Period, RuleOffer, Transaction } from '@rise/shared/schemas';
+import type { Account, Period, Rule, RuleOffer, Transaction } from '@rise/shared/schemas';
 
 export type AccountWithStaleness = Account & { staleness: Staleness };
 
@@ -53,6 +53,8 @@ export interface MerchantView {
   displayName: string | null;
   suppressRuleOffer: boolean;
   topCategoryIds: string[];
+  /** The merchant-field rule that files this merchant, if any. */
+  rule: Rule | null;
 }
 
 /** One paycheck or bill schedule on the Surplus page. */
@@ -67,6 +69,12 @@ export interface ScheduleRow {
   anchorDays: [number, number] | null;
   nextExpectedDate: string;
   isHandAdded: boolean;
+  /** A new amount from a date on; always null on a suggestion. */
+  change?: { amountCents: number; on: string } | null;
+  /** The bank balance already shows it; its transaction hasn't reached Rise yet. */
+  inBalance?: boolean;
+  /** Days its transaction usually trails the balance, once learned. */
+  lagDays?: number | null;
 }
 
 /** A schedule sync found in a cash account, waiting to be added or dismissed. */
@@ -79,6 +87,8 @@ export interface SuggestionRow {
   cadence: string;
   anchorDays: [number, number] | null;
   nextExpectedDate: string;
+  /** A hand-added schedule this looks like: adding it may count the same money twice. */
+  likelySameAs: string | null;
 }
 
 export interface CashToPaydayResponse {

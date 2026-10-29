@@ -15,9 +15,9 @@ import {
 } from '@rise/shared/schemas';
 import { Hono, type Context } from 'hono';
 import {
+  claimFallbackAttempt,
   confirmTotp,
   consumeRecoveryCode,
-  countAuditSince,
   findUserIdByEmail,
   getCredential,
   getSession,
@@ -25,10 +25,13 @@ import {
   getUser,
   insertCredential,
   listCredentials,
+  pendingTotpSecret,
   putPendingTotp,
+  releaseFallbackAttempt,
   replaceRecoveryCodes,
   revokeSession,
   rotateSession,
+  spendTotpStep,
   touchCredential,
   writeAudit,
 } from '../db';
@@ -55,9 +58,11 @@ import {
 } from '../lib/session';
 import {
   formatRefresh,
+  hashRecoveryCode,
   hashSecret,
-  newRefreshSecret,
+  nextRefreshSecret,
   parseRefresh,
+  REFRESH_GRACE_MS,
   signAccess,
   signChallenge,
   signStepUp,
@@ -227,11 +232,15 @@ auth.post('/passkey/stepup/verify', requireAuth, async (c) => {
 
 // ── TOTP + recovery fallback ──────────────────────────────────────────────────
 
+/**
+ * Resolves the user and claims one attempt against the lockout before any code is checked. The
+ * claim is a single conditional write, so a burst of parallel guesses can't all read "under the
+ * limit" first; an accepted code gives its attempt back (`succeedFallback`).
+ */
 async function fallbackUser(c: Context<AppEnv>, email: string) {
   const userId = await findUserIdByEmail(c.env.DB, email);
   if (!userId) throw unauthorized('Code not accepted');
-  const since = new Date(Date.now() - LOCKOUT_MS).toISOString();
-  if ((await countAuditSince(userId, c.env.DB, 'auth.login_failed', since)) >= MAX_FAILURES) {
+  if (!(await claimFallbackAttempt(userId, c.env.DB, MAX_FAILURES, LOCKOUT_MS))) {
     throw new AppError(429, 'RATE_LIMITED', 'Too many attempts — wait 15 minutes');
   }
   return userId;
@@ -248,8 +257,11 @@ auth.post('/totp/verify', async (c) => {
   const row = await getTotp(userId, c.env.DB);
   if (!row?.confirmed_at) return failFallback(userId, c.env.DB, 'totp');
   const secret = await decryptString(c.env.TOTP_KEY, row.secret_enc);
-  if (!(await verifyTotp(secret, b.code, Date.now())))
+  const step = await verifyTotp(secret, b.code, Date.now());
+  // A code is good once: replaying it (or an older one) inside its window fails like a wrong one.
+  if (step === null || !(await spendTotpStep(userId, c.env.DB, step)))
     return failFallback(userId, c.env.DB, 'totp');
+  await releaseFallbackAttempt(userId, c.env.DB);
   await writeAudit(userId, c.env.DB, 'auth.login', { detail: { method: 'totp' } });
   return issueSession(c, userId);
 });
@@ -257,9 +269,11 @@ auth.post('/totp/verify', async (c) => {
 auth.post('/recovery/verify', async (c) => {
   const b = await body(c, FallbackLoginBody);
   const userId = await fallbackUser(c, b.email);
-  const hash = await hashSecret(normalizeRecovery(b.code));
-  if (!(await consumeRecoveryCode(userId, c.env.DB, hash)))
+  const code = normalizeRecovery(b.code);
+  const [hash, legacy] = await Promise.all([hashRecoveryCode(c.env, code), hashSecret(code)]);
+  if (!(await consumeRecoveryCode(userId, c.env.DB, hash, legacy)))
     return failFallback(userId, c.env.DB, 'recovery');
+  await releaseFallbackAttempt(userId, c.env.DB);
   await writeAudit(userId, c.env.DB, 'auth.recovery_used');
   return issueSession(c, userId);
 });
@@ -278,28 +292,41 @@ auth.post('/refresh', async (c) => {
     throw unauthorized();
   }
   const presented = await hashSecret(secret);
-  if (!safeEqual(presented, session.refresh_hash)) {
-    // A superseded token was replayed: assume theft and kill the whole family.
-    await revokeSession(userId, c.env.DB, sessionId);
-    await writeAudit(userId, c.env.DB, 'auth.refresh_reuse_detected', {
-      type: 'session',
-      id: sessionId,
-    });
-    clearRefreshCookie(c);
-    throw unauthorized('Session ended — sign in again');
+  const next = await nextRefreshSecret(c.env, sessionId, secret);
+  const nextHash = await hashSecret(next);
+  const issue = async () => {
+    setRefreshCookie(c, formatRefresh(userId, sessionId, next));
+    return c.json({ access: await signAccess(c.env, userId, sessionId) });
+  };
+
+  if (safeEqual(presented, session.refresh_hash)) {
+    if (await rotateSession(userId, c.env.DB, sessionId, presented, nextHash, refreshExpiry()))
+      return issue();
+    // Lost the compare-and-swap to a concurrent refresh with this same token. The successor
+    // is derived, so if that one rotated to it, this caller gets the same token.
+    const now = await getSession(userId, c.env.DB, sessionId);
+    if (now && !now.revoked_at && safeEqual(nextHash, now.refresh_hash)) return issue();
+    throw unauthorized();
   }
-  const next = newRefreshSecret();
-  const rotated = await rotateSession(
-    userId,
-    c.env.DB,
-    sessionId,
-    presented,
-    await hashSecret(next),
-    refreshExpiry(),
-  );
-  if (!rotated) throw unauthorized();
-  setRefreshCookie(c, formatRefresh(userId, sessionId, next));
-  return c.json({ access: await signAccess(c.env, userId, sessionId) });
+
+  // The token that was current a moment ago: another tab refreshed first, or this device never
+  // got the last response. Within the grace window it gets the session's current token.
+  const inGrace =
+    session.prev_refresh_hash !== null &&
+    session.rotated_at !== null &&
+    Date.parse(session.rotated_at) > Date.now() - REFRESH_GRACE_MS &&
+    safeEqual(presented, session.prev_refresh_hash) &&
+    safeEqual(nextHash, session.refresh_hash);
+  if (inGrace) return issue();
+
+  // An older token, or the last one replayed after the window: assume theft, end the family.
+  await revokeSession(userId, c.env.DB, sessionId);
+  await writeAudit(userId, c.env.DB, 'auth.refresh_reuse_detected', {
+    type: 'session',
+    id: sessionId,
+  });
+  clearRefreshCookie(c);
+  throw unauthorized('Session ended — sign in again');
 });
 
 auth.post('/logout', async (c) => {
@@ -322,6 +349,7 @@ auth.post('/totp/setup', requireAuth, requireStepUp, async (c) => {
   const user = await getUser(userId, c.env.DB);
   if (!user) throw unauthorized();
   const secret = newTotpSecret();
+  // A confirmed authenticator keeps working until this new one is confirmed.
   await putPendingTotp(userId, c.env.DB, await encryptString(c.env.TOTP_KEY, secret));
   return c.json({ otpauthUri: otpauthUri(secret, user.email, c.env.RP_NAME), secret });
 });
@@ -330,11 +358,13 @@ auth.post('/totp/confirm', requireAuth, requireStepUp, async (c) => {
   const userId = c.get('userId');
   const { code } = await body(c, TotpConfirmBody);
   const row = await getTotp(userId, c.env.DB);
-  if (!row) throw new AppError(409, 'CONFLICT', 'Start TOTP setup first');
-  const secret = await decryptString(c.env.TOTP_KEY, row.secret_enc);
-  if (!(await verifyTotp(secret, code, Date.now())))
-    throw new AppError(400, 'BAD_REQUEST', 'Code not accepted');
-  await confirmTotp(userId, c.env.DB);
+  const pendingEnc = row && pendingTotpSecret(row);
+  if (!pendingEnc) throw new AppError(409, 'CONFLICT', 'Start TOTP setup first');
+  const secret = await decryptString(c.env.TOTP_KEY, pendingEnc);
+  const step = await verifyTotp(secret, code, Date.now());
+  if (step === null) throw new AppError(400, 'BAD_REQUEST', 'Code not accepted');
+  if (!(await confirmTotp(userId, c.env.DB, pendingEnc, step)))
+    throw new AppError(409, 'CONFLICT', 'Setup was restarted — scan the newest code');
   await writeAudit(userId, c.env.DB, 'auth.totp_enabled');
   return c.json({ ok: true });
 });
@@ -352,7 +382,7 @@ auth.post('/recovery/generate', requireAuth, requireStepUp, async (c) => {
     await Promise.all(
       codes.map(async (code) => ({
         id: crypto.randomUUID(),
-        hash: await hashSecret(normalizeRecovery(code)),
+        hash: await hashRecoveryCode(c.env, normalizeRecovery(code)),
       })),
     ),
   );

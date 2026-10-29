@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { surplusSuggestions, type AccountOccurrence } from './suggest';
+import { cashMovements, surplusSuggestions, likelySameAs, type AccountOccurrence } from './suggest';
 
 const o = (date: string, amountCents: number, accountId = 'chk'): AccountOccurrence => ({
   date,
@@ -83,5 +83,77 @@ describe('surplusSuggestions', () => {
     expect(
       surplusSuggestions(new Map([['MORTGAGE', rent]]), cash, new Set(), '2027-01-01'),
     ).toEqual([]);
+  });
+});
+
+describe('cashMovements', () => {
+  const t = (date: string, cents: number, pair: string | null, accountId = 'chk') => ({
+    ...o(date, cents, accountId),
+    isTransfer: true,
+    pairAccountId: pair,
+  });
+  const cashIds = new Set(['chk', 'sav']);
+  const cards = new Set(['citi']);
+
+  it('keeps transfers out to a loan, outside savings, or an unlinked leg', () => {
+    const moves = cashMovements(
+      new Map([
+        ['THECB', [t('2026-09-14', 106_054, 'loan')]],
+        ['APPLE SAVINGS', [t('2026-09-15', 50_000, null)]],
+        ['ACME PAYROLL', [o('2026-09-05', -310_000)]],
+      ]),
+      new Set(['chk']),
+      cards,
+    );
+    expect([...moves.keys()]).toEqual(['THECB', 'APPLE SAVINGS', 'ACME PAYROLL']);
+  });
+
+  it('drops card payments, moves between cash accounts, and rows outside cash', () => {
+    const moves = cashMovements(
+      new Map([
+        ['CITI PAYMENT', [t('2026-09-10', 80_000, 'citi')]],
+        ['TO SAVINGS', [t('2026-09-10', 20_000, 'sav')]],
+        ['NETFLIX', [o('2026-09-10', 1_599, 'citi')]],
+      ]),
+      cashIds,
+      cards,
+    );
+    expect(moves.size).toBe(0);
+  });
+
+  it('a savings transfer from checking forms a suggestion once savings is not cash', () => {
+    const saving = ['2026-07-15', '2026-08-15', '2026-09-15'].map((d) => t(d, 25_000, 'usaa-sav'));
+    const out = surplusSuggestions(
+      cashMovements(new Map([['SUMMIT FUNDS TRANSFER', saving]]), new Set(['chk']), cards),
+      new Set(['chk']),
+      new Set(),
+      '2026-09-20',
+    );
+    expect(out.map((x) => x.merchant)).toEqual(['SUMMIT FUNDS TRANSFER']);
+  });
+});
+
+describe('likelySameAs', () => {
+  const mortgage = [{ name: 'Mortgage', expectedAmountCents: 245_000, nextDate: '2026-11-01' }];
+
+  it('names a hand-added schedule with the same amount around the same day', () => {
+    expect(
+      likelySameAs({ expectedAmountCents: 245_000, nextExpectedDate: '2026-11-02' }, mortgage),
+    ).toBe('Mortgage');
+  });
+
+  it('a different amount, day or direction is its own schedule', () => {
+    const at = (cents: number, date: string) =>
+      likelySameAs({ expectedAmountCents: cents, nextExpectedDate: date }, mortgage);
+    expect(at(106_054, '2026-11-01')).toBeNull();
+    expect(at(245_000, '2026-11-14')).toBeNull();
+    expect(at(-245_000, '2026-11-01')).toBeNull();
+  });
+
+  it('the same amount means within 5% of the hand-added one, not ~10%', () => {
+    const at = (cents: number) =>
+      likelySameAs({ expectedAmountCents: cents, nextExpectedDate: '2026-11-01' }, mortgage);
+    expect(at(257_250)).toBe('Mortgage'); // +5%
+    expect(at(267_050)).toBeNull(); // +9%
   });
 });

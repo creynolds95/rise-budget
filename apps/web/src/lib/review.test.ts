@@ -21,12 +21,15 @@ const txn = (p: Partial<QueueItem>): QueueItem => ({
   isPending: false,
   isTransfer: false,
   transferPairId: null,
+  refundOfId: null,
   reviewState: 'needs_review',
   suggestedCategoryId: null,
   suggestionConfidence: 0,
   source: 'simplefin',
   sourceId: null,
   splits: [],
+  tagIds: [],
+  flag: null,
   createdAt: '2026-09-10T00:00:00Z',
   updatedAt: '2026-09-10T00:00:00Z',
   topCategoryIds: [],
@@ -159,7 +162,7 @@ describe('transfer offer for a lone leg', () => {
     ).toBe('card_payment');
   });
   it('offers a plain transfer between bank accounts', () => {
-    expect(transferOffer(txn({ descriptorRaw: 'USAA FUNDS TRANSFER DB' }), 'depository')).toBe(
+    expect(transferOffer(txn({ descriptorRaw: 'SUMMIT FUNDS TRANSFER DB' }), 'depository')).toBe(
       'transfer',
     );
   });

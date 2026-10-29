@@ -10,18 +10,314 @@ import {
   RecurringCadence,
   RecurringStatus,
   ReviewState,
+  ChargeFlag,
   RolloverPolicy,
   RuleMatchField,
   RuleMatchType,
   SnapshotSource,
   SpendShape,
   SyncRunStatus,
+  TaxKind,
   TxnSource,
 } from './enums';
 
 /** Entity shapes as the API speaks them (camelCase, booleans as booleans). */
 
+/** Dashboard tiles a user can show, hide and reorder. */
+export const DASHBOARD_TILES = [
+  'review',
+  'surplus',
+  'budget',
+  'spending',
+  'whereItWent',
+  'transactions',
+  'netWorth',
+  'comingUp',
+  'investments',
+  'savings',
+  'retirement',
+  'debt',
+  'mortgageSchedule',
+  'mortgageYear',
+] as const;
+export const DashboardTile = z.enum(DASHBOARD_TILES);
+export type DashboardTile = z.infer<typeof DashboardTile>;
+
+/** Retirement plan, all in today's dollars. One household age; contributions are entered by hand. */
+export const RetirementPlan = z.object({
+  currentAge: z.int().min(18).max(100),
+  goalAge: z.int().min(40).max(90),
+  /** Age the plan has to last to; the draw-down test runs from retirement to here. */
+  planToAge: z.int().min(70).max(110).default(95),
+  /** Monthly spend wanted in retirement, in today's dollars. The needed balance is derived from it. */
+  spendTargetCents: Cents.min(0),
+  /** What goes in each month, per retirement account, match included. */
+  contributions: z.array(z.object({ accountId: Id, monthlyCents: Cents.min(0) })).default([]),
+  /** Real (after-inflation) growth, basis points. Conservative default. */
+  realGrowthBps: z.int().min(0).max(1000).default(400),
+  /** Safe-withdrawal rate, basis points. Conservative default. */
+  withdrawalBps: z.int().min(100).max(1000).default(350),
+  /** Yearly swing in returns for the Monte Carlo fan, basis points. */
+  volatilityBps: z.int().min(0).max(5000).default(1500),
+  /** Monthly benefit at full retirement age (67) from the owner's ssa.gov statement; 0 = none. */
+  ssBenefitCents: Cents.min(0).default(0),
+  ssClaimAge: z.int().min(62).max(70).default(67),
+  /** A spouse's own age and statement, for their check (or half the owner's, if more). */
+  spouse: z
+    .object({
+      age: z.int().min(18).max(100),
+      ssBenefitCents: Cents.min(0).default(0),
+      ssClaimAge: z.int().min(62).max(70).default(67),
+    })
+    .nullable()
+    .default(null),
+  /** Share of promised benefits to count on, for anyone who'd rather plan on a cut. */
+  ssHaircutPct: z.int().min(0).max(100).default(100),
+  /** One-time money in (positive) or out (negative) at the owner's age, today's dollars. */
+  lifeEvents: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(60),
+        age: z.int().min(18).max(100),
+        cents: Cents,
+      }),
+    )
+    .max(30)
+    .default([]),
+});
+export type RetirementPlan = z.infer<typeof RetirementPlan>;
+
+/** One account in the payoff plan. Manual and edited by hand; nothing here is guessed. */
+export const DebtLoanPlan = z.object({
+  accountId: Id,
+  /** Annual rate in thousandths of a percent: 5.875% is 5875. */
+  aprMilliPct: z.int().min(0).max(100_000),
+  paymentCents: Cents.min(0),
+  /** Taxes, insurance and mortgage insurance inside `paymentCents`; the schedule skips it. */
+  escrowCents: Cents.min(0).default(0),
+  /** Day of the month the payment is due (clamped to short months). */
+  dueDay: z.int().min(1).max(31),
+  /** Student loans pool together; the mortgage never joins them. */
+  group: z.enum(['student', 'mortgage']),
+  /** The last month ("2026-10") whose payment is already in the account's balance. */
+  appliedThrough: z.string().regex(/^\d{4}-\d{2}$/),
+  /** What the payment's debit looks like ("mohela"). Any matching debit applies the month,
+   * whatever the amount; empty falls back to matching the payment amount exactly. */
+  merchant: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(60)
+    .refine((m) => m === '' || m.length >= 3, 'At least 3 characters')
+    .default(''),
+});
+export type DebtLoanPlan = z.infer<typeof DebtLoanPlan>;
+
+/** What the last automatic apply did, so the Debt page can say so and undo it. */
+export const DebtAutoRun = z.object({
+  period: z.string().regex(/^\d{4}-\d{2}$/),
+  /** What left checking, against what the plan said; shown when they differ. */
+  debitCents: Cents.min(0).default(0),
+  plannedCents: Cents.min(0).default(0),
+  loans: z.array(
+    z.object({
+      accountId: Id,
+      beforeCents: Cents.min(0),
+      afterCents: Cents.min(0),
+      /** The day the balance was written; undo rewrites the same day. */
+      asOf: IsoDate,
+      prevApplied: z.string().regex(/^\d{4}-\d{2}$/),
+    }),
+  ),
+});
+export type DebtAutoRun = z.infer<typeof DebtAutoRun>;
+
+export const DebtPlan = z.object({
+  loans: z.array(DebtLoanPlan).default([]),
+  /** Apply a month's payments on their own once the matching debit posts. */
+  autoApply: z.boolean().default(true),
+  lastAuto: DebtAutoRun.nullable().default(null),
+  strategy: z.enum(['snowball', 'avalanche']).default('snowball'),
+  /** A finished loan's payment moves on to the next loan. */
+  rollForward: z.boolean().default(true),
+  /** Extra per month, split by strategy across the student loans only. */
+  extraCents: Cents.min(0).default(0),
+  mortgageExtraCents: Cents.min(0).default(0),
+  /** One-time extra principal toward the mortgage, by the month it goes in. */
+  mortgageLumps: z
+    .array(z.object({ period: PeriodId, cents: Cents.min(1) }))
+    .max(240)
+    .default([]),
+  /** Original term; payments already made are the term less what remains. */
+  mortgageTermMonths: z.int().min(12).max(600).default(360),
+  /** Manual account whose balance is the home's value, for equity. */
+  homeValueAccountId: Id.nullable().default(null),
+});
+export type DebtPlan = z.infer<typeof DebtPlan>;
+
+/** One savings goal. Saved is the linked account's balance, or a hand-set share of it. */
+export const SavingsGoal = z.object({
+  id: Id,
+  name: z.string().min(1).max(60),
+  accountId: Id,
+  /** Used when kind is 'goal'; an emergency fund derives it from months × expenses. */
+  targetCents: Cents.min(0),
+  /** What goes in each month, for the projected date. A what-if, not a rule. */
+  monthlyCents: Cents.min(0),
+  /** Share of the account that counts toward this goal; null = the whole balance. */
+  savedCents: Cents.min(0).nullable().default(null),
+  kind: z.enum(['goal', 'emergency']).default('goal'),
+  /** Emergency fund only. */
+  months: z.int().min(1).max(36).default(6),
+  monthlyExpenseCents: Cents.min(0).default(0),
+});
+export type SavingsGoal = z.infer<typeof SavingsGoal>;
+
+export const SavingsPlan = z.object({ goals: z.array(SavingsGoal).max(50).default([]) });
+export type SavingsPlan = z.infer<typeof SavingsPlan>;
+
+/** Most log entries kept; far above what a 45-day window ever holds. */
+export const FOLLOW_LOG_MAX = 1000;
+
+/** A manual account whose balance follows matching rows in other accounts (Apple Savings). */
+export const FollowRule = z.object({
+  accountId: Id,
+  /** Text to find in the row's descriptor or merchant. */
+  match: z.string().trim().toLowerCase().min(3).max(60),
+  /** Only rows posted on or after this day are followed, so history never changes. */
+  since: IsoDate,
+});
+export type FollowRule = z.infer<typeof FollowRule>;
+
+/** What a rule did to a balance, kept so it can be undone and never applied twice. */
+export const FollowEntry = z.object({
+  txnId: Id,
+  accountId: Id,
+  deltaCents: z.int(),
+  /** The day the balance was written. */
+  asOf: IsoDate,
+  undone: z.boolean().default(false),
+});
+export type FollowEntry = z.infer<typeof FollowEntry>;
+
+export const FollowSettings = z.object({
+  rules: z.array(FollowRule).max(20).default([]),
+  /** Newest last. Entries older than the sync window are pruned by date (never by count,
+   * which could let a row drop out of the log while still inside the window and be
+   * followed twice); the cap only bounds the settings size. */
+  log: z.array(FollowEntry).max(FOLLOW_LOG_MAX).default([]),
+});
+export type FollowSettings = z.infer<typeof FollowSettings>;
+
+/**
+ * The household binder (SPEC §12.2): who to call and where things are, for whoever has to
+ * step in. Never a password, a full account number or a PIN: only where passwords live and
+ * the last four digits.
+ */
+export const BinderEntry = z.object({
+  id: z.string().min(1).max(40),
+  kind: z.enum(['account', 'insurance', 'person', 'document', 'other']),
+  title: z.string().trim().min(1).max(80),
+  /** A Rise account this is about, when there is one. */
+  accountId: Id.nullable().default(null),
+  last4: z
+    .string()
+    .regex(/^\d{4}$/)
+    .nullable()
+    .default(null),
+  phone: z.string().trim().max(40).default(''),
+  website: z.string().trim().max(200).default(''),
+  /** Where the paper copy or the file is. */
+  location: z.string().trim().max(200).default(''),
+  notes: z.string().trim().max(1000).default(''),
+});
+export type BinderEntry = z.infer<typeof BinderEntry>;
+
+export const Binder = z.object({
+  /** "1Password", "the notebook in the safe": where, never what. */
+  passwordsLiveIn: z.string().trim().max(200).default(''),
+  entries: z.array(BinderEntry).max(150).default([]),
+});
+export type Binder = z.infer<typeof Binder>;
+
+/** Which quiet notices show (SPEC §8.1). Each is the owner's choice; all on to start. */
+export const AlertSettings = z.object({
+  priceUp: z.boolean().default(true),
+  doubleCharge: z.boolean().default(true),
+  duplicate: z.boolean().default(true),
+  unusual: z.boolean().default(true),
+  firstTime: z.boolean().default(true),
+});
+export type AlertSettings = z.infer<typeof AlertSettings>;
+const ALERTS_ON: AlertSettings = {
+  priceUp: true,
+  doubleCharge: true,
+  duplicate: true,
+  unusual: true,
+  firstTime: true,
+};
+
+/**
+ * What may interrupt with a push notification (SPEC §8.2). The weekly recap, a missed bill
+ * and bank trouble start on; the quiet notices start off and stay in the app unless chosen.
+ */
+export const PushSettings = z.object({
+  recap: z.boolean().default(true),
+  missedBill: z.boolean().default(true),
+  bankTrouble: z.boolean().default(true),
+  priceUp: z.boolean().default(false),
+  doubleCharge: z.boolean().default(false),
+  duplicate: z.boolean().default(false),
+  unusual: z.boolean().default(false),
+  firstTime: z.boolean().default(false),
+  surplusNegative: z.boolean().default(false),
+  toReview: z.boolean().default(false),
+  /** A paycheck or other income deposit landed. */
+  paycheck: z.boolean().default(false),
+  /** A manual loan's balance changed (a scheduled paydown counts). */
+  manualLoan: z.boolean().default(false),
+});
+export type PushSettings = z.infer<typeof PushSettings>;
+export const PUSH_DEFAULTS: PushSettings = {
+  recap: true,
+  missedBill: true,
+  bankTrouble: true,
+  priceUp: false,
+  doubleCharge: false,
+  duplicate: false,
+  unusual: false,
+  firstTime: false,
+  surplusNegative: false,
+  toReview: false,
+  paycheck: false,
+  manualLoan: false,
+};
+
+/**
+ * Accounts the owner wants told about (SPEC §8.2). `deposits` pushes each new money-in
+ * transaction (right for retirement: contributions, never market moves); `balance` pushes
+ * when the reported balance moves. Both skip anything under `minCents`.
+ */
+export const BalanceAlertMode = z.enum(['deposits', 'balance']);
+export type BalanceAlertMode = z.infer<typeof BalanceAlertMode>;
+export const BalanceAlerts = z.object({
+  minCents: Cents.min(0).default(10_000),
+  accounts: z.array(z.object({ accountId: Id, mode: BalanceAlertMode })).default([]),
+});
+export type BalanceAlerts = z.infer<typeof BalanceAlerts>;
+
+/** Times of day (minutes after local midnight, the owner's timezone) when the bank sync runs on
+ * its own. SimpleFIN allows 24 requests a day; the cap on rows leaves room for manual syncs. */
+export const SYNC_TIMES_MAX = 12;
+export const SYNC_TIMES_DEFAULT = [5, 7, 9, 11, 13, 15, 17, 19, 21, 23].map((h) => h * 60);
+export const SyncTimes = z
+  .array(z.number().int().min(0).max(1439))
+  .min(1)
+  .max(SYNC_TIMES_MAX)
+  .refine((t) => new Set(t).size === t.length, 'Pick each time once');
+
 export const UserSettings = z.object({
+  syncTimes: SyncTimes.default(SYNC_TIMES_DEFAULT),
   appLock: AppLock.default('off'),
   /** SPEC §2.9: where the plan editor's "apply to all future months" starts. */
   planChangesApplyToFuture: z.boolean().default(false),
@@ -35,6 +331,22 @@ export const UserSettings = z.object({
   dismissedPayMerchants: z
     .array(z.object({ merchant: z.string(), displayName: z.string() }))
     .default([]),
+  /** Missed-charge notes dismissed from the Dashboard, by series and the due date missed. A
+   * later miss of the same series is a new note. */
+  dismissedMisses: z
+    .array(z.object({ seriesId: z.string(), dueDate: IsoDate }))
+    .max(200)
+    .default([]),
+  /** Shown tiles in order; null until the user customizes, which keeps the stock layout. */
+  dashboard: z.array(DashboardTile).max(DASHBOARD_TILES.length).nullable().default(null),
+  retirement: RetirementPlan.nullable().default(null),
+  debt: DebtPlan.nullable().default(null),
+  savings: SavingsPlan.nullable().default(null),
+  follow: FollowSettings.default({ rules: [], log: [] }),
+  alerts: AlertSettings.default(ALERTS_ON),
+  binder: Binder.default({ passwordsLiveIn: '', entries: [] }),
+  push: PushSettings.default(PUSH_DEFAULTS),
+  balanceAlerts: BalanceAlerts.default({ minCents: 10_000, accounts: [] }),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 
@@ -47,6 +359,37 @@ export const User = z.object({
   createdAt: IsoDateTime,
 });
 export type User = z.infer<typeof User>;
+
+/** Outline symbols a user can pick for an account Rise has no logo for. Each name is also an
+ *  icon in the web app's Icon set (the editor renders them, so a missing one fails typecheck). */
+export const BADGE_ICONS = [
+  'home',
+  'building',
+  'car',
+  'bank',
+  'card',
+  'wallet',
+  'coins',
+  'chart',
+  'briefcase',
+  'cap',
+  'shield',
+  'doc',
+] as const;
+export const AccountBadgeIcon = z.enum(BADGE_ICONS);
+export type AccountBadgeIcon = z.infer<typeof AccountBadgeIcon>;
+
+/** A badge the user chose for an account Rise has no logo for: a symbol, or their own letters
+ *  on a color (#rrggbb). */
+export const AccountBadgeStyle = z.union([
+  z.object({ icon: AccountBadgeIcon }),
+  z.object({
+    text: z.string().trim().min(1).max(4),
+    bg: z.string().regex(/^#[0-9a-f]{6}$/i),
+    fg: z.string().regex(/^#[0-9a-f]{6}$/i),
+  }),
+]);
+export type AccountBadgeStyle = z.infer<typeof AccountBadgeStyle>;
 
 export const Account = z.object({
   id: Id,
@@ -66,6 +409,7 @@ export const Account = z.object({
   lastSyncedAt: IsoDateTime.nullable(),
   archivedAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
+  badge: AccountBadgeStyle.nullable().default(null),
 });
 export type Account = z.infer<typeof Account>;
 
@@ -106,8 +450,19 @@ export const Category = z.object({
   /** Whether a split filed here counts as spending (pre-deploy-todo A4). Transfer-like
    * categories default to false; everything else defaults to true. */
   budgeted: z.boolean(),
+  /** Totals into the year-end tax pack under this heading. */
+  taxKind: TaxKind.nullable().default(null),
 });
 export type Category = z.infer<typeof Category>;
+
+/** A label that cuts across categories: a trip, a project, a side gig. */
+export const Tag = z.object({
+  id: Id,
+  name: z.string().min(1).max(40),
+  taxKind: TaxKind.nullable(),
+  createdAt: IsoDateTime,
+});
+export type Tag = z.infer<typeof Tag>;
 
 export const Period = z.object({
   id: PeriodId,
@@ -157,12 +512,16 @@ export const Transaction = z.object({
   isPending: z.boolean(),
   isTransfer: z.boolean(),
   transferPairId: Id.nullable(),
+  refundOfId: Id.nullable(),
   reviewState: ReviewState,
   suggestedCategoryId: Id.nullable(),
   suggestionConfidence: z.number().min(0).max(1),
   source: TxnSource,
   sourceId: z.string().nullable(),
   splits: z.array(Split),
+  tagIds: z.array(Id).default([]),
+  /** A quiet flag until the user says it's fine (SPEC §8.1). */
+  flag: ChargeFlag.nullable().default(null),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -206,8 +565,12 @@ export const RecurringSeries = z.object({
   nextExpectedDate: IsoDate.nullable(),
   status: RecurringStatus,
   updatedAt: IsoDateTime,
-  /** 'manual' = Caleb's "Recurring Cash Withdrawal" tag; 'detected' = auto-detected (SPEC §7). */
+  /** 'manual' = the owner's "Recurring Cash Withdrawal" tag; 'detected' = auto-detected (SPEC §7). */
   source: z.enum(['detected', 'manual']),
+  /** Subscription radar (SPEC §7.1), each only for a while after it happened. */
+  previousAmountCents: Cents.nullable().default(null),
+  priceChangedOn: IsoDate.nullable().default(null),
+  doubleChargedOn: IsoDate.nullable().default(null),
 });
 export type RecurringSeries = z.infer<typeof RecurringSeries>;
 

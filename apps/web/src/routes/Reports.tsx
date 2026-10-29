@@ -1,20 +1,13 @@
 import { averageCents } from '@rise/shared/reports';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { Chart } from '../components/primitives/Chart';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { series as seriesColors } from '../design/tokens';
 import { pieArcs, squarifyTreemap, type Slice } from '../lib/chart';
 import { addMonths, monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
-import {
-  useCashFlowReport,
-  useCategories,
-  usePeriod,
-  useSpendingReport,
-  useToday,
-} from '../lib/queries';
+import { useCashFlowReport, useCategories, useMoneyFlow, useToday } from '../lib/queries';
 import { MoneyFlowReportView } from './MoneyFlow';
 
 const VIEWS = [
@@ -41,31 +34,60 @@ const short = (period: string) => monthName(period, false).slice(0, 3);
 /** Categorical color for the Nth slice; the design system's palette is short, so it cycles. */
 const colorAt = (i: number) => seriesColors[i % seriesColors.length] as string;
 
-/** Desktop-first "Reports" tab: cash flow and spending, each with a Monarch-style chart picker. */
+/** How many months the bar charts (and the "all" summary) cover; matches the API's window. */
+const WINDOW = 6;
+
+/** "May – Oct 2026", or "Dec 2025 – May 2026" across a year boundary. */
+function rangeLabel(from: string, to: string): string {
+  const fromYear = from.slice(0, 4) !== to.slice(0, 4);
+  return `${short(from)}${fromYear ? ` ${from.slice(0, 4)}` : ''} – ${short(to)} ${to.slice(0, 4)}`;
+}
+
+/**
+ * Reports: cash flow and spending, each with a chart picker. One period drives every chart
+ * and the Summary: a single month (the arrows, or tapping a bar) or the whole six-month
+ * window (tapping the selected bar again, or "6 months").
+ */
 export function Reports() {
   const today = useToday();
+  const thisMonth = today.slice(0, 7);
   const [params, setParams] = useSearchParams();
-  const month = params.get('m') ?? today.slice(0, 7);
+  const month = params.get('m') ?? thisMonth;
+  const all = params.get('all') === '1';
   const [view, setView] = useState<ViewKey>('flow');
   const [flowChart, setFlowChart] = useState<FlowChart>('sankey');
   const [spendingChart, setSpendingChart] = useState<SpendingChart>('pie');
-  const setMonth = (m: string) =>
-    setParams(m === today.slice(0, 7) ? {} : { m }, { replace: true });
+  const select = (m: string, wholeWindow = false) => {
+    const next: Record<string, string> = {};
+    if (m !== thisMonth) next.m = m;
+    if (wholeWindow) next.all = '1';
+    setParams(next, { replace: true });
+  };
+  // The window ends this month while the selection is inside it, else at the selection.
+  const end = month >= addMonths(thisMonth, 1 - WINDOW) ? thisMonth : month;
+  const start = addMonths(end, 1 - WINDOW);
+  const from = all ? start : month;
+  const to = all ? end : month;
+  const label = all
+    ? rangeLabel(start, end)
+    : monthName(month, month.slice(0, 4) !== today.slice(0, 4));
+  const period: Period = { from, to, label, selected: all ? null : month };
+  const tapMonth = (m: string) => select(m, !all && m === month);
 
   return (
     <div className="mx-auto max-w-2xl pb-16">
       <nav aria-label="Month" className="gutter flex items-center justify-between pt-4">
         <button
           className="min-h-11 min-w-11 text-sage-700"
-          onClick={() => setMonth(addMonths(month, -1))}
+          onClick={() => select(addMonths(month, -1))}
         >
           ‹ {short(addMonths(month, -1))}
         </button>
-        <h1 className="type-title">{monthName(month, month.slice(0, 4) !== today.slice(0, 4))}</h1>
+        <h1 className="type-title">{label}</h1>
         <button
           className="min-h-11 min-w-11 text-sage-700 disabled:opacity-0"
-          disabled={month >= today.slice(0, 7)}
-          onClick={() => setMonth(addMonths(month, 1))}
+          disabled={month >= thisMonth}
+          onClick={() => select(addMonths(month, 1))}
         >
           {short(addMonths(month, 1))} ›
         </button>
@@ -99,14 +121,108 @@ export function Reports() {
       </div>
 
       <section className="gutter mt-2">
-        {view === 'flow' && flowChart === 'sankey' && <MoneyFlowReportView month={month} />}
-        {view === 'flow' && flowChart === 'bar' && <CashFlowBarView month={month} />}
-        {view === 'spending' && spendingChart === 'pie' && <SpendingPieView month={month} />}
-        {view === 'spending' && spendingChart === 'bar' && <SpendingBarView month={month} />}
+        {view === 'flow' && flowChart === 'sankey' && (
+          <MoneyFlowReportView month={to} from={from} label={label} />
+        )}
+        {view === 'flow' && flowChart === 'bar' && (
+          <CashFlowBarView end={end} period={period} onTap={tapMonth} />
+        )}
+        {view === 'spending' && spendingChart === 'pie' && <SpendingPieView period={period} />}
+        {view === 'spending' && spendingChart === 'bar' && (
+          <SpendingBarView end={end} period={period} onTap={tapMonth} thisMonth={thisMonth} />
+        )}
         {view === 'spending' && spendingChart === 'treemap' && (
-          <SpendingTreemapView month={month} />
+          <SpendingTreemapView period={period} />
         )}
       </section>
+
+      <section className="gutter mt-3">
+        <Summary
+          end={end}
+          period={period}
+          onMonth={() => select(month)}
+          onAll={() => select(month, true)}
+        />
+      </section>
+    </div>
+  );
+}
+
+/** What every chart and the Summary show: one month, or the whole window. */
+interface Period {
+  from: string;
+  to: string;
+  label: string;
+  /** The month picked, or null when the whole window is. */
+  selected: string | null;
+}
+
+// ── Summary ─────────────────────────────────────────────────────────────────────
+
+function Summary({
+  end,
+  period,
+  onMonth,
+  onAll,
+}: {
+  end: string;
+  period: Period;
+  onMonth: () => void;
+  onAll: () => void;
+}) {
+  const report = useCashFlowReport(end).data;
+  const months = report?.months.filter((m) => m.periodId >= period.from && m.periodId <= period.to);
+  const income = months?.reduce((n, m) => n + m.incomeCents, 0) ?? 0;
+  const expense = months?.reduce((n, m) => n + m.expenseCents, 0) ?? 0;
+  const net = income - expense;
+  const rows = [
+    { label: 'Income', cents: income, tone: 'in' as const },
+    { label: 'Expenses', cents: expense, tone: 'ink' as const },
+    { label: 'Savings', cents: net, tone: net < 0 ? ('over' as const) : ('ink' as const) },
+  ];
+
+  return (
+    <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="type-title">Summary</h2>
+          <p className="type-caption text-ink-muted">{period.label}</p>
+        </div>
+        <div className="flex shrink-0 gap-1 rounded-input bg-canvas p-0.5">
+          {[
+            { key: 'month', label: 'Month', on: period.selected !== null, go: onMonth },
+            { key: 'all', label: `${WINDOW} months`, on: period.selected === null, go: onAll },
+          ].map((o) => (
+            <button
+              key={o.key}
+              aria-pressed={o.on}
+              onClick={o.go}
+              className={`min-h-9 rounded-input px-3 type-caption font-semibold ${
+                o.on ? 'bg-surface text-ink shadow-soft' : 'text-ink-muted'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <dl className="mt-2">
+        {rows.map((r) => (
+          <div
+            key={r.label}
+            className="flex items-center justify-between border-t border-hairline py-3 first:border-t-0"
+          >
+            <dt>{r.label}</dt>
+            <dd>
+              {report ? (
+                <MoneyText cents={r.cents} tone={r.tone} whole />
+              ) : (
+                <Skeleton className="h-5 w-20" />
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
@@ -138,8 +254,16 @@ function ChartPicker<K extends string>({
 
 // ── Cash flow: Bar ──────────────────────────────────────────────────────────────
 
-function CashFlowBarView({ month }: { month: string }) {
-  const report = useCashFlowReport(month).data;
+function CashFlowBarView({
+  end,
+  period,
+  onTap,
+}: {
+  end: string;
+  period: Period;
+  onTap: (m: string) => void;
+}) {
+  const report = useCashFlowReport(end).data;
   if (!report) {
     return (
       <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
@@ -147,122 +271,23 @@ function CashFlowBarView({ month }: { month: string }) {
       </div>
     );
   }
-  const totalIncome = report.months.reduce((n, m) => n + m.incomeCents, 0);
-  const totalExpense = report.months.reduce((n, m) => n + m.expenseCents, 0);
 
   return (
     <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
       <p className="type-label text-ink-muted">Income vs. expenses</p>
       <div className="mt-4">
-        <CashFlowBars months={report.months} />
-      </div>
-      <div className="mt-4 grid grid-cols-3 gap-2 border-t border-hairline pt-4">
-        <Figure label="Income" cents={totalIncome} tone="ink" />
-        <Figure label="Expenses" cents={totalExpense} tone="ink" />
-        <Figure
-          label="Savings"
-          cents={totalIncome - totalExpense}
-          tone={totalIncome - totalExpense < 0 ? 'over' : 'ink'}
+        <MonthBars
+          months={report.months.map((m) => ({
+            periodId: m.periodId,
+            bars: [
+              { cents: m.incomeCents, fill: 'var(--color-sage-600)', name: 'income' },
+              { cents: m.expenseCents, fill: 'var(--color-clay)', name: 'expenses' },
+            ],
+          }))}
+          net={report.months.map((m) => m.incomeCents - m.expenseCents)}
+          selected={period.selected}
+          onTap={onTap}
         />
-      </div>
-    </div>
-  );
-}
-
-function Figure({ label, cents, tone }: { label: string; cents: number; tone: 'ink' | 'over' }) {
-  return (
-    <div>
-      <p className="type-caption text-ink-faint">{label}</p>
-      <p className="mt-0.5">
-        <MoneyText cents={cents} tone={tone} whole />
-      </p>
-    </div>
-  );
-}
-
-const CF_W = 320;
-const CF_H = 160;
-
-function CashFlowBars({
-  months,
-}: {
-  months: { periodId: string; incomeCents: number; expenseCents: number }[];
-}) {
-  const max = Math.max(1, ...months.flatMap((m) => [m.incomeCents, m.expenseCents]));
-  const slot = CF_W / Math.max(months.length, 1);
-  const barW = slot * 0.32;
-  const net = months.reduce<number[]>((acc, m) => {
-    const prev = acc.at(-1) ?? 0;
-    acc.push(prev + m.incomeCents - m.expenseCents);
-    return acc;
-  }, []);
-  const netMax = Math.max(1, ...net.map(Math.abs));
-  const netY = (v: number) => CF_H - ((v + netMax) / (netMax * 2)) * CF_H;
-
-  return (
-    <figure className="m-0">
-      <svg
-        viewBox={`0 0 ${CF_W} ${CF_H}`}
-        role="img"
-        aria-label="Income and expenses per month"
-        className="h-40 w-full"
-        preserveAspectRatio="none"
-      >
-        {[0.25, 0.5, 0.75].map((f) => (
-          <line
-            key={f}
-            x1={0}
-            x2={CF_W}
-            y1={CF_H * f}
-            y2={CF_H * f}
-            className="stroke-hairline"
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {months.map((m, i) => {
-          const cx = i * slot + slot / 2;
-          const incomeH = (m.incomeCents / max) * (CF_H - 8);
-          const expenseH = (m.expenseCents / max) * (CF_H - 8);
-          return (
-            <g key={m.periodId}>
-              <rect
-                x={cx - barW - 1}
-                width={barW}
-                y={CF_H - incomeH}
-                height={incomeH}
-                rx={2}
-                fill="var(--color-sage-600)"
-              >
-                <title>{`${m.periodId} income: ${formatCents(m.incomeCents)}`}</title>
-              </rect>
-              <rect
-                x={cx + 1}
-                width={barW}
-                y={CF_H - expenseH}
-                height={expenseH}
-                rx={2}
-                fill="var(--color-clay)"
-              >
-                <title>{`${m.periodId} expenses: ${formatCents(m.expenseCents)}`}</title>
-              </rect>
-            </g>
-          );
-        })}
-        <polyline
-          points={net.map((v, i) => `${i * slot + slot / 2},${netY(v)}`).join(' ')}
-          fill="none"
-          stroke="var(--color-ink)"
-          strokeWidth={1.5}
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      <div aria-hidden className="mt-1 flex justify-between type-caption text-ink-faint">
-        {months.map((m) => (
-          <span key={m.periodId} className="flex-1 text-center">
-            {short(m.periodId)}
-          </span>
-        ))}
       </div>
       <div className="mt-2 flex gap-4 type-caption text-ink-muted">
         <span className="flex items-center gap-1.5">
@@ -276,6 +301,125 @@ function CashFlowBars({
           (cumulative)
         </span>
       </div>
+    </div>
+  );
+}
+
+const CF_W = 320;
+const CF_H = 160;
+
+interface MonthColumn {
+  periodId: string;
+  bars: { cents: number; fill: string; name: string }[];
+}
+
+/**
+ * Side-by-side bars per month, each month a button: tapping one selects it, and the rest
+ * fade. `net`, when given, draws the cumulative savings line over the bars.
+ */
+function MonthBars({
+  months,
+  net,
+  selected,
+  onTap,
+}: {
+  months: MonthColumn[];
+  net?: number[];
+  selected: string | null;
+  onTap: (m: string) => void;
+}) {
+  const max = Math.max(1, ...months.flatMap((m) => m.bars.map((b) => b.cents)));
+  const slot = CF_W / Math.max(months.length, 1);
+  const per = months[0]?.bars.length ?? 1;
+  const barW = (slot * 0.64) / per;
+  const running = net?.reduce<number[]>((acc, v) => {
+    acc.push((acc.at(-1) ?? 0) + v);
+    return acc;
+  }, []);
+  const netMax = Math.max(1, ...(running ?? []).map(Math.abs));
+  const netY = (v: number) => CF_H - ((v + netMax) / (netMax * 2)) * CF_H;
+
+  return (
+    <figure className="m-0">
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${CF_W} ${CF_H}`}
+          aria-hidden
+          className="h-40 w-full"
+          preserveAspectRatio="none"
+        >
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line
+              key={f}
+              x1={0}
+              x2={CF_W}
+              y1={CF_H * f}
+              y2={CF_H * f}
+              className="stroke-hairline"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {months.map((m, i) => {
+            const left = i * slot + slot / 2 - (barW * per) / 2;
+            const faded = selected !== null && m.periodId !== selected;
+            return (
+              <g key={m.periodId} opacity={faded ? 0.35 : 1}>
+                {m.bars.map((b, j) => {
+                  const h = (Math.max(0, b.cents) / max) * (CF_H - 8);
+                  return (
+                    <rect
+                      key={b.name}
+                      x={left + j * barW + 0.5}
+                      width={barW - 1}
+                      y={CF_H - h}
+                      height={h}
+                      rx={2}
+                      fill={b.fill}
+                    />
+                  );
+                })}
+              </g>
+            );
+          })}
+          {running && (
+            <polyline
+              points={running.map((v, i) => `${i * slot + slot / 2},${netY(v)}`).join(' ')}
+              fill="none"
+              stroke="var(--color-ink)"
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+        </svg>
+        <div className="absolute inset-0 flex">
+          {months.map((m) => (
+            <button
+              key={m.periodId}
+              aria-pressed={m.periodId === selected}
+              aria-label={`${monthName(m.periodId)}: ${m.bars
+                .map((b) => `${b.name} ${formatCents(b.cents)}`)
+                .join(', ')}`}
+              onClick={() => onTap(m.periodId)}
+              className="flex-1"
+            />
+          ))}
+        </div>
+      </div>
+      <div aria-hidden className="mt-1 flex justify-between type-caption">
+        {months.map((m) => (
+          <button
+            key={m.periodId}
+            tabIndex={-1}
+            onClick={() => onTap(m.periodId)}
+            className={`min-h-9 flex-1 text-center ${
+              m.periodId === selected ? 'font-semibold text-ink' : 'text-ink-faint'
+            }`}
+          >
+            {short(m.periodId)}
+          </button>
+        ))}
+      </div>
     </figure>
   );
 }
@@ -284,30 +428,33 @@ function CashFlowBars({
 
 const MAX_SLICES = 6;
 
-/** Top categories by spend, capped with the rest bucketed into "Everything else". */
-function useSpendingSlices(month: string): { slices: Slice[]; total: number } | undefined {
-  const period = usePeriod(month).data;
+/** Top categories by spend over the period, capped with the rest in "Everything else". */
+function useSpendingSlices(period: Period): { slices: Slice[]; total: number } | undefined {
+  const flow = useMoneyFlow(period.to, period.from).data;
   const categories = useCategories().data;
   return useMemo(() => {
-    if (!period || !categories) return undefined;
-    const spent = period.categories
-      .filter((c) => c.groupKind === 'expense' && c.spentCents > 0)
-      .sort((a, b) => b.spentCents - a.spentCents);
-    const cat = (id: string) => categories.find((c) => c.id === id);
-    const named = spent.map((c) => {
-      const info = cat(c.categoryId);
-      return {
-        label: info ? `${info.emoji ? info.emoji + ' ' : ''}${info.name}` : 'Category',
-        cents: c.spentCents,
-      };
-    });
+    if (!flow || !categories) return undefined;
+    const name = new Map(flow.nodes.map((n) => [n.id, n.name]));
+    const cat = (id: string) => categories.find((c) => `cat:${c.id}` === id);
+    const named = flow.links
+      .filter((l) => l.source.startsWith('group:'))
+      .sort((a, b) => b.valueCents - a.valueCents)
+      .map((l) => {
+        const info = cat(l.target);
+        return {
+          label: info
+            ? `${info.emoji ? info.emoji + ' ' : ''}${info.name}`
+            : (name.get(l.target) ?? 'Category'),
+          cents: l.valueCents,
+        };
+      });
     const head = named.slice(0, MAX_SLICES);
     const restCents = named.slice(MAX_SLICES).reduce((n, s) => n + s.cents, 0);
     const slices: Slice[] = head.map((s, i) => ({ ...s, color: colorAt(i) }));
     if (restCents > 0)
       slices.push({ label: 'Everything else', cents: restCents, color: colorAt(head.length) });
     return { slices, total: named.reduce((n, s) => n + s.cents, 0) };
-  }, [period, categories]);
+  }, [flow, categories]);
 }
 
 function SpendingLegend({ slices, total }: { slices: Slice[]; total: number }) {
@@ -349,18 +496,18 @@ function SpendingLegend({ slices, total }: { slices: Slice[]; total: number }) {
   );
 }
 
-function SpendingEmpty({ month }: { month: string }) {
+function SpendingEmpty({ period }: { period: Period }) {
   return (
     <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-      <p className="text-ink-muted">Nothing spent yet in {monthName(month, false)}.</p>
+      <p className="text-ink-muted">Nothing spent, {period.label}.</p>
     </div>
   );
 }
 
 // ── Spending: Pie ────────────────────────────────────────────────────────────────
 
-function SpendingPieView({ month }: { month: string }) {
-  const data = useSpendingSlices(month);
+function SpendingPieView({ period }: { period: Period }) {
+  const data = useSpendingSlices(period);
   if (!data) {
     return (
       <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
@@ -368,14 +515,14 @@ function SpendingPieView({ month }: { month: string }) {
       </div>
     );
   }
-  if (data.slices.length === 0) return <SpendingEmpty month={month} />;
+  if (data.slices.length === 0) return <SpendingEmpty period={period} />;
   const cx = 160;
   const cy = 90;
   const arcs = pieArcs(data.slices, cx, cy, 78, 46);
 
   return (
     <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-      <p className="type-label text-ink-muted">Spending by category, {monthName(month, false)}</p>
+      <p className="type-label text-ink-muted">Spending by category, {period.label}</p>
       <div className="relative mt-2">
         <svg
           viewBox="0 0 320 180"
@@ -401,8 +548,18 @@ function SpendingPieView({ month }: { month: string }) {
 
 // ── Spending: Bar (monthly totals) ─────────────────────────────────────────────
 
-function SpendingBarView({ month }: { month: string }) {
-  const report = useSpendingReport(month).data;
+function SpendingBarView({
+  end,
+  period,
+  onTap,
+  thisMonth,
+}: {
+  end: string;
+  period: Period;
+  onTap: (m: string) => void;
+  thisMonth: string;
+}) {
+  const report = useCashFlowReport(end).data;
   if (!report) {
     return (
       <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
@@ -410,40 +567,27 @@ function SpendingBarView({ month }: { month: string }) {
       </div>
     );
   }
-  const firstWithData = report.months.findIndex((m) => m.cents !== 0);
-  const shown = firstWithData === -1 ? [] : report.months.slice(firstWithData);
-  const complete = shown.filter((m) => m.periodId !== month);
-  const avg = complete.length > 0 ? averageCents(complete.map((m) => m.cents)) : undefined;
+  const complete = report.months.filter((m) => m.periodId !== thisMonth && m.expenseCents !== 0);
+  const avg = averageCents(complete.map((m) => m.expenseCents));
 
   return (
     <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
       <p className="type-label text-ink-muted">Spending per month</p>
-      {complete.length === 0 ? (
-        <p className="mt-2 text-ink-muted">Not enough history yet to show a trend.</p>
-      ) : (
-        <>
-          <p className="mt-1 text-ink-muted">
-            {complete.length === 1
-              ? `${monthName(complete[0]?.periodId ?? '', false)}: `
-              : 'Typical month: '}
-            <MoneyText cents={avg ?? 0} whole />
-            {complete.length > 1 && (
-              <span className="type-caption text-ink-faint"> · average of {complete.length}</span>
-            )}
-          </p>
-          <div className="mt-4">
-            <Chart
-              kind="bar"
-              label={`Spending per month, ${short(shown[0]?.periodId ?? month)} to ${short(month)}`}
-              bars={shown.map((m) => ({
-                label: short(m.periodId),
-                cents: Math.max(0, m.cents),
-                muted: m.periodId === month,
-              }))}
-            />
-          </div>
-        </>
+      {avg !== null && (
+        <p className="mt-1 text-ink-muted">
+          Typical month: <MoneyText cents={avg} whole />
+        </p>
       )}
+      <div className="mt-4">
+        <MonthBars
+          months={report.months.map((m) => ({
+            periodId: m.periodId,
+            bars: [{ cents: m.expenseCents, fill: 'var(--color-sage-600)', name: 'spending' }],
+          }))}
+          selected={period.selected}
+          onTap={onTap}
+        />
+      </div>
     </div>
   );
 }
@@ -453,8 +597,8 @@ function SpendingBarView({ month }: { month: string }) {
 const TM_W = 320;
 const TM_H = 200;
 
-function SpendingTreemapView({ month }: { month: string }) {
-  const data = useSpendingSlices(month);
+function SpendingTreemapView({ period }: { period: Period }) {
+  const data = useSpendingSlices(period);
   if (!data) {
     return (
       <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
@@ -462,12 +606,12 @@ function SpendingTreemapView({ month }: { month: string }) {
       </div>
     );
   }
-  if (data.slices.length === 0) return <SpendingEmpty month={month} />;
+  if (data.slices.length === 0) return <SpendingEmpty period={period} />;
   const tiles = squarifyTreemap(data.slices, TM_W, TM_H);
 
   return (
     <div className="overflow-hidden rounded-card bg-surface p-4 shadow-soft">
-      <p className="type-label text-ink-muted">Spending by category, {monthName(month, false)}</p>
+      <p className="type-label text-ink-muted">Spending by category, {period.label}</p>
       <svg
         viewBox={`0 0 ${TM_W} ${TM_H}`}
         role="img"

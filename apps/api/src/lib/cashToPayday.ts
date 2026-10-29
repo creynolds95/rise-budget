@@ -1,7 +1,14 @@
 import { projectCashFlow, type CashEvent, type CashProjection } from '@rise/shared/cash-projection';
 import type { Account, User } from '@rise/shared/schemas';
-import { projectOccurrences, type DetectedSeries } from '@rise/shared/recurring';
-import { displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
+import {
+  likelySameAs,
+  upcomingOccurrences,
+  withAmountChange,
+  type AmountChange,
+  type DetectedSeries,
+} from '@rise/shared/recurring';
+import { changeOf, displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
+import { loadBalanceEvidence, paidAlready } from './balanceSeen';
 
 /** How far ahead to project: through this many upcoming paychecks. */
 const PAYCHECK_HORIZON = 3;
@@ -34,6 +41,12 @@ export interface ScheduleRow {
   nextExpectedDate: string;
   /** Added by hand from Surplus, so its name is its own. */
   isHandAdded: boolean;
+  /** A new amount from a date on, unsigned like `amountCents`. */
+  change: AmountChange | null;
+  /** The bank balance already shows this one; its transaction hasn't reached Rise yet. */
+  inBalance: boolean;
+  /** Days its transaction usually trails the balance, once learned. */
+  lagDays: number | null;
 }
 
 /** A schedule sync found in the cash accounts, waiting for the user to add or dismiss it. */
@@ -46,6 +59,8 @@ export interface SuggestionRow {
   cadence: DetectedSeries['cadence'];
   anchorDays: [number, number] | null;
   nextExpectedDate: string;
+  /** The hand-added schedule this looks like, so adding it may count it twice. */
+  likelySameAs: string | null;
 }
 
 export interface CashToPaydayResult extends CashProjection {
@@ -66,15 +81,18 @@ export async function buildCashToPaydayProjection(
   startBalanceCents: number,
   cushionCents: number,
   dismissedMerchants: readonly string[] = [],
+  /** The cash accounts behind `startBalanceCents`: their balance history is the evidence. */
+  cashAccountIds: readonly string[] = [],
 ): Promise<CashToPaydayResult> {
   const [manualRules, saved] = await Promise.all([
     listManualRules(userId, db),
     listSuggestions(userId, db),
   ]);
+  const { seen } = await loadBalanceEvidence(db, userId, manualRules, cashAccountIds, today);
   // Re-checked here: an add or dismiss since the last sync takes effect at once.
   const skip = new Set([...dismissedMerchants, ...manualRules.map((r) => r.merchant_normalized)]);
   const pending = saved.filter((r) => !skip.has(r.merchant_normalized));
-  // A manual rule projects even while flagged `broken` (unconfirmed) — Caleb still wants it
+  // A manual rule projects even while flagged `broken` (unconfirmed) — the owner still wants it
   // planned for; `broken` only ever surfaces as the Dashboard's "hasn't charged since" note.
   const confirmed = manualRules.map((r) => ({
     rule: r,
@@ -104,17 +122,31 @@ export async function buildCashToPaydayProjection(
   const paySchedules = confirmed.filter((d) => d.series.expectedAmountCents < 0);
   const bills = confirmed.filter((d) => d.series.expectedAmountCents > 0);
 
-  const payEvents: CashEvent[] = paySchedules.flatMap(({ merchant, series }) =>
-    projectOccurrences(series, PAYCHECK_HORIZON).map((o) => ({
+  // A hand-added schedule has no charge to wait for; a tagged one waits for its real one.
+  const upcoming = (rule: (typeof manualRules)[number], series: DetectedSeries, count: number) =>
+    withAmountChange(upcomingOccurrences(series, today, count, rule.label == null), changeOf(rule));
+  // The bank balance can show a bill (or paycheck) before its transaction reaches Rise: that
+  // one already moved the starting balance, so it is not projected a second time.
+  const ahead = (rule: (typeof manualRules)[number], series: DetectedSeries, count: number) => {
+    const all = upcoming(rule, series, count + 1);
+    return paidAlready(rule, seen.get(rule.id), all[0], today) ? all.slice(1) : all.slice(0, count);
+  };
+  const payRuns = paySchedules.map(({ rule, merchant, series }) =>
+    ahead(rule, series, PAYCHECK_HORIZON).map((o) => ({
       date: o.date,
       cashDeltaCents: -o.amountCents,
       label: displayNames.get(merchant) ?? merchant,
     })),
   );
-  const horizonEnd = payEvents.reduce((max, e) => (e.date > max ? e.date : max), today);
+  // The horizon ends where the soonest-ending schedule's projected paychecks run out. Past
+  // that, a faster schedule's later paychecks are missing while bills keep landing, which
+  // reads as a shortfall that isn't there.
+  const runEnds = payRuns.flatMap((r) => r.at(-1)?.date ?? []);
+  const horizonEnd = runEnds.length ? runEnds.reduce((a, b) => (b < a ? b : a)) : today;
+  const payEvents: CashEvent[] = payRuns.flat().filter((e) => e.date <= horizonEnd);
 
-  const billEvents: CashEvent[] = bills.flatMap(({ merchant, series }) =>
-    projectOccurrences(series, MAX_BILL_OCCURRENCES)
+  const billEvents: CashEvent[] = bills.flatMap(({ rule, merchant, series }) =>
+    ahead(rule, series, MAX_BILL_OCCURRENCES)
       .filter((o) => o.date <= horizonEnd)
       .map((o) => ({
         date: o.date,
@@ -135,9 +167,26 @@ export async function buildCashToPaydayProjection(
     amountCents: Math.abs(series.expectedAmountCents),
     cadence: series.cadence,
     anchorDays: series.anchorDays,
-    nextExpectedDate: series.nextExpectedDate,
+    // A hand-added date that has passed already happened; show the one coming up.
+    nextExpectedDate:
+      rule.label != null
+        ? (upcoming(rule, series, 1)[0]?.date ?? series.nextExpectedDate)
+        : series.nextExpectedDate,
     isHandAdded: rule.label != null,
+    change: rule.amount_changes_on
+      ? { amountCents: Math.abs(rule.next_amount_cents ?? 0), on: rule.amount_changes_on }
+      : null,
+    inBalance: seen.has(rule.id),
+    lagDays: rule.balance_lag_days,
   }));
+  // Hand-added schedules only: a tagged one already hides its own merchant's suggestion.
+  const handAdded = schedules
+    .filter((r) => r.isHandAdded)
+    .map((r) => ({
+      name: r.displayName,
+      expectedAmountCents: r.kind === 'income' ? -r.amountCents : r.amountCents,
+      nextDate: r.nextExpectedDate,
+    }));
   const suggestions: SuggestionRow[] = pending.map((r) => ({
     merchant: r.merchant_normalized,
     displayName: displayNames.get(r.merchant_normalized) ?? r.merchant_normalized,
@@ -147,6 +196,10 @@ export async function buildCashToPaydayProjection(
     cadence: r.cadence as DetectedSeries['cadence'],
     anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
     nextExpectedDate: r.next_expected_date,
+    likelySameAs: likelySameAs(
+      { expectedAmountCents: r.expected_amount_cents, nextExpectedDate: r.next_expected_date },
+      handAdded,
+    ),
   }));
   return {
     ...projection,

@@ -1,3 +1,4 @@
+import { Loading } from '../components/Pending';
 import { useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { MoneyText } from '../components/primitives/MoneyText';
@@ -16,13 +17,13 @@ import { nearestIndex } from '../lib/chart';
 import { useToday } from '../lib/queries';
 
 interface InvestmentsResponse {
-  points: { date: string; balanceCents: number; inferred: boolean }[];
+  points: { date: string; balanceCents: number; joinedCents: number; inferred: boolean }[];
   accounts: { id: string; name: string; balanceCents: number }[];
   sp500: { date: string; level: number }[] | null;
 }
 
 /** Investment accounts against the S&P 500. Balance-based: a deposit reads as growth. */
-export function Investments() {
+export function Investments({ compact = false }: { compact?: boolean } = {}) {
   const today = useToday();
   const [range, setRange] = useState<InvRange>('3M');
   // One year is fetched once; the chips just re-slice it.
@@ -41,7 +42,13 @@ export function Investments() {
   const shortHistory = firstDate !== undefined && firstDate > invRangeStart(range, today);
   const total = (q.data?.accounts ?? []).reduce((n, a) => n + a.balanceCents, 0);
 
-  if (q.isPending) return <Skeleton className="h-64 w-full" />;
+  if (q.isPending) {
+    return (
+      <Loading>
+        <Skeleton className="h-64 w-full" />
+      </Loading>
+    );
+  }
   if (!q.data || q.data.accounts.length === 0)
     return (
       <p className="text-ink-muted">
@@ -98,15 +105,19 @@ export function Investments() {
           </p>
         )}
       </div>
-      <h2 className="mt-6 type-title">Accounts</h2>
-      <div className="mt-2 divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft">
-        {q.data.accounts.map((a) => (
-          <div key={a.id} className="flex items-baseline justify-between gap-3 px-4 py-3">
-            <span className="min-w-0 truncate">{a.name}</span>
-            <MoneyText cents={a.balanceCents} />
+      {!compact && (
+        <>
+          <h2 className="mt-6 type-title">Accounts</h2>
+          <div className="mt-2 divide-y divide-hairline overflow-hidden rounded-card bg-surface shadow-soft">
+            {q.data.accounts.map((a) => (
+              <div key={a.id} className="flex items-baseline justify-between gap-3 px-4 py-3">
+                <span className="min-w-0 truncate">{a.name}</span>
+                <MoneyText cents={a.balanceCents} />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </>
   );
 }

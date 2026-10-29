@@ -168,4 +168,41 @@ describe('buildMoneyFlow', () => {
     ]);
     expect(flow.nodes.some((n) => n.id === 'leftover')).toBe(false);
   });
+
+  it('balances spending over income with an inflow for the difference', () => {
+    const flow = buildMoneyFlow([
+      cat({ categoryId: 'pay', groupKind: 'income', spentCents: -100 }),
+      cat({ categoryId: 'gro', spentCents: 150 }),
+    ]);
+    expect(flow.nodes).toContainEqual({ id: 'shortfall', name: 'From savings or credit' });
+    expect(flow.links).toContainEqual({ source: 'shortfall', target: 'income', valueCents: 50 });
+    // What flows into Income equals what flows out of it.
+    const into = flow.links.filter((l) => l.target === 'income');
+    const out = flow.links.filter((l) => l.source === 'income');
+    const sum = (ls: typeof into) => ls.reduce((n, l) => n + l.valueCents, 0);
+    expect(sum(into)).toBe(sum(out));
+  });
+
+  it('spending exactly the income needs no inflow', () => {
+    const flow = buildMoneyFlow([
+      cat({ categoryId: 'pay', groupKind: 'income', spentCents: -150 }),
+      cat({ categoryId: 'gro', spentCents: 150 }),
+    ]);
+    expect(flow.nodes.map((n) => n.id)).not.toContain('shortfall');
+  });
+
+  it('sums a category that appears once per month across a range', () => {
+    const flow = buildMoneyFlow([
+      cat({ categoryId: 'pay', groupKind: 'income', spentCents: -1_000 }),
+      cat({ categoryId: 'gro', spentCents: 300 }),
+      cat({ categoryId: 'pay', groupKind: 'income', spentCents: -1_000 }),
+      cat({ categoryId: 'gro', spentCents: 200 }),
+    ]);
+    expect(flow.links).toEqual([
+      { source: 'income', target: 'group:g1', valueCents: 500 },
+      { source: 'cat:pay', target: 'income', valueCents: 2_000 },
+      { source: 'group:g1', target: 'cat:gro', valueCents: 500 },
+      { source: 'income', target: 'leftover', valueCents: 1_500 },
+    ]);
+  });
 });

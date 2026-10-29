@@ -1,4 +1,5 @@
 import type { Category, CategoryGroup } from '@rise/shared/schemas';
+import { isTransfersGroup } from '@rise/shared/categorize';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, api } from '../lib/api';
@@ -7,8 +8,9 @@ import { useInvalidateMoney, useRules } from '../lib/queries';
 import { Button } from './primitives/Button';
 import { Group, GroupRow } from './primitives/Group';
 import { Icon } from './primitives/Icon';
-import { Sheet } from './primitives/Sheet';
+import { Leaving, Sheet } from './primitives/Sheet';
 import { Toggle } from './primitives/Toggle';
+import { TAX_KINDS } from '../lib/tax';
 
 const EMOJI: { char: string; keywords: string }[] = [
   { char: '🛒', keywords: 'cart grocery groceries shopping food' },
@@ -94,15 +96,18 @@ export function CategoryEditSheet({
   onClose: () => void;
   onDeleted?: () => void;
 }) {
-  if (!category) return null;
   return (
-    <Editor
-      key={category.id}
-      category={category}
-      groups={groups}
-      onClose={onClose}
-      onDeleted={onDeleted}
-    />
+    <Leaving>
+      {category && (
+        <Editor
+          key={category.id}
+          category={category}
+          groups={groups}
+          onClose={onClose}
+          onDeleted={onDeleted}
+        />
+      )}
+    </Leaving>
   );
 }
 
@@ -127,9 +132,12 @@ function Editor({
   const [emojiSearch, setEmojiSearch] = useState('');
   const filteredEmoji = EMOJI.filter((e) => matchesEmojiSearch(e, emojiSearch));
   const [groupId, setGroupId] = useState(category.groupId);
+  // Transfers never count toward the budget; the server enforces it, so no toggle there.
+  const inTransfers = isTransfersGroup(groups.find((g) => g.id === groupId)?.name);
   const [roll, setRoll] = useState(category.rolloverPolicy === 'roll');
   const [once, setOnce] = useState(category.spendShape === 'fixed');
   const [budgeted, setBudgeted] = useState(category.budgeted);
+  const [taxKind, setTaxKind] = useState(category.taxKind);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,8 +156,9 @@ function Editor({
     if (policy !== category.rolloverPolicy) patch.rolloverPolicy = policy;
     const shape = once ? 'fixed' : 'linear';
     if (shape !== category.spendShape) patch.spendShape = shape;
-    if (budgeted !== category.budgeted) patch.budgeted = budgeted;
+    if (!inTransfers && budgeted !== category.budgeted) patch.budgeted = budgeted;
   }
+  if (taxKind !== category.taxKind) patch.taxKind = taxKind;
   const dirty = Object.keys(patch).length > 0;
 
   const run = async (fn: () => Promise<unknown>, after: () => void) => {
@@ -280,7 +289,7 @@ function Editor({
         </GroupRow>
       </Group>
 
-      {kind === 'expense' && (
+      {kind === 'expense' && !inTransfers && (
         <Group title="Budget">
           <GroupRow
             label="Counts toward the budget"
@@ -319,6 +328,33 @@ function Editor({
         </Group>
       )}
 
+      {!inTransfers && (
+        <Group title="Taxes">
+          <GroupRow label="Tax heading" htmlFor="cat-tax">
+            <span className="relative flex items-center text-ink-muted">
+              <select
+                id="cat-tax"
+                value={taxKind ?? ''}
+                onChange={(e) => setTaxKind((e.target.value || null) as typeof taxKind)}
+                className="min-h-11 appearance-none bg-transparent pr-6 text-right text-ink outline-none [text-align-last:right]"
+              >
+                <option value="">None</option>
+                {TAX_KINDS.filter((t) => t.kind.startsWith('income') === (kind === 'income')).map(
+                  (t) => (
+                    <option key={t.kind} value={t.kind}>
+                      {t.label}
+                    </option>
+                  ),
+                )}
+              </select>
+              <span className="pointer-events-none absolute right-0">
+                <Icon name="chevronDown" size={18} />
+              </span>
+            </span>
+          </GroupRow>
+        </Group>
+      )}
+
       {error && <p className="mt-4 px-1 text-clay">{error}</p>}
 
       <div className="mt-8">
@@ -348,7 +384,6 @@ function Editor({
                     await Promise.all([
                       invalidate(),
                       qc.invalidateQueries({ queryKey: ['rules'] }),
-                      qc.invalidateQueries({ queryKey: ['transactions'] }),
                     ]);
                     onClose();
                     onDeleted?.();

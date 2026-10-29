@@ -11,7 +11,7 @@ const base = 'flex min-h-12 items-center justify-between gap-4 border-b border-h
 export function StaticRow({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
     <div className={base} data-row="static">
-      <span className="min-w-0 text-ink-muted">{label}</span>
+      <span className="min-w-0 text-ink">{label}</span>
       <span className="shrink-0 text-right text-ink">{value}</span>
     </div>
   );
@@ -20,7 +20,7 @@ export function StaticRow({ label, value }: { label: ReactNode; value: ReactNode
 export function EditRow({ label, field }: { label: ReactNode; field: ReactNode }) {
   return (
     <div className={base} data-row="edit">
-      <span className="text-ink-muted">{label}</span>
+      <span className="text-ink">{label}</span>
       {field}
     </div>
   );
@@ -76,7 +76,7 @@ export function ValueRow({
 }) {
   const inner = (
     <>
-      <span className="shrink-0 text-ink-muted">{label}</span>
+      <span className="shrink-0 text-ink">{label}</span>
       <span
         className={`flex min-w-0 items-center justify-end gap-2 text-right ${muted ? 'text-ink-faint' : 'text-ink'}`}
       >

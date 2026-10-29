@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { centsToInput, parseMoney } from '../../lib/money';
 
 /**
@@ -11,6 +11,7 @@ export function MoneyField({
   onCommit,
   label,
   allowNegative = false,
+  draft = false,
   className = '',
 }: {
   cents: number;
@@ -18,11 +19,17 @@ export function MoneyField({
   /** Accessible name; the visible label lives in the row. */
   label: string;
   allowNegative?: boolean;
+  /** Inside a Save-gated form: report every valid keystroke, so tapping Save (which doesn't blur on iOS) never loses the last edit. */
+  draft?: boolean;
   className?: string;
 }) {
   const [text, setText] = useState(centsToInput(cents));
   const [invalid, setInvalid] = useState(false);
-  useEffect(() => setText(centsToInput(cents)), [cents]);
+  const typed = useRef(false);
+  useEffect(() => {
+    if (typed.current) typed.current = false;
+    else setText(centsToInput(cents));
+  }, [cents]);
 
   const commit = () => {
     const parsed = parseMoney(text);
@@ -51,7 +58,14 @@ export function MoneyField({
         inputMode="decimal"
         className="w-24 bg-transparent text-right money outline-none"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          if (!draft) return;
+          const parsed = parseMoney(e.target.value);
+          if (parsed === null || (!allowNegative && parsed < 0) || parsed === cents) return;
+          typed.current = true;
+          onCommit(parsed);
+        }}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
