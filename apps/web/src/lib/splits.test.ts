@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { splitEmojis, splitProblem, withRemainder } from './splits';
+import { categoryPortion, splitEmojis, splitProblem, withRemainder } from './splits';
+
+describe('category portion of a split', () => {
+  const splits = [
+    { categoryId: 'home', amountCents: 2_999 },
+    { categoryId: 'kids', amountCents: 5_438 },
+  ];
+  it('is the part filed to that category', () => {
+    expect(categoryPortion(splits, 'home')).toBe(2_999);
+    expect(categoryPortion(splits, 'kids')).toBe(5_438);
+  });
+  it('sums several rows in the same category', () => {
+    expect(categoryPortion([...splits, { categoryId: 'home', amountCents: 100 }], 'home')).toBe(
+      3_099,
+    );
+  });
+  it('is null when the transaction is not split across categories', () => {
+    expect(categoryPortion([{ categoryId: 'home', amountCents: 8_437 }], 'home')).toBeNull();
+    expect(categoryPortion([], 'home')).toBeNull();
+  });
+});
 
 describe('split editor (SPEC §3.5)', () => {
   it('auto-computes the last row so the set sums exactly', () => {
