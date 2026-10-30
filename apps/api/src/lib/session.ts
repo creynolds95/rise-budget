@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
-import { createSession, isSessionLive } from '../db';
+import { createSession, liveSessionRole, type Role } from '../db';
 import type { AppEnv } from '../env';
 import { deviceLabel } from './device';
 import { AppError } from './errors';
@@ -39,7 +39,11 @@ export const readRefreshCookie = (c: Context<AppEnv>) => getCookie(c, REFRESH_CO
  * Start a new session family: refresh token in an httpOnly cookie, access token in the body.
  * Signing in is itself a fresh proof of identity, so it also mints a step-up token (H4).
  */
-export async function issueSession(c: Context<AppEnv>, userId: string) {
+export async function issueSession(
+  c: Context<AppEnv>,
+  userId: string,
+  who: { role: Role; credentialId?: string } = { role: 'owner' },
+) {
   const sessionId = crypto.randomUUID();
   const secret = newRefreshSecret();
   await createSession(userId, c.env.DB, {
@@ -47,6 +51,8 @@ export async function issueSession(c: Context<AppEnv>, userId: string) {
     refreshHash: await hashSecret(secret),
     expiresAt: refreshExpiry(),
     deviceLabel: deviceLabel(c.req.header('User-Agent')),
+    role: who.role,
+    credentialId: who.credentialId ?? null,
   });
   setRefreshCookie(c, formatRefresh(userId, sessionId, secret));
   return c.json({
@@ -64,8 +70,9 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const header = c.req.header('Authorization') ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   const claims = token ? await verifyAccess(c.env, token) : null;
-  if (!claims || !(await isSessionLive(claims.userId, c.env.DB, claims.sessionId)))
-    throw new AppError(401, 'UNAUTHORIZED', 'Sign in required');
+  const role = claims ? await liveSessionRole(claims.userId, c.env.DB, claims.sessionId) : null;
+  if (!claims || !role) throw new AppError(401, 'UNAUTHORIZED', 'Sign in required');
+  c.set('role', role);
   c.set('userId', claims.userId);
   c.set('sessionId', claims.sessionId);
   await next();
@@ -75,7 +82,9 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 export const optionalAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const header = c.req.header('Authorization') ?? '';
   const claims = header.startsWith('Bearer ') ? await verifyAccess(c.env, header.slice(7)) : null;
-  if (claims && (await isSessionLive(claims.userId, c.env.DB, claims.sessionId))) {
+  const role = claims ? await liveSessionRole(claims.userId, c.env.DB, claims.sessionId) : null;
+  if (claims && role) {
+    c.set('role', role);
     c.set('userId', claims.userId);
     c.set('sessionId', claims.sessionId);
   }
@@ -98,5 +107,11 @@ export const requireStepUp: MiddlewareHandler<AppEnv> = async (c, next) => {
       throw new AppError(401, 'STEP_UP_REQUIRED', 'Re-verify with your passkey to continue');
     }
   }
+  await next();
+};
+
+/** Only the owner's profile manages who has a login. Enforced here, not by hiding buttons. */
+export const requireOwner: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (c.get('role') !== 'owner') throw new AppError(403, 'FORBIDDEN', 'Only the owner can do that');
   await next();
 };

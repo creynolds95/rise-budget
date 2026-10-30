@@ -97,20 +97,38 @@ export function Login() {
 export function Register() {
   const auth = useAuth();
   const nav = useNavigate();
-  const token = new URLSearchParams(window.location.hash.slice(1)).get('token') ?? '';
+  const hash = new URLSearchParams(window.location.hash.slice(1));
+  const invite = hash.get('invite') ?? '';
+  const token = hash.get('token') ?? '';
+  const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return (
     <div className="gutter mx-auto flex min-h-dvh max-w-sm flex-col justify-center">
       <h1 className="font-serif text-5xl tracking-tight text-sage-700">Rise</h1>
+      {invite && (
+        <label className="mt-12 flex flex-col gap-1">
+          <span className="type-label text-ink-muted">Your name</span>
+          <input
+            className="min-h-11 rounded-input border border-hairline bg-surface px-3"
+            autoComplete="name"
+            maxLength={80}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+      )}
       <Button
-        className="mt-12"
-        disabled={busy || !token}
+        className={invite ? 'mt-4' : 'mt-12'}
+        disabled={busy || !(token || invite) || (!!invite && !name.trim())}
         onClick={async () => {
           setBusy(true);
           setError(null);
           try {
-            await auth.registerPasskey(token);
+            await auth.registerPasskey(
+              invite ? undefined : token,
+              invite ? { token: invite, name: name.trim() } : undefined,
+            );
           } catch (e) {
             setError(passkeyMessage(e, 'The passkey wasn’t created.'));
             setBusy(false);
@@ -129,7 +147,7 @@ export function Register() {
       >
         Create passkey
       </Button>
-      {!token && (
+      {!token && !invite && (
         <p className="mt-4 text-clay">This link is missing its token. Ask for a new one.</p>
       )}
       {error && (

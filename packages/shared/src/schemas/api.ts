@@ -396,7 +396,11 @@ const WebAuthnJson = z.looseObject({ id: z.string(), type: z.literal('public-key
 export const RegisterOptionsBody = z.object({
   /** One-time token from `pnpm seed:user`; omitted when adding a device while signed in. */
   registrationToken: z.string().optional(),
+  /** Share link from Settings > Share; the secret half of `#invite=…`. */
+  inviteToken: z.string().max(200).optional(),
 });
+
+export const RenamePasskeyBody = z.object({ label: z.string().trim().min(1).max(80) });
 
 export const RegisterVerifyBody = z.object({
   challengeToken: z.string(),
@@ -404,11 +408,23 @@ export const RegisterVerifyBody = z.object({
   deviceLabel: z.string().max(80).optional(),
 });
 
+/** Settings > Share: links that can still be used. The link itself is shown only when made. */
+export const InviteListResponse = z.object({
+  invites: z.array(z.object({ id: z.string(), createdAt: z.string(), expiresAt: z.string() })),
+});
+export type InviteListResponse = z.infer<typeof InviteListResponse>;
+export const InviteCreateResponse = z.object({ token: z.string(), expiresAt: z.string() });
+export type InviteCreateResponse = z.infer<typeof InviteCreateResponse>;
+
 /** C17: what Settings lists under Passkeys and Signed-in devices. */
+export const Role = z.enum(['owner', 'member']);
 export const DevicesResponse = z.object({
+  /** What the signed-in profile may do: only the owner manages profiles and share links. */
+  viewerRole: Role,
   passkeys: z.array(
     z.object({
       id: z.string(),
+      role: Role,
       label: z.string().nullable(),
       createdAt: z.string(),
       lastUsedAt: z.string().nullable(),

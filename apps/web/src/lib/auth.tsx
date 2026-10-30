@@ -29,7 +29,10 @@ interface Auth {
   signInWithCode(kind: 'totp' | 'recovery', email: string, code: string): Promise<void>;
   /** H4: re-verify with a passkey to prove a fresh identity check before a sensitive change. */
   stepUp(): Promise<string>;
-  registerPasskey(registrationToken?: string): Promise<void>;
+  registerPasskey(
+    registrationToken?: string,
+    invite?: { token: string; name: string },
+  ): Promise<void>;
   signOut(): Promise<void>;
 }
 
@@ -86,17 +89,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       return stepUp;
     },
-    async registerPasskey(registrationToken) {
+    async registerPasskey(registrationToken, invite) {
       // Adding a device while already signed in needs a moments-old re-verification (H4); the
       // one-time link from `pnpm seed:user` registering the first device does not.
       const { options, challengeToken } = await api<{ options: never; challengeToken: string }>(
         'POST',
         '/auth/passkey/register/options',
-        registrationToken ? { registrationToken } : {},
-        registrationToken ? {} : { stepUp: await value.stepUp() },
+        invite ? { inviteToken: invite.token } : registrationToken ? { registrationToken } : {},
+        registrationToken || invite ? {} : { stepUp: await value.stepUp() },
       );
       const response = await startRegistration({ optionsJSON: options });
-      await api('POST', '/auth/passkey/register/verify', { challengeToken, response });
+      await api('POST', '/auth/passkey/register/verify', {
+        challengeToken,
+        response,
+        ...(invite ? { deviceLabel: invite.name } : {}),
+      });
     },
     async signOut() {
       await api('POST', '/auth/logout').catch(() => undefined);

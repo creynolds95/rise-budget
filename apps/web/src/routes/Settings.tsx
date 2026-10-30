@@ -44,6 +44,7 @@ import { currentSubscription, disablePush, enablePush, pushSupport } from '../li
 import { isStale, RUNNING, updateApp, useLatestBuild } from '../lib/version';
 import { healthSummary } from '../lib/health';
 import { HealthSection, useHealthChecks } from './Health';
+import { ShareSection } from './Share';
 import {
   useAccounts,
   useBackupStatus,
@@ -77,6 +78,7 @@ const SECTIONS = {
   sync: 'Bank sync',
   health: 'Health',
   security: 'Security',
+  share: 'Share',
   data: 'Your data',
 } as const;
 type Section = keyof typeof SECTIONS;
@@ -104,6 +106,7 @@ export function Settings() {
   const lastRun = sync?.runs[0];
   const backups = useBackupStatus().data;
   const appearance = getThemeSetting();
+  const devices = useDevices();
   const checks = useHealthChecks();
   const health = healthSummary(checks);
   const healthTone = checks.some((c) => c.ok === false) ? 'text-clay-text' : 'text-sage-700';
@@ -177,6 +180,15 @@ export function Settings() {
                 ? me.settings.appLock === 'off'
                   ? 'App lock off'
                   : `Locks ${{ immediate: 'immediately', '5m': 'after 5 min', '1h': 'after 1 hour' }[me.settings.appLock]}`
+                : undefined
+            }
+          />
+          <Card
+            to="/settings/share"
+            title="Share"
+            state={
+              devices.data
+                ? `${devices.data.passkeys.length} ${devices.data.passkeys.length === 1 ? 'login' : 'logins'}`
                 : undefined
             }
           />
@@ -293,6 +305,7 @@ export function SettingsSection() {
           {s === 'sync' && <SyncSection />}
           {s === 'health' && <HealthSection />}
           {s === 'security' && <SecuritySection />}
+          {s === 'share' && <ShareSection />}
           {s === 'data' && <DataSection />}
         </div>
       </Suspense>
@@ -1297,7 +1310,7 @@ function SecuritySection() {
             label={k.label ?? 'Passkey'}
             hint={`Added ${seen(k.createdAt)}${k.lastUsedAt ? ` · used ${seen(k.lastUsedAt)}` : ''}`}
           >
-            {(devices.data?.passkeys.length ?? 0) > 1 && (
+            {devices.data?.viewerRole === 'owner' && (devices.data?.passkeys.length ?? 0) > 1 && (
               <button
                 className="min-h-11 shrink-0 font-semibold text-clay"
                 onClick={() => void removePasskey(k.id, k.label)}

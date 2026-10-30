@@ -59,12 +59,25 @@ export const signChallenge = (
   challenge: string,
   ceremony: 'register' | 'login',
   userId = '',
-) => signToken(env, 'challenge', CHALLENGE_TTL_S, { challenge, ceremony, sub: userId });
+  extra: { inviteId?: string; role?: 'owner' | 'member' } = {},
+) =>
+  signToken(env, 'challenge', CHALLENGE_TTL_S, {
+    challenge,
+    ceremony,
+    sub: userId,
+    inv: extra.inviteId ?? '',
+    role: extra.role ?? 'owner',
+  });
 
 export async function verifyChallenge(env: Env, token: string, ceremony: 'register' | 'login') {
   const p = await verifyToken(env, 'challenge', token);
   return p && p['ceremony'] === ceremony && typeof p['challenge'] === 'string'
-    ? { challenge: p['challenge'], userId: String(p['sub'] ?? '') }
+    ? {
+        challenge: p['challenge'],
+        userId: String(p['sub'] ?? ''),
+        inviteId: String(p['inv'] ?? ''),
+        role: p['role'] === 'member' ? ('member' as const) : ('owner' as const),
+      }
     : null;
 }
 
@@ -98,6 +111,16 @@ export function parseRefresh(token: string) {
 }
 
 export const hashSecret = sha256Hex;
+
+// ── share links: opaque `userId.inviteId.secret`, stored as SHA-256 of the secret ──
+
+/** 12 hours, then the link is dead whether or not anyone used it. */
+export const INVITE_TTL_MS = 12 * 60 * 60 * 1000;
+
+export const formatInvite = (userId: string, inviteId: string, secret: string) =>
+  `${userId}.${inviteId}.${secret}`;
+
+export const parseInvite = parseRefresh;
 
 /**
  * How long the refresh secret that was current a moment ago still works. Two tabs (or the

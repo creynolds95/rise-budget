@@ -22,12 +22,15 @@ export interface CredentialRow {
   counter: number;
   transports: string | null;
   device_label: string | null;
+  role: Role;
 }
+
+export type Role = 'owner' | 'member';
 
 export async function listCredentials(userId: UserId, db: D1Database): Promise<CredentialRow[]> {
   const { results } = await db
     .prepare(
-      'SELECT id, public_key, counter, transports, device_label FROM credential WHERE user_id = ?1',
+      'SELECT id, public_key, counter, transports, device_label, role FROM credential WHERE user_id = ?1',
     )
     .bind(userId)
     .all<CredentialRow>();
@@ -41,7 +44,7 @@ export async function getCredential(
 ): Promise<CredentialRow | null> {
   return db
     .prepare(
-      'SELECT id, public_key, counter, transports, device_label FROM credential WHERE user_id = ?1 AND id = ?2',
+      'SELECT id, public_key, counter, transports, device_label, role FROM credential WHERE user_id = ?1 AND id = ?2',
     )
     .bind(userId, id)
     .first<CredentialRow>();
@@ -56,11 +59,12 @@ export async function insertCredential(
     counter: number;
     transports: string[];
     deviceLabel: string | null;
+    role: Role;
   },
 ): Promise<void> {
   await db
     .prepare(
-      'INSERT INTO credential (id, user_id, public_key, counter, transports, device_label, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+      'INSERT INTO credential (id, user_id, public_key, counter, transports, device_label, created_at, role) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)',
     )
     .bind(
       c.id,
@@ -70,6 +74,7 @@ export async function insertCredential(
       JSON.stringify(c.transports),
       c.deviceLabel,
       nowIso(),
+      c.role,
     )
     .run();
 }
@@ -101,14 +106,30 @@ export interface SessionRow {
 export async function createSession(
   userId: UserId,
   db: D1Database,
-  s: { id: string; refreshHash: string; expiresAt: string; deviceLabel?: string | null },
+  s: {
+    id: string;
+    refreshHash: string;
+    expiresAt: string;
+    deviceLabel?: string | null;
+    role: Role;
+    credentialId?: string | null;
+  },
 ): Promise<void> {
   const now = nowIso();
   await db
     .prepare(
-      'INSERT INTO session (id, user_id, refresh_hash, expires_at, created_at, device_label, last_seen_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?5)',
+      'INSERT INTO session (id, user_id, refresh_hash, expires_at, created_at, device_label, last_seen_at, role, credential_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?5, ?7, ?8)',
     )
-    .bind(s.id, userId, s.refreshHash, s.expiresAt, now, s.deviceLabel ?? null)
+    .bind(
+      s.id,
+      userId,
+      s.refreshHash,
+      s.expiresAt,
+      now,
+      s.deviceLabel ?? null,
+      s.role,
+      s.credentialId ?? null,
+    )
     .run();
 }
 
@@ -129,14 +150,18 @@ export async function getSession(
  * Every authenticated request asks this, so a signed-out device stops working at once rather
  * than when its 15-minute access token runs out. One primary-key read.
  */
-export async function isSessionLive(userId: UserId, db: D1Database, id: string): Promise<boolean> {
+export async function liveSessionRole(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+): Promise<Role | null> {
   const row = await db
     .prepare(
-      'SELECT 1 AS live FROM session WHERE id = ?2 AND user_id = ?1 AND revoked_at IS NULL AND expires_at > ?3',
+      'SELECT role FROM session WHERE id = ?2 AND user_id = ?1 AND revoked_at IS NULL AND expires_at > ?3',
     )
     .bind(userId, id, nowIso())
-    .first<{ live: number }>();
-  return row !== null;
+    .first<{ role: Role }>();
+  return row?.role ?? null;
 }
 
 /**
@@ -178,19 +203,33 @@ export interface PasskeySummaryRow {
   device_label: string | null;
   created_at: string;
   last_used_at: string | null;
+  role: Role;
 }
 
 export async function listPasskeys(userId: UserId, db: D1Database): Promise<PasskeySummaryRow[]> {
   const { results } = await db
     .prepare(
-      'SELECT id, device_label, created_at, last_used_at FROM credential WHERE user_id = ?1 ORDER BY created_at',
+      'SELECT id, device_label, created_at, last_used_at, role FROM credential WHERE user_id = ?1 ORDER BY created_at',
     )
     .bind(userId)
     .all<PasskeySummaryRow>();
   return results;
 }
 
-/** Removes a passkey unless it is the user's last one — that would lock them out. */
+export async function renamePasskey(
+  userId: UserId,
+  db: D1Database,
+  id: string,
+  label: string,
+): Promise<boolean> {
+  const r = await db
+    .prepare('UPDATE credential SET device_label = ?3 WHERE user_id = ?1 AND id = ?2')
+    .bind(userId, id, label)
+    .run();
+  return r.meta.changes === 1;
+}
+
+/** Removes a passkey unless it is the account's last owner passkey — that would lock the owner out. */
 export async function deletePasskey(
   userId: UserId,
   db: D1Database,
@@ -199,11 +238,21 @@ export async function deletePasskey(
   const r = await db
     .prepare(
       `DELETE FROM credential WHERE user_id = ?1 AND id = ?2
-         AND (SELECT COUNT(*) FROM credential WHERE user_id = ?1) > 1`,
+         AND (role = 'member'
+              OR (SELECT COUNT(*) FROM credential WHERE user_id = ?1 AND role = 'owner') > 1)`,
     )
     .bind(userId, id)
     .run();
-  if (r.meta.changes === 1) return 'deleted';
+  if (r.meta.changes === 1) {
+    // Whoever signed in with it is signed out too.
+    await db
+      .prepare(
+        'UPDATE session SET revoked_at = ?3 WHERE user_id = ?1 AND credential_id = ?2 AND revoked_at IS NULL',
+      )
+      .bind(userId, id, nowIso())
+      .run();
+    return 'deleted';
+  }
   return (await getCredential(userId, db, id)) ? 'last' : 'missing';
 }
 
