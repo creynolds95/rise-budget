@@ -3,6 +3,7 @@ export * from './users';
 export * from './accounts';
 export * from './audit';
 export * from './auth';
+export * from './invite';
 export * from './categories';
 export * from './periods';
 export * from './transactions';

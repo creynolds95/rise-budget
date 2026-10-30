@@ -36,6 +36,7 @@ const TABLES = [
   'push_subscription',
   'push_sent',
   'mcp_token',
+  'invite',
 ];
 
 const INDEXES = [
@@ -58,6 +59,8 @@ const INDEXES = [
   'ix_txn_pair',
   // 0023
   'ix_txn_refund_of',
+  // 0034
+  'ix_invite_user',
   'ix_txn_feed',
   'ix_txn_csv_source',
   // 0025

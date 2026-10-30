@@ -359,6 +359,10 @@ POST   /auth/totp/verify
 POST   /auth/recovery/verify
 POST   /auth/refresh
 POST   /auth/logout
+POST   /auth/invite                    (owner, step-up — single-use 12 h share link)
+GET    /auth/invite                    (owner — live links)
+DELETE /auth/invite/:id                (owner — revoke)
+PATCH  /devices/passkeys/:id           (owner — rename a profile)
 
 GET    /me                                → user + settings
 PATCH  /me/settings

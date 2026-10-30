@@ -19,5 +19,5 @@ export interface Env {
 
 export interface AppEnv {
   Bindings: Env;
-  Variables: { userId: string; sessionId: string };
+  Variables: { userId: string; sessionId: string; role: 'owner' | 'member' };
 }
