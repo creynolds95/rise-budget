@@ -1,7 +1,7 @@
 import { applyTolerance } from '@rise/shared/budget';
 import { Loading } from '../components/Pending';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { CategoryEditSheet } from '../components/CategoryEditSheet';
 import { usePlanFlow } from '../components/PlanFlow';
@@ -9,7 +9,7 @@ import { TxnRow } from '../components/TxnRow';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { MoneyText } from '../components/primitives/MoneyText';
-import { NavRow, ValueRow } from '../components/primitives/Rows';
+import { ValueRow } from '../components/primitives/Rows';
 import { IconButton } from '../components/primitives/Icon';
 import { FillBar } from '../components/primitives/FillBar';
 import { Rail } from '../components/primitives/Rail';
@@ -17,7 +17,7 @@ import { Sheet } from '../components/primitives/Sheet';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { ApiError, api, get } from '../lib/api';
 import { earnedBars, yearBars, type MonthSpend } from '../lib/plan';
-import { monthEnd, monthName } from '../lib/dates';
+import { monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { backFrom } from '../lib/nav';
 import {
@@ -84,6 +84,11 @@ function CategoryDetailBody({
     queryFn: () => get<MonthSpend[]>(`/categories/${categoryId}/history?months=13`),
   });
   const txns = useTransactions({ category: categoryId, period: month });
+  // The page lists the whole month, so keep pulling pages until there are none left.
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = txns;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
   const [forgiving, setForgiving] = useState(false);
   const [editingCat, setEditingCat] = useState(false);
   const groups = useGroups();
@@ -195,7 +200,7 @@ function CategoryDetailBody({
           children: (
             <>
               {list.length === 0 && <p className="py-3 text-ink-muted">Nothing filed here yet.</p>}
-              {list.slice(0, 5).map((t) => (
+              {list.map((t) => (
                 <TxnRow
                   key={t.id}
                   t={t}
@@ -204,12 +209,6 @@ function CategoryDetailBody({
                   from={`${cat.name}|/budget/${categoryId}?m=${month}`}
                 />
               ))}
-              {list.length > 5 && (
-                <NavRow
-                  to={`/transactions?category=${categoryId}&from=${month}-01&to=${monthEnd(month)}&back=${encodeURIComponent(`${cat.name}|/budget/${categoryId}?m=${month}`)}`}
-                  label={`All ${list.length}${txns.hasNextPage ? '+' : ''} transactions`}
-                />
-              )}
             </>
           ),
         }}
