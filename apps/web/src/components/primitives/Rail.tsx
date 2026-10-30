@@ -19,25 +19,25 @@ export function Rail(props: RailInput & { availableCents: number }) {
       aria-label={label}
       className="relative h-2 w-full overflow-visible rounded-full bg-hairline"
     >
-      {g.carried && (
-        <span
-          data-seg="carried"
-          className={`absolute inset-y-0 rounded-l-full ${g.carried.tone === 'deficit' ? 'bg-clay-100' : 'bg-sage-100'}`}
-          style={at(g.carried)}
-        />
-      )}
-      <span
-        data-seg="allocated"
-        className="absolute inset-y-0 bg-sage-100"
-        style={at(g.allocated)}
-      />
-      <span data-seg="spent" className="absolute inset-y-0 bg-sage-600" style={at(g.spent)} />
-      {g.over && (
-        <span
-          data-seg="over"
-          className="absolute inset-y-0 rounded-r-full bg-clay"
-          style={at(g.over)}
-        />
+      {g.over ? (
+        // Over budget: the whole bar is clay, not a green fill with a clay tail.
+        <span data-seg="over" className="absolute inset-0 rounded-full bg-clay" />
+      ) : (
+        <>
+          {g.carried && (
+            <span
+              data-seg="carried"
+              className={`absolute inset-y-0 rounded-l-full ${g.carried.tone === 'deficit' ? 'bg-clay-100' : 'bg-sage-100'}`}
+              style={at(g.carried)}
+            />
+          )}
+          <span
+            data-seg="allocated"
+            className="absolute inset-y-0 bg-sage-100"
+            style={at(g.allocated)}
+          />
+          <span data-seg="spent" className="absolute inset-y-0 bg-sage-600" style={at(g.spent)} />
+        </>
       )}
       {g.tick !== null && (
         <span
