@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { installSelectOnFocus } from './gestures';
+import { edgeWidth, installSelectOnFocus } from './gestures';
 
 describe('installSelectOnFocus', () => {
   installSelectOnFocus();
@@ -29,5 +29,13 @@ describe('installSelectOnFocus', () => {
     vi.runAllTimers();
     expect(el.selectionStart).toBe(6);
     vi.useRealTimers();
+  });
+});
+
+describe('edgeWidth', () => {
+  it('is wider on tab landing screens, where there is nothing to go back to', () => {
+    for (const p of ['/', '/accounts', '/transactions', '/budget']) {
+      expect(edgeWidth(p)).toBeGreaterThan(edgeWidth('/settings'));
+    }
   });
 });

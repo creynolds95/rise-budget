@@ -25,6 +25,17 @@ export function installNoZoom() {
 
 /** Width of the screen edge where iOS starts its own back gesture. */
 const EDGE = 20;
+/**
+ * On a tab's landing screen there is nothing to go back to, and the menu is dragged out from
+ * the left. iOS arms its back gesture a little wider than 20pt, so a drag that starts just
+ * inside the strip still slid back to the launch screen. The strip is wider there.
+ */
+const ROOT_EDGE = 36;
+
+/** Width of the cancelled edge strip for the screen at `pathname`. */
+export function edgeWidth(pathname: string): number {
+  return isTabRoot(pathname) ? ROOT_EDGE : EDGE;
+}
 
 /**
  * iOS starts its own slide-back from the left edge and shows the previous screen, which in
@@ -40,7 +51,8 @@ export function installEdgeGuard() {
       const t = e.touches[0];
       const el = e.target as Element | null;
       tap = null;
-      if (!t || e.touches.length !== 1 || t.clientX > EDGE || !el) return;
+      if (!t || e.touches.length !== 1 || t.clientX > edgeWidth(window.location.pathname) || !el)
+        return;
       if (el.closest('[data-zoomable], input, textarea, select')) return;
       tap = { x: t.clientX, y: t.clientY, el };
       e.preventDefault();
