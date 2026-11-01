@@ -122,12 +122,12 @@ describe('cash to payday', () => {
     ]);
     const after = await project();
     expect(after.suggestions).toEqual([]);
-    // Payday (09-18), the mortgage that follows it (09-27), then two more paydays through
+    // Payday (09-18), the mortgage that follows it (09-27, a Sunday, so taken Monday 09-28), then two more paydays through
     // the 3-paycheck horizon — the mortgage payment is real cash out; no card ever appears.
     expect(after.points).toEqual([
       { date: '2026-09-10', balanceCents: 200_000, label: 'Today' },
       { date: '2026-09-18', balanceCents: 510_000, label: 'ACME CORP PAYROLL' },
-      { date: '2026-09-27', balanceCents: 330_000, label: 'MORTGAGE SERVICING' },
+      { date: '2026-09-28', balanceCents: 330_000, label: 'MORTGAGE SERVICING' },
       { date: '2026-10-05', balanceCents: 640_000, label: 'ACME CORP PAYROLL' },
       { date: '2026-10-20', balanceCents: 950_000, label: 'ACME CORP PAYROLL' },
     ]);
