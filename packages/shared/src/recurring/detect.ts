@@ -221,6 +221,15 @@ export function shiftWeekendToFriday(date: string): string {
   return date;
 }
 
+/** A bill due on a weekend is taken the Monday after, never earlier. */
+export function shiftWeekendToMonday(date: string): string {
+  const dn = dayNumber(date);
+  const wd = weekday(dn);
+  if (wd === 6) return dateFromDayNumber(dn + 2);
+  if (wd === 0) return dateFromDayNumber(dn + 1);
+  return date;
+}
+
 function nominalPayDate(y: number, m: number, anchorDay: number): string {
   const day = Math.min(anchorDay, daysInMonth(y, m));
   return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;

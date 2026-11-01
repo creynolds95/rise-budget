@@ -4,6 +4,7 @@ import {
   likelySameAs,
   upcomingOccurrences,
   withAmountChange,
+  shiftWeekendToMonday,
   type AmountChange,
   type DetectedSeries,
 } from '@rise/shared/recurring';
@@ -149,7 +150,12 @@ export async function buildCashToPaydayProjection(
     ahead(rule, series, MAX_BILL_OCCURRENCES)
       .filter((o) => o.date <= horizonEnd)
       .map((o) => ({
-        date: o.date,
+        // A bill due on a weekend is taken the Monday after. A late one owed today stays
+        // today: it is already overdue, so moving it later would only read Surplus high.
+        date:
+          series.nextExpectedDate < today && o.date === today
+            ? o.date
+            : shiftWeekendToMonday(o.date),
         cashDeltaCents: -o.amountCents,
         label: displayNames.get(merchant) ?? merchant,
       })),

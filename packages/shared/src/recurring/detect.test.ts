@@ -12,6 +12,7 @@ import {
   nextSemimonthlyDate,
   projectOccurrences,
   shiftWeekendToFriday,
+  shiftWeekendToMonday,
   steadyAmounts,
   typicalPostDay,
   type ManualRule,
@@ -553,5 +554,13 @@ describe('nextScheduled', () => {
   it('anything else walks from the given date', () => {
     expect(nextScheduled('weekly', '2026-09-24', null, '2026-10-01')).toBe('2026-10-01');
     expect(nextScheduled('monthly', '2026-09-01', null, '2026-09-25')).toBe('2026-10-01');
+  });
+});
+
+describe('shiftWeekendToMonday', () => {
+  it('moves a weekend bill to the Monday after and leaves weekdays alone', () => {
+    expect(shiftWeekendToMonday('2026-10-31')).toBe('2026-11-02'); // Saturday
+    expect(shiftWeekendToMonday('2026-11-01')).toBe('2026-11-02'); // Sunday
+    expect(shiftWeekendToMonday('2026-11-02')).toBe('2026-11-02'); // Monday
   });
 });
