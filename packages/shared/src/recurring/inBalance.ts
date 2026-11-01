@@ -1,6 +1,6 @@
 import { dateFromDayNumber, dayNumber } from '../networth';
 import { within5Pct } from './amount';
-import { shiftWeekendToMonday } from './detect';
+import { earliestMatch, nextBusinessDay } from './calendar';
 
 /**
  * Whether a Surplus schedule's money has already moved in the bank balance before its
@@ -62,14 +62,14 @@ export interface SeenInBalance {
 
 /**
  * When its money can first show in the balance. A paycheck may land up to a few days early
- * (the Friday before a weekend); a bill is taken on its due date, or the Monday after when
- * that falls on a weekend, so a balance read before then says nothing about it (a coincidental
+ * (up to the paycheck's early business days); a bill is taken on its due date, or the next
+ * business day when that is a weekend or bank holiday, so a balance read before then says nothing about it (a coincidental
  * gap must not read as the bill, which would drop it from Surplus).
  */
 function firstShows(c: { dueOn: string; deltaCents: number }): number {
   return c.deltaCents > 0
-    ? dayNumber(c.dueOn) - BALANCE_EARLY_DAYS
-    : dayNumber(shiftWeekendToMonday(c.dueOn));
+    ? dayNumber(earliestMatch(c.dueOn, true))
+    : dayNumber(nextBusinessDay(c.dueOn));
 }
 
 const clampLag = (lag: number | null) => Math.min(Math.max(lag ?? 0, 0), MAX_BALANCE_LAG_DAYS);
@@ -223,7 +223,7 @@ export function handAddedArrival<T extends { postedAt: string; amountCents: numb
   rule: { amountCents: number; dueOn: string },
   txns: readonly T[],
 ): T | null {
-  const from = dateFromDayNumber(dayNumber(rule.dueOn) - BALANCE_EARLY_DAYS);
+  const from = earliestMatch(rule.dueOn, rule.amountCents < 0);
   return (
     txns
       .filter((t) => t.postedAt >= from && within5Pct(t.amountCents, rule.amountCents))

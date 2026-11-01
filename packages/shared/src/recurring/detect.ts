@@ -1,5 +1,6 @@
 import { dateFromDayNumber, dayNumber, daysFromCivil } from '../networth';
 import { within5Pct } from './amount';
+import { earliestMatch, nextBusinessDay, prevBusinessDay } from './calendar';
 
 /**
  * Recurring detection (SPEC §7). Pure. A series is ≥ 3 charges from one merchant with
@@ -207,31 +208,15 @@ const MIN_ANCHOR_GAP_DAYS = 5;
 const MIN_SEMIMONTHLY_GAP_DAYS = 10;
 const MAX_SEMIMONTHLY_GAP_DAYS = 20;
 
-/** 0 = Sunday ... 6 = Saturday. 1970-01-01 (day number 0) is a Thursday. */
-function weekday(dayNum: number): number {
-  return (((dayNum + 4) % 7) + 7) % 7;
-}
+/** A payday never lands on a non-business day: it moves to the business day before. */
+export const shiftWeekendToFriday = prevBusinessDay;
 
-/** A payday never lands on a weekend — it moves to the Friday before, never later. */
-export function shiftWeekendToFriday(date: string): string {
-  const dn = dayNumber(date);
-  const wd = weekday(dn);
-  if (wd === 6) return dateFromDayNumber(dn - 1);
-  if (wd === 0) return dateFromDayNumber(dn - 2);
-  return date;
-}
-
-/** A bill due on a weekend is taken the Monday after, never earlier. */
-export function shiftWeekendToMonday(date: string): string {
-  const dn = dayNumber(date);
-  const wd = weekday(dn);
-  if (wd === 6) return dateFromDayNumber(dn + 2);
-  if (wd === 0) return dateFromDayNumber(dn + 1);
-  return date;
-}
+/** A bill due on a non-business day is taken the next business day, never earlier. */
+export const shiftWeekendToMonday = nextBusinessDay;
 
 function nominalPayDate(y: number, m: number, anchorDay: number): string {
-  const day = Math.min(anchorDay, daysInMonth(y, m));
+  // A pay day of 28 or later means "the last day of the month".
+  const day = anchorDay >= 28 ? daysInMonth(y, m) : anchorDay;
   return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
@@ -448,11 +433,10 @@ export function nextScheduled(
  * covers this too.
  */
 /**
- * How early a charge can land and still pay a declared schedule's next due date: a paycheck the
- * Friday before a holiday Monday, a bill paid ahead. Under half a cycle, so it can never be
- * mistaken for the previous cycle's charge.
+ * How late a charge may land and still be read as belonging to a due date, when guessing which
+ * schedule a transaction belongs to. Early matching is tight and lives in `earliestMatch`.
  */
-export const EARLY_MATCH_DAYS: Record<Cadence, number> = {
+export const LATE_MATCH_DAYS: Record<Cadence, number> = {
   weekly: 3,
   biweekly: 6,
   semimonthly: 6,
@@ -470,12 +454,13 @@ export function advanceManualRule(
   /** The days it keeps to: a monthly or yearly rule saved without them keeps its first day. */
   anchorDays: [number, number] | null;
 } {
-  const early = EARLY_MATCH_DAYS[rule.cadence];
+  const income = rule.expectedAmountCents < 0;
+  const earliest = (d: string) => dayNumber(earliestMatch(d, income));
   const anchorDay = rule.anchorDays?.[0] ?? parts(rule.nextExpectedDate).d;
   const confirming = occurrences
     .filter((o) => Math.sign(o.amountCents) === Math.sign(rule.expectedAmountCents))
     .filter((o) => within5Pct(o.amountCents, rule.expectedAmountCents))
-    .filter((o) => dayNumber(o.date) >= dayNumber(rule.nextExpectedDate) - early)
+    .filter((o) => dayNumber(o.date) >= earliest(rule.nextExpectedDate))
     .sort((a, b) => a.date.localeCompare(b.date));
   const step = (d: string) =>
     rule.cadence === 'semimonthly'
@@ -483,11 +468,11 @@ export function advanceManualRule(
       : nextDate(rule.cadence, d, anchorDay);
   let next = rule.nextExpectedDate;
   for (const o of confirming) {
-    if (dayNumber(o.date) < dayNumber(next) - early) continue;
+    if (dayNumber(o.date) < earliest(next)) continue;
     // Each charge pays one due date: the cycle whose window [due - early, next due - early)
-    // holds it. A skipped cycle (a free month) is passed over, so the schedule never trails
+    // holds it (early only by `earliestMatch`). A skipped cycle (a free month) is passed over, so the schedule never trails
     // behind a charge that already posted.
-    while (dayNumber(o.date) >= dayNumber(step(next)) - early) next = step(next);
+    while (dayNumber(o.date) >= earliest(step(next))) next = step(next);
     // Then the following cycle is counted from that due date, early or late: a paycheck on
     // Friday the 2nd for Monday the 5th moves on to the 20th, and a bill due Friday that posts
     // Monday stays due on Fridays.

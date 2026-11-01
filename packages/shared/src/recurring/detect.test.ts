@@ -207,7 +207,7 @@ describe('long histories stay cheap (a Worker has 10 ms of CPU per sync)', () =>
 
 describe('semimonthly pay detection (5th & 20th, 1st & 15th, ...)', () => {
   it('shifts a weekend payday to the Friday before, never later', () => {
-    expect(shiftWeekendToFriday('2026-06-20')).toBe('2026-06-19'); // Saturday
+    expect(shiftWeekendToFriday('2026-06-20')).toBe('2026-06-18'); // Saturday; Fri 19th is Juneteenth
     expect(shiftWeekendToFriday('2026-07-05')).toBe('2026-07-03'); // Sunday
     expect(shiftWeekendToFriday('2026-06-05')).toBe('2026-06-05'); // Friday: unchanged
   });
@@ -442,21 +442,31 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
     });
   });
 
-  it('a bill paid up to a week early pays that month', () => {
+  it('a bill is never paid early: a charge a week ahead does not pay it', () => {
     const occ: Occurrence[] = [{ date: '2026-09-24', amountCents: 106_054, categoryId: null }];
     expect(advanceManualRule(rule(), occ, '2026-09-25')).toMatchObject({
-      nextExpectedDate: '2026-11-01',
+      nextExpectedDate: '2026-10-01',
       status: 'active',
     });
   });
 
-  it('a weekly charge only matches up to 3 days early, never the week before', () => {
-    const r = rule({ cadence: 'weekly', nextExpectedDate: '2026-10-08' });
+  it('a bill charge dated one day before its due date still pays it (date slack)', () => {
+    const occ: Occurrence[] = [{ date: '2026-09-30', amountCents: 106_054, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-10-01').nextExpectedDate).toBe('2026-11-01');
+  });
+
+  it('a paycheck may land 2 business days early (holiday Monday): Thu pays Tue after Labor Day', () => {
+    // Sep 7 2026 is Labor Day; the pay date Tue Sep 8 can land Thu Sep 3 (2 business days).
+    const pay = rule({
+      cadence: 'biweekly',
+      expectedAmountCents: -250_000,
+      nextExpectedDate: '2026-09-08',
+    });
     const at = (date: string) =>
-      advanceManualRule(r, [{ date, amountCents: 106_054, categoryId: null }], '2026-10-06')
+      advanceManualRule(pay, [{ date, amountCents: -250_000, categoryId: null }], '2026-09-09')
         .nextExpectedDate;
-    expect(at('2026-10-05')).toBe('2026-10-15');
-    expect(at('2026-10-04')).toBe('2026-10-08');
+    expect(at('2026-09-03')).toBe('2026-09-22');
+    expect(at('2026-09-02')).toBe('2026-09-08'); // 3 business days early: too early
   });
 
   it('a bill that posts late keeps its due day', () => {
@@ -486,8 +496,8 @@ describe('manual cash-withdrawal rules (owner: mortgage/student loans too new to
   });
 
   it('an early monthly charge keeps the scheduled day', () => {
-    const occ: Occurrence[] = [{ date: '2026-09-29', amountCents: 106_054, categoryId: null }];
-    expect(advanceManualRule(rule(), occ, '2026-09-30').nextExpectedDate).toBe('2026-11-01');
+    const occ: Occurrence[] = [{ date: '2026-09-30', amountCents: 106_054, categoryId: null }];
+    expect(advanceManualRule(rule(), occ, '2026-10-01').nextExpectedDate).toBe('2026-11-01');
   });
 
   it('advances a semimonthly manual rule from its confirming charge', () => {

@@ -53,7 +53,7 @@ describe('seenInBalance', () => {
 
   it('still sees a paycheck land the Friday before a weekend due date', () => {
     const out = seenInBalance(
-      snaps(['2026-10-28', 100_000], ['2026-10-30', 300_000]),
+      snaps(['2026-10-27', 100_000], ['2026-10-30', 300_000]),
       [],
       [rule('pay', -200_000, '2026-11-01')],
       '2026-10-30',

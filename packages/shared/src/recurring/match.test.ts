@@ -100,14 +100,22 @@ describe('surplusMatch', () => {
 });
 
 describe('nearDue', () => {
-  it('weekly and biweekly step back and forward from any due date', () => {
+  it('a bill is near its due date from a day before to a few days after, never a week before', () => {
     const w = sched({ cadence: 'weekly', nextExpectedDate: '2026-10-09' });
-    expect(nearDue(w, '2026-09-25')).toBe(true);
-    expect(nearDue(w, '2026-09-29')).toBe(true);
+    expect(nearDue(w, '2026-10-08')).toBe(true);
+    expect(nearDue(w, '2026-10-12')).toBe(true);
+    expect(nearDue(w, '2026-10-06')).toBe(false);
     const b = sched({ cadence: 'biweekly', nextExpectedDate: '2026-10-09' });
-    expect(nearDue(b, '2026-09-11')).toBe(true);
-    expect(nearDue(b, '2026-09-29')).toBe(true);
+    expect(nearDue(b, '2026-09-25')).toBe(true);
+    expect(nearDue(b, '2026-09-21')).toBe(false);
     expect(nearDue(b, '2026-10-30')).toBe(false);
+  });
+
+  it('a paycheck is near its date from 2 business days before', () => {
+    // Tue Sep 8 2026 follows Labor Day: Thu Sep 3 is 2 business days early.
+    const p = sched({ amountCents: -250_000, cadence: 'biweekly', nextExpectedDate: '2026-09-08' });
+    expect(nearDue(p, '2026-09-03')).toBe(true);
+    expect(nearDue(p, '2026-09-02')).toBe(false);
   });
 
   it('semimonthly checks the nearest pay date', () => {
@@ -116,7 +124,8 @@ describe('nearDue', () => {
       anchorDays: [5, 20],
       nextExpectedDate: '2026-10-20',
     });
-    expect(nearDue(s, '2026-10-02')).toBe(true);
+    expect(nearDue(s, '2026-10-06')).toBe(true);
+    expect(nearDue(s, '2026-10-02')).toBe(false); // a bill, 3 days ahead of the 5th
     expect(nearDue(s, '2026-09-11')).toBe(false);
   });
 
@@ -124,12 +133,12 @@ describe('nearDue', () => {
     const s = sched({ anchorDays: [31, 31], nextExpectedDate: '2026-10-31' });
     expect(nearDue(s, '2026-03-01')).toBe(true);
     expect(nearDue(s, '2026-02-15')).toBe(false);
-    expect(nearDue(s, '2027-01-28')).toBe(true);
+    expect(nearDue(s, '2027-01-30')).toBe(true);
   });
 
   it('annual looks a year either side', () => {
     const s = sched({ cadence: 'annual', nextExpectedDate: '2027-03-10' });
-    expect(nearDue(s, '2026-03-05')).toBe(true);
+    expect(nearDue(s, '2026-03-11')).toBe(true);
     expect(nearDue(s, '2026-09-10')).toBe(false);
   });
 });
