@@ -745,3 +745,60 @@ describe('Surplus rules: business days, proof, and a stale balance', () => {
     expect(p.points.some((x) => x.label === 'Pay' && x.date <= '2026-11-01')).toBe(false);
   });
 });
+
+describe('a saved "seen in balance" mark that could not have happened yet (owner, Sun 2026-11-01)', () => {
+  const NOV1 = '2026-11-01';
+  async function seeded() {
+    const s = await setup();
+    await api0(s, '2026-10-30', 600_000);
+    await api0(s, NOV1, 498_813);
+    await env.DB.batch([
+      upsertManualRuleStmt(s.userId, env.DB, 'BENCHMARK MTG', 'monthly', 274_998, NOV1),
+      upsertManualRuleStmt(s.userId, env.DB, 'VENMO PAYMENT', 'monthly', 10_200, NOV1),
+    ]);
+    // What an earlier sync left behind: both marked seen on the 1st itself.
+    await env.DB.prepare(
+      `UPDATE recurring_series SET balance_seen_due = ?2, balance_seen_on = ?2
+       WHERE user_id = ?1 AND source = 'manual'`,
+    )
+      .bind(s.userId, NOV1)
+      .run();
+    return s;
+  }
+  const api0 = (s: Awaited<ReturnType<typeof setup>>, asOf: string, balanceCents: number) =>
+    s.api('POST', `/accounts/${s.checking.id}/snapshots`, { asOf, balanceCents });
+
+  it('is not read as in the balance, and the bills count on Monday', async () => {
+    const s = await seeded();
+    const p = await buildCashToPaydayProjection(
+      env.DB,
+      s.userId,
+      NOV1,
+      498_813,
+      0,
+      [],
+      [s.checking.id],
+      NOV1,
+    );
+    expect(p.schedules.every((r) => !r.inBalance)).toBe(true);
+    expect(p.points.map((x) => [x.date, x.label])).toEqual([
+      [NOV1, 'Today'],
+      ['2026-11-02', 'BENCHMARK MTG'],
+      ['2026-11-02', 'VENMO PAYMENT'],
+      ...p.points.slice(3).map((x) => [x.date, x.label]),
+    ]);
+    expect(p.lowestPoint.balanceCents).toBe(498_813 - 274_998 - 10_200);
+  });
+
+  it('a refresh clears the saved marks', async () => {
+    const s = await seeded();
+    const { trackBalanceSeen } = await import('../src/lib/balanceSeen');
+    await trackBalanceSeen(env.DB, s.userId, NOV1);
+    const left = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM recurring_series WHERE user_id = ?1 AND balance_seen_due IS NOT NULL',
+    )
+      .bind(s.userId)
+      .first<{ n: number }>();
+    expect(left?.n).toBe(0);
+  });
+});

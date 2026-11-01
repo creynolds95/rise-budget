@@ -72,6 +72,17 @@ function firstShows(c: { dueOn: string; deltaCents: number }): number {
     : dayNumber(nextBusinessDay(c.dueOn));
 }
 
+/**
+ * Whether money due `dueOn` can have moved by `today`: a bill is taken no earlier than its
+ * business day, a paycheck lands no earlier than its early window. A balance reading can never
+ * show it before that, so a "seen" mark from before then is a coincidence (or an older rule's
+ * mistake) and is dropped, never trusted.
+ */
+export function mayHaveLeft(dueOn: string, amountCents: number, today: string): boolean {
+  const first = amountCents < 0 ? earliestMatch(dueOn, true) : nextBusinessDay(dueOn);
+  return first <= today;
+}
+
 const clampLag = (lag: number | null) => Math.min(Math.max(lag ?? 0, 0), MAX_BALANCE_LAG_DAYS);
 
 interface Candidate {
@@ -140,13 +151,21 @@ export function seenInBalance(
 ): SeenInBalance[] {
   const latest = [...snapshots.values()].map((s) => readings(s, '').current);
   if (latest.length === 0 || latest.some((r) => r === null)) return [];
-  const balanceDay = Math.min(...(latest as BalanceReading[]).map((r) => dayNumber(r.asOf)));
+  // A balance can't be from after today (a clock or zone slip must not open future bills).
+  const balanceDay = Math.min(
+    dayNumber(today),
+    ...(latest as BalanceReading[]).map((r) => dayNumber(r.asOf)),
+  );
   const todayN = dayNumber(today);
   const cands: Candidate[] = rules
     .flatMap((r): Candidate[] => {
       const deltaCents = -r.amountCents;
       if (deltaCents === 0) return [];
-      if (r.seenDue && todayN - dayNumber(r.seenDue) <= BALANCE_GIVE_UP_DAYS + MAX_BALANCE_LAG_DAYS)
+      if (
+        r.seenDue &&
+        mayHaveLeft(r.seenDue, r.amountCents, today) &&
+        todayN - dayNumber(r.seenDue) <= BALANCE_GIVE_UP_DAYS + MAX_BALANCE_LAG_DAYS
+      )
         return [{ id: r.id, dueOn: r.seenDue, deltaCents, forced: true }];
       const due = dayNumber(r.dueOn);
       const open =

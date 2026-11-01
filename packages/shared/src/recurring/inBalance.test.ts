@@ -4,6 +4,7 @@ import {
   balanceOverdue,
   handAddedArrival,
   learnLag,
+  mayHaveLeft,
   seenInBalance,
   type BalanceReading,
   type BalanceRule,
@@ -309,5 +310,69 @@ describe('seenInBalance, business days and tighter gaps', () => {
       TODAY,
     );
     expect(ids(out)).not.toContain('gym');
+  });
+});
+
+describe('a mark that could not have happened yet is never trusted', () => {
+  // The owner's day (Sun Nov 1 2026): bills due the 1st leave Monday, never on Sunday.
+  const NOV1 = '2026-11-01';
+  const bills = [
+    rule('mtg', 274_998, NOV1, { seenDue: NOV1 }),
+    rule('edu', 29_526, NOV1, { seenDue: NOV1 }),
+    rule('venmo', 10_200, NOV1, { seenDue: NOV1 }),
+    rule('gym', 34_300, '2026-11-03', { seenDue: '2026-11-03', lagDays: 2 }),
+  ];
+
+  it('a saved mark on bills due Sunday is dropped on Sunday', () => {
+    const out = seenInBalance(
+      snaps(['2026-10-30', 600_000], ['2026-11-01', 498_813]),
+      [],
+      bills,
+      NOV1,
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('even a balance drop of exactly their total is not them before Monday', () => {
+    const total = 274_998 + 29_526 + 10_200 + 34_300;
+    const fresh = bills.map((b) => ({ ...b, seenDue: null }));
+    const out = seenInBalance(
+      snaps(['2026-10-30', 600_000], ['2026-11-01', 600_000 - total]),
+      [],
+      fresh,
+      NOV1,
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('a balance dated after today cannot open bills that are not due yet', () => {
+    const fresh = bills.map((b) => ({ ...b, seenDue: null }));
+    const out = seenInBalance(
+      snaps(['2026-10-30', 600_000], ['2026-11-04', 300_000]),
+      [],
+      fresh,
+      NOV1,
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('the same mark holds once Monday has come', () => {
+    const out = seenInBalance(
+      snaps(['2026-10-30', 600_000], ['2026-11-02', 600_000 - 274_998 - 29_526 - 10_200]),
+      [],
+      bills.slice(0, 3),
+      '2026-11-02',
+    );
+    expect(ids(out)).toEqual(['mtg', 'edu', 'venmo']);
+  });
+});
+
+describe('mayHaveLeft', () => {
+  it('a bill not before its business day; a paycheck not before its early window', () => {
+    expect(mayHaveLeft('2026-11-01', 5_000, '2026-11-01')).toBe(false); // Sunday bill
+    expect(mayHaveLeft('2026-11-01', 5_000, '2026-11-02')).toBe(true);
+    // Pay date Sun Nov 1 lands Fri Oct 30; two business days early is Wed Oct 28.
+    expect(mayHaveLeft('2026-11-01', -5_000, '2026-10-27')).toBe(false);
+    expect(mayHaveLeft('2026-11-01', -5_000, '2026-10-28')).toBe(true);
   });
 });
