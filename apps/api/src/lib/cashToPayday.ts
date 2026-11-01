@@ -155,7 +155,9 @@ export async function buildCashToPaydayProjection(
   // one already moved the starting balance, so it is not projected a second time.
   const ahead = (rule: (typeof manualRules)[number], series: DetectedSeries, count: number) => {
     const all = upcoming(rule, series, count + 1);
-    return paidAlready(seen.get(rule.id), all[0], today) ? all.slice(1) : all.slice(0, count);
+    return paidAlready(seen.get(rule.id), all[0], series.nextExpectedDate, today)
+      ? all.slice(1)
+      : all.slice(0, count);
   };
   // A paycheck lands the business day before its date (weekend or bank holiday). When that day
   // is already behind us it counts today only if the bank's balance is older than it.

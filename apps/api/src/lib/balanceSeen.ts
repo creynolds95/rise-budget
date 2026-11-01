@@ -6,6 +6,7 @@ import {
   earliestMatch,
   handAddedArrival,
   learnLag,
+  mayHaveLeft,
   seenInBalance,
   within5Pct,
   type SeenInBalance,
@@ -124,6 +125,22 @@ export async function trackBalanceSeen(db: D1Database, userId: UserId, today: st
   for (const r of rules) {
     const live = seen.get(r.id);
     const lagDays = r.balance_lag_days;
+    // A saved mark is re-checked on every refresh: one that could not have happened yet (the
+    // bill isn't due, or a weekend/holiday keeps it from leaving) is let go, so an old
+    // mistake never sticks.
+    if (
+      r.balance_seen_due &&
+      !mayHaveLeft(
+        r.balance_seen_due,
+        amountOn(r.expected_amount_cents, changeOf(r), r.balance_seen_due),
+        today,
+      )
+    ) {
+      stmts.push(
+        setBalanceSeenStmt(userId, db, r.id, { due: null, on: null, twice: false, lagDays }),
+      );
+      continue;
+    }
     if (r.balance_seen_due && r.balance_seen_on) {
       const seenOn = r.balance_seen_on;
       const arrived = arrivalOf(r, r.balance_seen_due, rows);
@@ -168,14 +185,19 @@ export async function trackBalanceSeen(db: D1Database, userId: UserId, today: st
   if (stmts.length > 0) await db.batch(stmts);
 }
 
-/** The first projected occurrence a seen rule already paid, so it is not counted again. */
+/**
+ * The first projected occurrence a seen rule already paid, so it is not counted again. Only
+ * the occurrence the seen mark is about: its due date is the date being projected, or the
+ * stored date a late bill is owed today for. A mark from another cycle never drops this one.
+ */
 export function paidAlready(
   seen: SeenInBalance | undefined,
   first: { date: string } | undefined,
+  storedDue: string,
   today: string,
 ): boolean {
   if (!seen || !first) return false;
   if (first.date === seen.dueOn) return true;
   // A bill past due is projected as owed today: that is the one the balance shows.
-  return seen.dueOn < today && first.date === today;
+  return storedDue === seen.dueOn && seen.dueOn < today && first.date === today;
 }
