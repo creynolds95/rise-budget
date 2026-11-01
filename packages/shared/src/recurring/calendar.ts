@@ -17,16 +17,17 @@ export function weekday(dayNum: number): number {
 const iso = (y: number, m: number, d: number) =>
   `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-/** The `n`th (1-based) given weekday of a month; `n = -1` is the last one. */
+/** The `n`th (1-based) given weekday of a month. */
 function nthWeekday(y: number, m: number, wd: number, n: number): string {
-  if (n > 0) {
-    const first = dayNumber(iso(y, m, 1));
-    const offset = (wd - weekday(first) + 7) % 7;
-    return dateFromDayNumber(first + offset + 7 * (n - 1));
-  }
-  const nextMonth = m === 12 ? iso(y + 1, 1, 1) : iso(y, m + 1, 1);
-  const last = dayNumber(nextMonth) - 1;
-  return dateFromDayNumber(last - ((weekday(last) - wd + 7) % 7));
+  const first = dayNumber(iso(y, m, 1));
+  const offset = (wd - weekday(first) + 7) % 7;
+  return dateFromDayNumber(first + offset + 7 * (n - 1));
+}
+
+/** The last Monday of May (Memorial Day): the day before June 1 back to a Monday. */
+function lastMondayOfMay(y: number): string {
+  const last = dayNumber(iso(y, 6, 1)) - 1;
+  return dateFromDayNumber(last - ((weekday(last) - 1 + 7) % 7));
 }
 
 /** A fixed-date holiday as observed: Sunday moves to Monday, Saturday is not observed. */
@@ -47,7 +48,7 @@ export function fedHolidays(y: number): ReadonlySet<string> {
     observed(y, 1, 1),
     nthWeekday(y, 1, 1, 3), // Martin Luther King Jr. Day
     nthWeekday(y, 2, 1, 3), // Washington's Birthday
-    nthWeekday(y, 5, 1, -1), // Memorial Day
+    lastMondayOfMay(y), // Memorial Day
     observed(y, 6, 19), // Juneteenth
     observed(y, 7, 4), // Independence Day
     nthWeekday(y, 9, 1, 1), // Labor Day
