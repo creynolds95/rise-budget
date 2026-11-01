@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { installSelectOnFocus } from './gestures';
+import { edgeWidth, installSelectOnFocus } from './gestures';
 
 describe('installSelectOnFocus', () => {
   installSelectOnFocus();
@@ -29,5 +29,14 @@ describe('installSelectOnFocus', () => {
     vi.runAllTimers();
     expect(el.selectionStart).toBe(6);
     vi.useRealTimers();
+  });
+});
+
+describe('edgeWidth', () => {
+  it('is wider on the Dashboard only', () => {
+    expect(edgeWidth('/')).toBeGreaterThan(edgeWidth('/settings'));
+    for (const p of ['/accounts', '/transactions', '/budget', '/settings']) {
+      expect(edgeWidth(p)).toBe(edgeWidth('/settings'));
+    }
   });
 });
