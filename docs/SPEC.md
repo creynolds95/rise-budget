@@ -560,10 +560,10 @@ the owner turns that on. Each kind can be turned off in Settings → Alerts.
 
 SimpleFIN can report a balance that already has a bill (or paycheck) in it a day or more
 before that transaction reaches Rise. Counting the bill as still to come would subtract it
-twice. So, for a manual schedule from 3 days before its due date to 2 days after (plus its
+twice. So, for a manual schedule from its earliest landing (§7.3) to 2 days after (plus its
 learned lag, at most 7 more), Surplus compares the cash accounts' balance now with one from
 before the due date. Whatever the imported rows don't explain is the unexplained gap. When
-due schedules (each once or twice, within 5%) add up to that gap, they are **in balance**:
+due schedules (each once or twice; the leftover within 5% of the smallest one counted) add up to that gap, they are **in balance**:
 not projected again, and marked on the Surplus page. A pending row may or may not be in a
 bank's balance, so both readings are weighed. A schedule counts as in balance only when
 every reading and every fitting set agrees. A gap nothing explains leaves every schedule
@@ -574,6 +574,23 @@ days between are the schedule's lag, averaged with what was learned before. With
 after 2 days (or one day past its lag), the owner is told. A gap of twice a bill is told as
 a possible double charge. Both alerts fall under the missed-bill switch (§8.2). After 14 days
 with no row, it is let go.
+
+### 7.3 Surplus: when money moves, and what counts as proof
+
+- **Business days.** Federal Reserve holidays are built in, by rule (a holiday on a Sunday is
+  observed the Monday after; one on a Saturday is not observed). A bill on a weekend or bank
+  holiday is taken the **next** business day. A paycheck lands the business day **before**. A
+  twice-a-month pay day of 28 or later means the last day of the month.
+- **A bill is never paid early.** A charge counts for a bill only from one day before its
+  due date (a posted date can read a day off). A paycheck may land up to 2 business days
+  before its pay date (cap 3).
+- **Nothing counts as paid without proof.** A bill, tagged or hand-added, past its date stays
+  owed (counted today) until a matching charge, the balance (§7.2), or the owner's "Mark
+  paid" moves it on. A hand-added schedule matches by direction and amount (within 5%), each
+  row proving one schedule. After 1 business day overdue the owner is told (missed-bill switch).
+- **A stale balance is brought forward.** The projection starts from the bank's balance and
+  applies the rules from the balance date to today. A paycheck dated after the balance date
+  counts, marked "expected, not seen yet"; one on or before it is the bank's to show.
 
 ## 8. Review queue
 

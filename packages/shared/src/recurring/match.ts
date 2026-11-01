@@ -1,6 +1,7 @@
 import { dateFromDayNumber, dayNumber } from '../networth';
 import { within5Pct } from './amount';
-import { addMonths, EARLY_MATCH_DAYS, nextSemimonthlyDate, parts, type Cadence } from './detect';
+import { addMonths, LATE_MATCH_DAYS, nextSemimonthlyDate, parts, type Cadence } from './detect';
+import { earliestMatch } from './calendar';
 import { cashMovements } from './suggest';
 
 /** A Surplus schedule as the transaction page sees it. `amountCents` carries the SPEC §1.1 sign. */
@@ -33,21 +34,30 @@ export type SurplusMatch =
   | { state: 'suggested'; name: string }
   | { state: 'untracked' };
 
-/** Whether one of a schedule's due dates falls within its early-match window of `date`. */
+/**
+ * Whether one of a schedule's due dates is near `date`: a bill's charge no earlier than a day
+ * before it, a paycheck no earlier than its early window, either up to a few days late.
+ */
 export function nearDue(s: SurplusScheduleShape, date: string): boolean {
-  const tol = EARLY_MATCH_DAYS[s.cadence];
+  const late = LATE_MATCH_DAYS[s.cadence];
+  const income = s.amountCents < 0;
   const at = dayNumber(date);
-  const close = (d: string) => Math.abs(dayNumber(d) - at) <= tol;
+  const close = (d: string) =>
+    at >= dayNumber(earliestMatch(d, income)) && at <= dayNumber(d) + late;
   switch (s.cadence) {
     case 'weekly':
     case 'biweekly': {
       const cycle = s.cadence === 'weekly' ? 7 : 14;
-      const off = (((at - dayNumber(s.nextExpectedDate)) % cycle) + cycle) % cycle;
-      return Math.min(off, cycle - off) <= tol;
+      const k = Math.floor((at - dayNumber(s.nextExpectedDate)) / cycle);
+      return [k, k + 1].some((n) =>
+        close(dateFromDayNumber(dayNumber(s.nextExpectedDate) + n * cycle)),
+      );
     }
     case 'semimonthly':
-      return close(
-        nextSemimonthlyDate(dateFromDayNumber(at - tol - 1), s.anchorDays as [number, number]),
+      return (
+        close(
+          nextSemimonthlyDate(dateFromDayNumber(at - late - 1), s.anchorDays as [number, number]),
+        ) || close(nextSemimonthlyDate(dateFromDayNumber(at - 1), s.anchorDays as [number, number]))
       );
     case 'monthly':
     case 'annual': {

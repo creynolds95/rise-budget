@@ -67,6 +67,8 @@ export interface NoticeInputs {
     /** The balance moved by it twice. */
     twice: boolean;
   }[];
+  /** Hand-added bills past their date with no proof they left, over a business day late. */
+  owed?: readonly { id: string; name: string; amountCents: number; dueOn: string }[];
 }
 
 /** One standing key: told once per dip, and cleared by the caller when Surplus recovers. */
@@ -138,6 +140,15 @@ export function notices(input: NoticeInputs, prefs: PushSettings): Notice[] {
         body: `Your balance dropped by ${dollars(2 * b.amountCents)}, twice the usual ${dollars(b.amountCents)}.`,
         url: '/cash',
       });
+  }
+  for (const o of input.owed ?? []) {
+    if (!prefs.missedBill) break;
+    out.push({
+      key: `owed:${o.id}:${o.dueOn}`,
+      title: `${o.name} hasn’t shown leaving`,
+      body: `It was due ${o.dueOn.slice(5).replace('-', '/')}, ${dollars(o.amountCents)}. Surplus still counts it; tap Mark paid if it’s done.`,
+      url: '/cash',
+    });
   }
   for (const f of input.flags) {
     if (!prefs[FLAG_PREF[f.flag]]) continue;

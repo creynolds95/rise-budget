@@ -12,9 +12,9 @@ export function amountOn(baseCents: number, change: AmountChange | null, date: s
 }
 
 /** Projected occurrences with the change applied from its date on. Pure. */
-export function withAmountChange(
-  occurrences: readonly ProjectedOccurrence[],
+export function withAmountChange<T extends ProjectedOccurrence>(
+  occurrences: readonly T[],
   change: AmountChange | null,
-): ProjectedOccurrence[] {
+): T[] {
   return occurrences.map((o) => ({ ...o, amountCents: amountOn(o.amountCents, change, o.date) }));
 }

@@ -2,7 +2,7 @@ import { Loading } from '../components/Pending';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { dailySeries, inBalanceNote, surplusTone, tooltipLines } from '../lib/surplus';
+import { dailySeries, inBalanceNote, surplusTone, tooltipLines, unseenNote } from '../lib/surplus';
 import { DetailPage } from '../components/detail/DetailPage';
 import { Button } from '../components/primitives/Button';
 import { MoneyField } from '../components/primitives/MoneyField';
@@ -306,6 +306,9 @@ function ScheduleList({
             {r.inBalance && (
               <span className="block type-caption text-gold-text">{inBalanceNote(r)}</span>
             )}
+            {!r.inBalance && unseenNote(r) && (
+              <span className="block type-caption text-ink-muted">{unseenNote(r)}</span>
+            )}
           </span>
           <span className="flex shrink-0 items-center gap-2">
             <MoneyText cents={r.amountCents} tone={kind === 'income' ? 'in' : 'ink'} />
@@ -493,6 +496,23 @@ function EditScheduleSheet({
       >
         {row.id ? 'Remove' : 'Dismiss'}
       </Button>
+      {row.id && (row.owedUnseen || row.expectedNotSeen) && (
+        <Button
+          variant="quiet"
+          className="mt-2 w-full"
+          disabled={saving}
+          onClick={() =>
+            void run(() =>
+              api(
+                'POST',
+                `/cash-to-payday/schedules/${encodeURIComponent(row.id as string)}/mark-paid`,
+              ),
+            )
+          }
+        >
+          Mark paid
+        </Button>
+      )}
     </Sheet>
   );
 }

@@ -1,6 +1,6 @@
 import { dateFromDayNumber, dayNumber } from '../networth';
 import { within5Pct } from './amount';
-import { shiftWeekendToMonday } from './detect';
+import { earliestMatch, nextBusinessDay } from './calendar';
 
 /**
  * Whether a Surplus schedule's money has already moved in the bank balance before its
@@ -62,14 +62,14 @@ export interface SeenInBalance {
 
 /**
  * When its money can first show in the balance. A paycheck may land up to a few days early
- * (the Friday before a weekend); a bill is taken on its due date, or the Monday after when
- * that falls on a weekend, so a balance read before then says nothing about it (a coincidental
+ * (up to the paycheck's early business days); a bill is taken on its due date, or the next
+ * business day when that is a weekend or bank holiday, so a balance read before then says nothing about it (a coincidental
  * gap must not read as the bill, which would drop it from Surplus).
  */
 function firstShows(c: { dueOn: string; deltaCents: number }): number {
   return c.deltaCents > 0
-    ? dayNumber(c.dueOn) - BALANCE_EARLY_DAYS
-    : dayNumber(shiftWeekendToMonday(c.dueOn));
+    ? dayNumber(earliestMatch(c.dueOn, true))
+    : dayNumber(nextBusinessDay(c.dueOn));
 }
 
 const clampLag = (lag: number | null) => Math.min(Math.max(lag ?? 0, 0), MAX_BALANCE_LAG_DAYS);
@@ -95,7 +95,7 @@ function readings(snaps: readonly BalanceReading[], before: string) {
 
 /**
  * Every multiset of candidates (each 0-2 times, a forced one at least once) whose total
- * movement is within 5% of the unexplained gap. The empty set fits a gap within 5% of the
+ * movement is within 5% (of the smallest one counted) of the unexplained gap. The empty set fits a gap within 5% of the
  * smallest candidate: a balance that moved by about nothing beyond its transactions.
  */
 function fits(gapCents: number, cands: readonly Candidate[]): number[][] {
@@ -105,14 +105,16 @@ function fits(gapCents: number, cands: readonly Candidate[]): number[][] {
   const walk = (i: number) => {
     if (i === cands.length) {
       let moved = 0;
-      let size = 0;
+      let smallestCounted = Infinity;
       cands.forEach((c, k) => {
-        moved += (counts[k] as number) * c.deltaCents;
-        size += (counts[k] as number) * Math.abs(c.deltaCents);
+        const n = counts[k] as number;
+        moved += n * c.deltaCents;
+        if (n > 0) smallestCounted = Math.min(smallestCounted, Math.abs(c.deltaCents));
       });
-      // Within 5% of what moved (of the smallest candidate when nothing did), in whole cents.
-      if (100 * Math.abs(gapCents - moved) <= 5 * (size > 0 ? size : smallest))
-        out.push([...counts]);
+      // Each counted schedule gets its own 5% check, not 5% of the total: the leftover gap must
+      // be within 5% of the smallest one counted (of the smallest candidate when none was).
+      const unit = Number.isFinite(smallestCounted) ? smallestCounted : smallest;
+      if (100 * Math.abs(gapCents - moved) <= 5 * unit) out.push([...counts]);
       return;
     }
     for (let n = counts[i] as number; n <= 2; n++) {
@@ -223,7 +225,7 @@ export function handAddedArrival<T extends { postedAt: string; amountCents: numb
   rule: { amountCents: number; dueOn: string },
   txns: readonly T[],
 ): T | null {
-  const from = dateFromDayNumber(dayNumber(rule.dueOn) - BALANCE_EARLY_DAYS);
+  const from = earliestMatch(rule.dueOn, rule.amountCents < 0);
   return (
     txns
       .filter((t) => t.postedAt >= from && within5Pct(t.amountCents, rule.amountCents))

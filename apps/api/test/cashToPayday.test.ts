@@ -666,3 +666,82 @@ describe('a suggestion already in Surplus under another name', () => {
     ]);
   });
 });
+
+describe('Surplus rules: business days, proof, and a stale balance', () => {
+  const addEvent = (
+    userId: string,
+    id: string,
+    label: string,
+    cadence: string,
+    cents: number,
+    next: string,
+  ) =>
+    env.DB.batch([upsertManualEventStmt(userId as never, env.DB, id, label, cadence, cents, next)]);
+
+  it('a bill on a Sunday bank holiday is taken the Tuesday after (Jul 4 2027 -> observed Mon)', async () => {
+    const s = await setup();
+    await addEvent(s.userId, 'b1', 'Water', 'monthly', 5_000, '2027-07-04');
+    await addEvent(s.userId, 'p1', 'Pay', 'monthly', -300_000, '2027-07-15');
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2027-07-01', 100_000, 0);
+    expect(p.points.find((x) => x.label === 'Water')?.date).toBe('2027-07-06');
+  });
+
+  it('a Saturday paycheck lands Friday; a Sunday one too (weekly, biweekly, monthly alike)', async () => {
+    const s = await setup();
+    await addEvent(s.userId, 'p1', 'Pay', 'monthly', -300_000, '2026-11-14'); // Saturday
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-11-02', 0, 0);
+    expect(p.points.find((x) => x.label === 'Pay')?.date).toBe('2026-11-13');
+  });
+
+  it('a hand-added bill whose date passed stays owed today, and refresh does not roll it', async () => {
+    const s = await setup();
+    await addEvent(s.userId, 'b1', 'Rent', 'monthly', 150_000, '2026-10-31');
+    await refreshRecurring(env.DB, s.userId, '2026-11-02');
+    const row = await env.DB.prepare(
+      'SELECT next_expected_date FROM recurring_series WHERE user_id = ?1',
+    )
+      .bind(s.userId)
+      .first<{ next_expected_date: string }>();
+    expect(row?.next_expected_date).toBe('2026-10-31');
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-11-02', 500_000, 0);
+    expect(p.points[1]).toEqual({ date: '2026-11-02', balanceCents: 350_000, label: 'Rent' });
+  });
+
+  it('a stale balance is brought forward: a paycheck after the balance date counts, flagged', async () => {
+    const s = await setup();
+    await addEvent(s.userId, 'p1', 'Pay', 'monthly', -300_000, '2026-10-30'); // Friday
+    // The bank last reported Thursday; today is Sunday. Friday's pay has not shown yet.
+    const stale = await buildCashToPaydayProjection(
+      env.DB,
+      s.userId,
+      '2026-11-01',
+      100_000,
+      0,
+      [],
+      [],
+      '2026-10-29',
+    );
+    expect(stale.points[1]).toEqual({ date: '2026-11-01', balanceCents: 400_000, label: 'Pay' });
+    expect(stale.schedules[0]?.expectedNotSeen).toBe(true);
+    // Reported Friday: the balance has it (or will); never counted twice.
+    const fresh = await buildCashToPaydayProjection(
+      env.DB,
+      s.userId,
+      '2026-11-01',
+      100_000,
+      0,
+      [],
+      [],
+      '2026-10-30',
+    );
+    expect(fresh.points.some((x) => x.label === 'Pay' && x.date <= '2026-11-01')).toBe(false);
+    expect(fresh.schedules[0]?.expectedNotSeen).toBe(false);
+  });
+
+  it('with no balance date known, a late paycheck is not counted (reads low, never high)', async () => {
+    const s = await setup();
+    await addEvent(s.userId, 'p1', 'Pay', 'monthly', -300_000, '2026-10-30');
+    const p = await buildCashToPaydayProjection(env.DB, s.userId, '2026-11-01', 100_000, 0);
+    expect(p.points.some((x) => x.label === 'Pay' && x.date <= '2026-11-01')).toBe(false);
+  });
+});

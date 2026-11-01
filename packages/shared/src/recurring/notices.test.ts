@@ -230,3 +230,17 @@ describe('notices', () => {
     expect(dollars(-1_234_500)).toBe('$12,345.00');
   });
 });
+
+describe('owed hand-added bills', () => {
+  const owed = [{ id: 'r1', name: 'Rent', amountCents: 150_000, dueOn: '2026-10-31' }];
+  const only = { ...input, series: [], flags: [], inBalance: [], owed };
+
+  it('tells once, keyed on the due date, that a bill nobody saw leave is still counted', () => {
+    expect(notices(only, ALL).map((n) => n.key)).toContain('owed:r1:2026-10-31');
+  });
+
+  it('stays quiet when missed-bill alerts are off', () => {
+    const out = notices(only, { ...ALL, missedBill: false });
+    expect(out.map((n) => n.key)).not.toContain('owed:r1:2026-10-31');
+  });
+});

@@ -3,12 +3,11 @@ import {
   amountOn,
   anyNearDue,
   BALANCE_GIVE_UP_DAYS,
-  EARLY_MATCH_DAYS,
+  earliestMatch,
   handAddedArrival,
   learnLag,
   seenInBalance,
   within5Pct,
-  type Cadence,
   type SeenInBalance,
 } from '@rise/shared/recurring';
 import {
@@ -92,7 +91,7 @@ function arrivalOf(r: ManualRuleRow, due: string, rows: readonly CashTxnRow[]) {
     );
   // A tagged rule moves on only once its charge posts: until then nothing has arrived.
   if (r.next_expected_date <= due) return null;
-  const from = dateFromDayNumber(dayNumber(due) - EARLY_MATCH_DAYS[r.cadence as Cadence]);
+  const from = earliestMatch(due, r.expected_amount_cents < 0);
   return (
     rows
       .filter(
@@ -171,13 +170,12 @@ export async function trackBalanceSeen(db: D1Database, userId: UserId, today: st
 
 /** The first projected occurrence a seen rule already paid, so it is not counted again. */
 export function paidAlready(
-  r: Pick<ManualRuleRow, 'label'>,
   seen: SeenInBalance | undefined,
   first: { date: string } | undefined,
   today: string,
 ): boolean {
   if (!seen || !first) return false;
   if (first.date === seen.dueOn) return true;
-  // A tagged bill past due is projected as owed today: that is the one the balance shows.
-  return r.label == null && seen.dueOn < today && first.date === today;
+  // A bill past due is projected as owed today: that is the one the balance shows.
+  return seen.dueOn < today && first.date === today;
 }

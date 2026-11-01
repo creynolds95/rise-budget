@@ -1,12 +1,15 @@
-import { nextScheduled } from '@rise/shared/recurring';
+import { advanceManualRule, amountOn, nextScheduled } from '@rise/shared/recurring';
 import { ManualCashEventBody, ScheduleBody } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
+  advanceManualRuleStmt,
+  changeOf,
   deleteManualEventStmt,
   deleteManualRuleStmt,
   getUser,
   listAccounts,
   listManualEvents,
+  listManualRules,
   newId,
   updateManualRuleStmt,
   upsertManualEventStmt,
@@ -14,7 +17,7 @@ import {
 } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
-import { buildCashToPaydayProjection, cashAccountsOf } from '../lib/cashToPayday';
+import { balanceAsOfOf, buildCashToPaydayProjection, cashAccountsOf } from '../lib/cashToPayday';
 import { localToday } from '../lib/dates';
 import { body } from '../lib/validate';
 
@@ -39,6 +42,7 @@ cashToPayday.get('/', async (c) => {
     cushionCents,
     dismissedPayMerchants.map((d) => d.merchant),
     cashAccounts.map((a) => a.id),
+    balanceAsOfOf(cashAccounts, user.timezone),
   );
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
   return c.json({
@@ -157,4 +161,32 @@ cashToPayday.delete('/schedules/:id', async (c) => {
   if (result[0]?.meta.rows_written === 0)
     throw new AppError(404, 'NOT_FOUND', 'Schedule not found');
   return c.body(null, 204);
+});
+
+/**
+ * "Mark paid": the owner says a schedule's money moved though the bank never showed it (cash,
+ * a sync that missed it). Moves it on one cycle, the same step a matching charge would.
+ */
+cashToPayday.post('/schedules/:id/mark-paid', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const user = await getUser(userId, db);
+  const today = localToday(user?.timezone ?? 'America/Chicago');
+  const rule = (await listManualRules(userId, db)).find((r) => r.id === c.req.param('id'));
+  if (!rule) throw new AppError(404, 'NOT_FOUND', 'Schedule not found');
+  const amountCents = amountOn(rule.expected_amount_cents, changeOf(rule), rule.next_expected_date);
+  const next = advanceManualRule(
+    {
+      cadence: rule.cadence as never,
+      anchorDays: rule.anchor_days ? (JSON.parse(rule.anchor_days) as [number, number]) : null,
+      expectedAmountCents: amountCents,
+      nextExpectedDate: rule.next_expected_date,
+    },
+    [{ date: rule.next_expected_date, amountCents, categoryId: null }],
+    today,
+  );
+  await db.batch([
+    advanceManualRuleStmt(userId, db, rule.id, next.nextExpectedDate, 'active', next.anchorDays),
+  ]);
+  return c.json({ nextExpectedDate: next.nextExpectedDate });
 });
