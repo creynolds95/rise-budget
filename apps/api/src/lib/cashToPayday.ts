@@ -4,11 +4,13 @@ import {
   likelySameAs,
   upcomingOccurrences,
   withAmountChange,
-  shiftWeekendToMonday,
+  nextBusinessDay,
+  prevBusinessDay,
   type AmountChange,
   type DetectedSeries,
 } from '@rise/shared/recurring';
 import { changeOf, displayNamesFor, listManualRules, listSuggestions, type UserId } from '../db';
+import { localToday } from './dates';
 import { loadBalanceEvidence, paidAlready } from './balanceSeen';
 
 /** How far ahead to project: through this many upcoming paychecks. */
@@ -22,6 +24,19 @@ export function cashAccountsOf(settings: User['settings'], accounts: readonly Ac
   return ids.length > 0
     ? accounts.filter((a) => ids.includes(a.id))
     : accounts.filter((a) => a.kind === 'depository' && a.includeInBudget);
+}
+
+/**
+ * The date the bank's balance is from: the oldest any cash account last reported, in the
+ * owner's day. Null when there are none or one has never reported.
+ */
+export function balanceAsOfOf(cash: readonly Account[], timeZone: string): string | null {
+  const days: string[] = [];
+  for (const a of cash) {
+    if (a.lastSyncedAt === null) return null;
+    days.push(localToday(timeZone, new Date(a.lastSyncedAt)));
+  }
+  return days.sort()[0] ?? null;
 }
 
 export interface PaySchedule {
@@ -48,6 +63,8 @@ export interface ScheduleRow {
   inBalance: boolean;
   /** Days its transaction usually trails the balance, once learned. */
   lagDays: number | null;
+  /** A paycheck the rules count as landed that the bank hasn't shown yet. */
+  expectedNotSeen: boolean;
 }
 
 /** A schedule sync found in the cash accounts, waiting for the user to add or dismiss it. */
@@ -84,6 +101,11 @@ export async function buildCashToPaydayProjection(
   dismissedMerchants: readonly string[] = [],
   /** The cash accounts behind `startBalanceCents`: their balance history is the evidence. */
   cashAccountIds: readonly string[] = [],
+  /**
+   * The date the bank's balance is from (the oldest of the cash accounts'). The rules bring
+   * it forward to today: what they say happened since is counted until the bank shows it.
+   */
+  balanceAsOf: string | null = null,
 ): Promise<CashToPaydayResult> {
   const [manualRules, saved] = await Promise.all([
     listManualRules(userId, db),
@@ -123,21 +145,31 @@ export async function buildCashToPaydayProjection(
   const paySchedules = confirmed.filter((d) => d.series.expectedAmountCents < 0);
   const bills = confirmed.filter((d) => d.series.expectedAmountCents > 0);
 
-  // A hand-added schedule has no charge to wait for; a tagged one waits for its real one.
+  // Nothing counts as paid without proof (a charge, the balance, or the owner's say-so), for a
+  // hand-added schedule as much as a tagged one.
   const upcoming = (rule: (typeof manualRules)[number], series: DetectedSeries, count: number) =>
-    withAmountChange(upcomingOccurrences(series, today, count, rule.label == null), changeOf(rule));
+    withAmountChange(upcomingOccurrences(series, today, count, balanceAsOf), changeOf(rule));
   // The bank balance can show a bill (or paycheck) before its transaction reaches Rise: that
   // one already moved the starting balance, so it is not projected a second time.
   const ahead = (rule: (typeof manualRules)[number], series: DetectedSeries, count: number) => {
     const all = upcoming(rule, series, count + 1);
-    return paidAlready(rule, seen.get(rule.id), all[0], today) ? all.slice(1) : all.slice(0, count);
+    return paidAlready(seen.get(rule.id), all[0], today) ? all.slice(1) : all.slice(0, count);
+  };
+  // A paycheck lands the business day before its date (weekend or bank holiday). When that day
+  // is already behind us it counts today only if the bank's balance is older than it.
+  const payLanding = (date: string, flagged: boolean): string | null => {
+    if (flagged) return date;
+    const landed = prevBusinessDay(date);
+    if (landed >= today) return landed;
+    return balanceAsOf !== null && landed > balanceAsOf ? today : null;
   };
   const payRuns = paySchedules.map(({ rule, merchant, series }) =>
-    ahead(rule, series, PAYCHECK_HORIZON).map((o) => ({
-      date: o.date,
-      cashDeltaCents: -o.amountCents,
-      label: displayNames.get(merchant) ?? merchant,
-    })),
+    ahead(rule, series, PAYCHECK_HORIZON).flatMap((o) => {
+      const date = payLanding(o.date, 'expectedNotSeen' in o);
+      return date
+        ? [{ date, cashDeltaCents: -o.amountCents, label: displayNames.get(merchant) ?? merchant }]
+        : [];
+    }),
   );
   // The horizon ends where the soonest-ending schedule's projected paychecks run out. Past
   // that, a faster schedule's later paychecks are missing while bills keep landing, which
@@ -150,12 +182,11 @@ export async function buildCashToPaydayProjection(
     ahead(rule, series, MAX_BILL_OCCURRENCES)
       .filter((o) => o.date <= horizonEnd)
       .map((o) => ({
-        // A bill due on a weekend is taken the Monday after. A late one owed today stays
-        // today: it is already overdue, so moving it later would only read Surplus high.
+        // A bill due on a weekend or bank holiday is taken the next business day. A late one
+        // owed today stays today: it is already overdue, so moving it later would only read
+        // Surplus high.
         date:
-          series.nextExpectedDate < today && o.date === today
-            ? o.date
-            : shiftWeekendToMonday(o.date),
+          series.nextExpectedDate < today && o.date === today ? o.date : nextBusinessDay(o.date),
         cashDeltaCents: -o.amountCents,
         label: displayNames.get(merchant) ?? merchant,
       })),
@@ -184,6 +215,10 @@ export async function buildCashToPaydayProjection(
       : null,
     inBalance: seen.has(rule.id),
     lagDays: rule.balance_lag_days,
+    expectedNotSeen:
+      series.expectedAmountCents < 0 &&
+      !seen.has(rule.id) &&
+      upcoming(rule, series, 1).some((o) => 'expectedNotSeen' in o),
   }));
   // Hand-added schedules only: a tagged one already hides its own merchant's suggestion.
   const handAdded = schedules

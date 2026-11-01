@@ -14,7 +14,7 @@ import {
 } from '../db';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
-import { buildCashToPaydayProjection, cashAccountsOf } from '../lib/cashToPayday';
+import { balanceAsOfOf, buildCashToPaydayProjection, cashAccountsOf } from '../lib/cashToPayday';
 import { localToday } from '../lib/dates';
 import { body } from '../lib/validate';
 
@@ -39,6 +39,7 @@ cashToPayday.get('/', async (c) => {
     cushionCents,
     dismissedPayMerchants.map((d) => d.merchant),
     cashAccounts.map((a) => a.id),
+    balanceAsOfOf(cashAccounts, user.timezone),
   );
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
   return c.json({

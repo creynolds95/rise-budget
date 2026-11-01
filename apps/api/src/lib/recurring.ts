@@ -1,18 +1,19 @@
 import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
 import {
+  advanceHandAdded,
   advanceManualRule,
   amountOn,
   cashMovements,
   chargeFlags,
   seriesRadar,
   detectSemimonthly,
-  firstUpcoming,
   detectSeries,
   latestByAccount,
   missState,
   surplusSuggestions,
   typicalPostDay,
   type AccountOccurrence,
+  type ProofRow,
   type DetectedSeries,
 } from '@rise/shared/recurring';
 import {
@@ -97,14 +98,51 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
     const prev = billDay.get(s.categoryId);
     if (!prev || size > prev.size) billDay.set(s.categoryId, { day, size });
   }
+  const cashIds = user ? new Set(cashAccountsOf(user.settings, accounts).map((a) => a.id)) : null;
+  const cardIds = new Set(accounts.filter((a) => a.kind === 'credit').map((a) => a.id));
+  // What proves a hand-added schedule: real cash movements nothing else claims (a tagged
+  // schedule's own merchant, or another hand-added schedule's proof).
+  const proofRows: ProofRow[] = cashIds
+    ? [...cashMovements(withTransfers, cashIds, cardIds)].flatMap(([merchant, occ]) =>
+        manualMerchants.has(merchant)
+          ? []
+          : occ.map((o) => ({
+              key: o.id ?? `${merchant}|${o.date}|${o.amountCents}|${o.accountId}`,
+              date: o.date,
+              amountCents: o.amountCents,
+            })),
+      )
+    : [];
+  const claimed = new Set<string>();
+  // Earliest due date first, so the oldest owed schedule takes the earliest row.
+  const handAddedOrder = manual
+    .filter((r) => r.label != null)
+    .sort((a, b) => a.next_expected_date.localeCompare(b.next_expected_date));
+  const handAddedNext = new Map<string, string>();
+  for (const r of handAddedOrder) {
+    const res = advanceHandAdded(
+      {
+        cadence: r.cadence as DetectedSeries['cadence'],
+        anchorDays: r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null,
+        amountCents: amountOn(r.expected_amount_cents, changeOf(r), r.next_expected_date),
+        nextExpectedDate: r.next_expected_date,
+      },
+      proofRows,
+      claimed,
+      today,
+    );
+    if (res.claimedKey) claimed.add(res.claimedKey);
+    handAddedNext.set(r.id, res.nextExpectedDate);
+  }
   const manualUpdates = manual.map((r) => {
     const anchorDays = r.anchor_days ? (JSON.parse(r.anchor_days) as [number, number]) : null;
     const cadence = r.cadence as DetectedSeries['cadence'];
-    // Hand-added: no transaction will ever confirm it, so it simply moves on with the calendar.
+    // Hand-added: no merchant to wait on, so it moves on only with proof (a matching cash
+    // movement), never with the calendar alone: a bill nobody saw leave stays owed.
     const advanced =
       r.label != null
         ? {
-            nextExpectedDate: firstUpcoming(cadence, r.next_expected_date, anchorDays, today),
+            nextExpectedDate: handAddedNext.get(r.id) ?? r.next_expected_date,
             status: 'active' as const,
           }
         : advanceManualRule(
@@ -132,15 +170,10 @@ export async function refreshRecurring(db: D1Database, userId: UserId, today: st
       'anchorDays' in advanced ? advanced.anchorDays : null,
     );
   });
-  const cashIds = user ? new Set(cashAccountsOf(user.settings, accounts).map((a) => a.id)) : null;
   const suggestions =
     user && cashIds
       ? surplusSuggestions(
-          cashMovements(
-            withTransfers,
-            cashIds,
-            new Set(accounts.filter((a) => a.kind === 'credit').map((a) => a.id)),
-          ),
+          cashMovements(withTransfers, cashIds, cardIds),
           cashIds,
           new Set([
             ...manualMerchants,

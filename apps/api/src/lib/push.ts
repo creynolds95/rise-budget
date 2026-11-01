@@ -29,7 +29,7 @@ import {
   weekSummary,
 } from '../db';
 import type { UserId } from '../db/util';
-import { buildCashToPaydayProjection, cashAccountsOf } from './cashToPayday';
+import { balanceAsOfOf, buildCashToPaydayProjection, cashAccountsOf } from './cashToPayday';
 import { localToday } from './dates';
 import { generateVapidKeys, sendPush, type VapidKeys } from './webpush';
 
@@ -67,6 +67,7 @@ async function surplusShortfall(
     cushionCents,
     dismissedPayMerchants.map((d) => d.merchant),
     cash.map((a) => a.id),
+    balanceAsOfOf(cash, user.timezone),
   );
   return p.freeToMoveCents < 0
     ? { shortfallCents: -p.freeToMoveCents, date: p.lowestPoint.date }
