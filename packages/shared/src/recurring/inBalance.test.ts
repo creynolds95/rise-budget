@@ -40,6 +40,27 @@ describe('seenInBalance', () => {
     ]);
   });
 
+  // 2026-11-01 is a Sunday: a bill due then is taken Monday the 2nd, so a balance read
+  // before it (Friday the 30th) cannot show it, whatever coincidental drop it holds.
+  it('does not see a weekend bill before the Monday after, even when the gap fits', () => {
+    const bills = [rule('mortgage', 274_998, '2026-11-01'), rule('loan', 29_526, '2026-11-01')];
+    const gap = snaps(['2026-10-27', 500_000], ['2026-10-30', 195_476]);
+    expect(seenInBalance(gap, [], bills, '2026-11-01')).toEqual([]);
+    // Once a balance from Monday shows the drop, they are seen.
+    const monday = snaps(['2026-10-27', 500_000], ['2026-11-02', 195_476]);
+    expect(ids(seenInBalance(monday, [], bills, '2026-11-02'))).toEqual(['mortgage', 'loan']);
+  });
+
+  it('still sees a paycheck land the Friday before a weekend due date', () => {
+    const out = seenInBalance(
+      snaps(['2026-10-28', 100_000], ['2026-10-30', 300_000]),
+      [],
+      [rule('pay', -200_000, '2026-11-01')],
+      '2026-10-30',
+    );
+    expect(ids(out)).toEqual(['pay']);
+  });
+
   it('sees nothing when the balance has not moved past its transactions', () => {
     const out = seenInBalance(
       snaps(['2026-10-10', 200_000], ['2026-10-14', 190_000]),
@@ -144,10 +165,10 @@ describe('seenInBalance', () => {
 
   it('reads only transactions between the two balances', () => {
     const out = seenInBalance(
-      snaps(['2026-10-08', 999_999], ['2026-10-10', 200_000], ['2026-10-13', 166_900]),
+      snaps(['2026-10-08', 999_999], ['2026-10-10', 200_000], ['2026-10-14', 166_900]),
       [
         txn('2026-10-09', 1_000),
-        txn('2026-10-14', 2_000),
+        txn('2026-10-15', 2_000),
         { ...txn('2026-10-12', 0), accountId: 'sav' },
       ],
       [rule('gym', 33_100)],
@@ -175,7 +196,7 @@ describe('seenInBalance', () => {
     ]);
     // Savings last reported the 10th: a bill due the 14th is too far ahead of it to weigh.
     expect(seenInBalance(two, [], [rule('gym', 33_100)], TODAY)).toEqual([]);
-    expect(ids(seenInBalance(two, [], [rule('gym', 33_100, '2026-10-12')], TODAY))).toEqual([
+    expect(ids(seenInBalance(two, [], [rule('gym', 33_100, '2026-10-09')], TODAY))).toEqual([
       'gym',
     ]);
   });

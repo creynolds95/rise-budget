@@ -1,5 +1,6 @@
 import { dateFromDayNumber, dayNumber } from '../networth';
 import { within5Pct } from './amount';
+import { shiftWeekendToMonday } from './detect';
 
 /**
  * Whether a Surplus schedule's money has already moved in the bank balance before its
@@ -57,6 +58,18 @@ export interface SeenInBalance {
   dueOn: string;
   /** The balance moved by this schedule twice: possibly charged twice. */
   twice: boolean;
+}
+
+/**
+ * When its money can first show in the balance. A paycheck may land up to a few days early
+ * (the Friday before a weekend); a bill is taken on its due date, or the Monday after when
+ * that falls on a weekend, so a balance read before then says nothing about it (a coincidental
+ * gap must not read as the bill, which would drop it from Surplus).
+ */
+function firstShows(c: { dueOn: string; deltaCents: number }): number {
+  return c.deltaCents > 0
+    ? dayNumber(c.dueOn) - BALANCE_EARLY_DAYS
+    : dayNumber(shiftWeekendToMonday(c.dueOn));
 }
 
 const clampLag = (lag: number | null) => Math.min(Math.max(lag ?? 0, 0), MAX_BALANCE_LAG_DAYS);
@@ -136,7 +149,7 @@ export function seenInBalance(
       const due = dayNumber(r.dueOn);
       const open =
         due >= balanceDay - BALANCE_GRACE_DAYS - clampLag(r.lagDays) &&
-        due <= balanceDay + BALANCE_EARLY_DAYS;
+        firstShows({ dueOn: r.dueOn, deltaCents }) <= balanceDay;
       return open ? [{ id: r.id, dueOn: r.dueOn, deltaCents, forced: false }] : [];
     })
     .sort((a, b) => Number(b.forced) - Number(a.forced) || a.dueOn.localeCompare(b.dueOn))
@@ -146,9 +159,7 @@ export function seenInBalance(
     cands.filter((c) => c.forced).map((c) => ({ id: c.id, dueOn: c.dueOn, twice: false }));
 
   // A balance from before any of them could have moved it (early ones included).
-  const from = dateFromDayNumber(
-    Math.min(...cands.map((c) => dayNumber(c.dueOn))) - BALANCE_EARLY_DAYS,
-  );
+  const from = dateFromDayNumber(Math.min(...cands.map(firstShows)));
   // Banks differ on whether a pending row is in the balance yet, so both readings are weighed.
   let gapPosted = 0;
   let pendingCents = 0;
