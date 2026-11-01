@@ -95,7 +95,7 @@ function readings(snaps: readonly BalanceReading[], before: string) {
 
 /**
  * Every multiset of candidates (each 0-2 times, a forced one at least once) whose total
- * movement is within 5% of the unexplained gap. The empty set fits a gap within 5% of the
+ * movement is within 5% (of the smallest one counted) of the unexplained gap. The empty set fits a gap within 5% of the
  * smallest candidate: a balance that moved by about nothing beyond its transactions.
  */
 function fits(gapCents: number, cands: readonly Candidate[]): number[][] {
@@ -105,14 +105,16 @@ function fits(gapCents: number, cands: readonly Candidate[]): number[][] {
   const walk = (i: number) => {
     if (i === cands.length) {
       let moved = 0;
-      let size = 0;
+      let smallestCounted = Infinity;
       cands.forEach((c, k) => {
-        moved += (counts[k] as number) * c.deltaCents;
-        size += (counts[k] as number) * Math.abs(c.deltaCents);
+        const n = counts[k] as number;
+        moved += n * c.deltaCents;
+        if (n > 0) smallestCounted = Math.min(smallestCounted, Math.abs(c.deltaCents));
       });
-      // Within 5% of what moved (of the smallest candidate when nothing did), in whole cents.
-      if (100 * Math.abs(gapCents - moved) <= 5 * (size > 0 ? size : smallest))
-        out.push([...counts]);
+      // Each counted schedule gets its own 5% check, not 5% of the total: the leftover gap must
+      // be within 5% of the smallest one counted (of the smallest candidate when none was).
+      const unit = Number.isFinite(smallestCounted) ? smallestCounted : smallest;
+      if (100 * Math.abs(gapCents - moved) <= 5 * unit) out.push([...counts]);
       return;
     }
     for (let n = counts[i] as number; n <= 2; n++) {

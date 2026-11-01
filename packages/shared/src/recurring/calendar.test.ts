@@ -5,6 +5,7 @@ import {
   fedHolidays,
   isBusinessDay,
   nextBusinessDay,
+  overdueByBusinessDay,
   prevBusinessDay,
 } from './calendar';
 
@@ -89,5 +90,18 @@ describe('earliestMatch', () => {
     expect(earliestMatch('2026-10-13', true)).toBe('2026-10-08'); // Tue -> Thu (Columbus Mon)
     expect(earliestMatch('2026-10-13', true, 3)).toBe('2026-10-07');
     expect(earliestMatch('2026-10-13', true, 9)).toBe('2026-10-07');
+  });
+});
+
+describe('overdueByBusinessDay', () => {
+  it('a Saturday bill is taken Monday and is not overdue until after Tuesday', () => {
+    expect(overdueByBusinessDay('2026-10-31', '2026-11-02')).toBe(false);
+    expect(overdueByBusinessDay('2026-10-31', '2026-11-03')).toBe(false);
+    expect(overdueByBusinessDay('2026-10-31', '2026-11-04')).toBe(true);
+  });
+
+  it('a holiday Monday adds a day (Labor Day bill: due Tue, overdue after Wed)', () => {
+    expect(overdueByBusinessDay('2026-09-07', '2026-09-09')).toBe(false);
+    expect(overdueByBusinessDay('2026-09-07', '2026-09-10')).toBe(true);
   });
 });

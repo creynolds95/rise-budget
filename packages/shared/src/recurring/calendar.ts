@@ -115,3 +115,12 @@ export function earliestMatch(
     ? addBusinessDays(due, -Math.min(earlyBusinessDays, MAX_PAYCHECK_EARLY_BUSINESS_DAYS))
     : dateFromDayNumber(dayNumber(due) - BILL_EARLY_SLACK_DAYS);
 }
+
+/**
+ * Whether a bill due `due` is more than one business day overdue on `today`: it should have
+ * left by the business day it falls on (the next one if that is a weekend or holiday), plus
+ * one more for a date that reads late.
+ */
+export function overdueByBusinessDay(due: string, today: string): boolean {
+  return today > addBusinessDays(nextBusinessDay(due), 1);
+}

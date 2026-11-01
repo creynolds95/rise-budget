@@ -260,3 +260,54 @@ describe('handAddedArrival', () => {
     expect(handAddedArrival({ amountCents: -106_054, dueOn: TODAY }, rows)).toBeNull();
   });
 });
+
+describe('seenInBalance, business days and tighter gaps', () => {
+  it('a bill due on a bank holiday is not read in a balance from before it can leave', () => {
+    // Sun Jul 4 2027 is observed Mon Jul 5: the bill is taken Tue Jul 6. A drop of the same
+    // size seen on the Monday is a coincidence, not the bill.
+    const monday = seenInBalance(
+      snaps(['2027-07-01', 300_000], ['2027-07-05', 200_000]),
+      [],
+      [rule('water', 100_000, '2027-07-04')],
+      '2027-07-05',
+    );
+    expect(monday).toEqual([]);
+    const tuesday = seenInBalance(
+      snaps(['2027-07-01', 300_000], ['2027-07-06', 200_000]),
+      [],
+      [rule('water', 100_000, '2027-07-04')],
+      '2027-07-06',
+    );
+    expect(ids(tuesday)).toEqual(['water']);
+  });
+
+  it('a paycheck is seen two business days early, not three', () => {
+    // Pay date Tue Sep 8 2026 (Labor Day Monday): Thu Sep 3 is two business days early.
+    const early = seenInBalance(
+      snaps(['2026-09-01', 100_000], ['2026-09-03', 300_000]),
+      [],
+      [rule('pay', -200_000, '2026-09-08')],
+      '2026-09-03',
+    );
+    expect(ids(early)).toEqual(['pay']);
+    const tooEarly = seenInBalance(
+      snaps(['2026-08-31', 100_000], ['2026-09-02', 300_000]),
+      [],
+      [rule('pay', -200_000, '2026-09-08')],
+      '2026-09-02',
+    );
+    expect(tooEarly).toEqual([]);
+  });
+
+  it('each bill gets its own 5% check, not 5% of the total', () => {
+    // Two bills of $1,060.54 and $331.00 leave; the balance fell $60 more than both: 4.3% of
+    // the total but 18% of the small bill, so the small one is not vouched for.
+    const out = seenInBalance(
+      snaps(['2026-10-10', 232_670], ['2026-10-14', 232_670 - 106_054 - 33_100 - 6_000]),
+      [],
+      [rule('loan', 106_054), rule('gym', 33_100)],
+      TODAY,
+    );
+    expect(ids(out)).not.toContain('gym');
+  });
+});

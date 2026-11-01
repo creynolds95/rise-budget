@@ -65,6 +65,8 @@ export interface ScheduleRow {
   lagDays: number | null;
   /** A paycheck the rules count as landed that the bank hasn't shown yet. */
   expectedNotSeen: boolean;
+  /** A bill past its date with no proof it left: still owed, counted today. */
+  owedUnseen: boolean;
 }
 
 /** A schedule sync found in the cash accounts, waiting for the user to add or dismiss it. */
@@ -219,6 +221,8 @@ export async function buildCashToPaydayProjection(
       series.expectedAmountCents < 0 &&
       !seen.has(rule.id) &&
       upcoming(rule, series, 1).some((o) => 'expectedNotSeen' in o),
+    owedUnseen:
+      series.expectedAmountCents > 0 && !seen.has(rule.id) && series.nextExpectedDate < today,
   }));
   // Hand-added schedules only: a tagged one already hides its own merchant's suggestion.
   const handAdded = schedules

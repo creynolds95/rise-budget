@@ -75,6 +75,10 @@ export interface ScheduleRow {
   inBalance?: boolean;
   /** Days its transaction usually trails the balance, once learned. */
   lagDays?: number | null;
+  /** A paycheck the rules count as landed that the bank hasn't shown yet. */
+  expectedNotSeen?: boolean;
+  /** A bill past its date with no proof it left: still owed. */
+  owedUnseen?: boolean;
 }
 
 /** A schedule sync found in a cash account, waiting to be added or dismissed. */

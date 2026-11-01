@@ -1,6 +1,7 @@
 import { merchantName } from '@rise/shared/categorize';
 import {
   balanceOverdue,
+  overdueByBusinessDay,
   notices,
   SURPLUS_NEGATIVE_KEY,
   toSend,
@@ -178,6 +179,22 @@ async function gather(
               seenOn: r.balance_seen_on,
               overdue: balanceOverdue(r.balance_seen_on, r.balance_lag_days, today),
               twice: r.balance_seen_twice === 1,
+            },
+          ]
+        : [],
+    ),
+    // A hand-added bill nobody saw leave: counted in Surplus until proof or "Mark paid".
+    owed: rules.flatMap((r) =>
+      r.label != null &&
+      r.expected_amount_cents > 0 &&
+      !r.balance_seen_due &&
+      overdueByBusinessDay(r.next_expected_date, today)
+        ? [
+            {
+              id: r.id,
+              name: r.label,
+              amountCents: r.expected_amount_cents,
+              dueOn: r.next_expected_date,
             },
           ]
         : [],

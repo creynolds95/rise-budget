@@ -69,3 +69,10 @@ export function inBalanceNote(r: Pick<ScheduleRow, 'kind' | 'lagDays'>): string 
     ? `${what}, transaction usually ${lag} day${lag === 1 ? '' : 's'} behind`
     : `${what}, waiting on the transaction`;
 }
+
+/** Why a schedule is counted though the bank hasn't shown it: the rules say it happened. */
+export function unseenNote(r: Pick<ScheduleRow, 'expectedNotSeen' | 'owedUnseen'>): string | null {
+  if (r.expectedNotSeen) return 'Expected, not seen yet';
+  if (r.owedUnseen) return 'Owed, not seen leaving yet';
+  return null;
+}
