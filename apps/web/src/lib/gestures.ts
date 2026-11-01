@@ -26,7 +26,7 @@ export function installNoZoom() {
 /** Width of the screen edge where iOS starts its own back gesture. */
 const EDGE = 20;
 /**
- * On a tab's landing screen there is nothing to go back to, and the menu is dragged out from
+ * On the Dashboard there is nothing to go back to, and the menu is dragged out from
  * the left. iOS arms its back gesture a little wider than 20pt, so a drag that starts just
  * inside the strip still slid back to the launch screen. The strip is wider there.
  */
@@ -34,7 +34,7 @@ const ROOT_EDGE = 36;
 
 /** Width of the cancelled edge strip for the screen at `pathname`. */
 export function edgeWidth(pathname: string): number {
-  return isTabRoot(pathname) ? ROOT_EDGE : EDGE;
+  return pathname === '/' ? ROOT_EDGE : EDGE;
 }
 
 /**

@@ -33,9 +33,10 @@ describe('installSelectOnFocus', () => {
 });
 
 describe('edgeWidth', () => {
-  it('is wider on tab landing screens, where there is nothing to go back to', () => {
-    for (const p of ['/', '/accounts', '/transactions', '/budget']) {
-      expect(edgeWidth(p)).toBeGreaterThan(edgeWidth('/settings'));
+  it('is wider on the Dashboard only', () => {
+    expect(edgeWidth('/')).toBeGreaterThan(edgeWidth('/settings'));
+    for (const p of ['/accounts', '/transactions', '/budget', '/settings']) {
+      expect(edgeWidth(p)).toBe(edgeWidth('/settings'));
     }
   });
 });
