@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { isArmed, judgePull, PULL_THRESHOLD, pullOffset, refreshData } from './pullRefresh';
+import { describe, expect, it } from 'vitest';
+import { isArmed, judgePull, PULL_THRESHOLD, pullOffset } from './pullRefresh';
 
 describe('judgePull', () => {
   it('waits until the finger has moved', () => {
@@ -26,20 +26,5 @@ describe('pull distance', () => {
   it('arms at the threshold', () => {
     expect(isArmed(PULL_THRESHOLD - 1)).toBe(false);
     expect(isArmed(PULL_THRESHOLD)).toBe(true);
-  });
-});
-
-describe('refreshData', () => {
-  it('refetches in place and never reloads the page', async () => {
-    const reload = vi.fn();
-    vi.stubGlobal('location', { reload });
-    const refetch = vi.fn().mockResolvedValue(undefined);
-    await refreshData(refetch);
-    expect(refetch).toHaveBeenCalledOnce();
-    expect(reload).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
-  });
-  it('settles even when a refetch fails', async () => {
-    await expect(refreshData(() => Promise.reject(new Error('offline')))).resolves.toBeUndefined();
   });
 });

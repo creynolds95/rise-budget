@@ -23,17 +23,3 @@ export function pullOffset(dy: number): number {
 }
 
 export const isArmed = (dy: number): boolean => dy >= PULL_THRESHOLD;
-
-/**
- * Reload the screen's data in place: every query on screen is fetched again, and the service
- * worker is asked to look for a new version (the update button offers it when one is found).
- * No page reload, so the app never drops back to its splash screen.
- */
-export async function refreshData(refetch: () => Promise<unknown>): Promise<void> {
-  const sw = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker;
-  void sw
-    ?.getRegistration()
-    .then((reg) => reg?.update())
-    .catch(() => {});
-  await refetch().catch(() => {});
-}
