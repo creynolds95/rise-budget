@@ -612,3 +612,25 @@ html[data-content-slide='back'] .bar-ghost a[data-transition='back'] {
 .banner [role='menu'] [class*='active:bg-sage-100']:active {
   background: var(--color-sage-100);
 }
+
+/* Pull-to-refresh indicator (components/PullToRefresh): the arrow flips once the pull is far
+   enough to reload, then spins while the reload starts. */
+.pull-icon {
+  transition: transform 150ms ease-out;
+}
+[data-armed='1'] > .pull-icon {
+  transform: rotate(180deg);
+}
+[data-spin='1'] > .pull-icon {
+  animation: pull-spin 0.9s linear infinite;
+}
+@keyframes pull-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-spin='1'] > .pull-icon {
+    animation: none;
+  }
+}
