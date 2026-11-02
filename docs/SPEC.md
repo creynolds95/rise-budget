@@ -569,6 +569,12 @@ bank's balance, so both readings are weighed. A schedule counts as in balance on
 every reading and every fitting set agrees. A gap nothing explains leaves every schedule
 counted (cautious, never reading high).
 
+When the unexplained gap equals the sum of the pending rows (the balance has them out), a
+pending row is the schedule's own charge, and the schedule is in balance, when it carries the
+schedule's merchant (at any amount: the bank's is the truth) or its exact amount (a
+hand-added schedule has no merchant, and a bill's amount does not change). Each row proves
+one schedule.
+
 Each sync remembers when a schedule was first seen in balance. When its row arrives, the
 days between are the schedule's lag, averaged with what was learned before. With no row
 after 2 days (or one day past its lag), the owner is told. A gap of twice a bill is told as

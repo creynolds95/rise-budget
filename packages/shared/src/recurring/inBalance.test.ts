@@ -102,14 +102,14 @@ describe('seenInBalance', () => {
     expect(out).toEqual([{ id: 'gym', dueOn: TODAY, twice: true }]);
   });
 
-  it('stays cautious when a pending row may or may not be in the balance', () => {
+  it('sees a bill whose exact-amount pending row the balance already has out', () => {
     const out = seenInBalance(
       snaps(['2026-10-10', 200_000], ['2026-10-14', 166_900]),
       [txn('2026-10-14', 33_100, true)],
       [rule('gym', 33_100)],
       TODAY,
     );
-    expect(out).toEqual([]);
+    expect(out).toEqual([{ id: 'gym', dueOn: TODAY, twice: false }]);
   });
 
   it('sees an unrelated pending row the balance already holds', () => {
@@ -414,16 +414,30 @@ describe('seenInBalance: pending rows', () => {
     expect(ids(seenInBalance(b, one, two, '2026-11-02'))).toEqual(['a']);
   });
 
-  it("takes a merchant's earliest pending row, and leaves hand-added schedules to the fits", () => {
+  it("takes a merchant's earliest pending row, and a hand-added one only at its exact amount", () => {
     const late = { ...pend(200_000, 'acme mortgage'), postedAt: '2026-11-03' };
     const b = snaps(['2026-11-01', 500_000], ['2026-11-03', 100_000]);
-    const hand = rule('hand', 70_000, '2026-11-01', { merchant: null });
+    const near = rule('near', 200_100, '2026-11-01', { merchant: null });
     const out = seenInBalance(
       b,
       [late, pend(200_000, 'acme mortgage')],
-      [rule('m', 200_000, '2026-11-01', { merchant: 'acme mortgage' }), hand],
+      [rule('m', 200_000, '2026-11-01', { merchant: 'acme mortgage' }), near],
       '2026-11-03',
     );
     expect(ids(out)).toEqual(['m']);
+  });
+
+  it('ties a hand-added schedule, or a renamed merchant, to its pending row by exact amount', () => {
+    const b = snaps(['2026-11-01', 500_000], ['2026-11-02', 500_000 - 200_000 - 2_500]);
+    const out = seenInBalance(
+      b,
+      [pend(200_000, 'bank mortgage'), pend(2_500, 'bank charity 8x')],
+      [
+        rule('hand', 200_000, '2026-11-01', { merchant: null }),
+        rule('tagged', 2_500, '2026-11-02', { merchant: 'charity' }),
+      ],
+      '2026-11-02',
+    );
+    expect(ids(out)).toEqual(['hand', 'tagged']);
   });
 });
