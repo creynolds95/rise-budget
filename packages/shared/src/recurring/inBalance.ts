@@ -240,8 +240,9 @@ function pendingBalanceTakesOut(gapPosted: number, pendingCents: number): boolea
 }
 
 /**
- * Tagged candidates whose own pending charge is in the transactions: the schedule's merchant,
- * any amount (the bank's is the truth). Each row proves one schedule.
+ * Candidates whose own pending charge is in the transactions: the schedule's merchant (any
+ * amount: the bank's is the truth), or the exact amount (a hand-added schedule has no
+ * merchant, and a bill's amount does not change). Each row proves one schedule.
  */
 function pendingProven(
   cands: readonly Candidate[],
@@ -251,10 +252,7 @@ function pendingProven(
   const used = new Set<BalanceTxn>();
   const out = new Set<string>();
   for (const c of cands) {
-    const r = rules.find((x) => x.id === c.id);
-    // A hand-added schedule has no merchant to tie a row to: an amount alone could be another
-    // charge, so it stays with the balance fits.
-    if (!r?.merchant) continue;
+    const r = rules.find((x) => x.id === c.id) as BalanceRule;
     const from = earliestMatch(c.dueOn, c.deltaCents > 0);
     const row = txns
       .filter(
@@ -263,7 +261,7 @@ function pendingProven(
           !used.has(t) &&
           t.postedAt >= from &&
           Math.sign(t.amountCents) === Math.sign(r.amountCents) &&
-          t.merchant === r.merchant,
+          ((r.merchant != null && t.merchant === r.merchant) || t.amountCents === r.amountCents),
       )
       .sort((a, b) => a.postedAt.localeCompare(b.postedAt))[0];
     if (row) {
