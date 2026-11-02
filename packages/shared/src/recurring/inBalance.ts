@@ -155,11 +155,13 @@ export function seenInBalance(
 ): SeenInBalance[] {
   const latest = [...snapshots.values()].map((s) => readings(s, '').current);
   if (latest.length === 0 || latest.some((r) => r === null)) return [];
-  // A balance can't be from after today (a clock or zone slip must not open future bills).
-  const balanceDay = Math.min(
-    dayNumber(today),
-    ...(latest as BalanceReading[]).map((r) => dayNumber(r.asOf)),
+  // The day each account's balance is really from: its reported date, or later when it
+  // already has newer pending rows out (the bank's date can lag the money in it).
+  const asOf = new Map(
+    [...snapshots].map(([id, snaps]) => [id, effectiveAsOf(id, snaps, txns, today)]),
   );
+  // A balance can't be from after today (a clock or zone slip must not open future bills).
+  const balanceDay = Math.min(dayNumber(today), ...[...asOf.values()].map(dayNumber));
   const todayN = dayNumber(today);
   const cands: Candidate[] = rules
     .flatMap((r): Candidate[] => {
@@ -188,22 +190,31 @@ export function seenInBalance(
   // Banks differ on whether a pending row is in the balance yet, so both readings are weighed.
   let gapPosted = 0;
   let pendingCents = 0;
+  // Pending rows dated the base reading's own day: that reading may or may not have them.
+  let pendingOnBase = 0;
   for (const [accountId, snaps] of snapshots) {
-    const { base, current } = readings(snaps, from);
+    const current = readings(snaps, '').current as BalanceReading;
+    const until = asOf.get(accountId) as string;
+    // The base is always an earlier reading than the current one, even when the current one
+    // is dated before the bills it already has out.
+    const { base } = readings(snaps, from < current.asOf ? from : current.asOf);
     if (!base) return forcedOnly();
-    gapPosted += (current as BalanceReading).balanceCents - base.balanceCents;
+    gapPosted += current.balanceCents - base.balanceCents;
     for (const t of txns) {
-      if (t.accountId !== accountId || t.postedAt <= base.asOf) continue;
-      if (t.postedAt > (current as BalanceReading).asOf) continue;
+      if (t.accountId !== accountId || t.postedAt > until) continue;
+      if (t.postedAt === base.asOf && t.isPending) pendingOnBase += t.amountCents;
+      if (t.postedAt <= base.asOf) continue;
       if (t.isPending) pendingCents += t.amountCents;
       else gapPosted += t.amountCents;
     }
   }
   // When the balance has taken the pending rows out (what the imported rows leave unexplained
   // is exactly their sum), a pending row that is a schedule's own charge proves it left.
-  const proven = pendingBalanceTakesOut(gapPosted, pendingCents)
-    ? pendingProven(cands, rules, txns)
-    : new Set<string>();
+  const proven =
+    pendingBalanceTakesOut(gapPosted, pendingCents) ||
+    pendingBalanceTakesOut(gapPosted, pendingCents + pendingOnBase)
+      ? pendingProven(cands, rules, txns)
+      : new Set<string>();
   const all = [...fits(gapPosted, cands), ...fits(gapPosted + pendingCents, cands)];
   // Seen only where every fit agrees; twice only where every fit says twice.
   const fromFits = new Map<string, boolean>();
@@ -221,6 +232,37 @@ export function seenInBalance(
         : [],
   );
   return out;
+}
+
+/**
+ * The day an account's latest balance is really from. A bank can report a balance that
+ * already has newer pending rows taken out under an older date (its date only moves when a
+ * row posts), and that balance overwrites the day's reading. When the latest balance, against
+ * the reading before the earliest pending row, is explained exactly by the rows since with
+ * every pending row out, it is as new as the newest of them. Anything else: its own date.
+ */
+function effectiveAsOf(
+  accountId: string,
+  snaps: readonly BalanceReading[],
+  txns: readonly BalanceTxn[],
+  today: string,
+): string {
+  const current = readings(snaps, '').current as BalanceReading;
+  const mine = txns.filter((t) => t.accountId === accountId && t.postedAt <= today);
+  const pending = mine.filter((t) => t.isPending);
+  const newest = pending.reduce((d, t) => (t.postedAt > d ? t.postedAt : d), '');
+  if (newest <= current.asOf) return current.asOf;
+  const earliest = pending.reduce((d, t) => (t.postedAt < d ? t.postedAt : d), newest);
+  const { base } = readings(snaps, earliest < current.asOf ? earliest : current.asOf);
+  if (!base) return current.asOf;
+  let gap = current.balanceCents - base.balanceCents;
+  let pendingCents = 0;
+  for (const t of mine) {
+    if (t.postedAt <= base.asOf) continue;
+    if (t.isPending) pendingCents += t.amountCents;
+    else gap += t.amountCents;
+  }
+  return pendingBalanceTakesOut(gap, pendingCents) ? newest : current.asOf;
 }
 
 /** Slack for the unexplained gap to equal the pending rows' sum (cents). */
