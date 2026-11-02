@@ -39,6 +39,8 @@ export interface BalanceTxn {
   /** SPEC §1.1: money out positive. */
   amountCents: number;
   isPending: boolean;
+  /** Normalized merchant, to tie a pending row to a tagged schedule. */
+  merchant?: string;
 }
 
 export interface BalanceRule {
@@ -51,6 +53,8 @@ export interface BalanceRule {
   lagDays: number | null;
   /** The due date an earlier sync already saw in the balance, still waiting on its row. */
   seenDue: string | null;
+  /** A tagged schedule's merchant; absent for a hand-added one (matched by amount). */
+  merchant?: string | null;
 }
 
 export interface SeenInBalance {
@@ -195,13 +199,79 @@ export function seenInBalance(
       else gapPosted += t.amountCents;
     }
   }
+  // When the balance has taken the pending rows out (what the imported rows leave unexplained
+  // is exactly their sum), a pending row that is a schedule's own charge proves it left.
+  const proven = pendingBalanceTakesOut(gapPosted, pendingCents)
+    ? pendingProven(cands, rules, txns)
+    : new Set<string>();
   const all = [...fits(gapPosted, cands), ...fits(gapPosted + pendingCents, cands)];
-  if (all.length === 0) return forcedOnly();
   // Seen only where every fit agrees; twice only where every fit says twice.
-  return cands.flatMap((c, k) => {
-    const least = Math.min(...all.map((f) => f[k] as number));
-    return least > 0 ? [{ id: c.id, dueOn: c.dueOn, twice: least === 2 }] : [];
-  });
+  const fromFits = new Map<string, boolean>();
+  if (all.length > 0) {
+    cands.forEach((c, k) => {
+      const least = Math.min(...all.map((f) => f[k] as number));
+      if (least > 0) fromFits.set(c.id, least === 2);
+    });
+  }
+  const out = cands.flatMap((c) =>
+    fromFits.has(c.id)
+      ? [{ id: c.id, dueOn: c.dueOn, twice: fromFits.get(c.id) as boolean }]
+      : proven.has(c.id) || (all.length === 0 && c.forced)
+        ? [{ id: c.id, dueOn: c.dueOn, twice: false }]
+        : [],
+  );
+  return out;
+}
+
+/** Slack for the unexplained gap to equal the pending rows' sum (cents). */
+const PENDING_TAKEN_TOLERANCE_CENTS = 100;
+
+/**
+ * Whether the balance already has the pending rows taken out: what the rows leave unexplained
+ * is their sum, and not about nothing. Anything else (a bank that adds them later, or a gap of
+ * its own) says nothing, and no pending row is trusted.
+ */
+function pendingBalanceTakesOut(gapPosted: number, pendingCents: number): boolean {
+  return (
+    pendingCents !== 0 &&
+    Math.abs(gapPosted) > PENDING_TAKEN_TOLERANCE_CENTS &&
+    Math.abs(gapPosted + pendingCents) <= PENDING_TAKEN_TOLERANCE_CENTS
+  );
+}
+
+/**
+ * Tagged candidates whose own pending charge is in the transactions: the schedule's merchant,
+ * any amount (the bank's is the truth). Each row proves one schedule.
+ */
+function pendingProven(
+  cands: readonly Candidate[],
+  rules: readonly BalanceRule[],
+  txns: readonly BalanceTxn[],
+): Set<string> {
+  const used = new Set<BalanceTxn>();
+  const out = new Set<string>();
+  for (const c of cands) {
+    const r = rules.find((x) => x.id === c.id);
+    // A hand-added schedule has no merchant to tie a row to: an amount alone could be another
+    // charge, so it stays with the balance fits.
+    if (!r?.merchant) continue;
+    const from = earliestMatch(c.dueOn, c.deltaCents > 0);
+    const row = txns
+      .filter(
+        (t) =>
+          t.isPending &&
+          !used.has(t) &&
+          t.postedAt >= from &&
+          Math.sign(t.amountCents) === Math.sign(r.amountCents) &&
+          t.merchant === r.merchant,
+      )
+      .sort((a, b) => a.postedAt.localeCompare(b.postedAt))[0];
+    if (row) {
+      used.add(row);
+      out.add(c.id);
+    }
+  }
+  return out;
 }
 
 /**

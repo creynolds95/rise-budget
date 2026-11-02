@@ -376,3 +376,54 @@ describe('mayHaveLeft', () => {
     expect(mayHaveLeft('2026-11-01', -5_000, '2026-10-28')).toBe(true);
   });
 });
+
+describe('seenInBalance: pending rows', () => {
+  // A weekend due date; Monday the bank shows each bill as a pending row and its balance
+  // already has them out. Rise has the rows but not the posted charges.
+  const bills = [
+    rule('mortgage', 200_000, '2026-11-01', { merchant: 'acme mortgage' }),
+    rule('loan', 30_000, '2026-11-01', { merchant: 'acme loan' }),
+  ];
+  const pend = (amountCents: number, merchant: string): BalanceTxn => ({
+    ...txn('2026-11-02', amountCents, true),
+    merchant,
+  });
+  const rows = [
+    pend(200_000, 'acme mortgage'),
+    pend(34_000, 'acme loan'), // the bank's amount differs from the schedule's
+    pend(80_000, 'savings sweep'), // not a schedule, but in the balance too
+  ];
+  const balance = snaps(['2026-11-01', 500_000], ['2026-11-02', 500_000 - 314_000]);
+
+  it('counts a pending row as the schedule leaving when the balance has it out', () => {
+    expect(ids(seenInBalance(balance, rows, bills, '2026-11-02'))).toEqual(['mortgage', 'loan']);
+  });
+
+  it('does not trust pending rows when the balance has not taken them out', () => {
+    const stale = snaps(['2026-11-01', 500_000], ['2026-11-02', 500_000]);
+    expect(seenInBalance(stale, rows, bills, '2026-11-02')).toEqual([]);
+  });
+
+  it('uses each pending row for one schedule only', () => {
+    const two = [
+      rule('a', 200_000, '2026-11-01', { merchant: 'acme mortgage' }),
+      rule('b', 200_000, '2026-11-01', { merchant: 'acme mortgage' }),
+    ];
+    const one = [pend(200_000, 'acme mortgage')];
+    const b = snaps(['2026-11-01', 500_000], ['2026-11-02', 300_000]);
+    expect(ids(seenInBalance(b, one, two, '2026-11-02'))).toEqual(['a']);
+  });
+
+  it("takes a merchant's earliest pending row, and leaves hand-added schedules to the fits", () => {
+    const late = { ...pend(200_000, 'acme mortgage'), postedAt: '2026-11-03' };
+    const b = snaps(['2026-11-01', 500_000], ['2026-11-03', 100_000]);
+    const hand = rule('hand', 70_000, '2026-11-01', { merchant: null });
+    const out = seenInBalance(
+      b,
+      [late, pend(200_000, 'acme mortgage')],
+      [rule('m', 200_000, '2026-11-01', { merchant: 'acme mortgage' }), hand],
+      '2026-11-03',
+    );
+    expect(ids(out)).toEqual(['m']);
+  });
+});

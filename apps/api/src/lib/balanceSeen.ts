@@ -50,6 +50,7 @@ export async function loadBalanceEvidence(
     amountCents: amountOn(r.expected_amount_cents, changeOf(r), r.next_expected_date),
     lagDays: r.balance_lag_days,
     seenDue: r.balance_seen_due,
+    merchant: r.label == null ? r.merchant_normalized : null,
   }));
   if (cashAccountIds.length === 0 || !anyNearDue(shaped, today))
     return { seen: new Map(), rows: [] };
@@ -71,6 +72,7 @@ export async function loadBalanceEvidence(
         postedAt: t.posted_at,
         amountCents: t.amount_cents,
         isPending: t.is_pending === 1,
+        merchant: t.merchant_normalized,
       })),
     ),
     shaped,
