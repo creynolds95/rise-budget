@@ -1,18 +1,21 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { edgeWidth } from '../lib/gestures';
-import { isArmed, judgePull, PULL_THRESHOLD, pullOffset, reloadApp } from '../lib/pullRefresh';
+import { isArmed, judgePull, PULL_THRESHOLD, pullOffset } from '../lib/pullRefresh';
 import { scroller } from '../lib/scroller';
 
 const SKIP = '[data-zoomable], [data-no-swipe], input, textarea, select, [role=dialog]';
 
 /**
- * Drag down from the top of a tab screen to reload the app. Phone layout only (the scroller is
+ * Drag down from the top of a tab screen to refetch its data in place (no reload, no splash;
+ * this doesn't ask the bank for new transactions). Phone layout only (the scroller is
  * `#app-scroll`); a touch starts a pull only when that container is scrolled to the very top,
  * starts clear of the left edge strip, and turns out to be mostly vertical, so the menu drag and
  * the swipe-back guard keep their gestures. The indicator is moved directly, not through state.
  */
 export function PullToRefresh({ enabled }: { enabled: boolean }) {
   const dot = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (!enabled) return;
@@ -77,7 +80,13 @@ export function PullToRefresh({ enabled }: { enabled: boolean }) {
         const el = dot.current;
         if (el) el.style.transition = 'transform 150ms ease-out';
         paint(pullOffset(PULL_THRESHOLD), true, true);
-        void reloadApp();
+        const minimum = new Promise((r) => setTimeout(r, 500));
+        void Promise.all([qc.refetchQueries({ type: 'active' }).catch(() => {}), minimum]).then(
+          () => {
+            mode = 'idle';
+            reset();
+          },
+        );
       } else {
         mode = 'idle';
         reset();
@@ -101,7 +110,7 @@ export function PullToRefresh({ enabled }: { enabled: boolean }) {
       document.removeEventListener('touchend', onEnd);
       document.removeEventListener('touchcancel', onCancel);
     };
-  }, [enabled]);
+  }, [enabled, qc]);
 
   if (!enabled) return null;
   return (

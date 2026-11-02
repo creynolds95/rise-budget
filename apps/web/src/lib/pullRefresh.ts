@@ -23,30 +23,3 @@ export function pullOffset(dy: number): number {
 }
 
 export const isArmed = (dy: number): boolean => dy >= PULL_THRESHOLD;
-
-/**
- * Reload the app for real, taking a waiting new version with it. The service worker is asked for
- * an update first; if one is installing, it is given a moment to take over so the reload isn't
- * served the old precached shell. Stays on the current screen.
- */
-export async function reloadApp(): Promise<void> {
-  const sw = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker;
-  try {
-    const reg = await sw?.getRegistration();
-    if (reg) {
-      await reg.update().catch(() => {});
-      const worker = reg.installing ?? reg.waiting;
-      if (worker && worker.state !== 'activated') {
-        await new Promise<void>((resolve) => {
-          worker.addEventListener('statechange', () => {
-            if (worker.state === 'activated' || worker.state === 'redundant') resolve();
-          });
-          setTimeout(resolve, 8_000);
-        });
-      }
-    }
-  } catch {
-    /* no worker to wait for: just reload */
-  }
-  window.location.reload();
-}
