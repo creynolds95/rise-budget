@@ -1,6 +1,7 @@
 import { useTabRootTrap } from '../lib/gestures';
 import { BackLink } from './BackLink';
 import { Floater } from './Floater';
+import { PullToRefresh } from './PullToRefresh';
 import { MENU_ITEMS, NavDrawer } from './NavDrawer';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, type NavLinkProps } from 'react-router';
@@ -226,6 +227,7 @@ export function Shell() {
             }}
           />
           <NavDrawer open={menuOpen} onClose={closeMenu} />
+          <PullToRefresh enabled={onTabRoot && !menuOpen} />
           {/* Below lg this is the one thing that scrolls, so the bars around it stay put while it
             bounces at either end (styles.css); from lg up the document scrolls as before. */}
           <div
