@@ -413,4 +413,17 @@ describe('seenInBalance: pending rows', () => {
     const b = snaps(['2026-11-01', 500_000], ['2026-11-02', 300_000]);
     expect(ids(seenInBalance(b, one, two, '2026-11-02'))).toEqual(['a']);
   });
+
+  it("takes a merchant's earliest pending row, and leaves hand-added schedules to the fits", () => {
+    const late = { ...pend(200_000, 'acme mortgage'), postedAt: '2026-11-03' };
+    const b = snaps(['2026-11-01', 500_000], ['2026-11-03', 100_000]);
+    const hand = rule('hand', 70_000, '2026-11-01', { merchant: null });
+    const out = seenInBalance(
+      b,
+      [late, pend(200_000, 'acme mortgage')],
+      [rule('m', 200_000, '2026-11-01', { merchant: 'acme mortgage' }), hand],
+      '2026-11-03',
+    );
+    expect(ids(out)).toEqual(['m']);
+  });
 });
