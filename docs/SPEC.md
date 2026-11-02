@@ -575,6 +575,13 @@ schedule's merchant (at any amount: the bank's is the truth) or its exact amount
 hand-added schedule has no merchant, and a bill's amount does not change). Each row proves
 one schedule.
 
+A bank's balance date can lag the money in it: Monday's balance, with Monday's pending debits
+already out, can arrive still dated Sunday and replace Sunday's reading. When the latest
+balance, measured from the reading before the earliest pending row, is explained exactly by
+the rows since with every pending row out, it is read as of the newest pending row's date
+(never after today). Pending rows dated the base reading's own day may or may not be in that
+reading, so both are weighed. Otherwise the bank's own date stands.
+
 Each sync remembers when a schedule was first seen in balance. When its row arrives, the
 days between are the schedule's lag, averaged with what was learned before. With no row
 after 2 days (or one day past its lag), the owner is told. A gap of twice a bill is told as

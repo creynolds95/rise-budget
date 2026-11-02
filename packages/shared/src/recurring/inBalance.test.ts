@@ -441,3 +441,61 @@ describe('seenInBalance: pending rows', () => {
     expect(ids(out)).toEqual(['hand', 'tagged']);
   });
 });
+
+describe('seenInBalance: a balance dated before the bills it already has out', () => {
+  // Made-up numbers. A Sunday due date. Monday the bank sends a balance with every pending
+  // debit already out, but still dated Sunday (its date moves only when a row posts), so it
+  // overwrites Sunday's reading. Rise has the pending rows, dated Monday or Sunday.
+  const bills = [
+    rule('mortgage', 150_000, '2026-11-01', { merchant: null }),
+    rule('charity', 2_000, '2026-11-01', { merchant: 'charity' }),
+    rule('cash app', 8_000, '2026-11-01', { merchant: null }), // hand-added, no row yet
+    rule('tuition', 30_000, '2026-11-03', { merchant: 'school' }), // not due yet
+  ];
+  const pend = (postedAt: string, amountCents: number, merchant: string): BalanceTxn => ({
+    ...txn(postedAt, amountCents, true),
+    merchant,
+  });
+  const rows = (day: string) => [
+    pend(day, 1_500, 'card payment'),
+    pend(day, 60_000, 'savings sweep'),
+    pend(day, 150_000, 'bank mortgage co'),
+    pend(day, 2_000, 'bank charity 8x'),
+    pend(day, 25_000, 'student loan'),
+  ];
+  const out = 1_500 + 60_000 + 150_000 + 2_000 + 25_000;
+  const MON = '2026-11-02';
+
+  it('reads the balance as of its newest pending row when it has them all out', () => {
+    const lagging = snaps(['2026-10-31', 400_000], ['2026-11-01', 400_000 - out]);
+    expect(ids(seenInBalance(lagging, rows(MON), bills, MON))).toEqual(['mortgage', 'charity']);
+  });
+
+  it('weighs pending rows dated the base reading’s own day', () => {
+    const b = snaps(['2026-11-01', 400_000], [MON, 400_000 - out]);
+    expect(ids(seenInBalance(b, rows('2026-11-01'), bills, MON))).toEqual(['mortgage', 'charity']);
+  });
+
+  it('keeps the reported date when the balance has not taken the pending rows out', () => {
+    const stale = snaps(['2026-10-31', 400_000], ['2026-11-01', 400_000]);
+    expect(seenInBalance(stale, rows(MON), bills, MON)).toEqual([]);
+  });
+
+  it('looks back past an older pending row, counting posted rows since', () => {
+    const older = [
+      txn('2026-10-28', 9_000), // before the base reading: already in it
+      txn('2026-10-30', 1_000, true), // still pending, already out
+      txn('2026-10-31', 3_000), // posted since
+    ];
+    const lagging = snaps(['2026-10-29', 400_000], ['2026-11-01', 400_000 - 4_000 - out]);
+    expect(ids(seenInBalance(lagging, [...older, ...rows(MON)], bills, MON))).toEqual([
+      'mortgage',
+      'charity',
+    ]);
+  });
+
+  it('keeps the reported date when no reading predates the pending rows', () => {
+    const only = snaps(['2026-11-01', 400_000 - out]);
+    expect(seenInBalance(only, rows(MON), bills, MON)).toEqual([]);
+  });
+});
