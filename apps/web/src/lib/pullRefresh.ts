@@ -23,3 +23,23 @@ export function pullOffset(dy: number): number {
 }
 
 export const isArmed = (dy: number): boolean => dy >= PULL_THRESHOLD;
+
+/** A pull starts a bank sync at most this often; in between it only refetches Rise's own data. */
+export const SYNC_EVERY_MS = 3_600_000;
+
+/** True when the newest known sync (ISO string or epoch ms; the later of the two) is over an hour old. */
+export function syncDue(now: number, ...last: (string | number | null | undefined)[]): boolean {
+  const t = Math.max(
+    0,
+    ...last.map((v) => (typeof v === 'string' ? Date.parse(v) : (v ?? 0)) || 0),
+  );
+  return now - t >= SYNC_EVERY_MS;
+}
+
+/** Pulls leave this many of SimpleFIN's daily requests for the owner's scheduled syncs. */
+const PULL_DAILY_CAP = 8;
+
+/** False once the last day already holds `PULL_DAILY_CAP` runs, so a pull never crowds out the schedule. */
+export function dailyRoom(now: number, starts: string[]): boolean {
+  return starts.filter((t) => now - Date.parse(t) < 86_400_000).length < PULL_DAILY_CAP;
+}

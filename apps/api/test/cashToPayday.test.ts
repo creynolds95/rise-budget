@@ -240,11 +240,17 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
       });
     // Dated from the real clock: adding a rule walks its anchor forward from the real today.
     const today = localToday('America/Chicago');
-    const first = shiftDay(today, 2);
+    // Weekday anchors: a weekend payday moves to the Friday before, which would shift the dates
+    // this test expects by a day depending on when it runs.
+    const weekday = (d: string): string => {
+      const dow = new Date(`${d}T00:00:00Z`).getUTCDay();
+      return shiftDay(d, dow === 6 ? 2 : dow === 0 ? 1 : 0);
+    };
+    const first = weekday(shiftDay(today, 2));
     const third = shiftDay(first, 28);
     await add('Biweekly pay', 'income', 150_000, 'biweekly', first);
-    await add('Side income', 'income', 20_000, 'monthly', shiftDay(today, 25));
-    await add('Rent', 'expense', 250_000, 'monthly', shiftDay(today, 25));
+    await add('Side income', 'income', 20_000, 'monthly', weekday(shiftDay(today, 25)));
+    await add('Rent', 'expense', 250_000, 'monthly', weekday(shiftDay(today, 25)));
     const p = await buildCashToPaydayProjection(env.DB, s.userId, today, 200_000, 0);
     // The biweekly run's third paycheck ends it. Running to the monthly run's third
     // (about two months out) would count three rents against three of the biweekly pays and
