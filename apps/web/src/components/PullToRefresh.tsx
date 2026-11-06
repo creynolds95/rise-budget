@@ -1,7 +1,10 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { edgeWidth } from '../lib/gestures';
-import { api, get } from '../lib/api';
+import { ApiError, api, get } from '../lib/api';
+import { showFloater } from '../lib/floater';
+import { useInvalidateMoney } from '../lib/queries';
+import { type SyncRunResult, syncNote } from '../lib/syncOutcome';
 import {
   dailyRoom,
   isArmed,
@@ -14,43 +17,70 @@ import type { SyncStatus } from '../lib/types';
 import { scroller } from '../lib/scroller';
 
 const LAST_SYNC_KEY = 'rise-pull-sync-at';
+/** The spinner never waits longer than this for the data refetch. */
+const REFETCH_TIMEOUT_MS = 8000;
+const NOTE_MS = 3000;
 
-/** Pull = refetch Rise's data, plus a bank sync when the last one (here or scheduled) is over an hour old. */
-async function refreshAll(qc: ReturnType<typeof useQueryClient>) {
+const within = <T,>(p: Promise<T>, ms: number) =>
+  Promise.race([p, new Promise<void>((r) => setTimeout(r, ms))]);
+
+/** Whether a bank sync is due now: over an hour since the last one (here or scheduled), room in the day. */
+async function bankSyncDue(qc: QueryClient): Promise<boolean> {
+  let mine: number | null = null;
   try {
-    let mine: number | null = null;
-    try {
-      mine = Number(localStorage.getItem(LAST_SYNC_KEY)) || null;
-    } catch {
-      /* storage blocked: the server's own history still limits it */
-    }
-    const status = await qc.fetchQuery({
-      queryKey: ['sync'],
-      queryFn: () => get<SyncStatus>('/sync/status'),
-      staleTime: 0,
-    });
-    const now = Date.now();
-    // Scheduled syncs run on the owner's clock times regardless of this; the daily cap only keeps
-    // pulls from using up the requests those need.
-    if (
-      status.mode !== 'off' &&
-      syncDue(now, mine, status.runs[0]?.startedAt) &&
-      dailyRoom(
-        now,
-        status.runs.map((r) => r.startedAt),
-      )
-    ) {
-      try {
-        localStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
-      } catch {
-        /* ignore */
-      }
-      await api('POST', '/sync/run', {});
-    }
+    mine = Number(localStorage.getItem(LAST_SYNC_KEY)) || null;
   } catch {
-    /* offline or rate limited: still refetch below */
+    /* storage blocked: the server's own history still limits it */
   }
-  await refreshAll(qc);
+  const status = await qc.fetchQuery({
+    queryKey: ['sync'],
+    queryFn: () => get<SyncStatus>('/sync/status'),
+    staleTime: 0,
+  });
+  if (status.mode === 'off') return false;
+  const now = Date.now();
+  // Scheduled syncs run on the owner's clock times regardless of this; the daily cap only keeps
+  // pulls from using up the requests those need.
+  return (
+    syncDue(now, mine, status.runs[0]?.startedAt) &&
+    dailyRoom(
+      now,
+      status.runs.map((r) => r.startedAt),
+    )
+  );
+}
+
+/**
+ * Pull = refetch Rise's data (the spinner waits for this, capped), and when a bank sync is due start
+ * it in the background with its own floating note, so a slow bank never keeps the spinner up.
+ */
+async function refreshAll(qc: QueryClient, invalidate: () => Promise<unknown>) {
+  const due = bankSyncDue(qc).catch(() => null); // null: offline or unknown
+  await within(
+    qc.refetchQueries({ type: 'active' }).catch(() => {}),
+    REFETCH_TIMEOUT_MS,
+  );
+  const go = await within(due, 3000);
+  if (go === false) {
+    showFloater({ text: 'Synced recently', ttlMs: NOTE_MS });
+    return;
+  }
+  if (go !== true) return;
+  try {
+    localStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
+  } catch {
+    /* ignore */
+  }
+  showFloater({ text: 'Syncing banks…', busy: true });
+  void api<SyncRunResult>('POST', '/sync/run', {})
+    .then(async (r) => {
+      const n = syncNote(r);
+      showFloater({ ...n, ttlMs: n.tone === 'warn' ? undefined : NOTE_MS });
+      await Promise.all([invalidate(), qc.invalidateQueries({ queryKey: ['sync'] })]);
+    })
+    .catch((e) =>
+      showFloater({ text: e instanceof ApiError ? e.message : 'Sync failed', tone: 'warn' }),
+    );
 }
 
 const SKIP = '[data-zoomable], [data-no-swipe], input, textarea, select, [role=dialog]';
@@ -65,6 +95,9 @@ const SKIP = '[data-zoomable], [data-no-swipe], input, textarea, select, [role=d
 export function PullToRefresh({ enabled }: { enabled: boolean }) {
   const dot = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
+  const invalidate = useInvalidateMoney();
+  const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
 
   useEffect(() => {
     if (!enabled) return;
@@ -153,7 +186,10 @@ export function PullToRefresh({ enabled }: { enabled: boolean }) {
         paint(pullOffset(PULL_THRESHOLD), true, true);
         move(pullOffset(PULL_THRESHOLD), true);
         const minimum = new Promise((r) => setTimeout(r, 500));
-        void Promise.all([refreshAll(qc), minimum]).then(() => {
+        void Promise.all([
+          refreshAll(qc, () => invalidateRef.current()).catch(() => {}),
+          minimum,
+        ]).then(() => {
           mode = 'idle';
           reset();
         });
