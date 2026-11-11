@@ -204,7 +204,7 @@ export async function recentDeposits(
   if (accountIds.length === 0) return [];
   const { results } = await db
     .prepare(
-      `SELECT t.id, a.name AS account, -t.amount_cents AS amount_cents
+      `SELECT t.id, COALESCE(a.nickname, a.name) AS account, -t.amount_cents AS amount_cents
        FROM json_each(?2) j
        CROSS JOIN txn t ON t.account_id = j.value AND t.user_id = ?1 AND t.posted_at >= ?3
        JOIN account a ON a.id = t.account_id

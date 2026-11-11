@@ -396,7 +396,12 @@ export type AccountBadgeStyle = z.infer<typeof AccountBadgeStyle>;
 
 export const Account = z.object({
   id: Id,
+  /** What to show: the owner's nickname when set, else the synced/entered name. */
   name: z.string().min(1),
+  /** The owner's display-only override; sync never writes it. */
+  nickname: z.string().nullable().default(null),
+  /** The name as stored (what the bank sent, or typed for a manual account). */
+  originalName: z.string().min(1),
   kind: AccountKind,
   source: AccountSource,
   sourceAccountId: z.string().nullable(),

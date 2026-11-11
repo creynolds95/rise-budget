@@ -188,6 +188,36 @@ describe('T17 accounts & snapshots', () => {
     expect(r.status).toBe(409);
   });
 
+  it('a nickname is display-only, reverts when cleared, and keeps the synced name', async () => {
+    const u = await signedInUser();
+    const id = 'acct-nick-' + crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO account (id, user_id, source, source_account_id, name, kind, balance_cents, created_at)
+       VALUES (?1, ?2, 'simplefin', ?1, 'Checking 1234', 'depository', 100, ?3)`,
+    )
+      .bind(id, u.userId, new Date().toISOString())
+      .run();
+    const set = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { nickname: ' Bills ' },
+    });
+    expect(set.json).toMatchObject({
+      name: 'Bills',
+      nickname: 'Bills',
+      originalName: 'Checking 1234',
+    });
+    const cleared = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { nickname: null },
+    });
+    expect(cleared.json).toMatchObject({ name: 'Checking 1234', nickname: null });
+    const empty = await call('PATCH', `/accounts/${id}`, {
+      access: u.access,
+      body: { nickname: '  ' },
+    });
+    expect(empty.status).toBe(400);
+  });
+
   it('flips the stored sign when kind crosses the liability boundary', async () => {
     const u = await signedInUser();
     const acct = await call('POST', '/accounts', {

@@ -269,9 +269,10 @@ export function AccountsTile() {
   const accounts = useAccounts().data;
   const [picking, setPicking] = useState(false);
   const picked = me?.settings.dashboardAccountIds ?? [];
-  const shown = (accounts ?? []).filter(
-    (a) => !a.archivedAt && (picked.length === 0 || picked.includes(a.id)),
-  );
+  const open_ = (accounts ?? []).filter((a) => !a.archivedAt);
+  // The picked list is also the display order.
+  const shown =
+    picked.length === 0 ? open_ : picked.flatMap((id) => open_.filter((a) => a.id === id));
   return (
     <section>
       <div className="flex items-center justify-between">
