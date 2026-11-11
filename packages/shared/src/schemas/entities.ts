@@ -39,6 +39,7 @@ export const DASHBOARD_TILES = [
   'debt',
   'mortgageSchedule',
   'mortgageYear',
+  'accounts',
 ] as const;
 export const DashboardTile = z.enum(DASHBOARD_TILES);
 export type DashboardTile = z.infer<typeof DashboardTile>;
@@ -339,6 +340,8 @@ export const UserSettings = z.object({
     .default([]),
   /** Shown tiles in order; null until the user customizes, which keeps the stock layout. */
   dashboard: z.array(DashboardTile).max(DASHBOARD_TILES.length).nullable().default(null),
+  /** Accounts tile: which accounts it lists. Empty = every open account. */
+  dashboardAccountIds: z.array(Id).max(200).default([]),
   retirement: RetirementPlan.nullable().default(null),
   debt: DebtPlan.nullable().default(null),
   savings: SavingsPlan.nullable().default(null),

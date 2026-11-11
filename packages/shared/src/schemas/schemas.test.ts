@@ -58,6 +58,7 @@ describe('schemas', () => {
       dismissedPayMerchants: [],
       dismissedMisses: [],
       dashboard: null,
+      dashboardAccountIds: [],
       retirement: null,
       debt: null,
       savings: null,

@@ -15,6 +15,7 @@ export const TILE_LABELS: Record<DashboardTile, string> = {
   debt: 'Debt payoff',
   mortgageSchedule: 'Mortgage payoff schedule',
   mortgageYear: 'Mortgage this year',
+  accounts: 'Accounts',
 };
 
 /** What the Dashboard shows until the user customizes it. */

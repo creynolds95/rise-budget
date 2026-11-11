@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { isDue } from '@rise/shared/debt';
 import { series } from '../design/tokens';
@@ -16,6 +16,7 @@ import { MoneyText } from './primitives/MoneyText';
 import { Skeleton } from './primitives/Skeleton';
 import { Investments } from '../routes/Investments';
 import { Donut, Legend } from './Donut';
+import { AccountsPicker } from './AccountsPicker';
 
 /** A titled tile that opens its page; `to` is where tapping the card goes. */
 function Tile({ title, to, children }: { title: string; to: string; children: ReactNode }) {
@@ -258,6 +259,53 @@ export function InvestmentsTile() {
   return (
     <section>
       <Investments compact />
+    </section>
+  );
+}
+
+/** Name and balance for the accounts the owner picked (none picked = every open account). */
+export function AccountsTile() {
+  const me = useMe().data;
+  const accounts = useAccounts().data;
+  const [picking, setPicking] = useState(false);
+  const picked = me?.settings.dashboardAccountIds ?? [];
+  const shown = (accounts ?? []).filter(
+    (a) => !a.archivedAt && (picked.length === 0 || picked.includes(a.id)),
+  );
+  return (
+    <section>
+      <div className="flex items-center justify-between">
+        <h2 className="type-title">Accounts</h2>
+        <button
+          type="button"
+          onClick={() => setPicking(true)}
+          className="min-h-11 px-2 type-label text-ink-muted active:text-ink"
+        >
+          Edit
+        </button>
+      </div>
+      <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        {!me || !accounts ? (
+          <Skeleton className="my-4 h-24 w-full" />
+        ) : shown.length === 0 ? (
+          <p className="py-4 text-ink-muted">No accounts</p>
+        ) : (
+          <ul>
+            {shown.map((a) => (
+              <li key={a.id}>
+                <Link
+                  to={`/accounts/${a.id}`}
+                  className="flex min-h-12 items-baseline justify-between gap-3 border-b border-hairline py-3 last:border-b-0"
+                >
+                  <span className="min-w-0 truncate">{a.name}</span>
+                  <MoneyText cents={a.balanceCents} className="shrink-0" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <AccountsPicker open={picking} onClose={() => setPicking(false)} selectedIds={picked} />
     </section>
   );
 }
