@@ -28,14 +28,17 @@ export function AccountsPicker({
   // Order matters: the tile lists accounts in this order. None picked = all, default order.
   const order = ids.length === 0 ? defaultIds : ids.filter((id) => defaultIds.includes(id));
   const byId = new Map(open_.map((a) => [a.id, a]));
-  const rows = [...order.map((id) => byId.get(id)!), ...open_.filter((a) => !order.includes(a.id))];
+  const rows = [
+    ...order.flatMap((id) => byId.get(id) ?? []),
+    ...open_.filter((a) => !order.includes(a.id)),
+  ];
   const move = (id: string, by: -1 | 1) =>
     setIds(() => {
       const next = [...order];
       const i = next.indexOf(id);
       const j = i + by;
       if (i < 0 || j < 0 || j >= next.length) return order;
-      [next[i], next[j]] = [next[j]!, next[i]!];
+      next.splice(j, 0, ...next.splice(i, 1));
       return next;
     });
   const save = () => {
