@@ -17,3 +17,11 @@ describe('dashboard tiles', () => {
     expect(shown.has('surplus')).toBe(false);
   });
 });
+
+describe('accounts tile', () => {
+  it('is available but hidden until the owner turns it on', () => {
+    const { all, shown } = tileOrder(null);
+    expect(all).toContain('accounts');
+    expect(shown.has('accounts')).toBe(false);
+  });
+});

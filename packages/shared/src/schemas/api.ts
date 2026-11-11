@@ -80,6 +80,7 @@ export const PatchSettingsBody = z.object({
     .max(200)
     .optional(),
   dashboard: z.array(DashboardTile).max(DashboardTile.options.length).nullable().optional(),
+  dashboardAccountIds: z.array(Id).max(200).optional(),
   retirement: RetirementPlan.nullable().optional(),
   debt: DebtPlan.nullable().optional(),
   savings: SavingsPlan.nullable().optional(),

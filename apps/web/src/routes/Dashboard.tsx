@@ -19,6 +19,7 @@ import { Skeleton } from '../components/primitives/Skeleton';
 import { Icon } from '../components/primitives/Icon';
 import { CustomizeDashboard } from '../components/CustomizeDashboard';
 import {
+  AccountsTile,
   DebtTile,
   InvestmentsTile,
   MortgageScheduleTile,
@@ -263,6 +264,7 @@ export function Dashboard() {
     debt: <DebtTile />,
     mortgageSchedule: <MortgageScheduleTile />,
     mortgageYear: <MortgageYearTile />,
+    accounts: <AccountsTile />,
   };
   const order = tileOrder(me?.settings.dashboard ?? null);
   const visible = order.all.filter((id) => order.shown.has(id) && tiles[id]);
