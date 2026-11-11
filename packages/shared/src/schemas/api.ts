@@ -115,6 +115,8 @@ export type CreateAccountBody = z.infer<typeof CreateAccountBody>;
 
 export const PatchAccountBody = z.object({
   name: z.string().min(1).optional(),
+  /** Display-only label for a synced account; null reverts to the name the bank sent. */
+  nickname: z.string().trim().min(1).max(80).nullable().optional(),
   kind: AccountKind.optional(),
   institutionName: z.string().nullable().optional(),
   includeInNetWorth: z.boolean().optional(),

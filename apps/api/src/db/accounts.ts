@@ -10,6 +10,7 @@ import { bool, newId, nowIso, type UserId } from './util';
 interface AccountRow {
   id: string;
   name: string;
+  nickname: string | null;
   kind: string;
   source: string;
   source_account_id: string | null;
@@ -45,7 +46,9 @@ function toBadge(r: AccountRow) {
 const toAccount = (r: AccountRow): Account =>
   Account.parse({
     id: r.id,
-    name: r.name,
+    name: r.nickname ?? r.name,
+    nickname: r.nickname,
+    originalName: r.name,
     kind: r.kind,
     source: r.source,
     sourceAccountId: r.source_account_id,
@@ -209,6 +212,7 @@ export type AccountPatch = PatchAccountBody;
 
 const PATCH_COLUMNS: Record<Exclude<keyof AccountPatch, 'badge'>, string> = {
   name: 'name',
+  nickname: 'nickname',
   kind: 'kind',
   institutionName: 'institution_name',
   includeInNetWorth: 'include_in_net_worth',

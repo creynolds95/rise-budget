@@ -31,6 +31,8 @@ interface Snap {
 /** The Summary card's editable fields. Balance is as shown: owed amounts are positive. */
 interface Draft {
   name: string;
+  /** Synced accounts only: display-only label; empty reverts to the bank's name. */
+  nickname: string;
   kind: AccountKind;
   balance: number;
   asOf: string;
@@ -104,6 +106,7 @@ export function AccountDetail() {
 
   const base: Draft = {
     name: a.name,
+    nickname: a.nickname ?? '',
     kind: a.kind,
     balance: owes ? -a.balanceCents : a.balanceCents,
     asOf: today,
@@ -119,6 +122,8 @@ export function AccountDetail() {
   const balanceChanged = manual && d.balance !== base.balance;
   const patchBody: Record<string, unknown> = {};
   if (manual && d.name.trim() !== base.name) patchBody.name = d.name.trim();
+  if (!manual && d.nickname.trim() !== base.nickname)
+    patchBody.nickname = d.nickname.trim() || null;
   if (d.kind !== base.kind) patchBody.kind = d.kind;
   if (d.expectedPaymentCents !== base.expectedPaymentCents)
     patchBody.expectedPaymentCents = d.expectedPaymentCents || null;
@@ -238,6 +243,22 @@ export function AccountDetail() {
                       className="min-h-11 w-48 rounded-input border border-hairline bg-surface px-3 text-right focus:border-sage-600 focus:outline-none"
                       value={d.name}
                       onChange={(e) => set({ name: e.target.value })}
+                      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    />
+                  }
+                />
+              )}
+              {!manual && (
+                <EditRow
+                  label="Nickname"
+                  field={
+                    <input
+                      aria-label="Account nickname"
+                      placeholder={a.originalName}
+                      maxLength={80}
+                      className="min-h-11 w-48 rounded-input border border-hairline bg-surface px-3 text-right focus:border-sage-600 focus:outline-none"
+                      value={d.nickname}
+                      onChange={(e) => set({ nickname: e.target.value })}
                       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                     />
                   }
@@ -393,6 +414,7 @@ export function AccountDetail() {
                 onClose={() => setBadgeOpen(false)}
               />
               {a.institutionName && <StaticRow label="Institution" value={a.institutionName} />}
+              {a.nickname && <StaticRow label="Bank name" value={a.originalName} />}
               <StaticRow label="Source" value={manual ? 'Manual' : 'SimpleFIN'} />
               {error && <p className="py-2 text-clay">{error}</p>}
               {dirty && (

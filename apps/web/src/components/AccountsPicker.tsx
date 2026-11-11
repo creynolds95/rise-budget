@@ -24,37 +24,71 @@ export function AccountsPicker({
     onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
   });
   const open_ = (accounts.data ?? []).filter((a) => !a.archivedAt);
+  const defaultIds = open_.map((a) => a.id);
+  // Order matters: the tile lists accounts in this order. None picked = all, default order.
+  const order = ids.length === 0 ? defaultIds : ids.filter((id) => defaultIds.includes(id));
+  const byId = new Map(open_.map((a) => [a.id, a]));
+  const rows = [...order.map((id) => byId.get(id)!), ...open_.filter((a) => !order.includes(a.id))];
+  const move = (id: string, by: -1 | 1) =>
+    setIds(() => {
+      const next = [...order];
+      const i = next.indexOf(id);
+      const j = i + by;
+      if (i < 0 || j < 0 || j >= next.length) return order;
+      [next[i], next[j]] = [next[j]!, next[i]!];
+      return next;
+    });
+  const save = () => {
+    const same = order.length === defaultIds.length && order.every((id, i) => id === defaultIds[i]);
+    patch.mutate(same ? [] : order);
+    onClose();
+  };
   return (
     <Sheet
       open={open}
       title="Accounts to show"
       onClose={onClose}
-      action={{
-        label: 'Save',
-        onClick: () => {
-          patch.mutate(ids);
-          onClose();
-        },
-      }}
+      action={{ label: 'Save', onClick: save }}
     >
       <ul className="divide-y divide-hairline rounded-card bg-surface shadow-soft">
-        {open_.map((a) => (
-          <li key={a.id} className="flex min-h-13 items-center justify-between gap-3 px-4 py-3">
-            <span className="min-w-0 truncate">{a.name}</span>
-            <Toggle
-              label={a.name}
-              on={ids.length === 0 || ids.includes(a.id)}
-              onChange={(on) =>
-                setIds((prev) => {
-                  const cur = prev.length === 0 ? open_.map((x) => x.id) : prev;
-                  const next = on ? [...cur, a.id] : cur.filter((id) => id !== a.id);
-                  // Every account on is the same as none picked.
-                  return next.length === open_.length ? [] : next;
-                })
-              }
-            />
-          </li>
-        ))}
+        {rows.map((a) => {
+          const on = order.includes(a.id);
+          const i = order.indexOf(a.id);
+          return (
+            <li key={a.id} className="flex min-h-13 items-center justify-between gap-2 px-4 py-3">
+              <span className="min-w-0 flex-1 truncate">{a.name}</span>
+              {on && (
+                <span className="flex">
+                  <button
+                    type="button"
+                    aria-label={`Move ${a.name} up`}
+                    disabled={i === 0}
+                    onClick={() => move(a.id, -1)}
+                    className="min-h-11 min-w-11 text-ink-muted disabled:opacity-30"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${a.name} down`}
+                    disabled={i === order.length - 1}
+                    onClick={() => move(a.id, 1)}
+                    className="min-h-11 min-w-11 text-ink-muted disabled:opacity-30"
+                  >
+                    ↓
+                  </button>
+                </span>
+              )}
+              <Toggle
+                label={a.name}
+                on={on}
+                onChange={(next) =>
+                  setIds(() => (next ? [...order, a.id] : order.filter((id) => id !== a.id)))
+                }
+              />
+            </li>
+          );
+        })}
       </ul>
     </Sheet>
   );
