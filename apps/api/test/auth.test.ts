@@ -478,6 +478,7 @@ describe('T16 auth middleware + error contract', () => {
       dismissedPayMerchants: [],
       dismissedMisses: [],
       dashboard: null,
+      dashboardAccountIds: [],
       retirement: null,
       debt: null,
       savings: null,
