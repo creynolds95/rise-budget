@@ -299,7 +299,11 @@ export function AccountsTile() {
                   className="flex min-h-12 items-baseline justify-between gap-3 border-b border-hairline py-3 last:border-b-0"
                 >
                   <span className="min-w-0 truncate">{a.name}</span>
-                  <MoneyText cents={a.balanceCents} className="shrink-0" />
+                  <MoneyText
+                    cents={a.balanceCents}
+                    tone={a.balanceCents > 0 ? 'in' : a.balanceCents < 0 ? 'over' : 'ink'}
+                    className="shrink-0"
+                  />
                 </Link>
               </li>
             ))}
