@@ -34,10 +34,11 @@ export function usePendingChanges(): OutboxEntry[] {
   return entries;
 }
 
-/** A screen is waiting on a read that has nothing cached and has failed or can't start. */
-function isStuck(q: Query): boolean {
+/** A screen is waiting on a read that has nothing cached and has failed or can't start. Reads marked optional never block a screen, so they don't count. */
+export function isStuck(q: Query): boolean {
   return (
     q.getObserversCount() > 0 &&
+    !q.meta?.optional &&
     q.state.data === undefined &&
     (q.state.status === 'error' || q.state.fetchStatus === 'paused')
   );

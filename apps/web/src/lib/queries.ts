@@ -85,18 +85,26 @@ export const useCategories = () =>
   });
 export const useRules = () =>
   useQuery({ queryKey: ['rules'], queryFn: () => get<Rule[]>('/rules'), staleTime: SLOW });
-export const useRecurring = () =>
+/**
+ * `optional` marks a read a screen can do without (an extra row, a hint): if it can't load,
+ * the screen still renders and OfflineBar must not call that "Couldn't load this screen".
+ */
+export const OPTIONAL_READ = { meta: { optional: true } } as const;
+
+export const useRecurring = (optional = false) =>
   useQuery({
     queryKey: ['recurring'],
     queryFn: () => get<RecurringSeries[]>('/recurring'),
     staleTime: SLOW,
+    ...(optional ? OPTIONAL_READ : {}),
   });
 export const useSyncStatus = () =>
   useQuery({ queryKey: ['sync'], queryFn: () => get<SyncStatus>('/sync/status') });
-export const useCashToPayday = () =>
+export const useCashToPayday = (optional = false) =>
   useQuery({
     queryKey: ['cash-to-payday'],
     queryFn: () => get<CashToPaydayResponse>('/cash-to-payday'),
+    ...(optional ? OPTIONAL_READ : {}),
   });
 export const useManualCashEvents = () =>
   useQuery({
@@ -163,8 +171,9 @@ export type TxnFilters = Partial<
   >
 >;
 
-export function useTransactions(f: TxnFilters) {
+export function useTransactions(f: TxnFilters, optional = false) {
   return useInfiniteQuery({
+    ...(optional ? OPTIONAL_READ : {}),
     queryKey: ['txns', f],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => {
