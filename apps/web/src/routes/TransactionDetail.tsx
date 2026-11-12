@@ -31,6 +31,7 @@ import {
   useAccounts,
   useCashToPayday,
   useCategories,
+  OPTIONAL_READ,
   useInvalidateMoney,
   useMe,
   usePatchTransaction,
@@ -72,7 +73,7 @@ export function TransactionDetail() {
   const allTags = useTags().data ?? [];
   const [offer, setOffer] = useState<Parameters<typeof RuleOfferSheet>[0]['offer']>(null);
   const [error, setError] = useState<string | null>(null);
-  const recurring = useRecurring();
+  const recurring = useRecurring(true);
   const splitting = params.get('split') === '1';
   const setSplitting = (on: boolean) =>
     setParams(
@@ -90,14 +91,16 @@ export function TransactionDetail() {
     queryFn: () =>
       get<MerchantView>(`/merchants/${encodeURIComponent(t?.merchantNormalized ?? '')}`),
     enabled: !!t,
+    ...OPTIONAL_READ,
   });
-  const same = useTransactions({ q: t?.merchantNormalized ?? '' });
-  const surplus = useCashToPayday();
+  const same = useTransactions({ q: t?.merchantNormalized ?? '' }, true);
+  const surplus = useCashToPayday(true);
   // A transfer's other leg says whether it is a card payment, which Surplus never counts.
   const pair = useQuery({
     queryKey: ['txn', t?.transferPairId],
     queryFn: () => get<Transaction>(`/transactions/${t?.transferPairId}`),
     enabled: !!t?.transferPairId,
+    ...OPTIONAL_READ,
   });
 
   if (!t) {
