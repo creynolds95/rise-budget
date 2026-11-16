@@ -135,3 +135,109 @@ describe('masking', () => {
     expect(out).toBe('Connection to [name] for "[name]" # failed');
   });
 });
+
+describe('explainSyncOps edge cases', () => {
+  it('records every kind of change, and tolerates an op whose stored row is gone', () => {
+    const s = [stored({ sourceId: 'old', isPending: false, dropped: true })];
+    const i = inc({
+      sourceId: 'new',
+      postedAt: '2026-09-11',
+      amountCents: 4_000,
+      descriptor: 'OTHER',
+      pending: true,
+    });
+    const ops: SyncOp[] = [
+      { kind: 'update', id: 'row-1', incoming: i, matchedPending: false },
+      { kind: 'update', id: 'ghost', incoming: inc(), matchedPending: false },
+      { kind: 'drop', id: 'ghost' },
+      { kind: 'insert', incoming: inc({ sourceId: '' }) },
+    ];
+    const { events } = explainSyncOps(s, [i], ops, [], [], '2026-09-12');
+    expect(events[0]?.detail).toEqual({
+      postedAt: ['2026-09-10', '2026-09-11'],
+      amountCents: [5_000, 4_000],
+      descriptor: true,
+      pending: [false, true],
+      restoredFromDropped: true,
+      newSourceId: true,
+    });
+    expect(events[1]).toMatchObject({ wasPending: null, detail: null });
+    expect(events[2]).toMatchObject({
+      kind: 'drop',
+      sourceTail: null,
+      postedAt: null,
+      detail: null,
+    });
+    expect(events[3]).toMatchObject({
+      kind: 'insert',
+      reason: 'new posted row, no pending match',
+      txnId: null,
+      sourceTail: null,
+    });
+  });
+
+  it('writes no summary for a quiet account', () => {
+    const s = [stored({ isPending: false, sourceId: 'a' })];
+    const { events, summary } = explainSyncOps(
+      s,
+      [inc({ sourceId: 'a' })],
+      [],
+      [],
+      [],
+      '2026-09-12',
+    );
+    expect(events).toEqual([]);
+    expect(summary).toMatchObject({ unchanged: 1, inserted: 0 });
+  });
+});
+
+describe('masking edge cases', () => {
+  it('handles banks without a name, ties on date, and more than 26 banks', () => {
+    const many = Array.from({ length: 28 }, (_, n) => ({
+      id: `id-${String(n).padStart(2, '0')}`,
+      kind: 'depository',
+      name: 'x',
+      institutionName: `Bank number ${n}`,
+      createdAt: '2026-01-01',
+    }));
+    const m = maskAccounts([
+      ...many,
+      { id: 'zz', kind: 'other', name: 'y', createdAt: '2026-01-01' },
+    ]);
+    expect(m.get('id-00')?.bank).toBe('Bank A');
+    expect(m.get('id-26')?.bank).toBe('Bank AA');
+    expect(m.get('id-27')?.bank).toBe('Bank AB');
+    expect(m.get('zz')?.bank).toBe('Bank AC');
+    expect(m.get('zz')?.code).toBe('acct-29');
+  });
+
+  it('keeps only usable, distinct names, longest first', () => {
+    expect(
+      sensitiveNames([
+        {
+          id: 'a',
+          kind: 'x',
+          name: 'Chk',
+          nickname: null,
+          institutionName: 'Chk',
+          sourceAccountId: 'ab',
+          createdAt: '',
+        },
+        { id: 'b', kind: 'x', name: 'Longer name', createdAt: '' },
+      ]),
+    ).toEqual(['Longer name', 'Chk']);
+  });
+});
+
+it('does not count a pending row as unsent when the bank still sends it', () => {
+  const s = [stored({ sourceId: 'p' })];
+  const { summary } = explainSyncOps(
+    s,
+    [inc({ sourceId: 'p', pending: true })],
+    [],
+    [],
+    [],
+    '2026-09-12',
+  );
+  expect(summary.pendingNotSent).toBe(0);
+});
