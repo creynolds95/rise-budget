@@ -37,6 +37,8 @@ const TABLES = [
   'push_sent',
   'mcp_token',
   'invite',
+  'sync_event',
+  'balance_observation',
 ];
 
 const INDEXES = [
@@ -68,6 +70,10 @@ const INDEXES = [
   // 0027
   'ux_tag_name',
   'ix_txn_tag_tag',
+  // 0036
+  'ix_sync_event_time',
+  'ix_sync_event_txn',
+  'ix_balance_obs_time',
   // 0029
   'ux_push_subscription',
 ];

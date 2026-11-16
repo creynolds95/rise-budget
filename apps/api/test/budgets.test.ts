@@ -191,14 +191,15 @@ describe('rows read on a production-sized database', () => {
     // [label, run, rows-read budget, rows-written budget]. Writes are budgeted too: the free
     // tier allows 100k a day, and an idle sync used to rewrite every touched month's
     // aggregates (~1,150 rows) three times a day. Now it writes the balance report, the run
-    // record and whatever actually changed (here: four pending rows posting on the first run).
+    // record and whatever actually changed (here: four pending rows posting on the first run),
+    // plus the diagnostics log: one balance observation per account and an event per change.
     const runs: [string, () => Promise<unknown>, number, number][] = [
-      ['sync, nothing new', () => runSync(env.DB, s.userId, source(0), { now }), 35_000, 150],
+      ['sync, nothing new', () => runSync(env.DB, s.userId, source(0), { now }), 35_000, 170],
       [
         'cron sync, nothing new, later the same day',
         () => runSync(env.DB, s.userId, source(0), { now, skipRecurringWhenIdle: true }),
         5_000,
-        40,
+        60,
       ],
       ['sync, 2 new per account', () => runSync(env.DB, s.userId, source(2), { now }), 35_000, 320],
       // Radar and charge flags (SPEC §7.1, §8.1) write only what changed: a second refresh

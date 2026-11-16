@@ -18,3 +18,4 @@ export * from './usage';
 export * from './tags';
 export * from './push';
 export * from './mcp';
+export * from './syncLog';

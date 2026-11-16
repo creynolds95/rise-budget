@@ -7,6 +7,7 @@ import { renderError } from '../lib/errors';
 import { accounts } from './accounts';
 import { cashToPayday } from './cashToPayday';
 import { categories } from './categories';
+import { diagnostics } from './diagnostics';
 import { networth } from './networth';
 import { periods } from './periods';
 import { recurring } from './recurring';
@@ -30,6 +31,7 @@ reader.use('*', async (c, next) => {
 });
 reader.route('/accounts', accounts);
 reader.route('/categories', categories);
+reader.route('/diagnostics', diagnostics);
 reader.route('/networth', networth);
 reader.route('/periods', periods);
 reader.route('/recurring', recurring);
@@ -42,7 +44,7 @@ const str = (description: string) => ({ type: 'string', description });
 interface Tool {
   name: string;
   description: string;
-  inputSchema: { type: 'object'; properties: Record<string, unknown> };
+  inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] };
   path: (args: Record<string, unknown>, today: string) => string;
 }
 
@@ -129,6 +131,27 @@ export const TOOLS: Tool[] = [
     description: 'Net worth now and its history.',
     inputSchema: { type: 'object', properties: {} },
     path: () => '/networth',
+  },
+  {
+    name: 'sync_diagnostics',
+    description:
+      'Redacted log of what bank syncs did: per sync and account, every row inserted, turned from pending to posted, updated, dropped or skipped (with the reason), balance history with the pending rows sent alongside, and signals such as a balance that moved with no rows. Use this to check real data before guessing at a sync, pending or Surplus bug.',
+    inputSchema: {
+      type: 'object',
+      properties: { days: str('How many days back, 1 to 60; 7 if left out') },
+    },
+    path: (a) => `/diagnostics?days=${encodeURIComponent(String(a['days'] ?? 7))}`,
+  },
+  {
+    name: 'transaction_history',
+    description:
+      'Every sync decision about one transaction (its id comes from transactions or sync_diagnostics): when it arrived, when pending became posted, what changed.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: str('The transaction id') },
+      required: ['id'],
+    },
+    path: (a) => `/diagnostics/transactions/${encodeURIComponent(String(a['id'] ?? ''))}`,
   },
 ];
 

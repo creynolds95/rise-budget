@@ -756,3 +756,25 @@ carries a 32-byte secret, stored only as a hash; turning it on again replaces th
 turning it off deletes it. Its tools read through the app's own GET routes (budget month,
 transactions and their totals, accounts, categories, recurring, Surplus, net worth). There is
 no tool that writes.
+
+### 12.4 Diagnostics log
+
+So a bug in sync, pending rows or Surplus is checked against real data, not guessed at, every
+sync appends to two logs (kept 60 days, pruned nightly, never part of any money calculation):
+
+- **Sync events**: per account and run, one event for each row inserted, turned from pending
+  to posted (same id, or a new bank id matched by amount, merchant and date), updated (with
+  what changed), dropped (pending, unmatched 14 days) or skipped because the owner deleted
+  it, each with its reason; plus a per-account summary when anything happened, including
+  stored pending rows the bank did not send.
+- **Balance observations**: every balance the bank reports, with its own date, and the pending
+  rows sent and stored alongside it. Unlike balance snapshots these are never overwritten, so
+  a balance that leads its rows (SPEC §6) is visible as a balance that moved with no rows.
+
+Read only, for the signed-in owner, at `GET /diagnostics` (`days` 1 to 60), `GET
+/diagnostics/export` (a downloadable snapshot) and `GET /diagnostics/transactions/:id` (one
+row's thread). The Claude connector exposes `sync_diagnostics` and `transaction_history`.
+Output never carries a name, nickname, institution, account number, merchant or descriptor:
+accounts are `acct-N` / `Bank A` in the order added, and error text has names and long digit
+runs removed. Amounts and dates are real. Logging is best effort and can never fail a sync.
+
