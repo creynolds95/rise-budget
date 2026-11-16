@@ -7,7 +7,12 @@ import {
   type IncomingAccount,
 } from '@rise/shared/import';
 import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
-import { detectTransfers, planAccountSync, type IncomingWithMerchant } from '@rise/shared/sync';
+import {
+  detectTransfers,
+  explainSyncOps,
+  planAccountSync,
+  type IncomingWithMerchant,
+} from '@rise/shared/sync';
 import { z } from 'zod';
 import {
   budgetedCategoryIds,
@@ -20,6 +25,8 @@ import {
   hadSyncRunSince,
   flagClosedPeriodStmt,
   getUser,
+  insertBalanceObservationStmt,
+  insertSyncEventStmts,
   insertSyncedAccountStmt,
   insertSyncedTxnStmt,
   linkTransferStmts,
@@ -132,6 +139,51 @@ export function windowStart(
 }
 
 /**
+ * The diagnostics log for one account's sync: an event per planner op and a balance
+ * observation. After the account's own batch, and never allowed to fail it.
+ */
+async function logAccountSync(
+  db: D1Database,
+  userId: UserId,
+  runId: string,
+  accountId: string,
+  a: {
+    stored: Parameters<typeof explainSyncOps>[0];
+    incoming: IncomingWithMerchant[];
+    ops: Parameters<typeof explainSyncOps>[2];
+    newIds: string[];
+    skippedDeleted: string[];
+    today: string;
+    balanceDate: string;
+    balanceCents: number;
+    reportedAt: string;
+  },
+): Promise<void> {
+  try {
+    const { events, summary } = explainSyncOps(
+      a.stored,
+      a.incoming,
+      a.ops,
+      a.newIds,
+      a.skippedDeleted,
+      a.today,
+    );
+    const stmts = [
+      ...insertSyncEventStmts(userId, db, runId, accountId, events),
+      insertBalanceObservationStmt(userId, db, runId, accountId, {
+        balanceDate: a.balanceDate,
+        balanceCents: a.balanceCents,
+        reportedAt: a.reportedAt,
+        summary,
+      }),
+    ];
+    for (let i = 0; i < stmts.length; i += 50) await db.batch(stmts.slice(i, i + 50));
+  } catch {
+    // Diagnostics are best-effort: the sync itself already committed.
+  }
+}
+
+/**
  * One sync (SPEC §6.1, ARCHITECTURE §6). Each account is one atomic batch: a failing account
  * is recorded and skipped without touching the others. New rows arrive in the review queue
  * (H1) already carrying a real split — the best guess when there is one, the user's
@@ -220,13 +272,15 @@ export async function runSync(
       const accountId = existing?.id ?? newId();
 
       const gone = existing ? await deletedSourceIds(userId, db, accountId) : new Set<string>();
-      const incoming: IncomingWithMerchant[] = sf.transactions
-        .map((t) => {
-          const i = toIncomingTxn(t, tz, Math.floor(now.getTime() / 1000));
-          return { ...i, merchant: normalizeMerchant(i.descriptor) };
-        })
-        // What the user deleted stays deleted, even while the bank keeps reporting it.
-        .filter((i) => !i.sourceId || !gone.has(i.sourceId));
+      const sent: IncomingWithMerchant[] = sf.transactions.map((t) => {
+        const i = toIncomingTxn(t, tz, Math.floor(now.getTime() / 1000));
+        return { ...i, merchant: normalizeMerchant(i.descriptor) };
+      });
+      // What the user deleted stays deleted, even while the bank keeps reporting it.
+      const incoming = sent.filter((i) => !i.sourceId || !gone.has(i.sourceId));
+      const skippedDeleted = sent.flatMap((i) =>
+        i.sourceId && gone.has(i.sourceId) ? [i.sourceId] : [],
+      );
       // Stored rows from as far back as the bank sent any: a row it re-sends from just before
       // the window is then seen as known, not planned as an insert that conflicts.
       const sentFrom = incoming.reduce((d, i) => (i.postedAt < d ? i.postedAt : d), from);
@@ -339,6 +393,17 @@ export async function runSync(
         .filter((_, i) => i % 2 === 0)
         .reduce((n, r) => n + r.meta.changes, 0);
       rowsUpdated += updates;
+      await logAccountSync(db, userId, runId, accountId, {
+        stored,
+        incoming,
+        ops,
+        newIds: inserts.map((o) => o.id),
+        skippedDeleted,
+        today,
+        balanceDate: acct.balanceDate > today ? today : acct.balanceDate,
+        balanceCents: acct.balanceCents,
+        reportedAt: new Date(sf['balance-date'] * 1000).toISOString(),
+      });
       for (const i of incoming) if (i.postedAt < earliest) earliest = i.postedAt;
     } catch (e) {
       errors.push({ account: label, message: message(e) });

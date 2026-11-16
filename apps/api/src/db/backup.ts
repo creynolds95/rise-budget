@@ -225,6 +225,7 @@ export const RETENTION = {
   syncRunDays: 90,
   authAuditDays: 90,
   pushSentDays: 120,
+  syncLogDays: 60,
 } as const;
 
 /**
@@ -251,7 +252,18 @@ export async function pruneOperational(db: D1Database, now: Date): Promise<numbe
     db
       .prepare('DELETE FROM push_sent WHERE sent_at < ?1 /* system:backup */')
       .bind(before(RETENTION.pushSentDays)),
+    ...pruneSyncLogStmts(db, before(RETENTION.syncLogDays)),
     ...pruneUsageStmts(db, now),
   ]);
   return results.reduce((n, r) => n + (r.meta.changes ?? 0), 0);
+}
+
+/** Nightly, across all users like the rest of pruneOperational. */
+function pruneSyncLogStmts(db: D1Database, beforeIso: string): D1PreparedStatement[] {
+  return [
+    db.prepare('DELETE FROM sync_event WHERE created_at < ?1 /* system:backup */').bind(beforeIso),
+    db
+      .prepare('DELETE FROM balance_observation WHERE observed_at < ?1 /* system:backup */')
+      .bind(beforeIso),
+  ];
 }
