@@ -224,10 +224,29 @@ export function seenInBalance(
       if (least > 0) fromFits.set(c.id, least === 2);
     });
   }
+  // Some banks never send their pending rows at all (the owner's checking: the balance already
+  // has every pending debit out and the transactions never list them). The leftover gap then
+  // holds card payments and the like that Rise cannot see, so no exact fit exists. The leftover
+  // can't be told from a second bill, so only the single largest due bill is read as gone, and
+  // only when the balance fell by at least its amount (the bigger the bill, the less a
+  // coincidence). Bills only, only when no exact fit was found, and by the smallest of the
+  // pending readings, so it never reads high.
+  const beyond = new Set<string>();
+  if (all.length === 0) {
+    const fell = Math.min(
+      -gapPosted,
+      -(gapPosted + pendingCents),
+      -(gapPosted + pendingCents + pendingOnBase),
+    );
+    const largest = cands
+      .filter((c) => !c.forced && c.deltaCents < 0)
+      .sort((x, y) => x.deltaCents - y.deltaCents)[0];
+    if (largest && 100 * fell >= -95 * largest.deltaCents) beyond.add(largest.id);
+  }
   const out = cands.flatMap((c) =>
     fromFits.has(c.id)
       ? [{ id: c.id, dueOn: c.dueOn, twice: fromFits.get(c.id) as boolean }]
-      : proven.has(c.id) || (all.length === 0 && c.forced)
+      : proven.has(c.id) || beyond.has(c.id) || (all.length === 0 && c.forced)
         ? [{ id: c.id, dueOn: c.dueOn, twice: false }]
         : [],
   );

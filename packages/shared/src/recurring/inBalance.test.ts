@@ -499,3 +499,39 @@ describe('seenInBalance: a balance dated before the bills it already has out', (
     expect(seenInBalance(only, rows(MON), bills, MON)).toEqual([]);
   });
 });
+
+describe('seenInBalance: a bank that never sends its pending rows', () => {
+  // Saturday bill taken Monday; the balance fell by the bill plus card payments Rise has no
+  // rows for, so no exact fit exists. The balance fell by at least the bill: it left.
+  const MON = '2026-11-16';
+  const loan = rule('loan', 106_054, '2026-11-14');
+  it('sees a due bill when the balance fell by more than it, rows nowhere', () => {
+    const out = seenInBalance(snaps(['2026-11-15', 234_919], [MON, 90_262]), [], [loan], MON);
+    expect(out).toEqual([{ id: 'loan', dueOn: '2026-11-14', twice: false }]);
+  });
+  it('reads only the largest due bill: the leftover could be another one', () => {
+    const two = [rule('gym', 34_300, '2026-11-14'), loan];
+    expect(ids(seenInBalance(snaps(['2026-11-15', 234_919], [MON, 90_262]), [], two, MON))).toEqual(
+      ['loan'],
+    );
+  });
+  it('counts nothing when the fall is smaller than the bill', () => {
+    const small = snaps(['2026-11-15', 234_919], [MON, 234_919 - 100_000]);
+    expect(seenInBalance(small, [], [loan], MON)).toEqual([]);
+  });
+  it('never reads a paycheck as landed on a bigger gap', () => {
+    const pay = rule('pay', -200_000, '2026-11-14');
+    expect(seenInBalance(snaps(['2026-11-15', 100_000], [MON, 500_000]), [], [pay], MON)).toEqual(
+      [],
+    );
+  });
+  it('does not count a fall that known pending rows already explain', () => {
+    const out = seenInBalance(
+      snaps(['2026-11-15', 234_919], [MON, 90_262]),
+      [txn(MON, 144_657, true)],
+      [loan],
+      MON,
+    );
+    expect(out).toEqual([]);
+  });
+});

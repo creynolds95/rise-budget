@@ -569,6 +569,12 @@ bank's balance, so both readings are weighed. A schedule counts as in balance on
 every reading and every fitting set agrees. A gap nothing explains leaves every schedule
 counted (cautious, never reading high).
 
+Some banks never send pending rows at all (the owner's checking: SimpleFIN returns none, yet the
+balance has every pending debit out). With no exact fit, the leftover gap may be card payments
+Rise cannot see. Then, and only then, the single largest due bill is read as in balance when the
+balance fell by at least its amount (95%); a smaller bill or a paycheck is never read this way.
+The mark clears like any other if its row never comes (14 days).
+
 When the unexplained gap equals the sum of the pending rows (the balance has them out), a
 pending row is the schedule's own charge, and the schedule is in balance, when it carries the
 schedule's merchant (at any amount: the bank's is the truth) or its exact amount (a
