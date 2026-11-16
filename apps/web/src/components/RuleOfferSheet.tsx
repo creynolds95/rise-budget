@@ -1,8 +1,9 @@
-import type { RuleOffer } from '@rise/shared/schemas';
+import type { Rule, RuleOffer } from '@rise/shared/schemas';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCategories } from '../lib/queries';
+import { ApplyRuleSheet, waitingForRule } from './ApplyRuleSheet';
 import { Button } from './primitives/Button';
 import { Sheet } from './primitives/Sheet';
 
@@ -21,21 +22,35 @@ export function RuleOfferSheet({
   const qc = useQueryClient();
   const categories = useCategories().data ?? [];
   const [error, setError] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState<string[]>([]);
   const name = categories.find((c) => c.id === offer?.categoryId)?.name ?? 'this category';
   const act = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
-      await fn();
+      const res = await fn();
       await Promise.all(
         ['rules', 'review-queue', 'queue-count'].map((k) =>
           qc.invalidateQueries({ queryKey: [k] }),
         ),
       );
-      onClose();
+      const ids = await waitingForRule((res as Rule | undefined)?.id);
+      if (ids.length > 0) setWaiting(ids);
+      else onClose();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not save.');
     }
   };
+  if (waiting.length > 0)
+    return (
+      <ApplyRuleSheet
+        ids={waiting}
+        categoryName={name}
+        onClose={() => {
+          setWaiting([]);
+          onClose();
+        }}
+      />
+    );
   return (
     <Sheet open={offer !== null} title="Make it a rule?" onClose={onClose}>
       {offer && (

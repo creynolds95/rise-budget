@@ -402,6 +402,11 @@ where no rule currently matches it.
 `No` sets `suppress_rule_offer = true` for that merchant permanently. `Not now` re-arms
 after 3 more corrections.
 
+A rule can also be created or edited directly (a transaction's menu, or Settings → Rules) —
+that is the "default category for this merchant". Saving one never changes existing
+transactions by itself; if transactions are already waiting in the review queue that it would
+file, the app offers to file them (explicit tap, `bulk-accept`). Reviewed history is never touched.
+
 ### 4.7 Merchant normalisation
 
 Raw descriptors are noisy. Normalise before keying memory:

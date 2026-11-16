@@ -90,6 +90,33 @@ describe('T25 categorisation', () => {
     expect(audit.results.map((r) => r.action)).toEqual(['rule.created', 'rule.deleted']);
   });
 
+  it('a new merchant rule lists only the waiting rows it would file; accepting them files them', async () => {
+    const s = await setup();
+    const a = await s.queued('QT 12', 'QuikTrip');
+    const b = await s.queued('QT 99', 'QuikTrip');
+    const reviewed = await s.queued('QT 5', 'QuikTrip');
+    await s.pick(reviewed, s.home.id);
+    const other = await s.queued('SHELL 1', 'Shell');
+    const rule = await s.api('POST', '/rules', {
+      matchField: 'merchant',
+      matchType: 'equals',
+      matchValue: 'QuikTrip',
+      categoryId: s.gas.id,
+    });
+    const waiting = await s.api('GET', `/rules/${rule.json.id}/waiting`);
+    expect(waiting.json.count).toBe(2);
+    expect([...waiting.json.ids].sort()).toEqual([a, b].sort());
+    // Nothing moved until the owner confirms.
+    expect((await s.txn(a)).splits).toEqual([]);
+    const done = await s.api('POST', '/transactions/bulk-accept', { ids: waiting.json.ids });
+    expect(done.status).toBe(200);
+    expect((await s.txn(a)).splits[0].categoryId).toBe(s.gas.id);
+    expect((await s.txn(reviewed)).splits[0].categoryId).toBe(s.home.id);
+    expect((await s.txn(other)).splits).toEqual([]);
+    expect((await s.api('GET', `/rules/${rule.json.id}/waiting`)).json.count).toBe(0);
+    expect((await s.api('GET', `/rules/${crypto.randomUUID()}/waiting`)).status).toBe(404);
+  });
+
   it('asking for the same rule twice keeps one; a new answer replaces the old rule', async () => {
     const s = await setup();
     const make = (categoryId: string) =>

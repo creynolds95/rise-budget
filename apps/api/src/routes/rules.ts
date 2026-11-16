@@ -1,4 +1,4 @@
-import { firstMatchingRule, rankMemory, validateRule } from '@rise/shared/categorize';
+import { firstMatchingRule, rankMemory, ruleMatches, validateRule } from '@rise/shared/categorize';
 import { CreateRuleBody, PatchMerchantBody } from '@rise/shared/schemas';
 import { Hono } from 'hono';
 import {
@@ -7,6 +7,8 @@ import {
   getMerchantMeta,
   getRule,
   insertRule,
+  listAcceptable,
+  listNeedsReview,
   listRules,
   memoryFor,
   putMerchantMetaStmt,
@@ -55,6 +57,27 @@ rules.post('/', async (c) => {
   await writeAudit(userId, db, 'rule.created', { type: 'rule', id: rule.id, detail: { ...b } });
   await refreshSuggestions(db, userId);
   return c.json(rule, 201);
+});
+
+/**
+ * Waiting transactions this rule would file: still in the review queue (never one the owner
+ * already reviewed) and the rule is what their stored suggestion now says. Read-only; the
+ * owner confirms in the app, which then accepts these ids through `/transactions/bulk-accept`.
+ */
+rules.get('/:id/waiting', async (c) => {
+  const userId = c.get('userId');
+  const db = c.env.DB;
+  const rule = await getRule(userId, db, c.req.param('id'));
+  if (!rule) throw new AppError(404, 'NOT_FOUND', 'Rule not found');
+  const narrow = rule.matchField === 'merchant' && rule.matchType === 'equals';
+  const waiting = await listNeedsReview(userId, db, narrow ? rule.matchValue : null);
+  const ids = waiting
+    .filter((r) => ruleMatches(rule, r.descriptor_raw, r.merchant_normalized))
+    .map((r) => r.id);
+  if (ids.length === 0) return c.json({ ids: [], count: 0 });
+  const acceptable = await listAcceptable(userId, db, { ids });
+  const mine = acceptable.filter((r) => r.suggested_category_id === rule.categoryId);
+  return c.json({ ids: mine.map((r) => r.id), count: mine.length });
 });
 
 rules.delete('/:id', async (c) => {

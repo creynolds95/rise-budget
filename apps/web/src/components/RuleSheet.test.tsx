@@ -49,4 +49,35 @@ describe('RuleSheet from a transaction', () => {
       priority: 0,
     });
   });
+
+  it('offers to file waiting transactions and only does so on a tap', async () => {
+    api.mockImplementation((...a: unknown[]) => {
+      if (a[1] === '/rules') return Promise.resolve({ id: 'r1' });
+      if (a[1] === '/rules/r1/waiting') return Promise.resolve({ ids: ['t1', 't2'], count: 2 });
+      return Promise.resolve({});
+    });
+    const onClose = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <RuleSheet
+          rule={null}
+          initial={{
+            matchField: 'merchant',
+            matchType: 'equals',
+            matchValue: 'QUIKTRIP',
+            categoryId: 'c1',
+          }}
+          onClose={onClose}
+          onSaved={() => Promise.resolve()}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByText('Save rule'));
+    await screen.findByText('File earlier ones too?');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(api).not.toHaveBeenCalledWith('POST', '/transactions/bulk-accept', expect.anything());
+    fireEvent.click(screen.getByText('Yes, file all 2'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(api).toHaveBeenCalledWith('POST', '/transactions/bulk-accept', { ids: ['t1', 't2'] });
+  });
 });
