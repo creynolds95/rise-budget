@@ -208,7 +208,16 @@ export async function runSync(
   } = {},
 ): Promise<SyncResult> {
   const now = opts.now ?? new Date();
+  const t0 = Date.now();
   const runId = await startSyncRun(userId, db);
+  // Timing for the diagnostics log: how long the whole run took, and each account's share.
+  const accountTiming: {
+    accountId: string;
+    ms: number;
+    fetched: number;
+    inserted: number;
+    updated: number;
+  }[] = [];
   const errors: SyncResult['errors'] = [];
   let accountsTouched = 0;
   let rowsInserted = 0;
@@ -220,7 +229,13 @@ export async function runSync(
     const status: SyncResult['status'] =
       errors.length === 0 ? 'ok' : accountsTouched > 0 ? 'partial' : 'failed';
     const r = { status, accountsTouched, rowsInserted, rowsUpdated, errors };
-    await finishSyncRun(userId, db, runId, { ...r, source: source_ });
+    await finishSyncRun(userId, db, runId, {
+      ...r,
+      source: source_ && {
+        ...source_,
+        timing: { totalMs: Date.now() - t0, accounts: accountTiming },
+      },
+    });
     return { id: runId, ...r, transfersLinked };
   };
 
@@ -248,6 +263,8 @@ export async function runSync(
     source_ = describeSource(raw, source.lastFetch, from);
     envelope = Envelope.parse(raw);
   } catch (e) {
+    // Even a failed fetch leaves its status and latency behind.
+    source_ ??= describeSource(null, source.lastFetch, from);
     errors.push({
       message: e instanceof z.ZodError ? 'SimpleFIN returned an unexpected shape' : message(e),
     });
@@ -262,6 +279,7 @@ export async function runSync(
   let earliest = today;
   for (const raw of envelope.accounts) {
     let label = 'unknown account';
+    const acctStart = Date.now();
     try {
       const sf = SimpleFinAccount.parse(raw);
       label = sf.name;
@@ -393,6 +411,13 @@ export async function runSync(
         .filter((_, i) => i % 2 === 0)
         .reduce((n, r) => n + r.meta.changes, 0);
       rowsUpdated += updates;
+      accountTiming.push({
+        accountId,
+        ms: Date.now() - acctStart,
+        fetched: sent.length,
+        inserted: inserts.length,
+        updated: updates,
+      });
       await logAccountSync(db, userId, runId, accountId, {
         stored,
         incoming,

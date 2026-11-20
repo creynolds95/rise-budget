@@ -1,4 +1,4 @@
-import { pruneUsageStmts } from './usage';
+import { dayKey, hourKey, pruneUsageStmts } from './usage';
 import type { UserId } from './util';
 
 /**
@@ -252,6 +252,8 @@ export async function pruneOperational(db: D1Database, now: Date): Promise<numbe
     db
       .prepare('DELETE FROM push_sent WHERE sent_at < ?1 /* system:backup */')
       .bind(before(RETENTION.pushSentDays)),
+    // Roll up first: the rollup reads the rows the next statements delete.
+    ...rollupAndPruneStmts(db, now, before(RETENTION.syncLogDays)),
     ...pruneSyncLogStmts(db, before(RETENTION.syncLogDays)),
     ...pruneUsageStmts(db, now),
   ]);
@@ -265,5 +267,77 @@ function pruneSyncLogStmts(db: D1Database, beforeIso: string): D1PreparedStateme
     db
       .prepare('DELETE FROM balance_observation WHERE observed_at < ?1 /* system:backup */')
       .bind(beforeIso),
+  ];
+}
+
+// ── nightly: roll up, then prune ────────────────────────────────────────────
+
+export const ACTIVITY_RETENTION = {
+  activityDays: 180,
+  perfHourDays: 14,
+  slowQueryDays: 30,
+  logDayDays: 730,
+} as const;
+
+/**
+ * Roll the rows about to be pruned into log_day, then delete them, in one batch so a failure
+ * between the two can't double-count or lose a day. Rolling up only reads rows already past
+ * retention (an index range on time), so each night touches roughly one day of rows.
+ * Cross-user like the rest of pruneOperational (marked system:backup).
+ */
+export function rollupAndPruneStmts(
+  db: D1Database,
+  now: Date,
+  syncLogBeforeIso: string,
+): D1PreparedStatement[] {
+  const before = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
+  const activityBefore = before(ACTIVITY_RETENTION.activityDays);
+  const perfBefore = hourKey(
+    new Date(now.getTime() - ACTIVITY_RETENTION.perfHourDays * 86_400_000),
+  );
+  const slowBefore = dayKey(
+    new Date(now.getTime() - ACTIVITY_RETENTION.slowQueryDays * 86_400_000),
+  );
+  const logDayBefore = dayKey(new Date(now.getTime() - ACTIVITY_RETENTION.logDayDays * 86_400_000));
+  const dayOf = (col: string) => `CAST(REPLACE(SUBSTR(${col}, 1, 10), '-', '') AS INTEGER)`;
+  return [
+    db
+      .prepare(
+        `INSERT INTO log_day (user_id, day, stream, key, n, sum_a, sum_b, peak)
+         SELECT user_id, ${dayOf('created_at')}, 'sync_event', kind, COUNT(*),
+           SUM(ABS(COALESCE(amount_cents, 0))), 0, 0
+         FROM sync_event WHERE created_at < ?1
+         GROUP BY user_id, ${dayOf('created_at')}, kind
+         ON CONFLICT(user_id, day, stream, key) DO UPDATE SET n = n + excluded.n,
+           sum_a = sum_a + excluded.sum_a /* system:backup */`,
+      )
+      .bind(syncLogBeforeIso),
+    db
+      .prepare(
+        `INSERT INTO log_day (user_id, day, stream, key, n, sum_a, sum_b, peak)
+         SELECT user_id, ${dayOf('at')}, 'activity', entity, COUNT(*), SUM(ms), SUM(status >= 400), MAX(ms)
+         FROM activity_event WHERE at < ?1
+         GROUP BY user_id, ${dayOf('at')}, entity
+         ON CONFLICT(user_id, day, stream, key) DO UPDATE SET n = n + excluded.n,
+           sum_a = sum_a + excluded.sum_a, sum_b = sum_b + excluded.sum_b,
+           peak = MAX(peak, excluded.peak) /* system:backup */`,
+      )
+      .bind(activityBefore),
+    db
+      .prepare(
+        `INSERT INTO log_day (user_id, day, stream, key, n, sum_a, sum_b, peak)
+         SELECT '', ${dayOf('hour')}, 'perf', kind || ' ' || route, SUM(requests), SUM(ms_total),
+           SUM(errors), MAX(ms_max)
+         FROM perf_hour WHERE hour < ?1
+         GROUP BY ${dayOf('hour')}, kind, route
+         ON CONFLICT(user_id, day, stream, key) DO UPDATE SET n = n + excluded.n,
+           sum_a = sum_a + excluded.sum_a, sum_b = sum_b + excluded.sum_b,
+           peak = MAX(peak, excluded.peak) /* system:backup */`,
+      )
+      .bind(perfBefore),
+    db.prepare('DELETE FROM activity_event WHERE at < ?1 /* system:backup */').bind(activityBefore),
+    db.prepare('DELETE FROM perf_hour WHERE hour < ?1 /* system:backup */').bind(perfBefore),
+    db.prepare('DELETE FROM slow_query WHERE day < ?1 /* system:backup */').bind(slowBefore),
+    db.prepare('DELETE FROM log_day WHERE day < ?1 /* system:backup */').bind(logDayBefore),
   ];
 }

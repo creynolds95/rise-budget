@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 // T3: every table from ARCHITECTURE §3 exists after migrations.
 const TABLES = [
+  'activity_event',
+  'log_day',
+  'perf_hour',
+  'slow_query',
   'user',
   'credential',
   'totp_secret',
@@ -42,6 +46,7 @@ const TABLES = [
 ];
 
 const INDEXES = [
+  'ix_activity_time',
   'ux_txn_source',
   'ux_txn_dedupe',
   'ix_txn_account_date',

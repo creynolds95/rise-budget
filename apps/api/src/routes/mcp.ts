@@ -143,6 +143,20 @@ export const TOOLS: Tool[] = [
     path: (a) => `/diagnostics?days=${encodeURIComponent(String(a['days'] ?? 7))}`,
   },
   {
+    name: 'review_activity',
+    description:
+      'The owner’s on-demand review of how Rise has been behaving: when each bank synced and what it returned (counts, latency, errors), when transactions arrived, every edit the owner made (category, splits, plan, accounts, settings; before/after, never notes or names), and app performance (API and browser latency, error rates, slow queries). Start here for "how is it going", "what changed", "why is it slow" or any sync, pending or Surplus question; use mode detail only to drill into specifics.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        days: str('How many days back; 7 if left out. Up to 180 for summary, 60 for detail'),
+        mode: str('summary (default, compact) or detail (adds every edit and sync decision)'),
+      },
+    },
+    path: (a) =>
+      `/diagnostics/activity?days=${encodeURIComponent(String(a['days'] ?? 7))}&mode=${a['mode'] === 'detail' ? 'detail' : 'summary'}`,
+  },
+  {
     name: 'transaction_history',
     description:
       'Every sync decision about one transaction (its id comes from transactions or sync_diagnostics): when it arrived, when pending became posted, what changed.',
