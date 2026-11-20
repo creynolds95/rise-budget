@@ -48,6 +48,8 @@ const GROWING = new Set([
   'push_sent',
   'sync_event',
   'balance_observation',
+  'activity_event',
+  'log_day',
 ]);
 
 const catalog = (): string[] => [

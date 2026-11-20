@@ -760,7 +760,7 @@ describe('sync plumbing', () => {
       .bind(r.id)
       .first<{ source_json: string }>();
     expect(row?.source_json).not.toMatch(/Secret|999/);
-    expect(JSON.parse(row?.source_json ?? 'null')).toEqual({
+    expect(JSON.parse(row?.source_json ?? 'null')).toMatchObject({
       fetch: null,
       startDate: '2026-09-01',
       keys: ['accounts', 'errors'],
@@ -799,7 +799,14 @@ describe('sync plumbing', () => {
       url: 'https://bridge.simplefin.org/simplefin/accounts?start-date=1700000000&pending=1',
       auth: `Basic ${btoa('user:s3cret')}`,
     });
-    expect(src.lastFetch).toEqual({ status: 200, date: null, age: null, cacheStatus: null });
+    expect(src.lastFetch).toMatchObject({
+      status: 200,
+      date: null,
+      age: null,
+      cacheStatus: null,
+      attempts: 1,
+    });
+    expect(src.lastFetch?.ms).toBeGreaterThanOrEqual(0);
     const err = await src.fetchAccounts(0).catch((e: Error) => e.message);
     expect(err).toBe('SimpleFIN refused the access URL (403)');
     expect(err).not.toContain('s3cret');

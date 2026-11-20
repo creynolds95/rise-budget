@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import type { AppEnv } from './env';
 import { errorBody, renderError } from './lib/errors';
+import { activityLog } from './lib/activity';
 import { idempotency } from './lib/idempotency';
 import { requireAuth } from './lib/session';
 import { flushUsage, meter, meterDb, type Tally } from './lib/usage';
@@ -61,6 +62,7 @@ app.route('/mcp', mcp);
 
 // Everything else requires a valid access token (T16).
 app.use('*', requireAuth);
+app.use('*', activityLog);
 app.use('*', idempotency);
 app.route('/me', me);
 app.route('/devices', devices);
@@ -101,6 +103,8 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
   const started = Date.now();
   const tally: Tally = { read: 0, written: 0 };
   const db = meterDb(env.DB, tally);
+  let failed = false;
+  let idleTick = false;
   try {
     if (job === 'housekeeping') {
       const r = await runHousekeeping(db, env.BACKUPS, new Date(event.scheduledTime));
@@ -126,6 +130,7 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
       const slot = syncSlot(user.settings.syncTimes, user.timezone, new Date(event.scheduledTime));
       if (!slot.due) {
         tally.read = tally.written = 0;
+        idleTick = true;
         return;
       }
       deep = slot.deep;
@@ -174,9 +179,17 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
       ms: Date.now() - started,
       error: e instanceof Error ? e.message : String(e),
     });
+    failed = true;
     throw e;
   } finally {
-    await flushUsage(env.DB, tally, 0, `cron ${job}`);
+    await flushUsage(
+      env.DB,
+      tally,
+      0,
+      `cron ${job}`,
+      new Date(),
+      idleTick ? undefined : { kind: 'cron', ms: Date.now() - started, failed },
+    );
   }
 }
 

@@ -779,8 +779,34 @@ sync appends to two logs (kept 60 days, pruned nightly, never part of any money 
 
 Read only, for the signed-in owner, at `GET /diagnostics` (`days` 1 to 60), `GET
 /diagnostics/export` (a downloadable snapshot) and `GET /diagnostics/transactions/:id` (one
-row's thread). The Claude connector exposes `sync_diagnostics` and `transaction_history`.
+row's thread). The Claude connector exposes `sync_diagnostics`, `transaction_history` and
+`review_activity` (§12.5).
 Output never carries a name, nickname, institution, account number, merchant or descriptor:
 accounts are `acct-N` / `Bank A` in the order added, and error text has names and long digit
 runs removed. Amounts and dates are real. Logging is best effort and can never fail a sync.
+
+### 12.5 Activity and performance log
+
+Extends §12.4 with what the owner does and how the app performs. All of it is read-only,
+redacted the same way, and never part of a money calculation. Logging is best effort, runs
+after the response, and can never fail a request or a sync.
+
+- **Edits**: one row per mutating request (kept 180 days): entity, id, route, status, time
+  taken. For transactions (including their splits), categories, groups, accounts, periods,
+  allocations and settings, the row is read before and after and the structured fields that
+  changed are stored with before and after. Free text (notes, names, merchant display) is
+  recorded only as "changed" with its length; settings record only which keys changed.
+- **Sync timing**: each run's provider status, latency, response size and attempts (always 1;
+  the sync does not retry), total duration, and per account duration, rows fetched, inserted
+  and updated.
+- **Performance** (aggregates, not requests): per hour and route pattern, the count, errors
+  (5xx), slow (over 1 s), average and maximum time and rows read, for API calls, cron runs
+  and the browser (call timings by route pattern, script errors, app load). Hourly detail is
+  kept 14 days. The slowest statement shapes per day (SQL text only) are kept 30 days.
+- **Roll-up**: before pruning, expired sync events, edits and hourly performance are summed
+  into one row per day and kind (`log_day`, 2 years), so old months stay answerable.
+
+`GET /diagnostics/activity?days=&mode=summary|detail` returns the review (summary up to 180
+days; detail up to 60 adds every edit and sync decision). The connector tool `review_activity`
+wraps it: asking Claude "review the last week" needs no export step.
 

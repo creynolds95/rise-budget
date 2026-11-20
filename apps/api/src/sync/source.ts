@@ -18,6 +18,14 @@ export interface FetchInfo {
   date: string | null;
   age: string | null;
   cacheStatus: string | null;
+  /** How long the bridge took to answer (until the body was read), in milliseconds. */
+  ms?: number;
+  /** Size of the response body. */
+  bytes?: number;
+  /** Requests made. The sync does not retry, so this is 1; logged so a future retry shows up. */
+  attempts?: number;
+  /** Set when no response arrived. */
+  error?: 'unreachable' | 'invalid_json';
 }
 
 export class SourceError extends Error {
@@ -37,6 +45,7 @@ export function httpSimpleFin(accessUrl: string, fetcher: typeof fetch = fetch):
   const source: SimpleFinSource = {
     mode: 'live',
     async fetchAccounts(startDate) {
+      const t0 = Date.now();
       let res: Response;
       try {
         // Never a cached answer: a stale copy would look exactly like a bank that hasn't posted.
@@ -45,6 +54,15 @@ export function httpSimpleFin(accessUrl: string, fetcher: typeof fetch = fetch):
           cache: 'no-store',
         });
       } catch {
+        source.lastFetch = {
+          status: 0,
+          date: null,
+          age: null,
+          cacheStatus: null,
+          ms: Date.now() - t0,
+          attempts: 1,
+          error: 'unreachable',
+        };
         throw new SourceError('Could not reach SimpleFIN');
       }
       source.lastFetch = {
@@ -52,12 +70,23 @@ export function httpSimpleFin(accessUrl: string, fetcher: typeof fetch = fetch):
         date: res.headers.get('date'),
         age: res.headers.get('age'),
         cacheStatus: res.headers.get('cf-cache-status'),
+        ms: Date.now() - t0,
+        attempts: 1,
       };
       if (res.status === 403) throw new SourceError('SimpleFIN refused the access URL (403)');
       if (!res.ok) throw new SourceError(`SimpleFIN returned ${res.status}`);
+      let text: string;
       try {
-        return await res.json();
+        text = await res.text();
       } catch {
+        source.lastFetch = { ...source.lastFetch, ms: Date.now() - t0, error: 'unreachable' };
+        throw new SourceError('SimpleFIN returned invalid JSON');
+      }
+      source.lastFetch = { ...source.lastFetch, ms: Date.now() - t0, bytes: text.length };
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        source.lastFetch = { ...source.lastFetch, error: 'invalid_json' };
         throw new SourceError('SimpleFIN returned invalid JSON');
       }
     },

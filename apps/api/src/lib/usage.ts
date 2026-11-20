@@ -1,14 +1,19 @@
 import type { Context, MiddlewareHandler } from 'hono';
-import { addUsage } from '../db';
+import { SLOW_REQUEST_MS, SLOW_STATEMENT_MS } from '@rise/shared/activity';
+import { addUsage, upsertPerfStmt, upsertSlowQueryStmt } from '../db';
 import type { AppEnv, Env } from '../env';
 
 /** What one request or cron run has read and written so far, as D1 reports it per statement. */
 export interface Tally {
   read: number;
   written: number;
+  /** The slowest statements seen (SQL text and timing only), at most {@link MAX_SLOW} per tally. */
+  slow?: { sql: string; ms: number; rows: number }[];
 }
 
-type Meta = { meta?: { rows_read?: number; rows_written?: number } };
+const MAX_SLOW = 3;
+
+type Meta = { meta?: { rows_read?: number; rows_written?: number; duration?: number } };
 
 /**
  * One statement reading this many rows is a scan where a lookup was meant: every screen is
@@ -32,6 +37,9 @@ export function meterDb(
     const read = r.meta?.rows_read ?? 0;
     tally.read += read;
     tally.written += r.meta?.rows_written ?? 0;
+    const ms = r.meta?.duration ?? 0;
+    if ((ms >= SLOW_STATEMENT_MS || read >= heavyRows) && (tally.slow?.length ?? 0) < MAX_SLOW)
+      (tally.slow ??= []).push({ sql: sql ?? '?', ms, rows: read });
     if (read >= heavyRows) {
       console.error(
         JSON.stringify({ heavyQuery: true, rowsRead: read, sql: (sql ?? '?').slice(0, 300) }),
@@ -88,10 +96,30 @@ export async function flushUsage(
   requests: number,
   route?: string,
   now = new Date(),
+  /** When given, this call is also one sample in the hourly performance aggregate. */
+  perf?: { kind: 'api' | 'cron'; ms: number; status?: number; failed?: boolean },
 ) {
-  if (tally.read === 0 && tally.written === 0) return;
+  if (tally.read === 0 && tally.written === 0 && !perf) return;
   try {
-    await addUsage(db, now, tally.read, tally.written, requests, route);
+    const extra = [
+      ...(perf && route
+        ? [
+            upsertPerfStmt(db, now, {
+              kind: perf.kind,
+              route,
+              requests: 1,
+              errors: perf.failed || (perf.status ?? 0) >= 500 ? 1 : 0,
+              slow: perf.ms >= SLOW_REQUEST_MS ? 1 : 0,
+              msTotal: perf.ms,
+              msMax: perf.ms,
+              rowsRead: tally.read,
+              rowsWritten: tally.written,
+            }),
+          ]
+        : []),
+      ...(tally.slow ?? []).map((q) => upsertSlowQueryStmt(db, now, q)),
+    ];
+    await addUsage(db, now, tally.read, tally.written, requests, route, extra);
   } catch {
     // The cap itself can make this fail; there is nothing useful left to do about it.
   }
@@ -101,10 +129,15 @@ export async function flushUsage(
 export const meter: MiddlewareHandler<AppEnv> = async (c: Context<AppEnv>, next) => {
   const raw = c.env.DB;
   const tally: Tally = { read: 0, written: 0 };
+  const started = Date.now();
   c.env = { ...c.env, DB: meterDb(raw, tally) } satisfies Env;
   await next();
   // The route pattern (/periods/:id), not the URL, so every month lands on one row.
-  const flush = flushUsage(raw, tally, 1, `${c.req.method} ${c.req.routePath}`);
+  const flush = flushUsage(raw, tally, 1, `${c.req.method} ${c.req.routePath}`, new Date(), {
+    kind: 'api',
+    ms: Date.now() - started,
+    status: c.res.status,
+  });
   try {
     c.executionCtx.waitUntil(flush);
   } catch {

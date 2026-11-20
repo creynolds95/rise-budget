@@ -145,6 +145,24 @@ Notes:
 2. Them, on their phone: Login → "Use an authenticator code" → sign in.
 3. Them: Settings → Passkeys → "Add a passkey on this device".
 
+## Optional: let Claude review your activity on request
+
+One-time, about two minutes. After this, asking Claude "review the last week" reads the log
+directly (no export).
+
+1. In Rise: Settings › Your data › Claude › turn it on. Confirm with your passkey and copy the
+   link (shown once; turning it on again replaces it).
+2. In claude.ai: Settings › Connectors › Add custom connector. Name it `Rise`, paste the link
+   as the URL, leave sign-in empty (the link is the secret), Add.
+3. Allow it where you want it: in a chat or project, open the connectors menu and switch Rise
+   on. A project's threads can use it once it is enabled in that project; a cloud coding
+   session only sees connectors enabled for that session.
+4. Ask: "Review my Rise activity for the last 7 days." Claude calls `review_activity`
+   (summary); say "go into detail" for every edit and sync decision.
+
+The connector is read-only and redacted (no names, merchants, notes or account numbers).
+Turn it off any time in Settings, which deletes the link.
+
 ## Optional: deploy from GitHub Actions
 
 `ci.yml` + `deploy.yml` deploy on every push to `main`. Add these repo secrets

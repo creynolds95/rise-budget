@@ -3,6 +3,7 @@
  * token is an httpOnly cookie the browser sends to /api/auth. A 401 triggers one refresh,
  * shared by every request waiting on it, then a single retry.
  */
+import { recordApi, startPerfReporting } from './perf';
 import { Outbox, idbStore, isQueueable, type OutboxEntry, type SendResult } from './outbox';
 
 export class ApiError extends Error {
@@ -201,10 +202,12 @@ export async function api<T>(
 ): Promise<T> {
   // The same key on the retry: if the first attempt landed, the server replays it.
   const o = { ...opts, idempotencyKey: opts.idempotencyKey ?? crypto.randomUUID() };
+  const started = performance.now();
   let res: Response;
   try {
     res = await send(method, path, body, o);
   } catch (e) {
+    recordApi(method, path, started, true);
     if (MUTATING.has(method) && isQueueable(method, path)) {
       await outbox.add({
         key: o.idempotencyKey,
@@ -226,6 +229,7 @@ export async function api<T>(
   if (res.status === 401 && !path.startsWith('/auth/') && (await refresh())) {
     res = await send(method, path, body, o);
   }
+  recordApi(method, path, started, res.status >= 500);
   if (res.ok) {
     setDbLimited(false);
     if (MUTATING.has(method) && isQueueable(method, path))
@@ -259,6 +263,11 @@ export async function api<T>(
 }
 
 export const get = <T>(path: string) => api<T>('GET', path);
+
+// Client timings for the diagnostics log: batched, best effort, never user content.
+startPerfReporting((samples) =>
+  hasAccess() ? send('POST', '/diagnostics/client', { samples }, {}) : Promise.resolve(),
+);
 
 /**
  * T46: hands the browser a file to save, reusing `send`'s auth and the one-retry-on-401
