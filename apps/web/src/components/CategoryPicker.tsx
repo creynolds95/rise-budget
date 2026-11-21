@@ -8,6 +8,7 @@ export function CategoryPicker({
   open,
   title = 'Choose a category',
   always,
+  suggested,
   onPick,
   onClose,
 }: {
@@ -15,6 +16,11 @@ export function CategoryPicker({
   title?: string;
   /** Offer "Always file this merchant here"; the pick then says whether it was on. */
   always?: { merchant: string } | undefined;
+  /**
+   * The merchant's most-used categories, shown first when no rule files it. Choices to tap,
+   * never a pre-fill; ids that no longer exist are skipped.
+   */
+  suggested?: readonly string[] | undefined;
   onPick: (categoryId: string, always: boolean) => void;
   onClose: () => void;
 }) {
@@ -23,6 +29,15 @@ export function CategoryPicker({
   const [q, setQ] = useState('');
   const [rule, setRule] = useState(false);
   const match = (name: string) => name.toLowerCase().includes(q.trim().toLowerCase());
+  const picks = (suggested ?? [])
+    .slice(0, 3)
+    .flatMap((id) => categories.filter((c) => c.id === id))
+    .filter((c) => match(c.name));
+  const choose = (id: string) => {
+    setQ('');
+    onPick(id, rule);
+    setRule(false);
+  };
   return (
     <Sheet
       open={open}
@@ -51,6 +66,24 @@ export function CategoryPicker({
       {categories.length === 0 && (
         <p className="py-4 text-ink-muted">No categories yet. Add them from the Budget tab.</p>
       )}
+      {picks.length > 0 && (
+        <section className="mt-4" aria-label="Suggested">
+          <h3 className="type-label text-ink-muted">Suggested</h3>
+          <ul>
+            {picks.map((c) => (
+              <li key={c.id}>
+                <button
+                  className="flex min-h-12 w-full items-center border-b border-hairline text-left active:bg-sage-100"
+                  onClick={() => choose(c.id)}
+                >
+                  {c.emoji && <span className="mr-2">{c.emoji}</span>}
+                  {c.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {groups.map((g) => {
         const cats = categories.filter((c) => c.groupId === g.id && match(c.name));
         if (cats.length === 0) return null;
@@ -62,11 +95,7 @@ export function CategoryPicker({
                 <li key={c.id}>
                   <button
                     className="flex min-h-12 w-full items-center border-b border-hairline text-left active:bg-sage-100"
-                    onClick={() => {
-                      setQ('');
-                      onPick(c.id, rule);
-                      setRule(false);
-                    }}
+                    onClick={() => choose(c.id)}
                   >
                     {c.emoji && <span className="mr-2">{c.emoji}</span>}
                     {c.name}
