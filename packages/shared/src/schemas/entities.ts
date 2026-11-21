@@ -120,6 +120,8 @@ export const DebtAutoRun = z.object({
   /** What left checking, against what the plan said; shown when they differ. */
   debitCents: Cents.min(0).default(0),
   plannedCents: Cents.min(0).default(0),
+  /** Hidden from the Debt page by the owner; the payments stay applied. */
+  dismissed: z.boolean().default(false),
   loans: z.array(
     z.object({
       accountId: Id,

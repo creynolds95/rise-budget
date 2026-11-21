@@ -604,7 +604,11 @@ export function Debt() {
     }
   };
   const lastAuto =
-    current.lastAuto && current.lastAuto.period >= addMonths(period, -1) ? current.lastAuto : null;
+    current.lastAuto &&
+    !current.lastAuto.dismissed &&
+    current.lastAuto.period >= addMonths(period, -1)
+      ? current.lastAuto
+      : null;
   const undoAuto = async () => {
     if (!lastAuto) return;
     setError(null);
@@ -620,6 +624,18 @@ export function Debt() {
       await invalidateMoney();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not undo.');
+    }
+  };
+  const dismissAuto = async () => {
+    if (!current.lastAuto) return;
+    setError(null);
+    try {
+      await api('PATCH', '/me/settings', {
+        debt: { ...current, lastAuto: { ...current.lastAuto, dismissed: true } },
+      });
+      await qc.invalidateQueries({ queryKey: ['me'] });
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not hide this.');
     }
   };
   const skip = async () => {
@@ -772,7 +788,10 @@ export function Debt() {
                   </p>
                 )}
                 {!suggestions.length && error && <p className="mt-2 text-clay">{error}</p>}
-                <div className="mt-3">
+                <div className="mt-3 flex gap-2">
+                  <Button variant="quiet" onClick={() => void dismissAuto()}>
+                    Got it
+                  </Button>
                   <Button variant="quiet" onClick={() => void undoAuto()}>
                     Undo
                   </Button>
