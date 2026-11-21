@@ -396,6 +396,8 @@ export function Review() {
         open={picking !== null}
         onClose={() => setPicking(null)}
         always={picking ? { merchant: merchantName(picking) } : undefined}
+        // A rule scores 1; below that the merchant has no rule, so offer its usual categories.
+        suggested={picking && picking.suggestionConfidence < 1 ? picking.topCategoryIds : undefined}
         onPick={(id, always) => {
           // Picking only selects: the row waits for its ✓ or Confirm all.
           if (picking) setChosen((m) => new Map(m).set(picking.id, { categoryId: id, always }));
