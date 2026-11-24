@@ -20,3 +20,4 @@ export * from './push';
 export * from './mcp';
 export * from './syncLog';
 export * from './activity';
+export * from './monthlyReport';

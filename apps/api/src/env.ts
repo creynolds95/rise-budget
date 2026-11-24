@@ -15,6 +15,11 @@ export interface Env {
   SIMPLEFIN_MOCK?: string;
   /** Whose data the scheduled sync writes (single-user app). */
   SIMPLEFIN_OWNER_EMAIL?: string;
+  /** Optional. Turns on the monthly report's written summary (SPEC §12.6); without it the
+   * report still shows every figure and chart. Worker Secret; never returned or logged. */
+  ANTHROPIC_API_KEY?: string;
+  /** Optional. Adds the regional gas price to the monthly report (free key from eia.gov). */
+  EIA_API_KEY?: string;
 }
 
 export interface AppEnv {

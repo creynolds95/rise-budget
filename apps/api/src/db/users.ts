@@ -63,6 +63,12 @@ export async function updateSettings(
   );
   if (patch.follow)
     defined['follow'] = { rules: patch.follow.rules, log: user.settings.follow.log };
+  if (patch.monthlyReport) {
+    const keep = Object.fromEntries(
+      Object.entries(patch.monthlyReport).filter(([, v]) => v !== undefined),
+    );
+    defined['monthlyReport'] = { ...user.settings.monthlyReport, ...keep };
+  }
   const settings = UserSettings.parse({ ...user.settings, ...defined });
   await db
     .prepare('UPDATE user SET settings_json = ?2 WHERE id = ?1 /* scoped:user.id */')

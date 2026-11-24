@@ -9,10 +9,12 @@ import { addMonths, monthName } from '../lib/dates';
 import { formatCents } from '../lib/money';
 import { useCashFlowReport, useCategories, useMoneyFlow, useToday } from '../lib/queries';
 import { MoneyFlowReportView } from './MoneyFlow';
+import { MonthlyReportView } from './MonthlyReport';
 
 const VIEWS = [
   { key: 'flow', label: 'Cash flow' },
   { key: 'spending', label: 'Spending' },
+  { key: 'monthly', label: 'Monthly' },
 ] as const;
 type ViewKey = (typeof VIEWS)[number]['key'];
 
@@ -107,43 +109,51 @@ export function Reports() {
         ))}
       </div>
 
-      <div className="gutter mt-3 flex items-center justify-between">
-        <p className="type-label text-ink-muted">Chart</p>
-        {view === 'flow' ? (
-          <ChartPicker value={flowChart} options={FLOW_CHARTS} onChange={setFlowChart} />
-        ) : (
-          <ChartPicker
-            value={spendingChart}
-            options={SPENDING_CHARTS}
-            onChange={setSpendingChart}
-          />
-        )}
-      </div>
+      {view === 'monthly' ? (
+        <section className="gutter">
+          <MonthlyReportView month={month} />
+        </section>
+      ) : (
+        <>
+          <div className="gutter mt-3 flex items-center justify-between">
+            <p className="type-label text-ink-muted">Chart</p>
+            {view === 'flow' ? (
+              <ChartPicker value={flowChart} options={FLOW_CHARTS} onChange={setFlowChart} />
+            ) : (
+              <ChartPicker
+                value={spendingChart}
+                options={SPENDING_CHARTS}
+                onChange={setSpendingChart}
+              />
+            )}
+          </div>
 
-      <section className="gutter mt-2">
-        {view === 'flow' && flowChart === 'sankey' && (
-          <MoneyFlowReportView month={to} from={from} label={label} />
-        )}
-        {view === 'flow' && flowChart === 'bar' && (
-          <CashFlowBarView end={end} period={period} onTap={tapMonth} />
-        )}
-        {view === 'spending' && spendingChart === 'pie' && <SpendingPieView period={period} />}
-        {view === 'spending' && spendingChart === 'bar' && (
-          <SpendingBarView end={end} period={period} onTap={tapMonth} thisMonth={thisMonth} />
-        )}
-        {view === 'spending' && spendingChart === 'treemap' && (
-          <SpendingTreemapView period={period} />
-        )}
-      </section>
+          <section className="gutter mt-2">
+            {view === 'flow' && flowChart === 'sankey' && (
+              <MoneyFlowReportView month={to} from={from} label={label} />
+            )}
+            {view === 'flow' && flowChart === 'bar' && (
+              <CashFlowBarView end={end} period={period} onTap={tapMonth} />
+            )}
+            {view === 'spending' && spendingChart === 'pie' && <SpendingPieView period={period} />}
+            {view === 'spending' && spendingChart === 'bar' && (
+              <SpendingBarView end={end} period={period} onTap={tapMonth} thisMonth={thisMonth} />
+            )}
+            {view === 'spending' && spendingChart === 'treemap' && (
+              <SpendingTreemapView period={period} />
+            )}
+          </section>
 
-      <section className="gutter mt-3">
-        <Summary
-          end={end}
-          period={period}
-          onMonth={() => select(month)}
-          onAll={() => select(month, true)}
-        />
-      </section>
+          <section className="gutter mt-3">
+            <Summary
+              end={end}
+              period={period}
+              onMonth={() => select(month)}
+              onAll={() => select(month, true)}
+            />
+          </section>
+        </>
+      )}
     </div>
   );
 }

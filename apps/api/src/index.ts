@@ -19,6 +19,8 @@ import { allocations, periods } from './routes/periods';
 import { cashToPayday } from './routes/cashToPayday';
 import { recurring } from './routes/recurring';
 import { reports } from './routes/reports';
+import { monthlyReport } from './routes/monthlyReport';
+import { contextOptions, runMonthlyReportCron } from './lib/monthlyReport';
 import { tags } from './routes/tags';
 import { push } from './routes/push';
 import { connector } from './routes/connector';
@@ -85,6 +87,7 @@ app.route('/diagnostics', diagnostics);
 app.route('/recurring', recurring);
 app.route('/cash-to-payday', cashToPayday);
 app.route('/review', review);
+app.route('/reports/monthly', monthlyReport);
 app.route('/reports', reports);
 app.route('/export', dataExport);
 app.route('/import/monarch', monarchImport);
@@ -115,6 +118,17 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
         backupsPruned: r.pruned.length,
         rowsPruned: r.rowsPruned,
       });
+      // Optional and last: a report problem must never fail housekeeping.
+      if (env.ANTHROPIC_API_KEY && env.SIMPLEFIN_OWNER_EMAIL) {
+        await monthlyReportStep(env, db, new Date(event.scheduledTime)).catch((e: unknown) =>
+          log({
+            job,
+            ok: false,
+            step: 'monthly-report',
+            error: e instanceof Error ? e.message : String(e),
+          }),
+        );
+      }
       return;
     }
     const source = sourceFromEnv(env);
@@ -191,6 +205,26 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
       idleTick ? undefined : { kind: 'cron', ms: Date.now() - started, failed },
     );
   }
+}
+
+/** First days of the month: write last month's report if the owner turned that on. */
+async function monthlyReportStep(env: Env, db: D1Database, now: Date): Promise<void> {
+  if (now.getUTCDate() > 3 || !env.SIMPLEFIN_OWNER_EMAIL) return;
+  const userId = await findUserIdByEmail(db, env.SIMPLEFIN_OWNER_EMAIL);
+  const user = userId ? await getUser(userId, db) : null;
+  if (!userId || !user) return;
+  const result = await runMonthlyReportCron(
+    userId,
+    db,
+    env.ANTHROPIC_API_KEY,
+    user.settings.monthlyReport.auto,
+    user.settings.savings?.goals ?? [],
+    now,
+    fetch,
+    contextOptions(user.settings, env.EIA_API_KEY),
+  );
+  if (result !== 'skipped')
+    log({ job: 'housekeeping', ok: result === 'done', step: 'monthly-report' });
 }
 
 /** One JSON line per cron run, for Workers Logs ([observability] in wrangler.toml). */

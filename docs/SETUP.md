@@ -88,6 +88,8 @@ different, the scheduled sync silently does nothing.
 Simplest way to keep `JWT_SECRET` for step 5: generate it into a shell variable first
 (`JWT_SECRET=$(openssl rand -hex 32)`), then `printf '%s' "$JWT_SECRET" | npx wrangler secret put JWT_SECRET`.
 
+Optional: `ANTHROPIC_API_KEY` turns on the Monthly report's written summary; see [ANTHROPIC-KEY.md](ANTHROPIC-KEY.md).
+
 ## 4. Build and deploy
 
 From the repo root:
