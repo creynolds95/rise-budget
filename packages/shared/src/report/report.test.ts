@@ -150,14 +150,20 @@ describe('bridgeNetWorth', () => {
       investStartCents: 2_000_000,
       investEndCents: 2_200_000,
       investContributionCents: 60_000,
-      debtStartCents: -9_000_000,
-      debtEndCents: -8_950_000,
+      loanStartCents: -9_000_000,
+      loanEndCents: -8_950_000,
+      savingsStartCents: 300_000,
+      savingsEndCents: 330_000,
+      otherStartCents: 20_000_000,
+      otherEndCents: 20_010_000,
     });
     expect(bridge).toEqual({
       contributionsCents: 60_000,
       marketCents: 140_000,
       debtPaydownCents: 50_000,
-      otherCents: 50_000,
+      savingsCents: 30_000,
+      cashCents: 10_000,
+      otherCents: 10_000,
     });
     expect(Object.values(bridge).reduce((a, b) => a + b, 0)).toBe(changeCents);
   });
@@ -203,15 +209,15 @@ describe('formatUsd', () => {
 
 describe('narrative', () => {
   const ok = {
-    headlines: ['a'],
+    summary: 'a',
     chips: [{ text: 'x', tone: 'good' }],
     seasonal: '',
     movers: 'm',
-    weather: '',
-    gas: '',
+    budget: '',
     yoy: '',
     benchmarks: 'b',
     netWorth: 'n',
+    savings: '',
     goals: 'g',
     whatsNew: 'k',
     lifeNote: '',
@@ -222,18 +228,17 @@ describe('narrative', () => {
       JSON.stringify({
         ...ok,
         movers: 'x'.repeat(900),
-        headlines: Array(8).fill('h'.repeat(300)),
+        summary: 's'.repeat(900),
         chips: [{ text: 't'.repeat(90), tone: 'note' }],
       }),
     );
-    expect(long?.movers).toHaveLength(360);
-    expect(long?.headlines).toHaveLength(4);
-    expect(long?.headlines[0]).toHaveLength(160);
+    expect(long?.movers).toHaveLength(420);
+    expect(long?.summary).toHaveLength(360);
     expect(long?.chips[0]?.text).toHaveLength(48);
   });
   it('rejects junk', () => {
     expect(parseNarrative('nope')).toBeNull();
-    expect(parseNarrative(JSON.stringify({ ...ok, headlines: [] }))).not.toBeNull();
+    expect(parseNarrative(JSON.stringify({ ...ok, summary: '' }))).not.toBeNull();
     expect(parseNarrative(JSON.stringify({ ...ok, lifeNote: undefined }))).toBeNull();
     expect(
       parseNarrative(JSON.stringify({ ...ok, chips: [{ text: 'x', tone: 'bad' }] })),
@@ -267,7 +272,15 @@ const data: ReportData = {
     startCents: 0,
     endCents: 0,
     changeCents: 0,
-    bridge: { contributionsCents: 0, marketCents: 0, debtPaydownCents: 0, otherCents: 0 },
+    bridge: {
+      contributionsCents: 0,
+      marketCents: 0,
+      debtPaydownCents: 0,
+      savingsCents: 0,
+      cashCents: 0,
+      otherCents: 0,
+    },
+    trendCents: [],
     contributionsTracked: false,
     sp500Bp: null,
     bondsBp: null,
@@ -275,6 +288,10 @@ const data: ReportData = {
   },
   goals: [],
   whatsNew: [],
+  split: { spendingCents: 500_000, debtPaymentCents: 0, savingsCents: 0, retirementCents: 0 },
+  budget: null,
+  savings: null,
+  progress: null,
   yoy: [],
   weather: null,
   gas: null,
@@ -285,7 +302,7 @@ describe('prompt and fallback', () => {
   const firstCategory = data.categories[0] as ReportData['categories'][number];
   it('pre-formats every cents field so the model quotes, not computes', () => {
     const p = buildReportPrompt(data, usd);
-    expect(p).toContain('"netUsd":"$1000.00"');
+    expect(p).toContain('"leftAfterSpendingUsd":"$1000.00"');
     expect(p).toContain('"deltaUsd":"$100.00"');
     expect(p).toContain('"prevSparse":true');
   });
@@ -294,14 +311,49 @@ describe('prompt and fallback', () => {
     expect(p).toContain('"usd":"$500.00"');
     expect(p).not.toMatch(/Cents"|"cents"|Bp"/);
   });
+  it('gives weather and gas as comparisons to attach to the category they explain', () => {
+    const temps = (hi: number, lo: number) => ({
+      avgHighF: hi,
+      avgLowF: lo,
+      maxF: hi + 9,
+      minF: lo - 9,
+      days: 30,
+    });
+    const p = buildReportPrompt(
+      {
+        ...data,
+        weather: { month: temps(52, 33), prev: temps(60, 41), lastYear: temps(60, 40) },
+        gas: { region: 'Gulf Coast', monthCents: 301, prevCents: 289, lastYearCents: 330 },
+      },
+      usd,
+    );
+    expect(p).toContain('"highsVsLastYear":"8°F colder"');
+    expect(p).toContain('"vsLastMonth":"$0.12 a gallon higher"');
+    expect(p).toContain('"vsLastYear":"$0.29 a gallon lower"');
+  });
   it('carries only category names and aggregates', () => {
     expect(buildReportPrompt(data, usd)).not.toMatch(/merchant|account|email/i);
   });
   it('falls back to deterministic bullets', () => {
-    expect(fallbackHeadlines(data, usd)[0]).toBe('Surplus of $1000.00: $6000.00 in, $5000.00 out.');
+    expect(fallbackHeadlines(data, usd)[0]).toBe('$6000.00 in, $5000.00 spent.');
     expect(
-      fallbackHeadlines({ ...data, cash: { ...data.cash, status: 'even', netCents: 0 } }, usd)[0],
-    ).toMatch(/matched/);
+      fallbackHeadlines(
+        {
+          ...data,
+          savings: {
+            savingsCents: 0,
+            debtPrincipalCents: 0,
+            retirementCents: 0,
+            retirementEstimated: false,
+            totalCents: 0,
+            rateBp: 1_840,
+            avgRateBp: null,
+            basis: 'balances',
+          },
+        },
+        usd,
+      )[1],
+    ).toBe('Savings rate 18.4% of income.');
     const d: ReportData = {
       ...data,
       cash: { ...data.cash, status: 'deficit', netCents: -500 },
@@ -309,7 +361,6 @@ describe('prompt and fallback', () => {
       netWorth: { ...data.netWorth, changeCents: -100 },
     };
     const hs = fallbackHeadlines(d, usd);
-    expect(hs.some((x) => x.startsWith('Deficit'))).toBe(true);
     expect(hs.some((x) => x.includes('Net worth down'))).toBe(true);
     expect(hs.some((x) => x.includes('down $90.00'))).toBe(true);
     const up = fallbackHeadlines(

@@ -4,7 +4,11 @@ import {
   buildBenchmarks,
   buildCategories,
   cashStatus,
+  classifyCategory,
   isPrevSparse,
+  rateBp,
+  splitRows,
+  trailingRateBp,
   changelogFor,
   topMovers,
   yoyNotes,
@@ -112,9 +116,46 @@ export function reportDataFromCsv(txns: readonly CsvTxn[], month: string): Repor
   const cur = month_(month);
   const old = month_(prev);
   const ly = month_(lastYear);
-  const lyRows = ly.count > 0 ? ly.rows : null;
-  const categories = buildCategories(cur.rows, old.rows, lyRows);
-  const netCents = cur.income - cur.spent;
+  // Savings and retirement categories are money set aside, never spending; debt payments are
+  // bills and stay in the list but are counted apart.
+  const spendRows = (rows: RawCategory[]) =>
+    rows.filter((r) => ['spending', 'debt'].includes(classifyCategory(r.name)));
+  const curRows = spendRows(cur.rows);
+  const oldRows = spendRows(old.rows);
+  const spentOf = (rows: RawCategory[]) => rows.reduce((n, r) => n + r.cents, 0);
+  const lyRows = ly.count > 0 ? spendRows(ly.rows) : null;
+  const trend = new Map<string, number[]>();
+  for (let i = 5; i >= 0; i--) {
+    const mm = month_(addPeriods(month, -i));
+    const by = new Map(spendRows(mm.rows).map((r) => [r.name, r.cents]));
+    for (const name of new Set([...curRows, ...oldRows].map((r) => r.name)))
+      trend.set(name, [...(trend.get(name) ?? []), by.get(name) ?? 0]);
+  }
+  const categories = buildCategories(curRows, oldRows, lyRows, 10, { trend });
+  const spent = spentOf(curRows);
+  const netCents = cur.income - spent;
+  // A CSV has no balances, so what is set aside comes from category names (payments include
+  // interest, so this is approximate); the report says so.
+  const setAside = (rows: RawCategory[]) => {
+    const x = splitRows(rows);
+    return x.savingsCents + x.debtPaymentCents + x.retirementCents;
+  };
+  const past = [1, 2, 3].map((i) => month_(addPeriods(month, -i)));
+  const sp = splitRows(cur.rows);
+  const savings = {
+    savingsCents: sp.savingsCents,
+    debtPrincipalCents: sp.debtPaymentCents,
+    retirementCents: sp.retirementCents,
+    retirementEstimated: false,
+    totalCents: setAside(cur.rows),
+    rateBp: rateBp(setAside(cur.rows), cur.income),
+    avgRateBp: trailingRateBp(
+      past
+        .filter((m) => m.count > 0)
+        .map((m) => ({ totalCents: setAside(m.rows), incomeCents: m.income })),
+    ),
+    basis: 'categories' as const,
+  };
 
   return ReportData.parse({
     month,
@@ -123,27 +164,37 @@ export function reportDataFromCsv(txns: readonly CsvTxn[], month: string): Repor
     prevSparse: isPrevSparse(old.count, cur.count),
     cash: {
       incomeCents: cur.income,
-      spentCents: cur.spent,
+      spentCents: spent,
       netCents,
       prevIncomeCents: old.income,
-      prevSpentCents: old.spent,
+      prevSpentCents: spentOf(oldRows),
       status: cashStatus(netCents),
     },
     categories,
-    movers: topMovers(buildCategories(cur.rows, old.rows, null, 200)),
-    benchmarks: { year: BENCHMARK_YEAR, rows: buildBenchmarks(cur.rows, cur.spent) },
+    split: sp,
+    savings: savings.totalCents > 0 || savings.rateBp !== null ? savings : null,
+    movers: topMovers(buildCategories(curRows, oldRows, null, 200)),
+    benchmarks: { year: BENCHMARK_YEAR, rows: buildBenchmarks(curRows, spent) },
     netWorth: {
       startCents: 0,
       endCents: 0,
       changeCents: 0,
-      bridge: { contributionsCents: 0, marketCents: 0, debtPaydownCents: 0, otherCents: 0 },
+      bridge: {
+        contributionsCents: 0,
+        marketCents: 0,
+        debtPaydownCents: 0,
+        savingsCents: 0,
+        cashCents: 0,
+        otherCents: 0,
+      },
       contributionsTracked: false,
       sp500Bp: null,
       bondsBp: null,
       investmentGrowthBp: null,
+      trendCents: [],
     },
     goals: [],
     whatsNew: changelogFor(month),
-    yoy: yoyNotes(cur.rows, lyRows),
+    yoy: yoyNotes(curRows, lyRows),
   });
 }

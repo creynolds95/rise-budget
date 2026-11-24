@@ -2,10 +2,30 @@ import { useEffect } from 'react';
 import { markReportSeen } from '../lib/reportSeen';
 import { MonthlyReportBody } from '../components/MonthlyReportBody';
 import { Skeleton } from '../components/primitives/Skeleton';
-import { useMonthlyReport, useSetMonthlyReport, useWriteMonthlySummary } from '../lib/queries';
+import { addMonths, monthName } from '../lib/dates';
+import {
+  useMonthlyReport,
+  useSetMonthlyReport,
+  useToday,
+  useWriteMonthlySummary,
+} from '../lib/queries';
 
-/** The monthly report screen: the report for `month`, with the key-gated write controls. */
+/**
+ * The monthly report screen. Only whole months: the current one says when its report arrives
+ * (the 1st), with no partial comparisons.
+ */
 export function MonthlyReportView({ month }: { month: string }) {
+  const thisMonth = useToday().slice(0, 7);
+  if (month < thisMonth) return <Finished month={month} />;
+  return (
+    <p className="mt-4 rounded-card bg-surface p-4 type-body text-ink-muted shadow-soft">
+      Your {monthName(month, false)} report arrives {monthName(addMonths(month, 1), false)} 1.
+    </p>
+  );
+}
+
+/** The report for a finished `month`, with the key-gated write controls. */
+function Finished({ month }: { month: string }) {
   // Looking at it is enough: the Dashboard card for this month goes away.
   useEffect(() => markReportSeen(month), [month]);
   const q = useMonthlyReport(month);

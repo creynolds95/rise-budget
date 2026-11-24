@@ -1,5 +1,5 @@
 import { MonthlyReport, ReportData, ReportNarrative } from '@rise/shared/report';
-import { addPeriods } from '@rise/shared/budget';
+import { addPeriods, hasEnded } from '@rise/shared/budget';
 import { PeriodId } from '@rise/shared/schemas';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
@@ -91,6 +91,12 @@ monthlyReport.post('/generate', async (c) => {
   if (!key) throw new AppError(409, 'CONFLICT', 'No Anthropic API key is set on this deployment');
   const { month } = body.data;
   const { userId, user, today, goals } = await load(c);
+  if (!hasEnded(month, today))
+    throw new AppError(
+      409,
+      'CONFLICT',
+      'That month is not over yet. Its report arrives on the 1st.',
+    );
   const ok = await generateAndStore(
     userId,
     c.env.DB,

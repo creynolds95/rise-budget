@@ -824,7 +824,7 @@ insight, never advice. The figures always work; the written summary is optional.
 - **Spending** is the budget's own definition (`period_aggregate`, expense groups), so
   transfers and credit-card payments, which sit in unbudgeted categories, never count and
   nothing is double counted.
-- **Net worth bridge**: change = contributions (money recorded into investment accounts) +
+- **Net worth bridge** (superseded by the by-account-kind bridge in v2 below): change = contributions (money recorded into investment accounts) +
   market (investment change beyond contributions) + debt paydown (credit and loan balances
   moving toward zero) + other (the remainder, so the four always sum to the change). Accounts
   with no balance at the month's start are left out: an account appearing is not a gain. When
@@ -857,7 +857,7 @@ insight, never advice. The figures always work; the written summary is optional.
   most 12) are given to later reports so a change is explained once. Nothing is kept unasked.
 - **Key**: `ANTHROPIC_API_KEY` Worker secret. Without it the report renders every chart and tile
   and the headline bullets are written by plain code; the "Write summary" button is absent.
-- **When**: on its own, once, on the 1st for the month just ended (`MONTHLY_REPORT_CRON`, 16:00
+- **When**: on its own, once, on the 1st for the month just ended (the per-minute tick at 16:00
   UTC, after the morning syncs so the last day's transactions are in). No setting and no
   mid-month regeneration; the Monthly view offers finished months only. "Write summary" /
   "Rewrite summary" stays as a manual button (needs a key). With no key the report is stored
@@ -875,3 +875,14 @@ insight, never advice. The figures always work; the written summary is optional.
   worth and goals are absent from a CSV, so those sections are left out. In a CSV a category is
   income when its whole history nets positive; "Transfer" and "Credit Card Payment" categories
   are ignored.
+
+**v2 (full months, plan-aware).**
+
+- **Full months only.** The current month shows "report arrives on the 1st"; `/generate` returns 409 for an unfinished month.
+- **Spent splits three ways**: spending, savings (savings-goal and follow-rule categories) and debt paydown. Savings is good news and is tracked explicitly. "Surplus" is not a result; it is the signal for when to add to savings or pay down debt.
+- **Savings rate** = (savings + debt principal + retirement contributions) / income, for the month and the trailing average, with a one-line explanation.
+- **Budget context first.** Variable categories are compared against their budget (over or under, at least $25 and 10%); fixed bills are never compared (the owner edits those lines to match). Each mover carries a 3-6 month trend line.
+- **Weather and gas are model context only.** No tiles; the reason is attached to the mover it explains.
+- **Net worth bridge by account kind**: contributions and market (investments), loans paid, savings accounts, cash (checking and card balances), home and other assets. Sums to the change; nothing unexplained.
+- **Debt payoff and retirement contribution progress**, and holiday or seasonal awareness.
+- **Summary at the top**: 1-3 lines on the most notable things (one-offs, big swings, savings-rate or payoff moments), a baseline not a limit, within the same number guardrails. At most two chips, no repeated figures; benchmarks only for full months and only when unusual.

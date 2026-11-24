@@ -8,8 +8,10 @@ import {
   monthGasCents,
   monthWeather,
   moveKind,
+  spikeOf,
   priceToCents,
   yoyNotes,
+  tidyNarrative,
   type ReportNarrative,
 } from './index';
 
@@ -88,6 +90,31 @@ describe('weather and gas', () => {
   });
 });
 
+describe('tidyNarrative', () => {
+  it('cuts a chip that repeats a headline figure, and keeps two at most', () => {
+    const n = {
+      summary: 'Groceries up $221.50.',
+      chips: [
+        { text: '$221.50 more', tone: 'note' as const },
+        { text: 'Heating season', tone: 'note' as const },
+        { text: 'Gas $3.01', tone: 'watch' as const },
+        { text: 'Quiet month', tone: 'good' as const },
+      ],
+      seasonal: '',
+      movers: '',
+      budget: '',
+      yoy: '',
+      benchmarks: '',
+      netWorth: '',
+      savings: '',
+      goals: '',
+      whatsNew: '',
+      lifeNote: '',
+    };
+    expect(tidyNarrative(n).chips.map((c) => c.text)).toEqual(['Heating season', 'Gas $3.01']);
+  });
+});
+
 describe('grounding', () => {
   const input =
     '{"deltaUsd":"$300","pct":"25%","avgHigh":"62°F","month":"2026-10","usd":"$1,234.56"}';
@@ -108,27 +135,51 @@ describe('grounding', () => {
   });
   it('drops only the sentences that fail and counts them', () => {
     const n: ReportNarrative = {
-      headlines: ['Up $300.', 'Up $999.'],
+      summary: 'Up $300. Up $999.',
       chips: [
         { text: '$300 more', tone: 'note' },
         { text: '$9 more', tone: 'note' },
       ],
       seasonal: 'Cooler month. Bills ran $777 higher.',
       movers: '',
-      weather: '',
-      gas: '',
+      budget: '',
       yoy: '',
       benchmarks: '',
       netWorth: '',
+      savings: '',
       goals: '',
       whatsNew: '',
       lifeNote: 'Income was $5.',
     };
     const g = groundNarrative(n, input);
     expect(g.dropped).toBe(4);
-    expect(g.narrative.headlines).toEqual(['Up $300.']);
-    expect(g.narrative.chips).toHaveLength(1);
+    expect(g.narrative.summary).toBe('Up $300.');
+    // The surviving chip only repeats the surviving headline, so the tidy-up cuts it too.
+    expect(g.narrative.chips).toEqual([]);
     expect(g.narrative.seasonal).toBe('Cooler month.');
     expect(g.narrative.lifeNote).toBe('');
+  });
+});
+
+describe('spikeOf', () => {
+  const cat = (name: string, cents: number, trend: number[]) => ({
+    name,
+    cents,
+    prevCents: 0,
+    deltaCents: 0,
+    lastYearCents: null,
+    plannedCents: null,
+    trend,
+  });
+  it('flags a month at least double the usual by enough dollars', () => {
+    expect(spikeOf(cat('Repairs', 40_000, [5_000, 0, 10_000, 40_000]))).toEqual({
+      usualCents: 5_000,
+    });
+  });
+  it('needs three prior months, enough dollars, and skips Everything else', () => {
+    expect(spikeOf(cat('Repairs', 40_000, [0, 40_000]))).toBeNull();
+    expect(spikeOf(cat('Snacks', 4_000, [1_000, 1_000, 1_000, 4_000]))).toBeNull();
+    expect(spikeOf(cat('Everything else', 40_000, [5_000, 5_000, 5_000, 40_000]))).toBeNull();
+    expect(spikeOf(cat('Steady', 12_000, [10_000, 10_000, 10_000, 12_000]))).toBeNull();
   });
 });

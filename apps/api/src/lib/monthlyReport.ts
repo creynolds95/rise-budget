@@ -1,4 +1,4 @@
-import { addPeriods, hasEnded, periodEnd, periodStart } from '@rise/shared/budget';
+import { addPeriods, hasEnded, periodEnd, periodStart, resolvePlanned } from '@rise/shared/budget';
 import { balanceAt } from '@rise/shared/networth';
 import {
   REPORT_JSON_SCHEMA,
@@ -9,7 +9,12 @@ import {
   buildBenchmarks,
   buildCategories,
   buildReportPrompt,
+  classifyCategory,
+  compareBudget,
   groundNarrative,
+  rateBp,
+  splitRows,
+  trailingRateBp,
   yoyNotes,
   cashStatus,
   changelogFor,
@@ -20,14 +25,15 @@ import {
   parseNarrative,
   topMovers,
   BENCHMARK_YEAR,
-  type LifeNote,
   type RawCategory,
   type ReportNarrative,
 } from '@rise/shared/report';
 import { emergencyTargetCents, goalProgress, shareAccountBalance } from '@rise/shared/savings';
-import type { SavingsGoal } from '@rise/shared/schemas';
+import type { SavingsGoal, UserSettings } from '@rise/shared/schemas';
 import {
+  allocationsBetween,
   getReportRow,
+  planDefaultOf,
   incomeByPeriod,
   investmentInflow,
   listAccountsForNetWorth,
@@ -69,6 +75,18 @@ async function fetchBonds(
   }
 }
 
+/** What the report needs beyond the figures: the outside context and which accounts are which. */
+export interface ReportOptions extends ContextOptions {
+  /** Accounts that hold savings (goal and followed accounts): their balance change is savings. */
+  savingsAccountIds?: readonly string[];
+  /** Retirement accounts and what the plan puts into each every month. */
+  retirement?: readonly { accountId: string; monthlyCents: number }[];
+  /** Loan accounts by the plan's group, for the payoff rows. */
+  loanGroups?: readonly { accountId: string; group: 'student' | 'mortgage' }[];
+}
+
+const NO_OPTS: ReportOptions = { zip: '', lifeNotes: [] };
+
 export async function computeReportData(
   userId: UserId,
   db: D1Database,
@@ -77,24 +95,30 @@ export async function computeReportData(
   goals: readonly SavingsGoal[],
   /** null skips the market-data calls (the live preview needs no index returns). */
   fetcher: typeof fetch | null = fetch,
-  opts: ContextOptions = { zip: '', lifeNotes: [] },
+  opts: ReportOptions = NO_OPTS,
 ): Promise<ReportData> {
   const prev = addPeriods(month, -1);
   const lastYear = addPeriods(month, -12);
   const partial = !hasEnded(month, today);
-  const start = periodEnd(prev);
   const end = partial ? today : periodEnd(month);
+  // The last six months of spending for the trend lines; the last three before this one for
+  // the savings rate's average, which also needs balances from the start of the first.
+  const trendFrom = addPeriods(month, -5);
+  const rateMonths = [3, 2, 1, 0].map((i) => addPeriods(month, -i));
+  const monthStart = (m: string) => periodEnd(addPeriods(m, -1));
+  const monthEnd = (m: string) => (m === month ? end : periodEnd(m));
 
-  const [aggs, lyAggs, cats, groups, income, accts, snaps, inflow, sp, bonds, ext] =
+  const [aggs, lyAggs, cats, groups, income, accts, snaps, inflows, plans, sp, bonds, ext] =
     await Promise.all([
-      listAggregates(userId, db, prev, month),
+      listAggregates(userId, db, trendFrom, month),
       listAggregates(userId, db, lastYear, lastYear),
       listCategoriesWithArchived(userId, db),
       listGroupsWithArchived(userId, db),
-      incomeByPeriod(userId, db, prev, month),
+      incomeByPeriod(userId, db, rateMonths[0] as string, month),
       listAccountsForNetWorth(userId, db),
-      listSnapshots(userId, db, { from: start, to: end }),
-      investmentInflow(userId, db, start, end),
+      listSnapshots(userId, db, { from: monthStart(rateMonths[0] as string), to: end }),
+      Promise.all(rateMonths.map((m) => investmentInflow(userId, db, monthStart(m), monthEnd(m)))),
+      allocationsBetween(userId, db, month, month),
       fetcher ? fetchSp500(periodStart(prev), periodEnd(month), fetcher) : null,
       fetcher ? fetchBonds(periodStart(prev), periodEnd(month), fetcher) : null,
       fetcher ? fetchContext(opts, month, today, fetcher) : null,
@@ -104,8 +128,12 @@ export async function computeReportData(
   // aggregate: spending here is the budget's own definition, with no double count.
   const groupById = new Map(groups.map((g) => [g.id, g]));
   const catById = new Map(cats.map((c) => [c.id, c]));
-  const spendBy = (rows: typeof aggs, period: string): { rows: RawCategory[]; txns: number } => {
+  const spendBy = (
+    rows: typeof aggs,
+    period: string,
+  ): { rows: RawCategory[]; txns: number; byId: Map<string, number> } => {
     const out: RawCategory[] = [];
+    const byId = new Map<string, number>();
     let txns = 0;
     for (const a of rows) {
       if (a.periodId !== period) continue;
@@ -113,24 +141,57 @@ export async function computeReportData(
       const g = c && groupById.get(c.groupId);
       if (!c || !g || g.kind !== 'expense') continue;
       out.push({ name: c.name, cents: a.spentCents });
+      byId.set(c.id, a.spentCents);
       txns += a.txnCount;
     }
-    return { rows: out, txns };
+    return { rows: out, txns, byId };
   };
+  // Money set aside (savings, retirement) is not spending; debt payments stay in the list.
+  const spending = (rows: RawCategory[]) =>
+    rows.filter((r) => ['spending', 'debt'].includes(classifyCategory(r.name)));
   const cur = spendBy(aggs, month);
   const old = spendBy(aggs, prev);
   const ly = spendBy(lyAggs, lastYear);
+  const curRows = spending(cur.rows);
+  const oldRows = spending(old.rows);
   const sum = (r: RawCategory[]) => r.reduce((n, x) => n + x.cents, 0);
   const incomeOf = (p: string) => income.find((i) => i.periodId === p)?.cents ?? 0;
 
-  const lyRows = ly.rows.length > 0 ? ly.rows : null;
-  const categories = buildCategories(cur.rows, old.rows, lyRows);
-  const spentCents = sum(cur.rows);
+  const lyRows = ly.rows.length > 0 ? spending(ly.rows) : null;
+  const trend = new Map<string, number[]>();
+  const names = new Set([...curRows, ...oldRows].map((r) => r.name));
+  for (let i = 5; i >= 0; i--) {
+    const by = new Map<string, number>();
+    for (const r of spending(spendBy(aggs, addPeriods(month, -i)).rows))
+      by.set(r.name, (by.get(r.name) ?? 0) + r.cents);
+    for (const n of names) trend.set(n, [...(trend.get(n) ?? []), by.get(n) ?? 0]);
+  }
+
+  // Variable categories against this month's plan. Fixed bills and bills are left out: the
+  // owner sets their plan to the exact amount once it posts, so they are always on budget.
+  const planRows = new Map(plans.map((a) => [a.category_id, a]));
+  const variable = cats.flatMap((c) => {
+    const g = groupById.get(c.groupId);
+    if (!g || g.kind !== 'expense' || c.spendShape === 'fixed' || c.isBill) return [];
+    if (classifyCategory(c.name) !== 'spending') return [];
+    const row = planRows.get(c.id);
+    const plannedCents = resolvePlanned(
+      row && { plannedCents: row.planned_cents },
+      planDefaultOf(c),
+      month,
+    );
+    return plannedCents > 0
+      ? [{ name: c.name, plannedCents, spentCents: cur.byId.get(c.id) ?? 0 }]
+      : [];
+  });
+  const planByName = new Map(variable.map((v) => [v.name, v.plannedCents]));
+  const categories = buildCategories(curRows, oldRows, lyRows, 10, { plans: planByName, trend });
+  const spentCents = sum(curRows);
   const incomeCents = incomeOf(month);
   const netCents = incomeCents - spentCents;
 
-  // Net worth. Accounts whose first balance is after the start are left out of the bridge:
-  // an account appearing is not a gain.
+  // Net worth, by kind of account. Accounts whose first balance is after the start are left
+  // out of the bridge: an account appearing is not a gain.
   const byAccount = new Map<string, { asOf: string; balanceCents: number }[]>();
   for (const s of snaps) {
     const list = byAccount.get(s.account_id) ?? [];
@@ -138,31 +199,111 @@ export async function computeReportData(
     byAccount.set(s.account_id, list);
   }
   const live = accts.filter((a) => a.includeInNetWorth && !a.archivedAt);
-  const known = live.flatMap((a) => {
-    const snapshots = byAccount.get(a.id) ?? [];
-    const startBal = balanceAt(snapshots, start);
-    const endBal = balanceAt(snapshots, end);
-    return startBal && endBal
-      ? [{ kind: a.kind, start: startBal.balanceCents, end: endBal.balanceCents }]
-      : [];
-  });
-  const total = (pick: (k: (typeof known)[number]) => boolean, f: 'start' | 'end') =>
-    known.filter(pick).reduce((n, k) => n + k[f], 0);
-  const isInvest = (k: (typeof known)[number]) => k.kind === 'investment';
-  const isDebt = (k: (typeof known)[number]) => k.kind === 'credit' || k.kind === 'loan';
-  const all = () => true;
-  const startCents = total(all, 'start');
-  const endCents = total(all, 'end');
+  const savingsIds = new Set(opts.savingsAccountIds ?? []);
+  const retireIds = new Set((opts.retirement ?? []).map((r) => r.accountId));
+  const loanGroup = new Map((opts.loanGroups ?? []).map((l) => [l.accountId, l.group]));
+  const knownIn = (m: string) =>
+    live.flatMap((a) => {
+      const snapshots = byAccount.get(a.id) ?? [];
+      const startBal = balanceAt(snapshots, monthStart(m));
+      const endBal = balanceAt(snapshots, monthEnd(m));
+      return startBal && endBal
+        ? [{ id: a.id, kind: a.kind, start: startBal.balanceCents, end: endBal.balanceCents }]
+        : [];
+    });
+  type Known = ReturnType<typeof knownIn>[number];
+  const known = knownIn(month);
+  const total = (pick: (k: Known) => boolean, f: 'start' | 'end', from: Known[] = known) =>
+    from.filter(pick).reduce((n, k) => n + k[f], 0);
+  const isInvest = (k: Known) => k.kind === 'investment';
+  const isLoan = (k: Known) => k.kind === 'loan';
+  const isSavings = (k: Known) => savingsIds.has(k.id);
+  const isOther = (k: Known) => k.kind === 'other';
+  const startCents = total(() => true, 'start');
+  const endCents = total(() => true, 'end');
+  const inflow = inflows[3] as (typeof inflows)[number];
   const { changeCents, bridge } = bridgeNetWorth({
     startCents,
     endCents,
     investStartCents: total(isInvest, 'start'),
     investEndCents: total(isInvest, 'end'),
     investContributionCents: inflow.cents,
-    debtStartCents: total(isDebt, 'start'),
-    debtEndCents: total(isDebt, 'end'),
+    loanStartCents: total(isLoan, 'start'),
+    loanEndCents: total(isLoan, 'end'),
+    savingsStartCents: total(isSavings, 'start'),
+    savingsEndCents: total(isSavings, 'end'),
+    otherStartCents: total(isOther, 'start'),
+    otherEndCents: total(isOther, 'end'),
   });
   const investStart = total(isInvest, 'start');
+
+  // Net worth at each month end, over the accounts known at the first, so a new account is not
+  // a gain.
+  const first = rateMonths[0] as string;
+  const trendAccts = live.filter((a) => balanceAt(byAccount.get(a.id) ?? [], monthStart(first)));
+  const nwTrend =
+    trendAccts.length === 0
+      ? []
+      : rateMonths.map((m) =>
+          trendAccts.reduce(
+            (n, a) => n + (balanceAt(byAccount.get(a.id) ?? [], monthEnd(m))?.balanceCents ?? 0),
+            0,
+          ),
+        );
+
+  // Savings rate: (savings moved + loan principal + retirement deposits) / income.
+  const planned = (opts.retirement ?? []).reduce((n, r) => n + r.monthlyCents, 0);
+  const setAside = (m: string, i: number) => {
+    const k = m === month ? known : knownIn(m);
+    const infl = inflows[i] as (typeof inflows)[number];
+    const savingsCents = total(isSavings, 'end', k) - total(isSavings, 'start', k);
+    const debtPrincipalCents = total(isLoan, 'end', k) - total(isLoan, 'start', k);
+    const estimated = !infl.tracked && planned > 0;
+    const retirementCents = infl.tracked ? infl.cents : planned;
+    return {
+      savingsCents,
+      debtPrincipalCents,
+      retirementCents,
+      retirementEstimated: estimated,
+      totalCents: savingsCents + debtPrincipalCents + retirementCents,
+    };
+  };
+  const now = setAside(month, 3);
+  const earlier = rateMonths
+    .slice(0, 3)
+    .map((m, i) => ({ totalCents: setAside(m, i).totalCents, incomeCents: incomeOf(m) }))
+    .filter((m) => m.incomeCents > 0);
+  const savings = {
+    ...now,
+    rateBp: rateBp(now.totalCents, incomeCents),
+    avgRateBp: trailingRateBp(earlier),
+    basis: 'balances' as const,
+  };
+
+  const debtRows = new Map<string, { owedCents: number; paidCents: number }>();
+  for (const k of known.filter(isLoan)) {
+    const g = loanGroup.get(k.id);
+    const label = g === 'student' ? 'Student loans' : g === 'mortgage' ? 'Mortgage' : 'Other loans';
+    const r = debtRows.get(label) ?? { owedCents: 0, paidCents: 0 };
+    debtRows.set(label, {
+      owedCents: r.owedCents - k.end,
+      paidCents: r.paidCents + (k.end - k.start),
+    });
+  }
+  const retireKnown = known.filter((k) => retireIds.has(k.id));
+  const progress =
+    debtRows.size === 0 && retireKnown.length === 0 && !known.some(isSavings)
+      ? null
+      : {
+          debt: [...debtRows].map(([label, r]) => ({ label, ...r })),
+          retirement: {
+            balanceCents: total(() => true, 'end', retireKnown),
+            contributedCents: now.retirementCents,
+            plannedCents: planned,
+            estimated: now.retirementEstimated,
+          },
+          savingsBalanceCents: total(isSavings, 'end'),
+        };
 
   // Goals: each goal's share of its account at the end of the month.
   const balanceOf = (accountId: string): number =>
@@ -196,17 +337,22 @@ export async function computeReportData(
       spentCents,
       netCents,
       prevIncomeCents: incomeOf(prev),
-      prevSpentCents: sum(old.rows),
+      prevSpentCents: sum(oldRows),
       status: cashStatus(netCents),
     },
+    split: splitRows(cur.rows),
+    budget: variable.length > 0 ? compareBudget(variable) : null,
+    savings: incomeCents > 0 || savings.totalCents !== 0 ? savings : null,
+    progress,
     categories,
-    movers: topMovers(buildCategories(cur.rows, old.rows, null, 200)),
-    benchmarks: { year: BENCHMARK_YEAR, rows: buildBenchmarks(cur.rows, spentCents) },
+    movers: topMovers(buildCategories(curRows, oldRows, null, 200)),
+    benchmarks: { year: BENCHMARK_YEAR, rows: buildBenchmarks(curRows, spentCents) },
     netWorth: {
       startCents,
       endCents,
       changeCents,
       bridge,
+      trendCents: nwTrend,
       contributionsTracked: inflow.tracked,
       sp500Bp: sp ? monthReturnBp(sp, month) : null,
       bondsBp: bonds ? monthReturnBp(bonds, month) : null,
@@ -214,7 +360,7 @@ export async function computeReportData(
     },
     goals: goalRows,
     whatsNew: changelogFor(month),
-    yoy: yoyNotes(cur.rows, lyRows),
+    yoy: yoyNotes(curRows, lyRows),
     weather: ext?.weather ?? null,
     gas: ext?.gas ?? null,
     lifeNotes: [...opts.lifeNotes],
@@ -336,7 +482,7 @@ export async function generateAndStore(
   today: string,
   goals: readonly SavingsGoal[],
   fetcher: typeof fetch = fetch,
-  opts: ContextOptions = { zip: '', lifeNotes: [] },
+  opts: ReportOptions = NO_OPTS,
 ): Promise<boolean> {
   const data = await computeReportData(userId, db, month, today, goals, fetcher, opts);
   const r = await generateNarrative(apiKey, data, fetcher);
@@ -363,7 +509,7 @@ export async function runMonthlyReportCron(
   now: Date,
   window: ReportWindow = 'first',
   fetcher: typeof fetch = fetch,
-  opts: ContextOptions = { zip: '', lifeNotes: [] },
+  opts: ReportOptions = NO_OPTS,
 ): Promise<'skipped' | 'done' | 'failed'> {
   const day = now.getUTCDate();
   if (window === 'first' ? day !== 1 : day < 2 || day > 3) return 'skipped';
@@ -377,16 +523,27 @@ export async function runMonthlyReportCron(
   return apiKey && !r ? 'failed' : 'done';
 }
 
-/** The report's outside-context options from the owner's settings and the deployment's keys. */
+/** The report's options from the owner's settings and the deployment's keys. */
 export function contextOptions(
-  settings: { monthlyReport: { zip: string; lifeNotes: readonly LifeNote[] } },
+  settings: Pick<UserSettings, 'monthlyReport' | 'savings' | 'follow' | 'retirement' | 'debt'>,
   eiaKey: string | undefined,
-): ContextOptions {
+): ReportOptions {
   return {
     zip: settings.monthlyReport.zip,
     eiaKey,
     lifeNotes: settings.monthlyReport.lifeNotes
       .filter((n) => n.status === 'kept')
       .map((n) => n.text),
+    savingsAccountIds: [
+      ...new Set([
+        ...(settings.savings?.goals ?? []).map((g) => g.accountId),
+        ...settings.follow.rules.map((r) => r.accountId),
+      ]),
+    ],
+    retirement: settings.retirement?.contributions ?? [],
+    loanGroups: (settings.debt?.loans ?? []).map((l) => ({
+      accountId: l.accountId,
+      group: l.group,
+    })),
   };
 }
