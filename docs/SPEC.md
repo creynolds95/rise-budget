@@ -857,10 +857,18 @@ insight, never advice. The figures always work; the written summary is optional.
   most 12) are given to later reports so a change is explained once. Nothing is kept unasked.
 - **Key**: `ANTHROPIC_API_KEY` Worker secret. Without it the report renders every chart and tile
   and the headline bullets are written by plain code; the "Write summary" button is absent.
-- **When**: on demand ("Write summary" / "Rewrite summary"), or automatically on one of the
-  first three nights of the month if the owner turned the setting on (nightly housekeeping,
-  no extra cron). A failed call stores nothing and the next night tries again.
-- **Storage**: `monthly_report`, one row per month (migration 0038).
+- **When**: on its own, once, on the 1st for the month just ended (`MONTHLY_REPORT_CRON`, 16:00
+  UTC, after the morning syncs so the last day's transactions are in). No setting and no
+  mid-month regeneration; the Monthly view offers finished months only. "Write summary" /
+  "Rewrite summary" stays as a manual button (needs a key). With no key the report is stored
+  as figures alone, so it and its card still appear. If the model call fails, nightly
+  housekeeping retries on the 2nd and 3rd; the last retry keeps the figures alone. A stored
+  month is never rewritten by the schedule.
+- **Dashboard card**: "Your October report is ready", from the 1st, linking to Reports →
+  Monthly. Shown until the report is opened or the card dismissed on that device
+  (localStorage, by month). `alerts.monthlyReport` (Settings → Alerts, default on) switches it
+  off. `GET /reports/monthly/ready` is one primary-key read.
+- **Storage**: `monthly_report`, one row per month (migration 0038); a figures-only report has model `none` and narrative `null`.
 - **Trying it on a CSV**: `apps/web/scripts/monthly-report.mjs` builds the figures from a
   transaction CSV export (`aggregate`), prints the exact model prompt (`prompt`), and renders
   the report as a standalone HTML page, with or without a written narrative (`render`). Net

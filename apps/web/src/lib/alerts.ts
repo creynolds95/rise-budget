@@ -9,6 +9,7 @@ const ALL_ON: AlertSettings = {
   duplicate: true,
   unusual: true,
   firstTime: true,
+  monthlyReport: true,
 };
 
 /** What the subscription radar says about one series, respecting the owner's choices. */

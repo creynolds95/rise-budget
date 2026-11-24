@@ -69,6 +69,7 @@ describe('schemas', () => {
         duplicate: true,
         unusual: true,
         firstTime: true,
+        monthlyReport: true,
       },
       binder: { passwordsLiveIn: '', entries: [] },
       push: {
@@ -86,7 +87,7 @@ describe('schemas', () => {
         manualLoan: false,
       },
       balanceAlerts: { minCents: 10_000, accounts: [] },
-      monthlyReport: { auto: false, zip: '', lifeNotes: [] },
+      monthlyReport: { zip: '', lifeNotes: [] },
     });
     expect(u.timezone).toBe('America/Chicago');
   });

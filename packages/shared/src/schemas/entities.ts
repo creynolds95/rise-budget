@@ -251,6 +251,8 @@ export const AlertSettings = z.object({
   duplicate: z.boolean().default(true),
   unusual: z.boolean().default(true),
   firstTime: z.boolean().default(true),
+  /** A card on the Dashboard when last month's report is ready. */
+  monthlyReport: z.boolean().default(true),
 });
 export type AlertSettings = z.infer<typeof AlertSettings>;
 const ALERTS_ON: AlertSettings = {
@@ -259,6 +261,7 @@ const ALERTS_ON: AlertSettings = {
   duplicate: true,
   unusual: true,
   firstTime: true,
+  monthlyReport: true,
 };
 
 /**
@@ -353,11 +356,9 @@ export const UserSettings = z.object({
   binder: Binder.default({ passwordsLiveIn: '', entries: [] }),
   push: PushSettings.default(PUSH_DEFAULTS),
   balanceAlerts: BalanceAlerts.default({ minCents: 10_000, accounts: [] }),
-  /** Monthly report: write last month's summary on its own in the first days of the month.
-   * Off until the owner turns it on; the manual button works either way (needs a key). */
+  /** Monthly report (SPEC §12.6). It writes itself on the 1st; these are its inputs. */
   monthlyReport: z
     .object({
-      auto: z.boolean().default(false),
       /** Where the weather and gas prices come from. Five digits, or empty for none. */
       zip: z
         .string()
@@ -366,7 +367,7 @@ export const UserSettings = z.object({
       /** Facts the owner confirmed or dismissed from past reports, newest last. */
       lifeNotes: z.array(LifeNote).max(12).default([]),
     })
-    .default({ auto: false, zip: '', lifeNotes: [] }),
+    .default({ zip: '', lifeNotes: [] }),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 

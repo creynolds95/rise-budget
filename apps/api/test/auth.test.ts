@@ -489,6 +489,7 @@ describe('T16 auth middleware + error contract', () => {
         duplicate: true,
         unusual: true,
         firstTime: true,
+        monthlyReport: true,
       },
       binder: { passwordsLiveIn: '', entries: [] },
       push: {
@@ -506,7 +507,7 @@ describe('T16 auth middleware + error contract', () => {
         manualLoan: false,
       },
       balanceAlerts: { minCents: 10_000, accounts: [] },
-      monthlyReport: { auto: false, zip: '', lifeNotes: [] },
+      monthlyReport: { zip: '', lifeNotes: [] },
     });
   });
 

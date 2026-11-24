@@ -41,5 +41,7 @@ RP_NAME = "Rise"
 [triggers]
 # SimpleFIN sync: an hourly tick that syncs in the owner's chosen hours (Settings → Bank sync,
 # ARCHITECTURE §6); nightly housekeeping (§8, HOUSEKEEPING_CRON in
-# src/backup/run.ts). The backup itself runs in the `backup` GitHub workflow.
-crons = ["* * * * *", "30 9 * * *"]
+# src/backup/run.ts), which also retries last month's report on the 2nd and 3rd; and the monthly
+# report itself, on the 1st after the morning syncs (MONTHLY_REPORT_CRON, SPEC §12.6). The
+# backup itself runs in the `backup` GitHub workflow.
+crons = ["* * * * *", "30 9 * * *", "0 16 1 * *"]

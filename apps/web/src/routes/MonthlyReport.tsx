@@ -1,14 +1,18 @@
+import { useEffect } from 'react';
+import { markReportSeen } from '../lib/reportSeen';
 import { MonthlyReportBody } from '../components/MonthlyReportBody';
 import { Skeleton } from '../components/primitives/Skeleton';
 import { useMonthlyReport, useSetMonthlyReport, useWriteMonthlySummary } from '../lib/queries';
 
 /** The monthly report screen: the report for `month`, with the key-gated write controls. */
 export function MonthlyReportView({ month }: { month: string }) {
+  // Looking at it is enough: the Dashboard card for this month goes away.
+  useEffect(() => markReportSeen(month), [month]);
   const q = useMonthlyReport(month);
   const write = useWriteMonthlySummary();
   const set = useSetMonthlyReport();
   if (!q.data) return <Skeleton className="mt-4 h-64 w-full" />;
-  const { report, keySet, auto: autoOn, zip, lifeNotes } = q.data;
+  const { report, keySet, zip, lifeNotes } = q.data;
   const proposed = report.narrative?.lifeNote ?? '';
   // A note is offered once per month: kept or dismissed, it is not offered again.
   const decide = (status: 'kept' | 'dismissed') =>
@@ -25,12 +29,9 @@ export function MonthlyReportView({ month }: { month: string }) {
         keySet
           ? {
               keySet,
-              autoOn,
               writing: write.isPending,
               failed: write.isError,
-              autoPending: set.isPending,
               onWrite: () => write.mutate(month),
-              onAuto: (auto) => set.mutate({ auto }),
               zip,
               zipPending: set.isPending,
               onZip: (z) => set.mutate({ zip: z }),

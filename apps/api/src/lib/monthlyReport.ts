@@ -308,6 +308,25 @@ export async function generateNarrative(
   );
 }
 
+/** Store a computed report; `r` null is the figures-only report (no written note). */
+async function storeReport(
+  userId: UserId,
+  db: D1Database,
+  month: string,
+  data: ReportData,
+  r: ModelResult | null,
+): Promise<void> {
+  await saveReportRow(userId, db, {
+    periodId: month,
+    generatedAt: new Date().toISOString(),
+    model: r ? REPORT_MODEL : 'none',
+    dataJson: JSON.stringify(data),
+    narrativeJson: JSON.stringify(r ? r.narrative : null),
+    inputTokens: r?.inputTokens ?? 0,
+    outputTokens: r?.outputTokens ?? 0,
+  });
+}
+
 /** Compute, ask the model, store. Returns false when the model step failed (nothing stored). */
 export async function generateAndStore(
   userId: UserId,
@@ -322,40 +341,40 @@ export async function generateAndStore(
   const data = await computeReportData(userId, db, month, today, goals, fetcher, opts);
   const r = await generateNarrative(apiKey, data, fetcher);
   if (!r) return false;
-  await saveReportRow(userId, db, {
-    periodId: month,
-    generatedAt: new Date().toISOString(),
-    model: REPORT_MODEL,
-    dataJson: JSON.stringify(data),
-    narrativeJson: JSON.stringify(r.narrative),
-    inputTokens: r.inputTokens,
-    outputTokens: r.outputTokens,
-  });
+  await storeReport(userId, db, month, data, r);
   return true;
 }
 
+/** 'first': the run on the 1st, after the morning sync. 'retry': nights 2 and 3, only if missing. */
+export type ReportWindow = 'first' | 'retry';
+
 /**
- * Nightly housekeeping hook: in the first days of a month, write last month's report if the
- * owner turned it on, a key is set, and it isn't there yet. Retries on later nights if the
- * call failed. Never throws into the cron.
+ * Last month's report, written once on the 1st (a monthly cron after the morning sync, so the
+ * last day's transactions are in). With a key it adds the written note; with none it stores the
+ * figures alone, so the report and its Dashboard card still appear. If the model call fails the
+ * 'retry' runs on the next two nights try again, and the last of them stores the figures alone
+ * rather than leave no report. A stored month is never rewritten. Never throws into the cron.
  */
 export async function runMonthlyReportCron(
   userId: UserId,
   db: D1Database,
   apiKey: string | undefined,
-  auto: boolean,
   goals: readonly SavingsGoal[],
   now: Date,
+  window: ReportWindow = 'first',
   fetcher: typeof fetch = fetch,
   opts: ContextOptions = { zip: '', lifeNotes: [] },
 ): Promise<'skipped' | 'done' | 'failed'> {
-  if (!apiKey || !auto || now.getUTCDate() > 3) return 'skipped';
+  const day = now.getUTCDate();
+  if (window === 'first' ? day !== 1 : day < 2 || day > 3) return 'skipped';
   const today = now.toISOString().slice(0, 10);
   const month = addPeriods(today.slice(0, 7), -1);
   if (await getReportRow(userId, db, month)) return 'skipped';
-  return (await generateAndStore(userId, db, apiKey, month, today, goals, fetcher, opts))
-    ? 'done'
-    : 'failed';
+  const data = await computeReportData(userId, db, month, today, goals, fetcher, opts);
+  const r = apiKey ? await generateNarrative(apiKey, data, fetcher) : null;
+  if (apiKey && !r && day < 3) return 'failed';
+  await storeReport(userId, db, month, data, r);
+  return apiKey && !r ? 'failed' : 'done';
 }
 
 /** The report's outside-context options from the owner's settings and the deployment's keys. */

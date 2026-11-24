@@ -24,6 +24,7 @@ const off = {
   duplicate: false,
   unusual: false,
   firstTime: false,
+  monthlyReport: false,
 };
 
 describe('alerts', () => {

@@ -20,7 +20,7 @@ import { cashToPayday } from './routes/cashToPayday';
 import { recurring } from './routes/recurring';
 import { reports } from './routes/reports';
 import { monthlyReport } from './routes/monthlyReport';
-import { contextOptions, runMonthlyReportCron } from './lib/monthlyReport';
+import { contextOptions, runMonthlyReportCron, type ReportWindow } from './lib/monthlyReport';
 import { tags } from './routes/tags';
 import { push } from './routes/push';
 import { connector } from './routes/connector';
@@ -33,7 +33,7 @@ import { devices } from './routes/devices';
 import { diagnostics } from './routes/diagnostics';
 import { findUserIdByEmail, getUser } from './db';
 import type { Env } from './env';
-import { HOUSEKEEPING_CRON, runHousekeeping } from './backup/run';
+import { HOUSEKEEPING_CRON, MONTHLY_REPORT_CRON, runHousekeeping } from './backup/run';
 import { applyFollows } from './lib/follow';
 import { applyLoanPayments } from './lib/loanPayments';
 import { runPush } from './lib/push';
@@ -102,6 +102,17 @@ app.onError(renderError);
  * (early morning Central), well after the evening sync and before the GitHub backup job. Single-user, so sync runs for the configured owner.
  */
 export async function scheduled(event: ScheduledController, env: Env): Promise<void> {
+  if (event.cron === MONTHLY_REPORT_CRON) {
+    await monthlyReportStep(env, env.DB, new Date(event.scheduledTime), 'first').catch(
+      (e: unknown) =>
+        log({
+          job: 'monthly-report',
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        }),
+    );
+    return;
+  }
   const job = event.cron === HOUSEKEEPING_CRON ? 'housekeeping' : 'sync';
   const started = Date.now();
   const tally: Tally = { read: 0, written: 0 };
@@ -118,17 +129,15 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
         backupsPruned: r.pruned.length,
         rowsPruned: r.rowsPruned,
       });
-      // Optional and last: a report problem must never fail housekeeping.
-      if (env.ANTHROPIC_API_KEY && env.SIMPLEFIN_OWNER_EMAIL) {
-        await monthlyReportStep(env, db, new Date(event.scheduledTime)).catch((e: unknown) =>
-          log({
-            job,
-            ok: false,
-            step: 'monthly-report',
-            error: e instanceof Error ? e.message : String(e),
-          }),
-        );
-      }
+      // Last, and only a retry on nights 2 and 3: a report problem must never fail housekeeping.
+      await monthlyReportStep(env, db, new Date(event.scheduledTime), 'retry').catch((e: unknown) =>
+        log({
+          job,
+          ok: false,
+          step: 'monthly-report',
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      );
       return;
     }
     const source = sourceFromEnv(env);
@@ -207,9 +216,16 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
   }
 }
 
-/** First days of the month: write last month's report if the owner turned that on. */
-async function monthlyReportStep(env: Env, db: D1Database, now: Date): Promise<void> {
-  if (now.getUTCDate() > 3 || !env.SIMPLEFIN_OWNER_EMAIL) return;
+/** Last month's report: written on the 1st, retried on nights 2 and 3 if it did not land. */
+async function monthlyReportStep(
+  env: Env,
+  db: D1Database,
+  now: Date,
+  window: ReportWindow,
+): Promise<void> {
+  const day = now.getUTCDate();
+  if (window === 'first' ? day !== 1 : day < 2 || day > 3) return;
+  if (!env.SIMPLEFIN_OWNER_EMAIL) return;
   const userId = await findUserIdByEmail(db, env.SIMPLEFIN_OWNER_EMAIL);
   const user = userId ? await getUser(userId, db) : null;
   if (!userId || !user) return;
@@ -217,14 +233,13 @@ async function monthlyReportStep(env: Env, db: D1Database, now: Date): Promise<v
     userId,
     db,
     env.ANTHROPIC_API_KEY,
-    user.settings.monthlyReport.auto,
     user.settings.savings?.goals ?? [],
     now,
+    window,
     fetch,
     contextOptions(user.settings, env.EIA_API_KEY),
   );
-  if (result !== 'skipped')
-    log({ job: 'housekeeping', ok: result === 'done', step: 'monthly-report' });
+  if (result !== 'skipped') log({ job: 'monthly-report', ok: result === 'done', window });
 }
 
 /** One JSON line per cron run, for Workers Logs ([observability] in wrangler.toml). */
