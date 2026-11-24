@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LifeNote } from '../report/context';
 import { Cents, Id, IsoDate, IsoDateTime, PeriodId } from './primitives';
 import {
   AccountKind,
@@ -354,7 +355,18 @@ export const UserSettings = z.object({
   balanceAlerts: BalanceAlerts.default({ minCents: 10_000, accounts: [] }),
   /** Monthly report: write last month's summary on its own in the first days of the month.
    * Off until the owner turns it on; the manual button works either way (needs a key). */
-  monthlyReport: z.object({ auto: z.boolean().default(false) }).default({ auto: false }),
+  monthlyReport: z
+    .object({
+      auto: z.boolean().default(false),
+      /** Where the weather and gas prices come from. Five digits, or empty for none. */
+      zip: z
+        .string()
+        .regex(/^(\d{5})?$/)
+        .default(''),
+      /** Facts the owner confirmed or dismissed from past reports, newest last. */
+      lifeNotes: z.array(LifeNote).max(12).default([]),
+    })
+    .default({ auto: false, zip: '', lifeNotes: [] }),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 

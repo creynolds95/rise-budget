@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LifeNote } from '../report/context';
 import { Cents, Id, IsoDate, PeriodId } from './primitives';
 import {
   AccountKind,
@@ -90,7 +91,16 @@ export const PatchSettingsBody = z.object({
   binder: Binder.optional(),
   push: PushSettings.optional(),
   balanceAlerts: BalanceAlerts.optional(),
-  monthlyReport: z.object({ auto: z.boolean() }).optional(),
+  monthlyReport: z
+    .object({
+      auto: z.boolean().optional(),
+      zip: z
+        .string()
+        .regex(/^(\d{5})?$/)
+        .optional(),
+      lifeNotes: z.array(LifeNote).max(12).optional(),
+    })
+    .optional(),
 });
 
 /** A push service only ever speaks https. */

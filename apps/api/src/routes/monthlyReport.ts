@@ -6,7 +6,7 @@ import { getReportRow, getUser } from '../db';
 import type { AppEnv } from '../env';
 import { localToday } from '../lib/dates';
 import { AppError } from '../lib/errors';
-import { computeReportData, generateAndStore } from '../lib/monthlyReport';
+import { computeReportData, contextOptions, generateAndStore } from '../lib/monthlyReport';
 
 /**
  * The monthly report (SPEC §12.6). Reading never needs a key: with no stored narrative it
@@ -48,13 +48,24 @@ monthlyReport.get('/', async (c) => {
           month,
           generatedAt: null,
           model: null,
-          data: await computeReportData(userId, c.env.DB, month, today, goals, null),
+          data: await computeReportData(
+            userId,
+            c.env.DB,
+            month,
+            today,
+            goals,
+            null,
+            contextOptions(user.settings, undefined),
+          ),
           narrative: null,
         };
   return c.json({
     report,
     keySet: Boolean(c.env.ANTHROPIC_API_KEY),
     auto: user.settings.monthlyReport.auto,
+    zip: user.settings.monthlyReport.zip,
+    gasKeySet: Boolean(c.env.EIA_API_KEY),
+    lifeNotes: user.settings.monthlyReport.lifeNotes,
   });
 });
 
@@ -65,8 +76,17 @@ monthlyReport.post('/generate', async (c) => {
   const key = c.env.ANTHROPIC_API_KEY;
   if (!key) throw new AppError(409, 'CONFLICT', 'No Anthropic API key is set on this deployment');
   const { month } = body.data;
-  const { userId, today, goals } = await load(c);
-  const ok = await generateAndStore(userId, c.env.DB, key, month, today, goals);
+  const { userId, user, today, goals } = await load(c);
+  const ok = await generateAndStore(
+    userId,
+    c.env.DB,
+    key,
+    month,
+    today,
+    goals,
+    fetch,
+    contextOptions(user.settings, c.env.EIA_API_KEY),
+  );
   if (!ok) throw new AppError(502, 'INTERNAL', 'The summary could not be written. Try again.');
   return c.json({ ok: true as const });
 });

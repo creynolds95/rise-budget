@@ -6,7 +6,7 @@ import {
   type ReportData,
   type ReportNarrative,
 } from '@rise/shared/report';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { formatCents } from '../lib/money';
 import { monthName } from '../lib/dates';
 import { FillBar } from './primitives/FillBar';
@@ -21,6 +21,12 @@ export interface ReportControls {
   autoPending: boolean;
   onWrite: () => void;
   onAuto: (on: boolean) => void;
+  /** Where weather and gas come from: five digits, or empty. */
+  zip: string;
+  zipPending: boolean;
+  onZip: (zip: string) => void;
+  /** A fact from this report the owner can keep for later months; null when there is none. */
+  lifeNote: { text: string; pending: boolean; onKeep: () => void; onDismiss: () => void } | null;
 }
 
 /**
@@ -40,7 +46,7 @@ export function MonthlyReportBody({
   const month = report.month;
   const d = report.data;
   const n = report.narrative;
-  const headlines = n?.headlines ?? fallbackHeadlines(d, (c) => formatCents(c, { whole: true }));
+  const headlines = n ? n.headlines : fallbackHeadlines(d, (c) => formatCents(c, { whole: true }));
   const empty = d.cash.incomeCents === 0 && d.cash.spentCents === 0;
 
   return (
@@ -51,13 +57,28 @@ export function MonthlyReportBody({
       ) : (
         <>
           {d.categories.length > 0 && (
-            <Card title="Where the money went" text={n?.where}>
+            <Card title="Where the money went">
               <CategoryBars rows={d.categories} />
             </Card>
           )}
           {(d.movers.up.length > 0 || d.movers.down.length > 0) && (
-            <Card title="Month over month" text={n?.monthOverMonth}>
+            <Card title="What moved" text={n?.movers}>
               <DeltaBars rows={[...d.movers.up, ...d.movers.down]} sparse={d.prevSparse} />
+            </Card>
+          )}
+          {d.weather && (
+            <Card title="Weather" text={n?.weather}>
+              <Weather w={d.weather} />
+            </Card>
+          )}
+          {d.gas && (
+            <Card title="Gas prices" text={n?.gas}>
+              <Gas g={d.gas} />
+            </Card>
+          )}
+          {d.yoy.length > 0 && (
+            <Card title="Against a year ago" text={n?.yoy}>
+              <Yoy rows={d.yoy} />
             </Card>
           )}
           {d.benchmarks.rows.length > 0 && (
@@ -92,8 +113,11 @@ export function MonthlyReportBody({
         </>
       )}
 
+      {controls?.lifeNote && <LifeNote note={controls.lifeNote} />}
+
       {controls?.keySet && (
         <div className="space-y-2 pt-2">
+          <ZipField zip={controls.zip} pending={controls.zipPending} onSave={controls.onZip} />
           <button
             type="button"
             disabled={controls.writing}
@@ -190,14 +214,16 @@ function Headline({
           </div>
         ))}
       </dl>
-      <ul className="mt-4 space-y-1.5">
-        {headlines.map((h) => (
-          <li key={h} className="flex gap-2 type-body">
-            <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-sage-600" />
-            {h}
-          </li>
-        ))}
-      </ul>
+      {headlines.length > 0 && (
+        <ul className="mt-4 space-y-1.5">
+          {headlines.map((h) => (
+            <li key={h} className="flex gap-2 type-body">
+              <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-sage-600" />
+              {h}
+            </li>
+          ))}
+        </ul>
+      )}
       {n && n.chips.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {n.chips.map((c) => (
@@ -452,5 +478,145 @@ function Goals({ rows }: { rows: ReportData['goals'] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+type Temps = NonNullable<ReportData['weather']>['month'];
+
+/** Average high and low, this month against last month and a year ago. */
+function Weather({ w }: { w: NonNullable<ReportData['weather']> }) {
+  const cols: { label: string; t: Temps | null }[] = [
+    { label: 'This month', t: w.month },
+    { label: 'Last month', t: w.prev },
+    { label: 'A year ago', t: w.lastYear },
+  ];
+  return (
+    <div>
+      <dl className="grid grid-cols-3 gap-3">
+        {cols.map((c) => (
+          <div key={c.label}>
+            <dt className="type-caption text-ink-muted">{c.label}</dt>
+            <dd className="money type-title">{c.t ? `${c.t.avgHighF}°` : '–'}</dd>
+            <dd className="money type-caption text-ink-muted">
+              {c.t ? `low ${c.t.avgLowF}°` : ''}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 type-caption text-ink-muted">
+        Average daily high, °F. Hottest {w.month.maxF}°, coldest night {w.month.minF}°.
+      </p>
+    </div>
+  );
+}
+
+function Gas({ g }: { g: NonNullable<ReportData['gas']> }) {
+  const cols: { label: string; cents: number | null }[] = [
+    { label: 'This month', cents: g.monthCents },
+    { label: 'Last month', cents: g.prevCents },
+    { label: 'A year ago', cents: g.lastYearCents },
+  ];
+  return (
+    <div>
+      <dl className="grid grid-cols-3 gap-3">
+        {cols.map((c) => (
+          <div key={c.label}>
+            <dt className="type-caption text-ink-muted">{c.label}</dt>
+            <dd className="type-title">{c.cents === null ? '–' : <MoneyText cents={c.cents} />}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 type-caption text-ink-muted">Regular, per gallon, {g.region} average.</p>
+    </div>
+  );
+}
+
+const YOY_WORD = { new: 'New', gone: 'Gone', up: 'Up', down: 'Down' } as const;
+
+function Yoy({ rows }: { rows: ReportData['yoy'] }) {
+  return (
+    <ul className="space-y-2">
+      {rows.map((r) => (
+        <li key={r.name} className="flex items-baseline justify-between gap-3 type-body">
+          <span className="truncate">
+            {r.name} <span className="type-caption text-ink-muted">{YOY_WORD[r.kind]}</span>
+          </span>
+          <span className="flex items-baseline gap-2">
+            <MoneyText cents={r.lastYearCents} whole tone="muted" className="type-caption" />
+            <span aria-hidden className="type-caption text-ink-muted">
+              →
+            </span>
+            <MoneyText cents={r.cents} whole />
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A fact the report spotted; kept, it is told to the next months' reports so a change is explained once. */
+function LifeNote({ note }: { note: NonNullable<ReportControls['lifeNote']> }) {
+  return (
+    <section className="rounded-card bg-surface p-4 shadow-soft">
+      <h2 className="type-label text-ink-muted">Remember this?</h2>
+      <p className="mt-2 type-body">{note.text}</p>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={note.pending}
+          onClick={note.onKeep}
+          className="min-h-11 flex-1 rounded-input bg-sage-600 type-body font-semibold text-surface disabled:opacity-60"
+        >
+          Keep for later months
+        </button>
+        <button
+          type="button"
+          disabled={note.pending}
+          onClick={note.onDismiss}
+          className="min-h-11 flex-1 rounded-input bg-hairline type-body disabled:opacity-60"
+        >
+          Dismiss
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** The ZIP that weather and gas prices are looked up for. Only the ZIP leaves the app. */
+function ZipField({
+  zip,
+  pending,
+  onSave,
+}: {
+  zip: string;
+  pending: boolean;
+  onSave: (zip: string) => void;
+}) {
+  const [v, setV] = useState(zip);
+  const ok = /^(\d{5})?$/.test(v);
+  return (
+    <div className="flex min-h-11 items-center justify-between gap-3">
+      <label htmlFor="report-zip" className="type-body">
+        ZIP for weather and gas
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id="report-zip"
+          inputMode="numeric"
+          maxLength={5}
+          value={v}
+          onChange={(e) => setV(e.target.value.replace(/\D/g, ''))}
+          className="money h-11 w-24 rounded-input bg-hairline px-3 text-right type-body"
+        />
+        <button
+          type="button"
+          disabled={!ok || pending || v === zip}
+          onClick={() => onSave(v)}
+          className="min-h-11 rounded-input bg-hairline px-3 type-body disabled:opacity-50"
+        >
+          Save
+        </button>
+      </div>
+    </div>
   );
 }

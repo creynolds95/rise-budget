@@ -21,3 +21,5 @@ About 10 statements, none scanning a growing table whole. Idle cost is zero: not
 **Failure mode.** The model step runs after all figures are computed and swallows its own failures (no key, network, refusal, bad output): the report just has no written summary. The nightly step is wrapped so it can never fail housekeeping.
 
 **Rollback.** Drop `monthly_report` and revert the code; nothing else depends on it. The `monthlyReport` user setting is ignored if present.
+
+**Addendum: ZIP and notes.** No schema change. The `monthlyReport` user setting gains `zip` and `lifeNotes` (at most 12 short entries), stored in the existing `user.settings_json`; stored `data_json` gains `yoy`, `weather`, `gas`, `lifeNotes`. No new statements.

@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { getReportRow } from '../src/db';
 import {
+  computeReportData,
   generateAndStore,
   generateNarrative,
   runMonthlyReportCron,
@@ -14,12 +15,15 @@ const NARRATIVE = {
   headlines: ['Surplus this month.'],
   chips: [{ text: 'Steady', tone: 'good' }],
   seasonal: '',
-  where: 'Housing led.',
-  monthOverMonth: 'Little changed.',
+  movers: 'Groceries ran higher.',
+  weather: '',
+  gas: '',
+  yoy: '',
   benchmarks: 'Near average.',
   netWorth: 'Slightly up.',
-  goals: 'No goals set.',
+  goals: '',
   whatsNew: '',
+  lifeNote: '',
 };
 
 const modelReply = (text: string, extra: Record<string, unknown> = {}) =>
@@ -120,6 +124,11 @@ describe('monthly report: figures without a key', () => {
   });
 });
 
+async function dataFor(u: { access: string }) {
+  const r = await call('GET', '/reports/monthly?month=2026-09', { access: u.access });
+  return r.json.report.data;
+}
+
 describe('monthly report: the model call', () => {
   it('sends aggregates only, stores the narrative, and the report then carries it', async () => {
     const { u, api } = await seed();
@@ -142,11 +151,29 @@ describe('monthly report: the model call', () => {
     expect(r.json.report.generatedAt).not.toBeNull();
   });
 
+  it('asks again when a sentence states a number it was not given, and keeps the cleaner answer', async () => {
+    const { u } = await seed();
+    const bad = { ...NARRATIVE, movers: 'Groceries ran higher. Up $98,765 in all.' };
+    let n = 0;
+    const { f, sent } = fakeFetch({
+      model: () => modelReply(JSON.stringify(++n === 1 ? bad : NARRATIVE)),
+    });
+    expect(await generateNarrative('k', await dataFor(u), f)).toMatchObject({
+      narrative: { movers: 'Groceries ran higher.' },
+    });
+    expect(sent).toHaveLength(2);
+    // Two bad answers: the stray sentence is dropped, the rest stays, and it stops at two calls.
+    const again = fakeFetch({ model: () => modelReply(JSON.stringify(bad)) });
+    const r = await generateNarrative('k', await dataFor(u), again.f);
+    expect(r?.narrative.movers).toBe('Groceries ran higher.');
+    expect(again.sent).toHaveLength(2);
+  });
+
   it.each([
     ['a failed request', () => new Response('x', { status: 401 })],
     ['a refusal', () => modelReply('', { stop_reason: 'refusal' })],
     ['running out of tokens', () => modelReply('{', { stop_reason: 'max_tokens' })],
-    ['output that does not fit', () => modelReply(JSON.stringify({ headlines: [] }))],
+    ['output that does not fit', () => modelReply(JSON.stringify({ headlines: 'x' }))],
     ['output that is not JSON', () => modelReply('hello')],
     ['no text block', () => new Response(JSON.stringify({ content: [] }))],
   ])('stores nothing after %s', async (_name, model) => {
@@ -295,5 +322,102 @@ describe('monthly report: net worth bridge and goals', () => {
       pct: 12,
     });
     expect(goals[1]).toMatchObject({ name: 'Buffer', savedCents: 125_000, targetCents: 300_000 });
+  });
+});
+
+describe('monthly report: weather, gas and notes from the owner', () => {
+  const ZIP = '12345'; // invented
+  const ctxFetch = (hits: string[]) =>
+    (async (url: string) => {
+      hits.push(url);
+      if (url.includes('zippopotam'))
+        return Response.json({
+          places: [{ latitude: '10.5', longitude: '-20.5', 'state abbreviation': 'TX' }],
+        });
+      if (url.includes('open-meteo'))
+        return Response.json({
+          daily: {
+            time: ['2025-09-10', '2026-08-10', '2026-09-10', '2026-09-11'],
+            temperature_2m_max: [90, 95, 88, 86.4],
+            temperature_2m_min: [70, 75, 66, 64],
+          },
+        });
+      if (url.includes('api.eia.gov'))
+        return Response.json({
+          response: {
+            data: [
+              { period: '2025-09-08', value: '3.100' },
+              { period: '2026-08-10', value: '3.450' },
+              { period: '2026-09-07', value: '3.012' },
+              { period: '2026-09-14', value: '3.200' },
+            ],
+          },
+        });
+      return new Response('no', { status: 500 });
+    }) as unknown as typeof fetch;
+
+  it('stores the ZIP and kept notes as settings, and rejects a bad ZIP', async () => {
+    const { u, api } = await seed();
+    expect((await api('PATCH', '/me/settings', { monthlyReport: { zip: 'abc' } })).status).toBe(
+      400,
+    );
+    await api('PATCH', '/me/settings', { monthlyReport: { auto: true } });
+    const r = await api('PATCH', '/me/settings', {
+      monthlyReport: {
+        zip: ZIP,
+        lifeNotes: [{ month: '2026-08', text: 'Income was up.', status: 'kept' }],
+      },
+    });
+    expect(r.json.monthlyReport).toMatchObject({ auto: true, zip: ZIP });
+    expect(r.json.monthlyReport.lifeNotes).toHaveLength(1);
+    const g = await call('GET', '/reports/monthly?month=2026-09', { access: u.access });
+    expect(g.json).toMatchObject({ zip: ZIP, gasKeySet: false });
+  });
+
+  it('adds weather for the month, last month and last year, and gas by region', async () => {
+    const { u } = await seed();
+    const hits: string[] = [];
+    const data = await computeReportData(
+      u.userId,
+      env.DB,
+      '2026-09',
+      '2026-10-02',
+      [],
+      ctxFetch(hits),
+      { zip: ZIP, eiaKey: 'eia-key', lifeNotes: ['Income was up.'] },
+    );
+    expect(data.weather).toMatchObject({
+      month: { avgHighF: 87, avgLowF: 65, maxF: 88, minF: 64, days: 2 },
+      prev: { avgHighF: 95 },
+      lastYear: { avgHighF: 90 },
+    });
+    expect(data.gas).toEqual({
+      region: 'Gulf Coast',
+      monthCents: 311,
+      prevCents: 345,
+      lastYearCents: 310,
+    });
+    expect(data.lifeNotes).toEqual(['Income was up.']);
+    // Only the ZIP and its coordinates leave: no budget data in any outside request.
+    expect(hits.some((h) => /Groceries|Mortgage|SECRET/i.test(h))).toBe(false);
+    expect(hits.find((h) => h.includes('open-meteo'))).toContain('start_date=2025-09-01');
+  });
+
+  it('leaves weather and gas out with no ZIP, no key, or no answer', async () => {
+    const { u } = await seed();
+    const run = (zip: string, eiaKey: string | undefined, f: typeof fetch) =>
+      computeReportData(u.userId, env.DB, '2026-09', '2026-10-02', [], f, {
+        zip,
+        eiaKey,
+        lifeNotes: [],
+      });
+    const none = await run('', 'k', ctxFetch([]));
+    expect([none.weather, none.gas]).toEqual([null, null]);
+    const noKey = await run(ZIP, undefined, ctxFetch([]));
+    expect(noKey.weather).not.toBeNull();
+    expect(noKey.gas).toBeNull();
+    const down = (async () => new Response('no', { status: 500 })) as unknown as typeof fetch;
+    const dead = await run(ZIP, 'k', down);
+    expect([dead.weather, dead.gas]).toEqual([null, null]);
   });
 });

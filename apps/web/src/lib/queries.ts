@@ -1,4 +1,4 @@
-import type { MonthlyReport } from '@rise/shared/report';
+import type { LifeNote, MonthlyReport } from '@rise/shared/report';
 import type { DevicesResponse } from '@rise/shared/schemas';
 import type {
   CashFlowReport,
@@ -264,6 +264,10 @@ export interface MonthlyReportResponse {
   keySet: boolean;
   /** Write last month's summary on its own at the start of each month. */
   auto: boolean;
+  zip: string;
+  /** Gas prices need a free EIA key on the deployment. */
+  gasKeySet: boolean;
+  lifeNotes: LifeNote[];
 }
 
 export const useMonthlyReport = (month: string) =>
@@ -282,10 +286,11 @@ export function useWriteMonthlySummary() {
   });
 }
 
-export function useSetMonthlyAuto() {
+export function useSetMonthlyReport() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (auto: boolean) => api('PATCH', '/me/settings', { monthlyReport: { auto } }),
+    mutationFn: (patch: { auto?: boolean; zip?: string; lifeNotes?: LifeNote[] }) =>
+      api('PATCH', '/me/settings', { monthlyReport: patch }),
     onSuccess: () =>
       Promise.all([
         qc.invalidateQueries({ queryKey: ['reports', 'monthly'] }),

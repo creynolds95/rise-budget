@@ -7,6 +7,7 @@ import {
   isPrevSparse,
   changelogFor,
   topMovers,
+  yoyNotes,
   BENCHMARK_YEAR,
   type RawCategory,
 } from './index';
@@ -111,7 +112,8 @@ export function reportDataFromCsv(txns: readonly CsvTxn[], month: string): Repor
   const cur = month_(month);
   const old = month_(prev);
   const ly = month_(lastYear);
-  const categories = buildCategories(cur.rows, old.rows, ly.count > 0 ? ly.rows : null);
+  const lyRows = ly.count > 0 ? ly.rows : null;
+  const categories = buildCategories(cur.rows, old.rows, lyRows);
   const netCents = cur.income - cur.spent;
 
   return ReportData.parse({
@@ -128,7 +130,7 @@ export function reportDataFromCsv(txns: readonly CsvTxn[], month: string): Repor
       status: cashStatus(netCents),
     },
     categories,
-    movers: topMovers(categories),
+    movers: topMovers(buildCategories(cur.rows, old.rows, null, 200)),
     benchmarks: { year: BENCHMARK_YEAR, rows: buildBenchmarks(cur.rows, cur.spent) },
     netWorth: {
       startCents: 0,
@@ -142,5 +144,6 @@ export function reportDataFromCsv(txns: readonly CsvTxn[], month: string): Repor
     },
     goals: [],
     whatsNew: changelogFor(month),
+    yoy: yoyNotes(cur.rows, lyRows),
   });
 }

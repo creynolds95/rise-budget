@@ -20,7 +20,7 @@ import { cashToPayday } from './routes/cashToPayday';
 import { recurring } from './routes/recurring';
 import { reports } from './routes/reports';
 import { monthlyReport } from './routes/monthlyReport';
-import { runMonthlyReportCron } from './lib/monthlyReport';
+import { contextOptions, runMonthlyReportCron } from './lib/monthlyReport';
 import { tags } from './routes/tags';
 import { push } from './routes/push';
 import { connector } from './routes/connector';
@@ -220,6 +220,8 @@ async function monthlyReportStep(env: Env, db: D1Database, now: Date): Promise<v
     user.settings.monthlyReport.auto,
     user.settings.savings?.goals ?? [],
     now,
+    fetch,
+    contextOptions(user.settings, env.EIA_API_KEY),
   );
   if (result !== 'skipped')
     log({ job: 'housekeeping', ok: result === 'done', step: 'monthly-report' });

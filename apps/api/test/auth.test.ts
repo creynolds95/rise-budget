@@ -506,7 +506,7 @@ describe('T16 auth middleware + error contract', () => {
         manualLoan: false,
       },
       balanceAlerts: { minCents: 10_000, accounts: [] },
-      monthlyReport: { auto: false },
+      monthlyReport: { auto: false, zip: '', lifeNotes: [] },
     });
   });
 

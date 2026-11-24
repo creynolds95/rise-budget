@@ -9,6 +9,8 @@ import {
   buildBenchmarks,
   buildCategories,
   buildReportPrompt,
+  groundNarrative,
+  yoyNotes,
   cashStatus,
   changelogFor,
   formatUsd,
@@ -18,6 +20,7 @@ import {
   parseNarrative,
   topMovers,
   BENCHMARK_YEAR,
+  type LifeNote,
   type RawCategory,
   type ReportNarrative,
 } from '@rise/shared/report';
@@ -35,6 +38,7 @@ import {
   saveReportRow,
   type UserId,
 } from '../db';
+import { fetchContext, type ContextOptions } from './reportContext';
 import { fetchSp500, parseYahoo, type IndexPoint } from './sp500';
 
 /**
@@ -73,6 +77,7 @@ export async function computeReportData(
   goals: readonly SavingsGoal[],
   /** null skips the market-data calls (the live preview needs no index returns). */
   fetcher: typeof fetch | null = fetch,
+  opts: ContextOptions = { zip: '', lifeNotes: [] },
 ): Promise<ReportData> {
   const prev = addPeriods(month, -1);
   const lastYear = addPeriods(month, -12);
@@ -80,18 +85,20 @@ export async function computeReportData(
   const start = periodEnd(prev);
   const end = partial ? today : periodEnd(month);
 
-  const [aggs, lyAggs, cats, groups, income, accts, snaps, inflow, sp, bonds] = await Promise.all([
-    listAggregates(userId, db, prev, month),
-    listAggregates(userId, db, lastYear, lastYear),
-    listCategoriesWithArchived(userId, db),
-    listGroupsWithArchived(userId, db),
-    incomeByPeriod(userId, db, prev, month),
-    listAccountsForNetWorth(userId, db),
-    listSnapshots(userId, db, { from: start, to: end }),
-    investmentInflow(userId, db, start, end),
-    fetcher ? fetchSp500(periodStart(prev), periodEnd(month), fetcher) : null,
-    fetcher ? fetchBonds(periodStart(prev), periodEnd(month), fetcher) : null,
-  ]);
+  const [aggs, lyAggs, cats, groups, income, accts, snaps, inflow, sp, bonds, ext] =
+    await Promise.all([
+      listAggregates(userId, db, prev, month),
+      listAggregates(userId, db, lastYear, lastYear),
+      listCategoriesWithArchived(userId, db),
+      listGroupsWithArchived(userId, db),
+      incomeByPeriod(userId, db, prev, month),
+      listAccountsForNetWorth(userId, db),
+      listSnapshots(userId, db, { from: start, to: end }),
+      investmentInflow(userId, db, start, end),
+      fetcher ? fetchSp500(periodStart(prev), periodEnd(month), fetcher) : null,
+      fetcher ? fetchBonds(periodStart(prev), periodEnd(month), fetcher) : null,
+      fetcher ? fetchContext(opts, month, today, fetcher) : null,
+    ]);
 
   // Transfers and card payments sit in unbudgeted categories, so they are never in the
   // aggregate: spending here is the budget's own definition, with no double count.
@@ -116,7 +123,8 @@ export async function computeReportData(
   const sum = (r: RawCategory[]) => r.reduce((n, x) => n + x.cents, 0);
   const incomeOf = (p: string) => income.find((i) => i.periodId === p)?.cents ?? 0;
 
-  const categories = buildCategories(cur.rows, old.rows, ly.rows.length > 0 ? ly.rows : null);
+  const lyRows = ly.rows.length > 0 ? ly.rows : null;
+  const categories = buildCategories(cur.rows, old.rows, lyRows);
   const spentCents = sum(cur.rows);
   const incomeCents = incomeOf(month);
   const netCents = incomeCents - spentCents;
@@ -192,7 +200,7 @@ export async function computeReportData(
       status: cashStatus(netCents),
     },
     categories,
-    movers: topMovers(categories),
+    movers: topMovers(buildCategories(cur.rows, old.rows, null, 200)),
     benchmarks: { year: BENCHMARK_YEAR, rows: buildBenchmarks(cur.rows, spentCents) },
     netWorth: {
       startCents,
@@ -206,6 +214,10 @@ export async function computeReportData(
     },
     goals: goalRows,
     whatsNew: changelogFor(month),
+    yoy: yoyNotes(cur.rows, lyRows),
+    weather: ext?.weather ?? null,
+    gas: ext?.gas ?? null,
+    lifeNotes: [...opts.lifeNotes],
   });
 }
 
@@ -221,10 +233,10 @@ export interface ModelResult {
  * bundle (and cold start) unchanged for everyone who never sets a key. Returns null on any
  * failure (no network, bad key, refusal, unparsable output): the report just has no narrative.
  */
-export async function generateNarrative(
+async function askModel(
   apiKey: string,
-  data: ReportData,
-  fetcher: typeof fetch = fetch,
+  prompt: string,
+  fetcher: typeof fetch,
 ): Promise<ModelResult | null> {
   try {
     const res = await fetcher('https://api.anthropic.com/v1/messages', {
@@ -236,12 +248,12 @@ export async function generateNarrative(
       },
       body: JSON.stringify({
         model: REPORT_MODEL,
-        // Thinking tokens count against this, so leave room beyond the ~600-token answer.
-        max_tokens: 4_000,
+        // Thinking tokens count against this, so leave room beyond the ~700-token answer.
+        max_tokens: 6_000,
         system: REPORT_SYSTEM,
-        messages: [{ role: 'user', content: buildReportPrompt(data, formatUsd) }],
+        messages: [{ role: 'user', content: prompt }],
         output_config: {
-          effort: 'low',
+          effort: 'medium',
           format: { type: 'json_schema', schema: REPORT_JSON_SCHEMA },
         },
       }),
@@ -267,6 +279,35 @@ export async function generateNarrative(
   }
 }
 
+/**
+ * The written note. Every number in it must be one the model was shown: a sentence with
+ * any other is dropped. If anything was dropped it asks once more and keeps the cleaner of the
+ * two, so a stray figure costs a sentence, never a wrong number in the report.
+ */
+export async function generateNarrative(
+  apiKey: string,
+  data: ReportData,
+  fetcher: typeof fetch = fetch,
+): Promise<ModelResult | null> {
+  const prompt = buildReportPrompt(data, formatUsd);
+  let best: (ModelResult & { dropped: number }) | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await askModel(apiKey, prompt, fetcher);
+    if (!r) break;
+    const g = groundNarrative(r.narrative, prompt);
+    if (!best || g.dropped < best.dropped)
+      best = { ...r, narrative: g.narrative, dropped: g.dropped };
+    if (g.dropped === 0) break;
+  }
+  return (
+    best && {
+      narrative: best.narrative,
+      inputTokens: best.inputTokens,
+      outputTokens: best.outputTokens,
+    }
+  );
+}
+
 /** Compute, ask the model, store. Returns false when the model step failed (nothing stored). */
 export async function generateAndStore(
   userId: UserId,
@@ -276,8 +317,9 @@ export async function generateAndStore(
   today: string,
   goals: readonly SavingsGoal[],
   fetcher: typeof fetch = fetch,
+  opts: ContextOptions = { zip: '', lifeNotes: [] },
 ): Promise<boolean> {
-  const data = await computeReportData(userId, db, month, today, goals, fetcher);
+  const data = await computeReportData(userId, db, month, today, goals, fetcher, opts);
   const r = await generateNarrative(apiKey, data, fetcher);
   if (!r) return false;
   await saveReportRow(userId, db, {
@@ -305,12 +347,27 @@ export async function runMonthlyReportCron(
   goals: readonly SavingsGoal[],
   now: Date,
   fetcher: typeof fetch = fetch,
+  opts: ContextOptions = { zip: '', lifeNotes: [] },
 ): Promise<'skipped' | 'done' | 'failed'> {
   if (!apiKey || !auto || now.getUTCDate() > 3) return 'skipped';
   const today = now.toISOString().slice(0, 10);
   const month = addPeriods(today.slice(0, 7), -1);
   if (await getReportRow(userId, db, month)) return 'skipped';
-  return (await generateAndStore(userId, db, apiKey, month, today, goals, fetcher))
+  return (await generateAndStore(userId, db, apiKey, month, today, goals, fetcher, opts))
     ? 'done'
     : 'failed';
+}
+
+/** The report's outside-context options from the owner's settings and the deployment's keys. */
+export function contextOptions(
+  settings: { monthlyReport: { zip: string; lifeNotes: readonly LifeNote[] } },
+  eiaKey: string | undefined,
+): ContextOptions {
+  return {
+    zip: settings.monthlyReport.zip,
+    eiaKey,
+    lifeNotes: settings.monthlyReport.lifeNotes
+      .filter((n) => n.status === 'kept')
+      .map((n) => n.text),
+  };
 }

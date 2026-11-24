@@ -3,6 +3,9 @@
  *
  *   node scripts/monthly-report.mjs aggregate <export.csv> <YYYY-MM> <aggregate.json>
  *     Figures only (category names and totals): no merchants, accounts or descriptions.
+ *   node scripts/monthly-report.mjs context <aggregate.json> --zip 12345 [--eia-key KEY]
+ *     Adds the month's weather (and, with an EIA key, regional gas prices) to the aggregate, as
+ *     the app does. The ZIP is given here and never stored. Needs network; skips what fails.
  *   node scripts/monthly-report.mjs prompt <aggregate.json> <outDir>
  *     Writes system.txt, user.txt and schema.json: exactly what the app sends to the model.
  *   node scripts/monthly-report.mjs render <aggregate.json> <out.html> [--narrative n.json] [--label "Haiku, medium"]
@@ -46,6 +49,24 @@ try {
     const data = report.reportDataFromCsv(report.csvTxns(readFileSync(csvPath, 'utf8')), month);
     writeFileSync(out, JSON.stringify(data, null, 2) + '\n');
     say(`${out}: income ${usd(data.cash.incomeCents)}, spent ${usd(data.cash.spentCents)}`);
+  } else if (cmd === 'context') {
+    const [aggPath] = args;
+    const zip = flag('zip');
+    if (!aggPath || !/^\d{5}$/.test(zip ?? ''))
+      throw new Error('usage: context <aggregate.json> --zip 12345 [--eia-key KEY]');
+    const data = report.ReportData.parse(JSON.parse(readFileSync(aggPath, 'utf8')));
+    const ctx = await server.ssrLoadModule(resolve(root, '../api/src/lib/reportContext.ts'));
+    const today = new Date().toISOString().slice(0, 10);
+    const got = await ctx.fetchContext(
+      { zip, eiaKey: flag('eia-key'), lifeNotes: [] },
+      data.month,
+      today,
+      globalThis.fetch,
+    );
+    writeFileSync(aggPath, JSON.stringify({ ...data, ...got }, null, 2) + '\n');
+    say(
+      `${aggPath}: weather ${got.weather ? 'added' : 'unavailable'}, gas ${got.gas ? 'added' : 'unavailable'}`,
+    );
   } else if (cmd === 'prompt') {
     const [aggPath, dir] = args;
     if (!aggPath || !dir) throw new Error('usage: prompt <aggregate.json> <outDir>');
@@ -98,7 +119,7 @@ try {
     );
     say(`wrote ${out}`);
   } else {
-    throw new Error('commands: aggregate | prompt | render');
+    throw new Error('commands: aggregate | context | prompt | render');
   }
 } finally {
   await server.close();

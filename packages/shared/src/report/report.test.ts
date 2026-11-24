@@ -89,6 +89,28 @@ describe('topMovers', () => {
     expect(m.up.map((r) => r.name)).toEqual(['A']);
     expect(m.down.map((r) => r.name)).toEqual(['B']);
   });
+  it('needs the dollars AND the percent, fixed lines included', () => {
+    const rows = buildCategories(
+      [
+        { name: 'Mortgage', cents: 210_000 },
+        { name: 'Cable', cents: 9_000 },
+        { name: 'Power', cents: 30_000 },
+        { name: 'Gym', cents: 0 },
+        { name: 'Pets', cents: 8_000 },
+      ],
+      [
+        { name: 'Mortgage', cents: 200_000 },
+        { name: 'Cable', cents: 6_000 },
+        { name: 'Power', cents: 12_000 },
+        { name: 'Gym', cents: 6_000 },
+      ],
+      null,
+      50,
+    );
+    const m = topMovers(rows);
+    expect(m.up.map((r) => r.name)).toEqual(['Power', 'Pets']);
+    expect(m.down.map((r) => r.name)).toEqual(['Gym']);
+  });
 });
 
 describe('benchmarks', () => {
@@ -184,31 +206,35 @@ describe('narrative', () => {
     headlines: ['a'],
     chips: [{ text: 'x', tone: 'good' }],
     seasonal: '',
-    where: 'w',
-    monthOverMonth: 'm',
+    movers: 'm',
+    weather: '',
+    gas: '',
+    yoy: '',
     benchmarks: 'b',
     netWorth: 'n',
     goals: 'g',
     whatsNew: 'k',
+    lifeNote: '',
   };
   it('accepts a valid object and trims long strings', () => {
     expect(parseNarrative(JSON.stringify(ok))).toEqual(ok);
     const long = parseNarrative(
       JSON.stringify({
         ...ok,
-        where: 'x'.repeat(900),
+        movers: 'x'.repeat(900),
         headlines: Array(8).fill('h'.repeat(300)),
         chips: [{ text: 't'.repeat(90), tone: 'note' }],
       }),
     );
-    expect(long?.where).toHaveLength(360);
-    expect(long?.headlines).toHaveLength(5);
+    expect(long?.movers).toHaveLength(360);
+    expect(long?.headlines).toHaveLength(4);
     expect(long?.headlines[0]).toHaveLength(160);
     expect(long?.chips[0]?.text).toHaveLength(48);
   });
   it('rejects junk', () => {
     expect(parseNarrative('nope')).toBeNull();
-    expect(parseNarrative(JSON.stringify({ ...ok, headlines: [] }))).toBeNull();
+    expect(parseNarrative(JSON.stringify({ ...ok, headlines: [] }))).not.toBeNull();
+    expect(parseNarrative(JSON.stringify({ ...ok, lifeNote: undefined }))).toBeNull();
     expect(
       parseNarrative(JSON.stringify({ ...ok, chips: [{ text: 'x', tone: 'bad' }] })),
     ).toBeNull();
@@ -249,6 +275,10 @@ const data: ReportData = {
   },
   goals: [],
   whatsNew: [],
+  yoy: [],
+  weather: null,
+  gas: null,
+  lifeNotes: [],
 };
 
 describe('prompt and fallback', () => {
@@ -258,6 +288,11 @@ describe('prompt and fallback', () => {
     expect(p).toContain('"netUsd":"$1000.00"');
     expect(p).toContain('"deltaUsd":"$100.00"');
     expect(p).toContain('"prevSparse":true');
+  });
+  it('gives the model formatted strings only, including plain cents fields', () => {
+    const p = buildReportPrompt(data, usd);
+    expect(p).toContain('"usd":"$500.00"');
+    expect(p).not.toMatch(/Cents"|"cents"|Bp"/);
   });
   it('carries only category names and aggregates', () => {
     expect(buildReportPrompt(data, usd)).not.toMatch(/merchant|account|email/i);

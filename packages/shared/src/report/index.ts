@@ -2,10 +2,21 @@ import { z } from 'zod';
 import { mulDiv } from '../budget/money';
 import { BENCHMARKS, BENCHMARK_GROUPS, BENCHMARK_LABEL, benchmarkGroupOf } from './benchmarks';
 import type { BenchmarkGroup } from './benchmarks';
+import {
+  REPORT_CONFIG,
+  ReportGas,
+  ReportWeather,
+  ReportYoy,
+  changeBp,
+  formatPct,
+  kindOf,
+  type MoveKind,
+} from './context';
 
 export * from './benchmarks';
 export * from './changelog';
 export * from './csv';
+export * from './context';
 
 /**
  * The monthly report (SPEC §12.6). Everything numeric is computed here and in SQL; the model
@@ -67,7 +78,8 @@ export const ReportData = z.object({
     status: z.enum(['surplus', 'deficit', 'even']),
   }),
   categories: z.array(ReportCategory),
-  /** Largest increases and decreases against the previous month. */
+  /** Notable changes against the previous month: enough dollars AND percent (REPORT_CONFIG),
+   * fixed categories included, with new and vanished ones. */
   movers: z.object({ up: z.array(ReportCategory), down: z.array(ReportCategory) }),
   benchmarks: z.object({
     year: z.int(),
@@ -89,22 +101,37 @@ export const ReportData = z.object({
   }),
   goals: z.array(ReportGoal),
   whatsNew: z.array(z.object({ date: z.string(), text: z.string() })),
+  /** Notable changes against the same month last year; empty when none stand out. */
+  yoy: z.array(ReportYoy).default([]),
+  /** Monthly highs and lows for the owner's ZIP; null with no ZIP set or no answer. */
+  weather: ReportWeather.nullable().default(null),
+  /** Regional regular-gas price; null with no ZIP, no EIA key or no answer. */
+  gas: ReportGas.nullable().default(null),
+  /** Facts the owner confirmed about their life in earlier months. */
+  lifeNotes: z.array(z.string()).default([]),
 });
 export type ReportData = z.infer<typeof ReportData>;
 
-/** One short string per section: a few sentences at most, never advice. */
+/**
+ * One or two sentences per section, or an empty string to skip it: the report only says what
+ * it has something to say about. Never advice.
+ */
 export const ReportNarrative = z.object({
-  headlines: z.array(z.string().max(160)).min(1).max(5),
+  headlines: z.array(z.string().max(160)).max(4),
   chips: z
     .array(z.object({ text: z.string().max(48), tone: z.enum(['good', 'note', 'watch']) }))
     .max(5),
-  seasonal: z.string().max(220),
-  where: z.string().max(360),
-  monthOverMonth: z.string().max(360),
-  benchmarks: z.string().max(360),
+  seasonal: z.string().max(260),
+  movers: z.string().max(360),
+  weather: z.string().max(300),
+  gas: z.string().max(260),
+  yoy: z.string().max(300),
+  benchmarks: z.string().max(300),
   netWorth: z.string().max(360),
-  goals: z.string().max(360),
+  goals: z.string().max(300),
   whatsNew: z.string().max(260),
+  /** A fact the owner may want kept for later months; empty when nothing unique showed up. */
+  lifeNote: z.string().max(160),
 });
 export type ReportNarrative = z.infer<typeof ReportNarrative>;
 
@@ -177,22 +204,22 @@ export function buildCategories(
   return head;
 }
 
-/** The biggest swings in dollars, ignoring noise under `minCents`. */
+/**
+ * Notable changes against the previous month: both the dollars and the percent must clear the
+ * bar, so a small category doubling or a big one drifting is not news. Categories that appear
+ * or vanish count. Pass the unfolded rows; the folded tail is ignored.
+ */
 export function topMovers(
   rows: readonly ReportCategory[],
-  n = 3,
-  minCents = 2_500,
+  n: number = REPORT_CONFIG.moverMax,
 ): { up: ReportCategory[]; down: ReportCategory[] } {
-  const real = rows.filter((r) => r.name !== 'Everything else');
-  const up = real
-    .filter((r) => r.deltaCents >= minCents)
-    .sort((a, b) => b.deltaCents - a.deltaCents)
-    .slice(0, n);
-  const down = real
-    .filter((r) => r.deltaCents <= -minCents)
-    .sort((a, b) => a.deltaCents - b.deltaCents)
-    .slice(0, n);
-  return { up, down };
+  const hit = rows
+    .filter((r) => r.name !== 'Everything else' && kindOf(r) !== null)
+    .sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents));
+  return {
+    up: hit.filter((r) => r.deltaCents > 0).slice(0, n),
+    down: hit.filter((r) => r.deltaCents < 0).slice(0, n),
+  };
 }
 
 /**
@@ -321,19 +348,24 @@ export function formatUsd(cents: number): string {
 
 export const REPORT_MODEL = 'claude-haiku-5-5';
 
-export const REPORT_SYSTEM = `You write the narrative for one month of a household budget report. You are given computed figures; never recompute or invent any.
+export const REPORT_SYSTEM = `You write a short monthly note about one household's budget, in the voice of a morning newsletter: conversational, informative, a little light. It gives context for the month. It is not going to change anyone's life.
 
-Voice: plain, specific, calm. Give context and insight, never advice, suggestions, warnings to act, or "consider". Do not tell the owner what to do.
-Numbers: every dollar amount in the data is given as both cents and a formatted string; quote the formatted string. Never round differently or add figures that are not given.
-Overspending is a debt carried forward, not a failure: never use alarming or scolding language.
-Transfers and credit-card payments are already excluded from spending; do not mention them.
-If prevSparse is true, the previous month has far fewer transactions, so say the comparison is rough instead of presenting big swings as real changes.
-If partial is true, the month is not over: say "so far".
-Seasonal context: use the month's dates and the lastYearCents values to point out holidays, seasons, school terms, annual bills or other recurring effects. Only state a seasonal link when the data supports it.
-Net worth: the bridge is already computed. When contributionsTracked is false, deposits into investments are not recorded separately, so say the market figure includes any deposits and may overstate market moves. Explain it using the index returns when present; investmentGrowthBp is the owner's investments excluding contributions. If an index return is null, do not guess one.
-Benchmarks: comparisons are shares of total spending against U.S. all-household averages (BLS Consumer Expenditure Survey); describe differences neutrally.
-Each section: 1 to 3 short sentences. Headlines: 3 to 5 bullets, each under 110 characters, covering surplus or deficit status, net worth change, notable movers and goals when they exist. Chips: up to 5 very short callouts (under 40 characters) with tone good, note or watch (watch is for a fact worth noticing, not a command). If a section has no data, say so in one short sentence.
-Never mention merchants, account names or numbers.`;
+Facts: you are given figures and context in the input, and nothing else. Every number, amount, date, season, holiday and cause you write must come from the input or be plain calendar knowledge about that month. Quote the formatted strings (fields ending Usd, Pct, or temperatures) exactly as given: never round, convert, add, subtract or invent a figure. If the input does not show why something moved, say what moved and do not guess why.
+Skip, don't pad: every field is a string you may leave empty (""). Leave a section empty when there is no real insight. An empty section is better than a filler one. Headlines may be an empty list.
+Length: one or two sentences per section. Headlines: up to 4 bullets under 110 characters, only for what is actually worth a skim. Chips: up to 5 callouts under 40 characters, tone good, note or watch (watch is a fact worth noticing, never a command).
+No lists of percentages. Use a percent only when it makes a point a dollar figure can't, and never two in a row.
+Never remark that the biggest fixed costs (mortgage, rent, loans, insurance) are the biggest, or that they stayed the same. That is not news. A change in one of them is.
+movers: the categories that moved against last month (each has kind up, down, new or gone). Lead with the ones that tell a story. Link a move to weather, gas prices, a holiday or the season only when the input supports it, for example power and water bills in a first heating month, or the gas category when the regional price moved.
+weather: monthly average highs and lows for the owner's area, the hottest and coldest days, and the same for last month and a year ago. Tie to energy and water only when the weather clearly changed. Leave empty when weather is missing.
+gas: the regional gas price against last month and last year, tied to a gas or fuel category only when one exists in the input. Leave empty when gas is missing.
+yoy: only the notable differences listed against the same month last year (new, gone, or a big swing). Leave empty when the list is empty.
+seasonal: holidays, school terms, annual bills or seasons that fit this month's dates and the categories. Only when the data supports it.
+benchmarks: shares of total spending against U.S. all-household averages (BLS Consumer Expenditure Survey); neutral, never a verdict.
+netWorth: the bridge is already computed. When contributionsTracked is false, deposits into investments are not recorded separately, so say the market figure includes any deposits. Use the index returns when present; if one is null, do not guess one.
+goals, whatsNew: only when there is something to say.
+If prevSparse is true, last month has far fewer transactions: say the comparison is rough rather than presenting swings as real. If partial is true, the month is not over: say "so far".
+Overspending is a debt carried forward, not a failure. No scolding, no alarm, no advice, no "consider" or "should". Transfers and card payments are already excluded; do not mention them. Never mention merchants, account names or account numbers.
+lifeNote: leave empty unless something unique shows up that the owner may want remembered for later months (income changed by 10% or more, or a major category changed by 30% or more with no seasonal or price explanation in the input). Then write one plain factual sentence from the input, such as "Income was $X, up from $Y." Never guess a cause. Facts in lifeNotes are already known: do not repeat them as news, but use them to explain a change they account for.`;
 
 /** JSON Schema for `output_config.format`, kept in step with `ReportNarrative`. */
 export const REPORT_JSON_SCHEMA = {
@@ -343,12 +375,15 @@ export const REPORT_JSON_SCHEMA = {
     'headlines',
     'chips',
     'seasonal',
-    'where',
-    'monthOverMonth',
+    'movers',
+    'weather',
+    'gas',
+    'yoy',
     'benchmarks',
     'netWorth',
     'goals',
     'whatsNew',
+    'lifeNote',
   ],
   properties: {
     headlines: { type: 'array', items: { type: 'string' } },
@@ -365,48 +400,99 @@ export const REPORT_JSON_SCHEMA = {
       },
     },
     seasonal: { type: 'string' },
-    where: { type: 'string' },
-    monthOverMonth: { type: 'string' },
+    movers: { type: 'string' },
+    weather: { type: 'string' },
+    gas: { type: 'string' },
+    yoy: { type: 'string' },
     benchmarks: { type: 'string' },
     netWorth: { type: 'string' },
     goals: { type: 'string' },
     whatsNew: { type: 'string' },
+    lifeNote: { type: 'string' },
   },
 } as const;
 
-/** The user message: the computed aggregates, with every amount also pre-formatted. */
+/**
+ * The user message. Every amount is a formatted string and the raw cents and basis points are
+ * left out, so the model has one form to quote and `groundNarrative` can check its numbers
+ * against exactly what it was shown.
+ */
 export function buildReportPrompt(d: ReportData, fmt: (cents: number) => string): string {
-  const withUsd = <T extends Record<string, unknown>>(o: T): T & Record<string, string> => {
-    const extra: Record<string, string> = {};
-    for (const [k, v] of Object.entries(o))
-      if (k.endsWith('Cents') && typeof v === 'number') extra[`${k.slice(0, -5)}Usd`] = fmt(v);
-    return { ...o, ...extra };
+  const view = (o: object): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(o)) {
+      const isNum = typeof v === 'number' || v === null;
+      if (isNum && k === 'cents') out['usd'] = v === null ? null : fmt(v);
+      else if (isNum && k.endsWith('Cents'))
+        out[`${k.slice(0, -5)}Usd`] = v === null ? null : fmt(v);
+      else if (isNum && k.endsWith('Bp'))
+        out[`${k.slice(0, -2)}Pct`] = v === null ? null : formatPct(v);
+      else out[k] = v;
+    }
+    return out;
   };
+  const move = (name: string, kind: MoveKind, now: number, then: number, label: string) => ({
+    name,
+    kind,
+    nowUsd: fmt(now),
+    [`${label}Usd`]: fmt(then),
+    changeUsd: fmt(Math.abs(now - then)),
+    pct: kind === 'new' || kind === 'gone' ? null : formatPct(Math.abs(changeBp(now, then) ?? 0)),
+  });
+  const temps = (
+    t: { avgHighF: number; avgLowF: number; maxF: number; minF: number; days: number } | null,
+  ) =>
+    t && {
+      avgHigh: `${t.avgHighF}°F`,
+      avgLow: `${t.avgLowF}°F`,
+      hottestDay: `${t.maxF}°F`,
+      coldestNight: `${t.minF}°F`,
+      daysCounted: t.days,
+    };
+  const gal = (c: number | null) => (c === null ? null : `${fmt(c)} a gallon`);
   const body = {
     month: d.month,
     partial: d.partial,
     prevMonth: d.prevMonth,
     prevSparse: d.prevSparse,
-    cash: withUsd(d.cash),
-    categories: d.categories.map(withUsd),
-    movers: { up: d.movers.up.map(withUsd), down: d.movers.down.map(withUsd) },
-    benchmarks: { year: d.benchmarks.year, rows: d.benchmarks.rows.map(withUsd) },
+    cash: view(d.cash),
+    categories: d.categories.map(view),
+    moves: [...d.movers.up, ...d.movers.down].flatMap((r) => {
+      const k = kindOf(r);
+      return k ? [move(r.name, k, r.cents, r.prevCents, 'prev')] : [];
+    }),
+    yoy: d.yoy.map((y) => move(y.name, y.kind, y.cents, y.lastYearCents, 'lastYear')),
+    benchmarks: { year: d.benchmarks.year, rows: d.benchmarks.rows.map(view) },
     netWorth: {
-      ...withUsd({
+      ...view({
         startCents: d.netWorth.startCents,
         endCents: d.netWorth.endCents,
         changeCents: d.netWorth.changeCents,
       }),
-      bridge: withUsd(d.netWorth.bridge),
+      bridge: view(d.netWorth.bridge),
       contributionsTracked: d.netWorth.contributionsTracked,
-      sp500Bp: d.netWorth.sp500Bp,
-      bondsBp: d.netWorth.bondsBp,
-      investmentGrowthBp: d.netWorth.investmentGrowthBp,
+      ...view({
+        sp500Bp: d.netWorth.sp500Bp,
+        bondsBp: d.netWorth.bondsBp,
+        investmentGrowthBp: d.netWorth.investmentGrowthBp,
+      }),
     },
-    goals: d.goals.map(withUsd),
+    weather: d.weather && {
+      thisMonth: temps(d.weather.month),
+      lastMonth: temps(d.weather.prev),
+      sameMonthLastYear: temps(d.weather.lastYear),
+    },
+    gas: d.gas && {
+      region: d.gas.region,
+      thisMonth: gal(d.gas.monthCents),
+      lastMonth: gal(d.gas.prevCents),
+      sameMonthLastYear: gal(d.gas.lastYearCents),
+    },
+    goals: d.goals.map(view),
     whatsNew: d.whatsNew,
+    lifeNotes: d.lifeNotes,
   };
-  return `Write the narrative for this month. Data (JSON):\n${JSON.stringify(body)}`;
+  return `Write the note for this month. Data (JSON):\n${JSON.stringify(body)}`;
 }
 
 /** Validate and trim model output; null when it doesn't fit the schema. */
@@ -422,17 +508,20 @@ export function parseNarrative(text: string): ReportNarrative | null {
     const o = json as Record<string, unknown>;
     // Trim over-long strings rather than discard a whole report for a few extra characters.
     for (const [k, n] of [
-      ['seasonal', 220],
-      ['where', 360],
-      ['monthOverMonth', 360],
-      ['benchmarks', 360],
+      ['seasonal', 260],
+      ['movers', 360],
+      ['weather', 300],
+      ['gas', 260],
+      ['yoy', 300],
+      ['benchmarks', 300],
       ['netWorth', 360],
-      ['goals', 360],
+      ['goals', 300],
       ['whatsNew', 260],
+      ['lifeNote', 160],
     ] as const)
       o[k] = clip(o[k], n);
     if (Array.isArray(o['headlines']))
-      o['headlines'] = o['headlines'].slice(0, 5).map((h) => clip(h, 160));
+      o['headlines'] = o['headlines'].slice(0, 4).map((h) => clip(h, 160));
     if (Array.isArray(o['chips']))
       o['chips'] = o['chips'].slice(0, 5).map((c) => {
         if (c && typeof c === 'object')
