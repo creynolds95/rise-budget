@@ -15,6 +15,10 @@ export const REPORT_CONFIG = {
   yoyMinCents: 7_500,
   yoyMinPctBp: 5_000,
   yoyMax: 4,
+  /** A benchmark is worth showing only when the share is this far from the average. */
+  benchmarkMinGapBp: 400,
+  /** A month this far above the category's usual, and by this much, is a one-off worth naming. */
+  spikeMinCents: 10_000,
 } as const;
 
 // ── schemas ─────────────────────────────────────────────────────────────────
@@ -85,6 +89,16 @@ export function moveKind(
   const bp = changeBp(nowCents, thenCents);
   if (bp === null || Math.abs(bp) < minPctBp) return null;
   return delta > 0 ? 'up' : 'down';
+}
+
+/** A category well above its usual (the average of the months before) by enough dollars. */
+export function spikeOf(r: ReportCategory): { usualCents: number } | null {
+  const prior = r.trend.slice(0, -1);
+  if (prior.length < 3 || r.name === 'Everything else') return null;
+  const usualCents = Math.round(prior.reduce((n, v) => n + v, 0) / prior.length);
+  return r.cents >= 2 * usualCents && r.cents - usualCents >= REPORT_CONFIG.spikeMinCents
+    ? { usualCents }
+    : null;
 }
 
 export function kindOf(r: ReportCategory): MoveKind | null {
@@ -258,18 +272,36 @@ export function groundNarrative(
   };
   const text = (s: string) => sentences(s).filter(keep).join(' ');
   const narrative: ReportNarrative = {
-    headlines: n.headlines.filter(keep),
+    summary: text(n.summary),
     chips: n.chips.filter((c) => keep(c.text)),
     seasonal: text(n.seasonal),
     movers: text(n.movers),
-    weather: text(n.weather),
-    gas: text(n.gas),
+    budget: text(n.budget),
     yoy: text(n.yoy),
     benchmarks: text(n.benchmarks),
     netWorth: text(n.netWorth),
+    savings: text(n.savings),
     goals: text(n.goals),
     whatsNew: text(n.whatsNew),
     lifeNote: n.lifeNote && keep(n.lifeNote) ? n.lifeNote : '',
   };
-  return { narrative, dropped };
+  return { narrative: tidyNarrative(narrative), dropped };
+}
+
+/** Numbers in a text, as unit-tagged strings: how two pieces of text are compared for overlap. */
+const figuresOf = (s: string): string[] => tokens(s).map((t) => `${t.kind}${t.value}`);
+
+/**
+ * Final tidy of a grounded narrative: a chip that only repeats a figure the summary already
+ * gives is cut, and chips are capped at two.
+ */
+export function tidyNarrative(n: ReportNarrative): ReportNarrative {
+  const headline = new Set(figuresOf(n.summary));
+  const chips = n.chips
+    .filter((c) => {
+      const f = figuresOf(c.text);
+      return f.length === 0 || !f.every((x) => headline.has(x));
+    })
+    .slice(0, 2);
+  return { ...n, chips };
 }

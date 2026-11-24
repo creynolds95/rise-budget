@@ -12,15 +12,15 @@ import { call, signedInUser } from './helpers/http';
 // Every figure and name below is invented.
 
 const NARRATIVE = {
-  headlines: ['Surplus this month.'],
+  summary: 'A steady month.',
   chips: [{ text: 'Steady', tone: 'good' }],
   seasonal: '',
   movers: 'Groceries ran higher.',
-  weather: '',
-  gas: '',
+  budget: '',
   yoy: '',
   benchmarks: 'Near average.',
   netWorth: 'Slightly up.',
+  savings: '',
   goals: '',
   whatsNew: '',
   lifeNote: '',
@@ -140,7 +140,7 @@ describe('monthly report: the model call', () => {
     const row = await getReportRow(u.userId, env.DB, '2026-09');
     expect(row?.model).toBe('claude-haiku-5-5');
     const r = await api('GET', '/reports/monthly?month=2026-09');
-    expect(r.json.report.narrative.headlines).toEqual(['Surplus this month.']);
+    expect(r.json.report.narrative.summary).toBe('A steady month.');
     expect(r.json.report.generatedAt).not.toBeNull();
   });
 
@@ -166,7 +166,7 @@ describe('monthly report: the model call', () => {
     ['a failed request', () => new Response('x', { status: 401 })],
     ['a refusal', () => modelReply('', { stop_reason: 'refusal' })],
     ['running out of tokens', () => modelReply('{', { stop_reason: 'max_tokens' })],
-    ['output that does not fit', () => modelReply(JSON.stringify({ headlines: 'x' }))],
+    ['output that does not fit', () => modelReply(JSON.stringify({ summary: 5 }))],
     ['output that is not JSON', () => modelReply('hello')],
     ['no text block', () => new Response(JSON.stringify({ content: [] }))],
   ])('stores nothing after %s', async (_name, model) => {
@@ -292,7 +292,7 @@ describe('monthly report: ready for the Dashboard card', () => {
 });
 
 describe('monthly report: net worth bridge and goals', () => {
-  it('splits the change into contributions, market, debt paydown and the rest', async () => {
+  it('splits the change by kind of account: investments, loans, savings, cash, other', async () => {
     const { u, api } = await seed();
     const mk = async (name: string, kind: string, a: number, b: number) => {
       const acct = (await api('POST', '/accounts', { name, kind, source: 'manual' })).json;
@@ -314,11 +314,15 @@ describe('monthly report: net worth bridge and goals', () => {
       descriptor: 'Deposit',
     });
     const d = (await api('GET', '/reports/monthly?month=2026-09')).json.report.data.netWorth;
+    // Savings is only the accounts the owner linked to a goal or follow rule: this one is not,
+    // so its 30k sits in cash. Every account kind is covered, so nothing is left unexplained.
     expect(d.bridge).toEqual({
       contributionsCents: 50_000,
       marketCents: 100_000,
       debtPaydownCents: 10_000,
-      otherCents: 30_000,
+      savingsCents: 0,
+      cashCents: 30_000,
+      otherCents: 0,
     });
     expect(d.changeCents).toBe(190_000);
     expect(d.contributionsTracked).toBe(true);

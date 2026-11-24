@@ -42,12 +42,17 @@ export function MonthlyReportBody({
   const month = report.month;
   const d = report.data;
   const n = report.narrative;
-  const headlines = n ? n.headlines : fallbackHeadlines(d, (c) => formatCents(c, { whole: true }));
+  // The written summary when there is one, else a few plain lines from the figures.
+  const lines = n
+    ? n.summary
+      ? [n.summary]
+      : []
+    : fallbackHeadlines(d, (c) => formatCents(c, { whole: true }));
   const empty = d.cash.incomeCents === 0 && d.cash.spentCents === 0;
 
   return (
     <div className="mt-4 space-y-4" data-testid="monthly-report">
-      <Headline d={d} n={n} headlines={headlines} />
+      <Headline d={d} n={n} lines={lines} />
       {empty ? (
         <p className="type-body text-ink-muted">Nothing recorded for {monthName(month, true)}.</p>
       ) : (
@@ -62,14 +67,9 @@ export function MonthlyReportBody({
               <DeltaBars rows={[...d.movers.up, ...d.movers.down]} sparse={d.prevSparse} />
             </Card>
           )}
-          {d.weather && (
-            <Card title="Weather" text={n?.weather}>
-              <Weather w={d.weather} />
-            </Card>
-          )}
-          {d.gas && (
-            <Card title="Gas prices" text={n?.gas}>
-              <Gas g={d.gas} />
+          {d.budget && d.budget.plannedCents > 0 && (
+            <Card title="Against the plan" text={n?.budget}>
+              <BudgetBars b={d.budget} />
             </Card>
           )}
           {d.yoy.length > 0 && (
@@ -77,14 +77,19 @@ export function MonthlyReportBody({
               <Yoy rows={d.yoy} />
             </Card>
           )}
-          {d.benchmarks.rows.length > 0 && (
-            <Card title="Against typical households" text={n?.benchmarks}>
-              <ShareBars rows={d.benchmarks.rows} year={d.benchmarks.year} />
+          {(d.savings || d.progress) && (
+            <Card title="Saving and paying down" text={n?.savings}>
+              <SavingsBlock s={d.savings} p={d.progress} />
             </Card>
           )}
           {(d.netWorth.startCents !== 0 || d.netWorth.endCents !== 0) && (
             <Card title="Net worth" text={n?.netWorth}>
               <Waterfall d={d} />
+            </Card>
+          )}
+          {d.benchmarks.rows.length > 0 && (
+            <Card title="Against typical households" text={n?.benchmarks}>
+              <ShareBars rows={d.benchmarks.rows} year={d.benchmarks.year} />
             </Card>
           )}
           {d.goals.length > 0 && (
@@ -161,31 +166,34 @@ const CHIP = {
   watch: 'bg-gold-100 text-gold-text',
 } as const;
 
-function Headline({
-  d,
-  n,
-  headlines,
-}: {
-  d: ReportData;
-  n: ReportNarrative | null;
-  headlines: string[];
-}) {
-  const net = d.cash.netCents;
+function Headline({ d, n, lines }: { d: ReportData; n: ReportNarrative | null; lines: string[] }) {
+  const hasSplit = Object.values(d.split).some((v) => v !== 0);
   const tiles: { label: string; cents: number; tone: 'in' | 'over' | 'ink'; sign?: boolean }[] = [
     { label: 'Income', cents: d.cash.incomeCents, tone: 'in' },
-    { label: 'Spent', cents: d.cash.spentCents, tone: 'ink' },
     {
-      label: net < 0 ? 'Deficit' : 'Surplus',
-      cents: Math.abs(net),
-      tone: net < 0 ? 'over' : 'in',
+      label: 'Spending',
+      cents: hasSplit ? d.split.spendingCents : d.cash.spentCents,
+      tone: 'ink',
     },
   ];
+  if (d.split.debtPaymentCents > 0)
+    tiles.push({ label: 'Debt payments', cents: d.split.debtPaymentCents, tone: 'ink' });
+  if (d.savings && d.savings.totalCents !== 0)
+    tiles.push({ label: 'Set aside', cents: d.savings.totalCents, tone: 'in' });
   // Net worth is a change over the month: absent when no balances were recorded.
   if (d.netWorth.startCents !== 0 || d.netWorth.endCents !== 0)
     tiles.push({ label: 'Net worth', cents: d.netWorth.changeCents, tone: 'ink', sign: true });
   return (
     <section className="rounded-card bg-surface p-4 shadow-soft">
-      {d.partial && <p className="mb-2 type-label text-gold-text">So far this month</p>}
+      {lines.length > 0 && (
+        <div className="mb-4 space-y-1.5" data-testid="report-summary">
+          {lines.map((h) => (
+            <p key={h} className={n ? 'type-body font-semibold' : 'type-body'}>
+              {h}
+            </p>
+          ))}
+        </div>
+      )}
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {tiles.map((t) => (
           <div key={t.label}>
@@ -201,16 +209,6 @@ function Headline({
           </div>
         ))}
       </dl>
-      {headlines.length > 0 && (
-        <ul className="mt-4 space-y-1.5">
-          {headlines.map((h) => (
-            <li key={h} className="flex gap-2 type-body">
-              <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-sage-600" />
-              {h}
-            </li>
-          ))}
-        </ul>
-      )}
       {n && n.chips.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {n.chips.map((c) => (
@@ -275,7 +273,10 @@ function DeltaBars({ rows, sparse }: { rows: ReportCategory[]; sparse: boolean }
             <li key={r.name}>
               <div className="flex items-baseline justify-between gap-3 type-body">
                 <span className="truncate">{r.name}</span>
-                <MoneyText cents={r.deltaCents} sign="always" whole tone={up ? 'over' : 'in'} />
+                <span className="flex items-center gap-3">
+                  <Sparkline values={r.trend} label={`${r.name}, last months`} />
+                  <MoneyText cents={r.deltaCents} sign="always" whole tone={up ? 'over' : 'in'} />
+                </span>
               </div>
               <div className="relative mt-1 h-2">
                 <span aria-hidden className="absolute inset-y-0 left-1/2 w-px bg-hairline" />
@@ -331,12 +332,16 @@ function ShareBars({ rows, year }: { rows: ReportBenchmarkRow[]; year: number })
 /** Start → what moved it → end. Bars float between running totals; gains sage, losses clay. */
 function Waterfall({ d }: { d: ReportData }) {
   const { startCents, endCents, bridge } = d.netWorth;
+  // Every step is an account kind, so nothing is left as an unexplained "other"; steps that
+  // did nothing are left out.
   const steps = [
-    { label: 'Contributions', cents: bridge.contributionsCents },
+    { label: 'Invested', cents: bridge.contributionsCents },
     { label: 'Market', cents: bridge.marketCents },
-    { label: 'Debt paid', cents: bridge.debtPaydownCents },
-    { label: 'Other', cents: bridge.otherCents },
-  ];
+    { label: 'Loans', cents: bridge.debtPaydownCents },
+    { label: 'Savings', cents: bridge.savingsCents },
+    { label: 'Cash', cents: bridge.cashCents },
+    { label: 'Home etc.', cents: bridge.otherCents },
+  ].filter((x) => x.cents !== 0);
   // Running total before each step, to find the vertical extent.
   const bars: { label: string; from: number; to: number; kind: 'total' | 'up' | 'down' }[] = [
     { label: 'Start', from: 0, to: startCents, kind: 'total' },
@@ -401,6 +406,12 @@ function Waterfall({ d }: { d: ReportData }) {
         <span aria-hidden>→</span>
         <MoneyText cents={endCents} whole tone="muted" className="type-caption" />
       </p>
+      {d.netWorth.trendCents.length >= 3 && (
+        <div className="mt-3 flex items-center justify-between type-caption text-ink-muted">
+          <span>Last {d.netWorth.trendCents.length} month ends</span>
+          <Sparkline values={d.netWorth.trendCents} label="Net worth, recent month ends" />
+        </div>
+      )}
       <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
         {steps.map((s) => (
           <li key={s.label} className="flex justify-between type-caption">
@@ -468,52 +479,147 @@ function Goals({ rows }: { rows: ReportData['goals'] }) {
   );
 }
 
-type Temps = NonNullable<ReportData['weather']>['month'];
+/** A few months of one number as a line, newest on the right. Shape only: no axis. */
+function Sparkline({ values, label }: { values: readonly number[]; label: string }) {
+  if (values.length < 3) return null;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = Math.max(hi - lo, 1);
+  const W = 56;
+  const H = 18;
+  const pts = values.map((v, i) => [
+    (i / (values.length - 1)) * W,
+    H - 2 - ((v - lo) / span) * (H - 4),
+  ]);
+  const last = pts[pts.length - 1] as number[];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-[18px] w-14 shrink-0" role="img" aria-label={label}>
+      <polyline
+        points={pts.map((p) => p.join(',')).join(' ')}
+        fill="none"
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        className="stroke-sage-600"
+      />
+      <circle cx={last[0]} cy={last[1]} r={2} className="fill-sage-600" />
+    </svg>
+  );
+}
 
-/** Average high and low, this month against last month and a year ago. */
-function Weather({ w }: { w: NonNullable<ReportData['weather']> }) {
-  const cols: { label: string; t: Temps | null }[] = [
-    { label: 'This month', t: w.month },
-    { label: 'Last month', t: w.prev },
-    { label: 'A year ago', t: w.lastYear },
-  ];
+/** Variable categories against this month's plan. Fixed bills are not compared. */
+function BudgetBars({ b }: { b: NonNullable<ReportData['budget']> }) {
   return (
     <div>
-      <dl className="grid grid-cols-3 gap-3">
-        {cols.map((c) => (
-          <div key={c.label}>
-            <dt className="type-caption text-ink-muted">{c.label}</dt>
-            <dd className="money type-title">{c.t ? `${c.t.avgHighF}°` : '–'}</dd>
-            <dd className="money type-caption text-ink-muted">
-              {c.t ? `low ${c.t.avgLowF}°` : ''}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-3 type-caption text-ink-muted">
-        Average daily high, °F. Hottest {w.month.maxF}°, coldest night {w.month.minF}°.
-      </p>
+      <div className="flex items-baseline justify-between type-body">
+        <span>Variable spending</span>
+        <span className="money">
+          <MoneyText cents={b.spentCents} whole /> of <MoneyText cents={b.plannedCents} whole />
+        </span>
+      </div>
+      <div className="mt-1">
+        <FillBar filledCents={b.spentCents} targetCents={b.plannedCents} tick={null} />
+      </div>
+      {b.over.length > 0 && (
+        <ul className="mt-4 space-y-3">
+          {b.over.map((o) => (
+            <li key={o.name}>
+              <div className="flex items-baseline justify-between gap-3 type-body">
+                <span className="truncate">{o.name}</span>
+                <span className="flex items-baseline gap-2">
+                  <MoneyText
+                    cents={o.spentCents - o.plannedCents}
+                    sign="always"
+                    whole
+                    tone="over"
+                  />
+                  <span className="type-caption text-ink-muted">over</span>
+                </span>
+              </div>
+              <div className="mt-1">
+                <FillBar filledCents={o.spentCents} targetCents={o.plannedCents} tick={null} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
-function Gas({ g }: { g: NonNullable<ReportData['gas']> }) {
-  const cols: { label: string; cents: number | null }[] = [
-    { label: 'This month', cents: g.monthCents },
-    { label: 'Last month', cents: g.prevCents },
-    { label: 'A year ago', cents: g.lastYearCents },
-  ];
+/** The savings rate with what feeds it, then debt payoff and retirement progress. */
+function SavingsBlock({ s, p }: { s: ReportData['savings']; p: ReportData['progress'] }) {
   return (
-    <div>
-      <dl className="grid grid-cols-3 gap-3">
-        {cols.map((c) => (
-          <div key={c.label}>
-            <dt className="type-caption text-ink-muted">{c.label}</dt>
-            <dd className="type-title">{c.cents === null ? '–' : <MoneyText cents={c.cents} />}</dd>
+    <div className="space-y-4">
+      {s && s.rateBp !== null && (
+        <div>
+          <p className="type-title money">
+            {pct(s.rateBp)}
+            {s.avgRateBp !== null && (
+              <span className="ml-2 type-caption text-ink-muted">
+                3-month average {pct(s.avgRateBp)}
+              </span>
+            )}
+          </p>
+          <p className="mt-1 type-caption text-ink-muted">
+            Savings rate: the share of income that went to savings, loan principal and retirement.
+            {s.basis === 'categories' && ' Estimated from category names.'}
+          </p>
+        </div>
+      )}
+      {s && (
+        <ul className="space-y-1">
+          {(
+            [
+              ['Into savings', s.savingsCents],
+              ['Loan principal paid', s.debtPrincipalCents],
+              [
+                s.retirementEstimated ? 'Retirement (planned)' : 'Retirement deposits',
+                s.retirementCents,
+              ],
+            ] as const
+          ).map(([label, cents]) => (
+            <li key={label} className="flex justify-between type-body">
+              <span className="text-ink-muted">{label}</span>
+              <MoneyText cents={cents} whole />
+            </li>
+          ))}
+        </ul>
+      )}
+      {p && p.debt.length > 0 && (
+        <ul className="space-y-1 border-t border-hairline pt-3">
+          {p.debt.map((r) => (
+            <li key={r.label} className="flex items-baseline justify-between gap-3 type-body">
+              <span>{r.label}</span>
+              <span className="flex items-baseline gap-2">
+                <MoneyText cents={r.paidCents} sign="always" whole tone="in" />
+                <span className="type-caption text-ink-muted">
+                  of <MoneyText cents={r.owedCents} whole tone="muted" className="type-caption" />{' '}
+                  left
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {p && p.retirement.plannedCents > 0 && (
+        <div className="border-t border-hairline pt-3">
+          <div className="flex justify-between type-body">
+            <span>Retirement this month</span>
+            <span className="money">
+              <MoneyText cents={p.retirement.contributedCents} whole /> of{' '}
+              <MoneyText cents={p.retirement.plannedCents} whole />
+            </span>
           </div>
-        ))}
-      </dl>
-      <p className="mt-3 type-caption text-ink-muted">Regular, per gallon, {g.region} average.</p>
+          <div className="mt-1">
+            <FillBar
+              filledCents={p.retirement.contributedCents}
+              targetCents={p.retirement.plannedCents}
+              tick={null}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { averageCents } from '@rise/shared/reports';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
@@ -54,14 +54,17 @@ export function Reports() {
   const today = useToday();
   const thisMonth = today.slice(0, 7);
   const [params, setParams] = useSearchParams();
-  const month = params.get('m') ?? thisMonth;
   const all = params.get('all') === '1';
   const [view, setView] = useState<ViewKey>(params.get('view') === 'monthly' ? 'monthly' : 'flow');
+  // The monthly report is of a finished month, so it opens on last month; the charts on this one.
+  const lastMonth = addMonths(thisMonth, -1);
+  const home = view === 'monthly' ? lastMonth : thisMonth;
+  const month = params.get('m') ?? home;
   const [flowChart, setFlowChart] = useState<FlowChart>('sankey');
   const [spendingChart, setSpendingChart] = useState<SpendingChart>('pie');
   const select = (m: string, wholeWindow = false) => {
     const next: Record<string, string> = {};
-    if (m !== thisMonth) next.m = m;
+    if (m !== home) next.m = m;
     if (wholeWindow) next.all = '1';
     setParams(next, { replace: true });
   };
@@ -75,12 +78,6 @@ export function Reports() {
     : monthName(month, month.slice(0, 4) !== today.slice(0, 4));
   const period: Period = { from, to, label, selected: all ? null : month };
   const tapMonth = (m: string) => select(m, !all && m === month);
-  // The monthly report is of a finished month: no live view of this one.
-  const lastMonth = addMonths(thisMonth, -1);
-  const latest = view === 'monthly' ? lastMonth : thisMonth;
-  useEffect(() => {
-    if (view === 'monthly' && month > lastMonth) select(lastMonth);
-  }, [view, month, lastMonth]);
 
   return (
     <div className="mx-auto max-w-2xl pb-16">
@@ -94,7 +91,7 @@ export function Reports() {
         <h1 className="type-title">{label}</h1>
         <button
           className="min-h-11 min-w-11 text-sage-700 disabled:opacity-0"
-          disabled={month >= latest}
+          disabled={month >= thisMonth}
           onClick={() => select(addMonths(month, 1))}
         >
           {short(addMonths(month, 1))} ›
