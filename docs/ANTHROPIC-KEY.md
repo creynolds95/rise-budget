@@ -20,5 +20,5 @@ Optional. Without a key the Monthly report still shows every figure and chart; t
 ## Optional extras: weather and gas prices
 
 - **ZIP.** Monthly view → "ZIP for weather and gas" → Save. The ZIP is looked up on zippopotam.us and its coordinates sent to Open-Meteo (free, no key) for monthly highs and lows. It is stored in your settings only.
-- **Gas prices.** Free key at eia.gov/opendata, then `npx wrangler secret put EIA_API_KEY -c wrangler.local.toml`. Without it the gas section is simply left out.
+- **Gas prices.** The EIA is the U.S. Energy Information Administration, which publishes weekly average gas prices by region. Its data API is free but asks for a key (an identifier, not a payment). Get one at eia.gov/opendata (email sign-up, arrives by email), then `npx wrangler secret put EIA_API_KEY -c wrangler.local.toml`. Without it the gas section is simply left out.
 - **Names.** Category names are sent as written; rename a category that holds a personal name if you would rather it not be.
