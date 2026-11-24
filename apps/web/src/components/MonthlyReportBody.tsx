@@ -11,16 +11,12 @@ import { formatCents } from '../lib/money';
 import { monthName } from '../lib/dates';
 import { FillBar } from './primitives/FillBar';
 import { MoneyText } from './primitives/MoneyText';
-import { Toggle } from './primitives/Toggle';
 
 export interface ReportControls {
   keySet: boolean;
-  autoOn: boolean;
   writing: boolean;
   failed: boolean;
-  autoPending: boolean;
   onWrite: () => void;
-  onAuto: (on: boolean) => void;
   /** Where weather and gas come from: five digits, or empty. */
   zip: string;
   zipPending: boolean;
@@ -131,15 +127,6 @@ export function MonthlyReportBody({
               The summary could not be written. Try again.
             </p>
           )}
-          <div className="flex min-h-11 items-center justify-between gap-3">
-            <span className="type-body">Write each month's summary automatically</span>
-            <Toggle
-              label="Write each month's summary automatically"
-              on={controls.autoOn}
-              disabled={controls.autoPending}
-              onChange={controls.onAuto}
-            />
-          </div>
         </div>
       )}
     </div>

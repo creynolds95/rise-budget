@@ -262,8 +262,6 @@ export interface MonthlyReportResponse {
   report: MonthlyReport;
   /** The deployment has an Anthropic key, so a summary can be written. */
   keySet: boolean;
-  /** Write last month's summary on its own at the start of each month. */
-  auto: boolean;
   zip: string;
   /** Gas prices need a free EIA key on the deployment. */
   gasKeySet: boolean;
@@ -278,6 +276,17 @@ export const useMonthlyReport = (month: string) =>
     staleTime: SLOW,
   });
 
+/** Last month's report, when it has been written: what the Dashboard card is about. */
+export const useReportReady = () =>
+  useQuery({
+    queryKey: ['reports', 'monthly', 'ready'],
+    queryFn: () =>
+      get<{ ready: { month: string; generatedAt: string; written: boolean } | null }>(
+        '/reports/monthly/ready',
+      ),
+    staleTime: SLOW,
+  });
+
 export function useWriteMonthlySummary() {
   const qc = useQueryClient();
   return useMutation({
@@ -289,7 +298,7 @@ export function useWriteMonthlySummary() {
 export function useSetMonthlyReport() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: { auto?: boolean; zip?: string; lifeNotes?: LifeNote[] }) =>
+    mutationFn: (patch: { zip?: string; lifeNotes?: LifeNote[] }) =>
       api('PATCH', '/me/settings', { monthlyReport: patch }),
     onSuccess: () =>
       Promise.all([

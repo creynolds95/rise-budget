@@ -10,6 +10,7 @@ import { surplusTone } from '../lib/surplus';
 import { SummaryCard } from './Budget';
 import { SpendingSection, WhereItWent } from '../components/SpendingSection';
 import { HealthNotes } from '../components/HealthNotes';
+import { ReportReadyNote } from '../components/ReportReadyNote';
 import { quietInstitutions, StaleNotes } from '../components/StaleNotes';
 import { MissedRow, useMissed } from '../components/MissedCharges';
 import { TxnRow } from '../components/TxnRow';
@@ -271,6 +272,7 @@ export function Dashboard() {
 
   return (
     <div className="gutter mx-auto max-w-2xl pt-6 pb-12">
+      <ReportReadyNote />
       <HealthNotes
         sync={syncStatus.data}
         backups={backups.data}

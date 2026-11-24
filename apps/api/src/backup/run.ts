@@ -7,6 +7,8 @@ import { backupDate, expiredBackups } from './sql';
  * Wrangler/Miniflare reject a plain constant there ("not of type function or ExportedHandler").
  */
 export const HOUSEKEEPING_CRON = '30 9 * * *';
+/** The 1st of the month at 16:00 UTC (10-11 am Central), after the owner's morning syncs. */
+export const MONTHLY_REPORT_CRON = '0 16 1 * *';
 
 export type HousekeepingResult = { pruned: string[]; rowsPruned: number };
 

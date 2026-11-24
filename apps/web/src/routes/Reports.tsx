@@ -1,5 +1,5 @@
 import { averageCents } from '@rise/shared/reports';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { MoneyText } from '../components/primitives/MoneyText';
 import { Skeleton } from '../components/primitives/Skeleton';
@@ -56,7 +56,7 @@ export function Reports() {
   const [params, setParams] = useSearchParams();
   const month = params.get('m') ?? thisMonth;
   const all = params.get('all') === '1';
-  const [view, setView] = useState<ViewKey>('flow');
+  const [view, setView] = useState<ViewKey>(params.get('view') === 'monthly' ? 'monthly' : 'flow');
   const [flowChart, setFlowChart] = useState<FlowChart>('sankey');
   const [spendingChart, setSpendingChart] = useState<SpendingChart>('pie');
   const select = (m: string, wholeWindow = false) => {
@@ -75,6 +75,12 @@ export function Reports() {
     : monthName(month, month.slice(0, 4) !== today.slice(0, 4));
   const period: Period = { from, to, label, selected: all ? null : month };
   const tapMonth = (m: string) => select(m, !all && m === month);
+  // The monthly report is of a finished month: no live view of this one.
+  const lastMonth = addMonths(thisMonth, -1);
+  const latest = view === 'monthly' ? lastMonth : thisMonth;
+  useEffect(() => {
+    if (view === 'monthly' && month > lastMonth) select(lastMonth);
+  }, [view, month, lastMonth]);
 
   return (
     <div className="mx-auto max-w-2xl pb-16">
@@ -88,7 +94,7 @@ export function Reports() {
         <h1 className="type-title">{label}</h1>
         <button
           className="min-h-11 min-w-11 text-sage-700 disabled:opacity-0"
-          disabled={month >= thisMonth}
+          disabled={month >= latest}
           onClick={() => select(addMonths(month, 1))}
         >
           {short(addMonths(month, 1))} ›

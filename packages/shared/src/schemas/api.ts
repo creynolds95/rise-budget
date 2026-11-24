@@ -93,7 +93,6 @@ export const PatchSettingsBody = z.object({
   balanceAlerts: BalanceAlerts.optional(),
   monthlyReport: z
     .object({
-      auto: z.boolean().optional(),
       zip: z
         .string()
         .regex(/^(\d{5})?$/)

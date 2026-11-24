@@ -1,4 +1,5 @@
 import { MonthlyReport, ReportData, ReportNarrative } from '@rise/shared/report';
+import { addPeriods } from '@rise/shared/budget';
 import { PeriodId } from '@rise/shared/schemas';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
@@ -62,10 +63,23 @@ monthlyReport.get('/', async (c) => {
   return c.json({
     report,
     keySet: Boolean(c.env.ANTHROPIC_API_KEY),
-    auto: user.settings.monthlyReport.auto,
     zip: user.settings.monthlyReport.zip,
     gasKeySet: Boolean(c.env.EIA_API_KEY),
     lifeNotes: user.settings.monthlyReport.lifeNotes,
+  });
+});
+
+/**
+ * Whether last month's report is ready, for the Dashboard card: its month and whether it has a
+ * written note. One primary-key read; null when there is none (or the card is switched off).
+ */
+monthlyReport.get('/ready', async (c) => {
+  const { userId, user, today } = await load(c);
+  if (!user.settings.alerts.monthlyReport) return c.json({ ready: null });
+  const month = addPeriods(today.slice(0, 7), -1);
+  const row = await getReportRow(userId, c.env.DB, month);
+  return c.json({
+    ready: row ? { month, generatedAt: row.generated_at, written: row.model !== 'none' } : null,
   });
 });
 

@@ -89,7 +89,6 @@ describe('monthly report: figures without a key', () => {
     const r = await api('GET', '/reports/monthly?month=2026-09');
     expect(r.status).toBe(200);
     expect(r.json.keySet).toBe(false);
-    expect(r.json.auto).toBe(false);
     expect(r.json.report.narrative).toBeNull();
     const d = r.json.report.data;
     expect(d.cash).toMatchObject({
@@ -115,12 +114,6 @@ describe('monthly report: figures without a key', () => {
     const g = await api('POST', '/reports/monthly/generate', { month: '2026-09' });
     expect(g.status).toBe(409);
     expect(g.json.error.message).toMatch(/API key/);
-  });
-
-  it('turning the monthly summary on is a setting the owner controls', async () => {
-    const { api } = await seed();
-    await api('PATCH', '/me/settings', { monthlyReport: { auto: true } });
-    expect((await api('GET', '/reports/monthly?month=2026-09')).json.auto).toBe(true);
   });
 });
 
@@ -199,43 +192,102 @@ describe('monthly report: the model call', () => {
 });
 
 describe('monthly report: the monthly cron step', () => {
-  const at = (iso: string) => new Date(`${iso}T09:30:00Z`);
+  const at = (iso: string) => new Date(`${iso}T16:00:00Z`);
 
-  it('does nothing without a key, without the setting, or after the third', async () => {
+  it('runs on the 1st only, and the retry only on the 2nd and 3rd', async () => {
     const { u } = await seed();
     const { f, sent } = fakeFetch();
-    const run = (key: string | undefined, auto: boolean, day: string) =>
-      runMonthlyReportCron(u.userId, env.DB, key, auto, [], at(day), f);
-    expect(await run(undefined, true, '2026-10-02')).toBe('skipped');
-    expect(await run('k', false, '2026-10-02')).toBe('skipped');
-    expect(await run('k', true, '2026-10-04')).toBe('skipped');
+    const run = (day: string, w: 'first' | 'retry') =>
+      runMonthlyReportCron(u.userId, env.DB, 'k', [], at(day), w, f);
+    expect(await run('2026-10-02', 'first')).toBe('skipped');
+    expect(await run('2026-10-15', 'first')).toBe('skipped');
+    expect(await run('2026-10-01', 'retry')).toBe('skipped');
+    expect(await run('2026-10-04', 'retry')).toBe('skipped');
     expect(sent).toHaveLength(0);
+    expect(await run('2026-10-01', 'first')).toBe('done');
+    expect(await getReportRow(u.userId, env.DB, '2026-09')).not.toBeNull();
+    expect(await run('2026-10-01', 'first')).toBe('skipped');
+    expect(await run('2026-10-02', 'retry')).toBe('skipped');
+    expect(sent).toHaveLength(1);
   });
 
-  it('writes last month once, retries a failure, and never repeats a stored month', async () => {
+  it('stores the figures alone with no key, so the report and its card still appear', async () => {
+    const { u, api } = await seed();
+    const { f, sent } = fakeFetch();
+    expect(
+      await runMonthlyReportCron(u.userId, env.DB, undefined, [], at('2026-10-01'), 'first', f),
+    ).toBe('done');
+    expect(sent).toHaveLength(0);
+    const row = await getReportRow(u.userId, env.DB, '2026-09');
+    expect(row?.model).toBe('none');
+    const r = await api('GET', '/reports/monthly?month=2026-09');
+    expect(r.json.report.narrative).toBeNull();
+    expect(r.json.report.generatedAt).not.toBeNull();
+  });
+
+  it('retries a failed model call on night 2, and on night 3 keeps the figures alone', async () => {
     const { u } = await seed();
     let fail = true;
     const { f, sent } = fakeFetch({
       model: () =>
         fail ? new Response('x', { status: 500 }) : modelReply(JSON.stringify(NARRATIVE)),
     });
-    const run = (day: string) => runMonthlyReportCron(u.userId, env.DB, 'k', true, [], at(day), f);
-    expect(await run('2026-10-01')).toBe('failed');
+    const run = (day: string, w: 'first' | 'retry') =>
+      runMonthlyReportCron(u.userId, env.DB, 'k', [], at(day), w, f);
+    expect(await run('2026-10-01', 'first')).toBe('failed');
     expect(await getReportRow(u.userId, env.DB, '2026-09')).toBeNull();
     fail = false;
-    expect(await run('2026-10-02')).toBe('done');
-    expect(await getReportRow(u.userId, env.DB, '2026-09')).not.toBeNull();
-    expect(await run('2026-10-03')).toBe('skipped');
+    expect(await run('2026-10-02', 'retry')).toBe('done');
+    expect((await getReportRow(u.userId, env.DB, '2026-09'))?.model).toBe('claude-haiku-5-5');
+    expect(await run('2026-10-03', 'retry')).toBe('skipped');
     expect(sent).toHaveLength(2);
+
+    const second = await seed();
+    fail = true;
+    expect(
+      await runMonthlyReportCron(second.u.userId, env.DB, 'k', [], at('2026-10-03'), 'retry', f),
+    ).toBe('failed');
+    expect((await getReportRow(second.u.userId, env.DB, '2026-09'))?.model).toBe('none');
   });
 
   it('rolls over the year: January writes December', async () => {
     const { u } = await seed();
     const { f } = fakeFetch();
-    expect(await runMonthlyReportCron(u.userId, env.DB, 'k', true, [], at('2027-01-01'), f)).toBe(
-      'done',
-    );
+    expect(
+      await runMonthlyReportCron(u.userId, env.DB, 'k', [], at('2027-01-01'), 'first', f),
+    ).toBe('done');
     expect(await getReportRow(u.userId, env.DB, '2026-12')).not.toBeNull();
+  });
+});
+
+describe('monthly report: ready for the Dashboard card', () => {
+  it('says nothing until last month is stored, then names it; off switch hides it', async () => {
+    const { u, api } = await seed();
+    const month = new Date().toISOString().slice(0, 7);
+    const last = new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7) - 2, 1))
+      .toISOString()
+      .slice(0, 7);
+    expect((await api('GET', '/reports/monthly/ready')).json).toEqual({ ready: null });
+    await env.DB.prepare(
+      "INSERT INTO monthly_report (user_id, period_id, generated_at, model, data_json, narrative_json) VALUES (?1, ?2, '2026-10-01T16:00:00Z', 'none', '{}', 'null')",
+    )
+      .bind(u.userId, last)
+      .run();
+    expect((await api('GET', '/reports/monthly/ready')).json.ready).toMatchObject({
+      month: last,
+      written: false,
+    });
+    await api('PATCH', '/me/settings', {
+      alerts: {
+        priceUp: true,
+        doubleCharge: true,
+        duplicate: true,
+        unusual: true,
+        firstTime: true,
+        monthlyReport: false,
+      },
+    });
+    expect((await api('GET', '/reports/monthly/ready')).json).toEqual({ ready: null });
   });
 });
 
@@ -361,14 +413,13 @@ describe('monthly report: weather, gas and notes from the owner', () => {
     expect((await api('PATCH', '/me/settings', { monthlyReport: { zip: 'abc' } })).status).toBe(
       400,
     );
-    await api('PATCH', '/me/settings', { monthlyReport: { auto: true } });
     const r = await api('PATCH', '/me/settings', {
       monthlyReport: {
         zip: ZIP,
         lifeNotes: [{ month: '2026-08', text: 'Income was up.', status: 'kept' }],
       },
     });
-    expect(r.json.monthlyReport).toMatchObject({ auto: true, zip: ZIP });
+    expect(r.json.monthlyReport).toMatchObject({ zip: ZIP });
     expect(r.json.monthlyReport.lifeNotes).toHaveLength(1);
     const g = await call('GET', '/reports/monthly?month=2026-09', { access: u.access });
     expect(g.json).toMatchObject({ zip: ZIP, gasKeySet: false });

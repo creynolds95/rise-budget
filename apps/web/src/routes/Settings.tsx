@@ -167,7 +167,7 @@ export function Settings() {
             title="Alerts"
             state={
               me
-                ? `${Object.values(me.settings.alerts).filter(Boolean).length} of ${ALERT_ROWS.length} on`
+                ? `${Object.values(me.settings.alerts).filter(Boolean).length} of ${ALERT_ROWS.length + 1} on`
                 : undefined
             }
           />
@@ -397,7 +397,12 @@ function BudgetSection() {
   );
 }
 
-const ALERT_ROWS: { key: keyof AlertSettings; label: string; hint: string }[] = [
+/** The quiet notices that can also push to a device (the report's Dashboard card does not). */
+const ALERT_ROWS: {
+  key: Exclude<keyof AlertSettings, 'monthlyReport'>;
+  label: string;
+  hint: string;
+}[] = [
   { key: 'priceUp', label: 'Price went up', hint: 'A recurring charge costs more than last time' },
   {
     key: 'doubleCharge',
@@ -412,6 +417,12 @@ const ALERT_ROWS: { key: keyof AlertSettings; label: string; hint: string }[] = 
   { key: 'unusual', label: 'More than usual', hint: 'Well above what this place usually charges' },
   { key: 'firstTime', label: 'Large first charge', hint: '$300 or more somewhere new' },
 ];
+
+const REPORT_ROW = {
+  key: 'monthlyReport',
+  label: 'Monthly report ready',
+  hint: 'A card on the Dashboard on the 1st, until you open or dismiss it',
+} as const;
 
 /** Which quiet notices show (SPEC §8.1), and which also push to a device (SPEC §8.2). */
 function AlertsSection() {
@@ -436,6 +447,14 @@ function AlertsSection() {
             />
           </GroupRow>
         ))}
+        <GroupRow label={REPORT_ROW.label} hint={REPORT_ROW.hint}>
+          <Toggle
+            label={REPORT_ROW.label}
+            on={alerts.monthlyReport}
+            disabled={patch.isPending}
+            onChange={(on) => patch.mutate({ ...alerts, monthlyReport: on })}
+          />
+        </GroupRow>
       </Group>
       <PushGroup push={me.settings.push} />
       <AccountAlertsGroup alerts={me.settings.balanceAlerts} />
