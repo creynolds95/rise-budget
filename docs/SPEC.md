@@ -857,7 +857,7 @@ insight, never advice. The figures always work; the written summary is optional.
   most 12) are given to later reports so a change is explained once. Nothing is kept unasked.
 - **Key**: `ANTHROPIC_API_KEY` Worker secret. Without it the report renders every chart and tile
   and the headline bullets are written by plain code; the "Write summary" button is absent.
-- **When**: on its own, once, on the 1st for the month just ended (`MONTHLY_REPORT_CRON`, 16:00
+- **When**: on its own, once, on the 1st for the month just ended (the per-minute tick at 16:00
   UTC, after the morning syncs so the last day's transactions are in). No setting and no
   mid-month regeneration; the Monthly view offers finished months only. "Write summary" /
   "Rewrite summary" stays as a manual button (needs a key). With no key the report is stored

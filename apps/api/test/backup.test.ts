@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SYNC_CRON } from '../src/sync/schedule';
-import { HOUSEKEEPING_CRON, runHousekeeping } from '../src/backup/run';
+import { HOUSEKEEPING_CRON, runHousekeeping, isMonthlyReportTick } from '../src/backup/run';
 import { backupKey, expiredBackups, gunzip, gzip, splitSql } from '../src/backup/sql';
 import { dumpDatabase } from '../src/db';
 import { scheduled as handler } from '../src/index';
@@ -343,5 +343,14 @@ CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; SELECT 2; END;
     const z = await gzip(text);
     expect(z.byteLength).toBeLessThan(text.length / 10);
     expect(await gunzip(z)).toBe(text);
+  });
+});
+
+describe('isMonthlyReportTick', () => {
+  it('is true only at 16:00 UTC on the 1st', () => {
+    expect(isMonthlyReportTick(new Date('2026-12-01T16:00:00Z'))).toBe(true);
+    expect(isMonthlyReportTick(new Date('2026-12-01T16:01:00Z'))).toBe(false);
+    expect(isMonthlyReportTick(new Date('2026-12-01T15:00:00Z'))).toBe(false);
+    expect(isMonthlyReportTick(new Date('2026-12-02T16:00:00Z'))).toBe(false);
   });
 });

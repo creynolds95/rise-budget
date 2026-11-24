@@ -33,7 +33,7 @@ import { devices } from './routes/devices';
 import { diagnostics } from './routes/diagnostics';
 import { findUserIdByEmail, getUser } from './db';
 import type { Env } from './env';
-import { HOUSEKEEPING_CRON, MONTHLY_REPORT_CRON, runHousekeeping } from './backup/run';
+import { HOUSEKEEPING_CRON, isMonthlyReportTick, runHousekeeping } from './backup/run';
 import { applyFollows } from './lib/follow';
 import { applyLoanPayments } from './lib/loanPayments';
 import { runPush } from './lib/push';
@@ -102,7 +102,7 @@ app.onError(renderError);
  * (early morning Central), well after the evening sync and before the GitHub backup job. Single-user, so sync runs for the configured owner.
  */
 export async function scheduled(event: ScheduledController, env: Env): Promise<void> {
-  if (event.cron === MONTHLY_REPORT_CRON) {
+  if (event.cron === SYNC_CRON && isMonthlyReportTick(new Date(event.scheduledTime))) {
     await monthlyReportStep(env, env.DB, new Date(event.scheduledTime), 'first').catch(
       (e: unknown) =>
         log({
@@ -111,7 +111,6 @@ export async function scheduled(event: ScheduledController, env: Env): Promise<v
           error: e instanceof Error ? e.message : String(e),
         }),
     );
-    return;
   }
   const job = event.cron === HOUSEKEEPING_CRON ? 'housekeeping' : 'sync';
   const started = Date.now();

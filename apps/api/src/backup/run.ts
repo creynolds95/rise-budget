@@ -7,8 +7,13 @@ import { backupDate, expiredBackups } from './sql';
  * Wrangler/Miniflare reject a plain constant there ("not of type function or ExportedHandler").
  */
 export const HOUSEKEEPING_CRON = '30 9 * * *';
-/** The 1st of the month at 16:00 UTC (10-11 am Central), after the owner's morning syncs. */
-export const MONTHLY_REPORT_CRON = '0 16 1 * *';
+/**
+ * The 1st of the month at 16:00 UTC (10-11 am Central), after the owner's morning syncs. Not a
+ * cron of its own (the free plan allows 5 per account): the per-minute tick checks the time.
+ */
+export function isMonthlyReportTick(at: Date): boolean {
+  return at.getUTCDate() === 1 && at.getUTCHours() === 16 && at.getUTCMinutes() === 0;
+}
 
 export type HousekeepingResult = { pruned: string[]; rowsPruned: number };
 
