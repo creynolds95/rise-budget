@@ -86,6 +86,7 @@ describe('schemas', () => {
         manualLoan: false,
       },
       balanceAlerts: { minCents: 10_000, accounts: [] },
+      monthlyReport: { auto: false },
     });
     expect(u.timezone).toBe('America/Chicago');
   });

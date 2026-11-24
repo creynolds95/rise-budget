@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 const TABLES = [
   'activity_event',
   'log_day',
+  'monthly_report',
   'perf_hour',
   'slow_query',
   'user',

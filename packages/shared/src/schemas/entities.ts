@@ -352,6 +352,9 @@ export const UserSettings = z.object({
   binder: Binder.default({ passwordsLiveIn: '', entries: [] }),
   push: PushSettings.default(PUSH_DEFAULTS),
   balanceAlerts: BalanceAlerts.default({ minCents: 10_000, accounts: [] }),
+  /** Monthly report: write last month's summary on its own in the first days of the month.
+   * Off until the owner turns it on; the manual button works either way (needs a key). */
+  monthlyReport: z.object({ auto: z.boolean().default(false) }).default({ auto: false }),
 });
 export type UserSettings = z.infer<typeof UserSettings>;
 

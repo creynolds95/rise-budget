@@ -90,6 +90,7 @@ export const PatchSettingsBody = z.object({
   binder: Binder.optional(),
   push: PushSettings.optional(),
   balanceAlerts: BalanceAlerts.optional(),
+  monthlyReport: z.object({ auto: z.boolean() }).optional(),
 });
 
 /** A push service only ever speaks https. */

@@ -1,3 +1,4 @@
+import type { MonthlyReport } from '@rise/shared/report';
 import type { DevicesResponse } from '@rise/shared/schemas';
 import type {
   CashFlowReport,
@@ -253,5 +254,42 @@ export function usePatchTransaction() {
       await outbox.supersede('PATCH', `/transactions/${id}`, body);
       await invalidate();
     },
+  });
+}
+
+/** The monthly report: figures always, a written summary once one has been generated. */
+export interface MonthlyReportResponse {
+  report: MonthlyReport;
+  /** The deployment has an Anthropic key, so a summary can be written. */
+  keySet: boolean;
+  /** Write last month's summary on its own at the start of each month. */
+  auto: boolean;
+}
+
+export const useMonthlyReport = (month: string) =>
+  useQuery({
+    queryKey: ['reports', 'monthly', month],
+    queryFn: () => get<MonthlyReportResponse>(`/reports/monthly?month=${month}`),
+    placeholderData: keepPreviousData,
+    staleTime: SLOW,
+  });
+
+export function useWriteMonthlySummary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (month: string) => api('POST', '/reports/monthly/generate', { month }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reports', 'monthly'] }),
+  });
+}
+
+export function useSetMonthlyAuto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (auto: boolean) => api('PATCH', '/me/settings', { monthlyReport: { auto } }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['reports', 'monthly'] }),
+        qc.invalidateQueries({ queryKey: ['me'] }),
+      ]),
   });
 }

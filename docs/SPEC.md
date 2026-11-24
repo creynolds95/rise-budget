@@ -810,3 +810,43 @@ after the response, and can never fail a request or a sync.
 days; detail up to 60 adds every edit and sync decision). The connector tool `review_activity`
 wraps it: asking Claude "review the last week" needs no export step.
 
+
+### 12.6 Monthly report
+
+A once-a-month read of the month just ended, under Settings → Reports → Monthly. Context and
+insight, never advice. The figures always work; the written summary is optional.
+
+- **Figures** (SQL and integer arithmetic, no model): income, spending, surplus or deficit;
+  spend by category against last month (and the same month a year earlier, for seasonal
+  context); the largest swings; each BLS category's share of spending against the all-household
+  average (`BENCHMARKS`, Consumer Expenditure Survey 2024, updated once a year by hand); a net
+  worth bridge; savings goal progress at month end; the month's `CHANGELOG` lines.
+- **Spending** is the budget's own definition (`period_aggregate`, expense groups), so
+  transfers and credit-card payments, which sit in unbudgeted categories, never count and
+  nothing is double counted.
+- **Net worth bridge**: change = contributions (money recorded into investment accounts) +
+  market (investment change beyond contributions) + debt paydown (credit and loan balances
+  moving toward zero) + other (the remainder, so the four always sum to the change). Accounts
+  with no balance at the month's start are left out: an account appearing is not a gain. When
+  no deposit into an investment account is recorded as a transaction, `contributionsTracked`
+  is false and Market includes deposits; the report says so. S&P 500 and bond (AGG) monthly
+  returns are fetched for context only; if a source is down they are simply absent.
+- **Previous month sparse** (under half this month's transactions): the report says
+  comparisons are rough rather than presenting swings as real.
+- **Written summary** (optional, opt-in): one call to the latest Claude Haiku model with
+  structured JSON output, one field per section plus headline bullets and chips. Only
+  aggregates are sent: category names, totals, index returns, goal names and progress, never
+  merchants, descriptions, account names or numbers. The model is told not to advise. Output
+  is validated and trimmed; anything that does not fit is discarded.
+- **Key**: `ANTHROPIC_API_KEY` Worker secret. Without it the report renders every chart and tile
+  and the headline bullets are written by plain code; the "Write summary" button is absent.
+- **When**: on demand ("Write summary" / "Rewrite summary"), or automatically on one of the
+  first three nights of the month if the owner turned the setting on (nightly housekeeping,
+  no extra cron). A failed call stores nothing and the next night tries again.
+- **Storage**: `monthly_report`, one row per month (migration 0038).
+- **Trying it on a CSV**: `apps/web/scripts/monthly-report.mjs` builds the figures from a
+  transaction CSV export (`aggregate`), prints the exact model prompt (`prompt`), and renders
+  the report as a standalone HTML page, with or without a written narrative (`render`). Net
+  worth and goals are absent from a CSV, so those sections are left out. In a CSV a category is
+  income when its whole history nets positive; "Transfer" and "Credit Card Payment" categories
+  are ignored.
