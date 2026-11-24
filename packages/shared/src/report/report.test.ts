@@ -172,7 +172,7 @@ describe('isPrevSparse', () => {
 
 describe('formatUsd', () => {
   it('groups thousands and shows cents only when present', () => {
-    expect(formatUsd(137_200)).toBe('$1,372');
+    expect(formatUsd(138_800)).toBe('$1,388');
     expect(formatUsd(1_234_567)).toBe('$12,345.67');
     expect(formatUsd(-5)).toBe('-$0.05');
     expect(formatUsd(0)).toBe('$0');
