@@ -20,10 +20,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.11.0",
-    "prettier": "^3.9.9",
+    "eslint": "^10.13.0",
+    "prettier": "^3.9.10",
     "typescript": "~6.0.0",
-    "typescript-eslint": "^8.71.0",
+    "typescript-eslint": "^8.72.1",
     "vitest": "^4.1.11",
     "@vitest/coverage-v8": "^4.1.11"
   }
