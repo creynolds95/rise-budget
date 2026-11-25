@@ -223,6 +223,13 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
   });
 
   it('ends the horizon where the soonest schedule runs out, so mixed pay cadences stay whole', async () => {
+    // Adding a rule walks its anchor forward from the clock's today, and paydays move off bank
+    // holidays, so a real clock made the expected dates drift (Dec 25). Pin it to a quiet window.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-03-09T18:00:00Z'));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const s = await setup();
     const add = (
       label: string,
@@ -238,7 +245,6 @@ describe('hand-declared manual cash events (cold start, no transactions yet)', (
         cadence,
         anchorDate,
       });
-    // Dated from the real clock: adding a rule walks its anchor forward from the real today.
     const today = localToday('America/Chicago');
     // Weekday anchors: a weekend payday moves to the Friday before, which would shift the dates
     // this test expects by a day depending on when it runs.
