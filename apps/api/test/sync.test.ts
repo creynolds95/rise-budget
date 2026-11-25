@@ -500,6 +500,7 @@ describe('T27 SimpleFIN sync', () => {
       id: 'x',
       source: 'simplefin',
       kind: 'depository',
+      name: 'x',
       source_account_id: 'x',
       last_synced_at: last,
       include_in_budget: 1,

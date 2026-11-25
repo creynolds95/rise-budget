@@ -13,6 +13,8 @@ const run = (status: string, message?: string, account?: string): SyncStatus['ru
   rowsInserted: 0,
   rowsUpdated: 0,
   errors: message ? [{ message, ...(account ? { account } : {}) }] : [],
+  missing: [],
+  stale: [],
 });
 const fresh = { latest: { date: '2026-09-26', bytes: 1 }, count: 3 };
 

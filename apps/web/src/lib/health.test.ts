@@ -24,6 +24,8 @@ const run = (over: Partial<SyncStatus['runs'][number]> = {}): SyncStatus['runs']
   rowsInserted: 0,
   rowsUpdated: 0,
   errors: [],
+  missing: [],
+  stale: [],
   ...over,
 });
 const usage = (rowsRead: number): UsageStatus => ({
