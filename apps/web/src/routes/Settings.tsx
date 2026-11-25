@@ -15,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BackLink } from '../components/BackLink';
+import { quietWhenStale } from '../components/StaleNotes';
 import { PageBar } from '../lib/pageBar';
 import { GroupHeading, PageHeader } from '../components/PageHeader';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -1105,32 +1106,50 @@ function SyncSchedule() {
   );
 }
 
-/** When each bank last reported to SimpleFIN. Banks refresh on their own schedules. */
+/**
+ * When each bank last reported to SimpleFIN. Banks refresh on their own schedules; one whose
+ * accounts have gone quiet is flagged, with the accounts named (loans are a known slow feed).
+ */
 function BanksReported({ tz }: { tz: string | undefined }) {
   const accounts = useAccounts().data ?? [];
-  const byBank = new Map<string, number>();
+  const byBank = new Map<string, { ms: number; late: { name: string; ms: number | null }[] }>();
   for (const a of accounts) {
-    if (a.source !== 'simplefin' || a.archivedAt || !a.lastSyncedAt) continue;
+    if (a.source !== 'simplefin' || a.archivedAt) continue;
     const bank = a.institutionName ?? a.name;
-    byBank.set(bank, Math.max(byBank.get(bank) ?? 0, Date.parse(a.lastSyncedAt)));
+    const entry = byBank.get(bank) ?? { ms: 0, late: [] };
+    if (a.lastSyncedAt) entry.ms = Math.max(entry.ms, Date.parse(a.lastSyncedAt));
+    if (a.staleness.stale && !quietWhenStale(a))
+      entry.late.push({ name: a.name, ms: a.lastSyncedAt ? Date.parse(a.lastSyncedAt) : null });
+    byBank.set(bank, entry);
   }
   if (byBank.size === 0) return null;
-  const rows = [...byBank].sort((x, y) => y[1] - x[1]);
+  const stamp = (ms: number) =>
+    `${shortDate(localToday(tz, new Date(ms)))} · ${new Date(ms).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      ...(tz ? { timeZone: tz } : {}),
+    })}`;
+  const rows = [...byBank].sort((x, y) => y[1].ms - x[1].ms);
   return (
     <>
       <h2 className="mt-8 type-label text-ink-muted">Banks last reported</h2>
       <ul className="mt-1 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
-        {rows.map(([bank, ms]) => (
-          <li key={bank} className="flex justify-between border-b border-hairline py-2">
-            <span>{bank}</span>
-            <span className="text-ink-muted tabular-nums">
-              {shortDate(localToday(tz, new Date(ms)))} ·{' '}
-              {new Date(ms).toLocaleTimeString([], {
-                hour: 'numeric',
-                minute: '2-digit',
-                ...(tz ? { timeZone: tz } : {}),
-              })}
+        {rows.map(([bank, { ms, late }]) => (
+          <li key={bank} className="border-b border-hairline py-2">
+            <span className="flex justify-between">
+              <span>{bank}</span>
+              <span className={`tabular-nums ${late.length > 0 ? 'text-clay' : 'text-ink-muted'}`}>
+                {ms > 0 ? stamp(ms) : 'Not yet'}
+              </span>
             </span>
+            {late.map((l) => (
+              <span key={l.name} className="block type-caption text-clay">
+                {l.name} ·{' '}
+                {l.ms === null
+                  ? 'hasn’t reported yet'
+                  : `last reported ${shortDate(localToday(tz, new Date(l.ms)))}`}
+              </span>
+            ))}
           </li>
         ))}
       </ul>
@@ -1157,6 +1176,8 @@ function SyncSection() {
     onError: (e) => setError(e instanceof ApiError ? e.message : 'Sync failed.'),
   });
   const mode = status.data?.mode;
+  const names = new Map((accounts.data ?? []).map((a) => [a.id, a.name]));
+  const nameOf = (id: string) => names.get(id) ?? 'An account';
   return (
     <>
       <p className="type-label text-ink-muted">Status</p>
@@ -1213,9 +1234,26 @@ function SyncSection() {
             </span>
             {r.errors.map((e, i) => (
               <span key={i} className="block type-caption text-clay">
+                {e.account ? `${e.account}: ` : ''}
                 {e.message}
               </span>
             ))}
+            {r.missing.length > 0 && (
+              <span className="block type-caption text-clay">
+                Not returned by SimpleFIN: {r.missing.map(nameOf).join(', ')}
+              </span>
+            )}
+            {r.stale.length > 0 && (
+              <span className="block type-caption text-clay">
+                Old balance:{' '}
+                {r.stale
+                  .map(
+                    (x) =>
+                      `${nameOf(x.id)} (${shortDate(localToday(tz, new Date(x.balanceDate)))})`,
+                  )
+                  .join(', ')}
+              </span>
+            )}
           </li>
         ))}
       </ul>

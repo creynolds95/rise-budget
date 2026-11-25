@@ -16,6 +16,7 @@ export interface SyncedAccountRow {
   id: string;
   source: string;
   kind: string;
+  name: string;
   source_account_id: string;
   last_synced_at: string | null;
   include_in_budget: number;
@@ -31,7 +32,7 @@ export async function listSyncedAccounts(
 ): Promise<SyncedAccountRow[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, source, kind, source_account_id, last_synced_at, include_in_budget, archived_at, created_at FROM account
+      `SELECT id, source, kind, name, source_account_id, last_synced_at, include_in_budget, archived_at, created_at FROM account
        WHERE user_id = ?1 AND (source = 'simplefin' OR (source = 'manual' AND source_account_id IS NOT NULL))`,
     )
     .bind(userId)

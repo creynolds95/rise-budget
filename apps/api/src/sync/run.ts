@@ -8,6 +8,7 @@ import {
 } from '@rise/shared/import';
 import { dateFromDayNumber, dayNumber } from '@rise/shared/networth';
 import {
+  checkAccounts,
   detectTransfers,
   explainSyncOps,
   planAccountSync,
@@ -62,6 +63,17 @@ export const DEEP_OVERLAP_DAYS = 35;
 
 const Envelope = z.object({
   errors: z.array(z.string()).default([]),
+  // Structured errors (SimpleFIN 1.0.7+); some name the account. Absent on older bridges.
+  errlist: z
+    .array(
+      z.object({
+        code: z.string().optional(),
+        msg: z.string(),
+        conn_id: z.string().optional(),
+        account_id: z.string().optional(),
+      }),
+    )
+    .default([]),
   accounts: z.array(z.unknown()),
 });
 
@@ -223,7 +235,12 @@ export async function runSync(
   let rowsInserted = 0;
   let rowsUpdated = 0;
   let transfersLinked = 0;
-  let source_: ReturnType<typeof describeSource> | undefined;
+  let source_:
+    | (ReturnType<typeof describeSource> & {
+        missing?: string[];
+        stale?: { id: string; balanceDate: string }[];
+      })
+    | undefined;
 
   const finish = async (): Promise<SyncResult> => {
     const status: SyncResult['status'] =
@@ -270,7 +287,23 @@ export async function runSync(
     });
     return finish();
   }
-  for (const m of envelope.errors) errors.push({ message: m });
+  // Name what came back short: SimpleFIN's own error text rarely says which account.
+  const check = checkAccounts({
+    known: known
+      .filter((a) => a.source === 'simplefin' && !a.archived_at && a.source_account_id)
+      .map((a) => ({ id: a.id, sourceAccountId: a.source_account_id, name: a.name })),
+    returned: envelope.accounts.flatMap((raw) => {
+      const p = SimpleFinAccount.safeParse(raw);
+      return p.success
+        ? [{ id: p.data.id, name: p.data.name, balanceDateMs: p.data['balance-date'] * 1000 }]
+        : [];
+    }),
+    errors: envelope.errors,
+    errlist: envelope.errlist,
+    nowMs: now.getTime(),
+  });
+  errors.push(...check.errors);
+  if (source_) source_ = { ...source_, missing: check.missing, stale: check.stale };
 
   // Which categories count as spending, read once and only if some row is updated or dropped.
   let budgeted: Promise<ReadonlySet<string>> | undefined;

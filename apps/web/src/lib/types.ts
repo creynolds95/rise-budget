@@ -45,6 +45,9 @@ export interface SyncStatus {
     rowsInserted: number;
     rowsUpdated: number;
     errors: { account?: string; message: string }[];
+    /** Account ids the run's response left out, and ones that came back with an old balance. */
+    missing: string[];
+    stale: { id: string; balanceDate: string }[];
   }[];
 }
 

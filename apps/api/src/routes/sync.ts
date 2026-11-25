@@ -40,15 +40,25 @@ sync.get('/status', async (c) => {
   const runs = await listSyncRuns(c.get('userId'), c.env.DB);
   return c.json({
     mode: source?.mode ?? 'off',
-    runs: runs.map((r) => ({
-      id: r.id,
-      startedAt: r.started_at,
-      finishedAt: r.finished_at,
-      status: r.status,
-      accountsTouched: r.accounts_touched,
-      rowsInserted: r.rows_inserted,
-      rowsUpdated: r.rows_updated,
-      errors: r.error_json ? (JSON.parse(r.error_json) as unknown[]) : [],
-    })),
+    runs: runs.map((r) => {
+      const src = r.source_json
+        ? (JSON.parse(r.source_json) as {
+            missing?: string[];
+            stale?: { id: string; balanceDate: string }[];
+          })
+        : null;
+      return {
+        id: r.id,
+        startedAt: r.started_at,
+        finishedAt: r.finished_at,
+        status: r.status,
+        accountsTouched: r.accounts_touched,
+        rowsInserted: r.rows_inserted,
+        rowsUpdated: r.rows_updated,
+        errors: r.error_json ? (JSON.parse(r.error_json) as unknown[]) : [],
+        missing: src?.missing ?? [],
+        stale: src?.stale ?? [],
+      };
+    }),
   });
 });
