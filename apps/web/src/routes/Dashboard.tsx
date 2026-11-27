@@ -29,6 +29,7 @@ import {
   SavingsTile,
 } from '../components/DashboardTiles';
 import { tileOrder } from '../lib/dashboard';
+import { overBudgetItems } from '../lib/overBudget';
 import { useHeaderActions } from '../lib/headerActions';
 import { get } from '../lib/api';
 import { addMonths, shortDate } from '../lib/dates';
@@ -50,6 +51,57 @@ import { spreadMonths } from '../lib/spread';
 import { shouldOpenWelcome, welcomeDone } from '../lib/welcome';
 
 const RECENT_TXNS = 4;
+const OVER_COLLAPSED = 3;
+
+/** Budget items past their limit, three at a time with the rest behind a toggle. */
+function OverBudgetTile({
+  items,
+  names,
+  month,
+}: {
+  items: { categoryId: string; remainingCents: number }[];
+  names: Map<string, { name: string; emoji?: string | null }>;
+  month: string;
+}) {
+  const navigate = useNavigate();
+  const [all, setAll] = useState(false);
+  const shown = all ? items : items.slice(0, OVER_COLLAPSED);
+  return (
+    <section>
+      <h2 className="type-title">Over budget</h2>
+      <div className="mt-2 overflow-hidden rounded-card bg-surface px-4 shadow-soft">
+        {shown.map((i) => {
+          const to = `/budget/${i.categoryId}?m=${month}`;
+          const c = names.get(i.categoryId);
+          return (
+            <Link
+              key={i.categoryId}
+              to={to}
+              onClick={transitionClick(navigate, to)}
+              className="flex min-h-12 items-center justify-between gap-3 border-b border-hairline py-3 last:border-b-0 active:bg-sage-100"
+            >
+              <span className="min-w-0 truncate">
+                {c?.emoji ? `${c.emoji} ` : ''}
+                {c?.name ?? 'Category'}
+              </span>
+              <MoneyText cents={i.remainingCents} tone="over" className="font-semibold" />
+            </Link>
+          );
+        })}
+        {items.length > OVER_COLLAPSED && (
+          <button
+            type="button"
+            aria-expanded={all}
+            onClick={() => setAll(!all)}
+            className="flex min-h-11 w-full items-center justify-center border-t border-hairline type-label text-ink-muted active:bg-sage-100"
+          >
+            {all ? 'Show less' : `Show ${items.length - OVER_COLLAPSED} more`}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
 
 /** A gold call to action that disappears once there is nothing left to review. */
 function ReviewRow({ to, count, what }: { to: string; count: number; what: string }) {
@@ -125,6 +177,7 @@ export function Dashboard() {
     const cat = byId.get(c.categoryId);
     return c.groupKind === 'expense' && cat?.budgeted ? n + c.carriedInCents : n;
   }, 0);
+  const over = overBudgetItems(p.categories, (id) => !!byId.get(id)?.budgeted);
   const upcoming = (recurring.data ?? []).filter(
     (s: RecurringSeries) =>
       s.status !== 'ended' &&
@@ -191,6 +244,7 @@ export function Dashboard() {
         </div>
       </section>
     ),
+    overBudget: over.length > 0 ? <OverBudgetTile items={over} names={byId} month={month} /> : null,
     spending: (
       <SpendingSection month={month} spentCents={t.spentCents} elapsedDays={p.pace.elapsedDays} />
     ),
