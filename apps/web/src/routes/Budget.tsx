@@ -325,11 +325,11 @@ function SummaryRow({
             </span>
           )}
           <MoneyText
-            cents={Math.abs(remainingCents)}
+            cents={good ? Math.abs(remainingCents) : remainingCents}
             tone={over ? (good ? 'in' : 'over') : 'ink'}
             className="font-semibold"
           />
-          <span className="ml-1 text-ink-muted">{over ? 'over' : 'remaining'}</span>
+          <span className="ml-1 text-ink-muted">{over && good ? 'over' : 'remaining'}</span>
         </span>
       </div>
     </div>
@@ -433,7 +433,7 @@ function GroupSection({
           </span>
           <span className="flex w-[72px] items-center justify-end border border-transparent px-2">
             <MoneyText
-              cents={Math.abs(remainingTotal)}
+              cents={groupOver && kind === 'income' ? Math.abs(remainingTotal) : remainingTotal}
               tone={groupOver ? (kind === 'income' ? 'in' : 'over') : 'ink'}
               whole
             />
@@ -581,7 +581,9 @@ function BudgetRow({
                   : 'bg-sage-100 text-sage-700'
           }`}
         >
-          <span className="money">{formatBalance(remainingCents, { sign: 'never' })}</span>
+          <span className="money">
+            {formatBalance(remainingCents, { sign: kind === 'income' ? 'never' : 'auto' })}
+          </span>
         </span>
       </div>
       <Link to={to} onClick={open} tabIndex={-1} aria-hidden className="block pb-3">
@@ -614,7 +616,7 @@ function LeftToBudget({ poolCents }: { poolCents: number }) {
     >
       <span className="font-medium">{over ? 'Over budget' : 'Left to budget'}</span>
       <MoneyText
-        cents={Math.abs(poolCents)}
+        cents={poolCents}
         tone={over ? 'onClay' : poolCents > 0 ? 'in' : 'ink'}
         className="text-base font-semibold"
       />
