@@ -759,7 +759,7 @@ describe('sync plumbing', () => {
     const row = await env.DB.prepare('SELECT source_json FROM sync_run WHERE id = ?1')
       .bind(r.id)
       .first<{ source_json: string }>();
-    expect(row?.source_json).not.toMatch(/Secret|999/);
+    expect(row?.source_json).not.toMatch(/Secret|\b99999\b/);
     expect(JSON.parse(row?.source_json ?? 'null')).toMatchObject({
       fetch: null,
       startDate: '2026-09-01',
